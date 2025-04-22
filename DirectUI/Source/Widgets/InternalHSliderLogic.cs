@@ -176,7 +176,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
 
         // Draw the foreground BoxStyle using the *full track bounds*
         // This ensures the rounding radius is calculated based on the full Size.X
-        DrawBoxStyle(renderTarget, trackPosition, Size, Theme.Foreground);
+        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
 
         // Pop the clip
         renderTarget.PopAxisAlignedClip();

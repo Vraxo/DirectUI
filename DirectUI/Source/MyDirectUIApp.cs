@@ -1,5 +1,5 @@
 ﻿// MODIFIED: MyDirectUIApp.cs
-// Summary: Added a GridContainer example.
+// Summary: Modified the 'specialButtonTheme' to have BorderThickness = 0 to remove the border artifact.
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -23,11 +23,43 @@ public class MyDirectUIApp : Direct2DAppWindow
     public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
         : base(title, width, height)
     {
-        // Theme setup as before...
-        buttonTheme = new ButtonStylePack() { /* ... */ };
-        specialButtonTheme = new ButtonStylePack() { /* ... */ };
-        sliderTheme = new SliderStyle() { /* ... */ };
-        sliderGrabberTheme = new ButtonStylePack() { /* ... */ };
+        // Button Themes
+        buttonTheme = new ButtonStylePack()
+        {
+            Roundness = 0.0f,
+            BorderThickness = 1.0f,
+            FontSize = 14f,
+        };
+
+        // --- Modify Special Theme ---
+        specialButtonTheme = new ButtonStylePack()
+        {
+            Roundness = 0.5f, // Keep rounding
+            BorderThickness = 0.0f, // Set border thickness to 0
+            FontSize = 14f,
+            FontWeight = Vortice.DirectWrite.FontWeight.Bold,
+            // Define colors for different states (border colors are now irrelevant but kept for structure)
+            Normal = { FillColor = new Color4(0.3f, 0.5f, 0.3f, 1.0f), BorderColor = Colors.Transparent },
+            Hover = { FillColor = new Color4(0.4f, 0.6f, 0.4f, 1.0f), BorderColor = Colors.Transparent },
+            Pressed = { FillColor = new Color4(0.2f, 0.4f, 0.2f, 1.0f), BorderColor = Colors.Transparent },
+            Disabled = { FillColor = DefaultTheme.DisabledFill, FontColor = DefaultTheme.DisabledText, BorderColor = Colors.Transparent } // Ensure disabled state is handled
+        };
+        // --- End Modify Special Theme ---
+
+        // Slider Themes
+        sliderTheme = new SliderStyle()
+        {
+            Background = { Roundness = 0.2f, FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f), BorderThickness = 0 },
+            Foreground = { Roundness = 0.2f, FillColor = DefaultTheme.Accent, BorderThickness = 0 }
+        };
+        sliderGrabberTheme = new ButtonStylePack()
+        {
+            Roundness = 0.5f,
+            BorderThickness = 1.0f, // Keep border on grabber for now
+            Normal = { FillColor = new Color4(0.6f, 0.6f, 0.65f, 1.0f), BorderColor = new Color4(0.8f, 0.8f, 0.8f, 1.0f) },
+            Hover = { FillColor = new Color4(0.75f, 0.75f, 0.8f, 1.0f), BorderColor = Colors.WhiteSmoke },
+            Pressed = { FillColor = Colors.WhiteSmoke, BorderColor = DefaultTheme.Accent }
+        };
     }
 
     protected override void DrawUIContent(DrawingContext context, InputState input)
@@ -38,25 +70,21 @@ public class MyDirectUIApp : Direct2DAppWindow
         UI.BeginHBoxContainer("ActionButtons", new Vector2(50, 50), gap: 10.0f);
         if (UI.Button("OkButton", new() { Size = new(84, 28), Text = "OK", Theme = buttonTheme })) { backgroundColor = Colors.DarkSlateGray; Invalidate(); }
         if (UI.Button("CancelButton", new() { Size = new(84, 28), Text = "Cancel", Theme = buttonTheme })) { /* log */ }
-        // Add more buttons if needed...
         UI.EndHBoxContainer();
 
 
         // --- Area for Grid ---
         float gridStartX = 50;
         float gridStartY = 100;
-        // Calculate available size dynamically based on window size (example)
-        float windowWidth = GetClientRectSize().Width; // Get current window width
+        float windowWidth = GetClientRectSize().Width;
         float windowHeight = GetClientRectSize().Height;
-        float availableGridWidth = windowWidth - gridStartX - 50; // Leave 50px margin on right
-        float availableGridHeight = windowHeight - gridStartY - 50; // Leave 50px margin on bottom
-        Vector2 gridAvailableSize = new Vector2(availableGridWidth, availableGridHeight);
+        float availableGridWidth = windowWidth - gridStartX - 50;
+        float availableGridHeight = windowHeight - gridStartY - 50;
+        Vector2 gridAvailableSize = new Vector2(Math.Max(1, availableGridWidth), Math.Max(1, availableGridHeight)); // Ensure non-zero size
         int numberOfColumns = 3;
-        Vector2 cellGap = new Vector2(10, 10); // 10px horizontal and vertical gap
+        Vector2 cellGap = new Vector2(10, 10);
 
         UI.BeginGridContainer("MainGrid", new Vector2(gridStartX, gridStartY), gridAvailableSize, numberOfColumns, cellGap);
-
-        // Add elements to the grid (they will flow left-to-right, top-to-bottom)
 
         // Row 1
         UI.Button("GridBtn1", new() { Size = new(100, 30), Text = "Grid Cell 1", Theme = buttonTheme });
@@ -64,22 +92,16 @@ public class MyDirectUIApp : Direct2DAppWindow
         UI.Button("GridBtn2", new() { Size = new(100, 30), Text = "Grid Cell 3", Theme = buttonTheme });
 
         // Row 2
-        UI.Button("GridBtn3", new() { Size = new(100, 50), Text = "Taller Button", Theme = buttonTheme }); // Taller button will define row height
+        UI.Button("GridBtn3", new() { Size = new(100, 50), Text = "Taller Button", Theme = buttonTheme });
         UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 5", Theme = buttonTheme });
-        gridSlider2 = UI.VSlider("GridSlider2", gridSlider2, new() { Size = new(20, 80), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme }); // Taller slider
+        gridSlider2 = UI.VSlider("GridSlider2", gridSlider2, new() { Size = new(20, 80), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
 
-        // Row 3
+        // Row 3 - Uses specialButtonTheme now without border
         UI.Button("GridBtn5", new() { Size = new(80, 25), Text = "Cell 7", Theme = specialButtonTheme });
         UI.Button("GridBtn6", new() { Size = new(120, 25), Text = "Cell 8 - Wider", Theme = specialButtonTheme });
-        UI.Button("GridBtn7", new() { Size = new(80, 25), Text = "Cell 9", Theme = specialButtonTheme });
+        UI.Button("GridBtn7", new() { Size = new(80, 25), Text = "Cell 9", Theme = specialButtonTheme }); // This is the one from the image
 
-
-        // Add more widgets as needed... They will continue filling the grid.
-        // Example: Add widget larger than calculated cell width
-        // UI.Button("OverflowBtn", new() { Size = new(300, 30), Text = "This button might overflow its cell visually" });
-
-
-        UI.EndGridContainer(); // End the grid layout
+        UI.EndGridContainer();
 
 
         UI.EndFrame();

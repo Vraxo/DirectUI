@@ -1,9 +1,10 @@
-﻿// NEW: DirectUI/InternalSliderLogic.cs
-// Summary: Base logic common to HSlider and VSlider internal representations.
+﻿// MODIFIED: DirectUI/InternalSliderLogic.cs
+// Summary: Full class. Removed local DrawBoxStyle/DrawSharpRectangle helpers. Updated DrawBackground/DrawGrabber to call UI.DrawBoxStyleHelper. Includes previous fixes for grabber position clamping.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
+// Removed D2D Alias as it's no longer needed directly in this file for drawing helpers
 
 namespace DirectUI;
 
@@ -41,41 +42,62 @@ internal abstract class InternalSliderLogic
     protected abstract Vector2 CalculateGrabberPosition(float currentValue);
     protected abstract void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue);
 
+
     // --- Common Logic ---
     internal float UpdateAndDraw(InputState input, DrawingContext context, float currentValue)
     {
-        trackPosition = Position - Origin; // Calculate based on current Position/Origin
-        CalculateTrackBounds(); // Calculate coordinate bounds
+        // Calculate current bounds based on potentially updated Position/Origin/Size
+        trackPosition = Position - Origin;
+        CalculateTrackBounds(); // Calculate coordinate bounds (min/max)
 
         float newValue = currentValue; // Start with the input value
 
         if (Disabled)
         {
+            // Reset interaction states if disabled
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
         }
         else
         {
+            // Update hover states first (this might be refined in HandleInput)
             UpdateHoverStates(input.MousePosition);
-            newValue = HandleInput(input, currentValue); // Handle clicks, drags -> updates value
+            // Handle input, which might change the value and refine hover/press states
+            newValue = HandleInput(input, currentValue);
         }
 
-        UpdateGrabberThemeStyle(); // Update grabber's Current style based on state
+        // Update grabber's visual style based on potentially new state
+        UpdateGrabberThemeStyle();
 
         // --- Drawing ---
+        // Ensure render target is valid before drawing
+        if (context.RenderTarget is null)
+        {
+            Console.WriteLine("Error: RenderTarget is null during Slider UpdateAndDraw.");
+            return newValue; // Cannot draw
+        }
+
         try
         {
+            // Draw track background
             DrawBackground(context.RenderTarget);
-            DrawForeground(context.RenderTarget, newValue); // Use the potentially updated value for drawing
+            // Draw filled portion of the track (foreground) using the updated value
+            DrawForeground(context.RenderTarget, newValue);
+            // Draw the grabber using the updated value
             DrawGrabber(context.RenderTarget, newValue);
         }
-        catch (Exception ex) // Catch drawing errors
+        catch (SharpGen.Runtime.SharpGenException ex) when (ex.ResultCode.Code == Vortice.Direct2D1.ResultCode.RecreateTarget.Code)
+        {
+            // Handle cases where drawing operations fail due to lost device
+            Console.WriteLine($"Slider Draw failed (RecreateTarget): {ex.Message}. External cleanup needed.");
+            // Don't throw, allow frame to potentially finish, rely on external handling
+        }
+        catch (Exception ex) // Catch other drawing errors
         {
             Console.WriteLine($"Error drawing slider: {ex.Message}");
             // Don't crash, but the slider might not render correctly
         }
-
 
         return newValue; // Return the potentially modified value
     }
@@ -83,89 +105,49 @@ internal abstract class InternalSliderLogic
     protected float ApplyStep(float value)
     {
         float clampedValue = Math.Clamp(value, MinValue, MaxValue);
-        if (Step <= 0 || MaxValue <= MinValue) // Avoid division by zero or invalid range
+        // Prevent issues if step is invalid or range is zero
+        if (Step <= 0 || MaxValue <= MinValue)
         {
             return clampedValue;
         }
 
-        // Calculate how many steps fit into the range
         float range = MaxValue - MinValue;
-        // Ensure steps can actually fit
+        // Handle case where range is smaller than a single step
         if (range < Step && Step > 0)
         {
-            // If range is smaller than a step, snap to min or max
+            // Snap to the closer end
             return (value - MinValue < range / 2.0f) ? MinValue : MaxValue;
         }
 
-
-        // Calculate the nearest step
+        // Calculate the nearest step multiple from the minimum value
         float stepsFromMin = (float)Math.Round((clampedValue - MinValue) / Step);
         float steppedValue = MinValue + stepsFromMin * Step;
 
-        // Final clamp to ensure rounding didn't exceed bounds
+        // Final clamp to ensure rounding didn't exceed bounds (important due to float precision)
         return Math.Clamp(steppedValue, MinValue, MaxValue);
     }
 
 
     protected void UpdateGrabberThemeStyle()
     {
+        // Use the state fields updated during HandleInput/UpdateHoverStates
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
+    // --- MODIFIED DRAWING CALLS ---
     protected void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        DrawBoxStyle(renderTarget, trackPosition, Size, Theme.Background);
+        // Call the helper method now located in UI class
+        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
     }
 
     protected void DrawGrabber(ID2D1RenderTarget renderTarget, float currentValue)
     {
         Vector2 grabberPos = CalculateGrabberPosition(currentValue);
-        // Use the 'Current' style set by UpdateGrabberThemeStyle
-        DrawBoxStyle(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
+        // Call the helper method now located in UI class
+        // Use the 'Current' style which was set by UpdateGrabberThemeStyle
+        UI.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
     }
 
-    // Helper to draw based on BoxStyle (Handles rounded vs sharp)
-    protected static void DrawBoxStyle(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
-    {
-        if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0)
-        {
-            return; // Nothing to draw
-        }
-
-        Rect bounds = new Rect(pos.X, pos.Y, size.X, size.Y);
-        ID2D1SolidColorBrush fillBrush = UI.GetOrCreateBrush(style.FillColor);
-        ID2D1SolidColorBrush borderBrush = UI.GetOrCreateBrush(style.BorderColor);
-
-        bool canFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool canDrawBorder = style.BorderThickness > 0 && style.BorderColor.A > 0 && borderBrush is not null;
-
-        if (style.Roundness > 0.0f)
-        {
-            var radiusX = Math.Max(0, bounds.Width * style.Roundness * 0.5f);
-            var radiusY = Math.Max(0, bounds.Height * style.Roundness * 0.5f);
-            // Vortice requires System.Drawing.RectangleF
-            System.Drawing.RectangleF rectF = new(bounds.X, bounds.Y, bounds.Width, bounds.Height);
-            RoundedRectangle roundedRect = new(rectF, radiusX, radiusY);
-
-            if (canFill)
-            {
-                renderTarget.FillRoundedRectangle(roundedRect, fillBrush);
-            }
-            if (canDrawBorder)
-            {
-                renderTarget.DrawRoundedRectangle(roundedRect, borderBrush, style.BorderThickness);
-            }
-        }
-        else
-        {
-            if (canFill)
-            {
-                renderTarget.FillRectangle(bounds, fillBrush);
-            }
-            if (canDrawBorder)
-            {
-                renderTarget.DrawRectangle(bounds, borderBrush, style.BorderThickness);
-            }
-        }
-    }
+    // --- REMOVED DRAWING HELPERS (Moved to UI.cs) ---
 }
