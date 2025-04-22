@@ -1,5 +1,4 @@
-﻿// MODIFIED: UI.cs
-// Summary: Updated DrawBoxStyleHelper to handle individual BorderLengthTop/Right/Bottom/Left properties. Sharp corners are drawn accurately with potentially different border sizes. Rounded corners approximate by averaging border sizes.
+﻿// UI.cs
 using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
@@ -14,7 +13,6 @@ namespace DirectUI;
 // Enums (ensure they exist or are defined here)
 public enum HSliderDirection { LeftToRight, RightToLeft }
 public enum VSliderDirection { TopToBottom, BottomToTop }
-
 
 public static class UI
 {
@@ -428,11 +426,12 @@ public static class UI
     }
 
 
-    // --- SHARED DRAWING HELPERS ---
+    // --- SHARED DRAWING HELPERS --- FINAL VERSION ---
 
     /// <summary>
-    /// Draws a BoxStyle, supporting independent border lengths for sharp corners.
-    /// For rounded corners, it approximates by averaging horizontal/vertical border lengths.
+    /// Draws a BoxStyle. Supports independent border lengths for sharp corners.
+    /// For rounded corners, it approximates using the max average border length
+    /// and uses the standard Fill then Draw technique.
     /// </summary>
     internal static void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
     {
@@ -442,16 +441,8 @@ public static class UI
         }
 
         // Get brushes
-        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor);
-        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
-
-        // Check visibility
-        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null &&
-                                (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 ||
-                                 style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0);
-
-        if (!hasVisibleFill && !hasVisibleBorder) return;
+        ID2D1SolidColorBrush? fillBrush = GetOrCreateBrush(style.FillColor);
+        ID2D1SolidColorBrush? borderBrush = GetOrCreateBrush(style.BorderColor);
 
         // Ensure border lengths are non-negative
         float borderTop = Math.Max(0f, style.BorderLengthTop);
@@ -459,118 +450,114 @@ public static class UI
         float borderBottom = Math.Max(0f, style.BorderLengthBottom);
         float borderLeft = Math.Max(0f, style.BorderLengthLeft);
 
-        // --- Rounded Corners ---
-        if (style.Roundness > 0.0f)
+        // Check visibility
+        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null &&
+                                (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
+
+        if (!hasVisibleFill && !hasVisibleBorder) return;
+
+        // Store and set AntialiasMode for predictable shape rendering
+        var originalAntialiasMode = renderTarget.AntialiasMode;
+        renderTarget.AntialiasMode = AntialiasMode.PerPrimitive; // Default/standard for shapes
+
+        try // Use finally block to ensure AA mode is restored
         {
-            // --- Approximation for Rounded Corners with Independent Borders ---
-            // Calculate average horizontal and vertical border thicknesses for the inset/stroke logic
-            float avgHorizontalBorder = (borderLeft + borderRight) / 2.0f;
-            float avgVerticalBorder = (borderTop + borderBottom) / 2.0f;
-            // Use the maximum of the two averages for a single stroke width approximation
-            float approxBorderThickness = Math.Max(avgHorizontalBorder, avgVerticalBorder);
-            float halfApproxBorder = approxBorderThickness / 2.0f;
-
-            // Calculate outer bounds and radius
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
-            float maxOuterRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
-            float outerRadius = Math.Max(0f, maxOuterRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
-
-            if (float.IsFinite(outerRadius) && outerRadius >= 0)
+            // --- Rounded Corners (Roundness > 0) ---
+            if (style.Roundness > 0.0f)
             {
-                // 1. Draw Fill (inset by the approximated half border thickness)
-                if (hasVisibleFill)
+                // --- Standard Approximation: Fill then Draw ---
+                float avgHorizontalBorder = (borderLeft + borderRight) / 2.0f;
+                float avgVerticalBorder = (borderTop + borderBottom) / 2.0f; // Corrected variable name
+                float approxBorderThickness = Math.Max(avgHorizontalBorder, avgVerticalBorder);
+
+                Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+                // Prevent radius from being larger than half the size
+                float maxOuterRadiusX = outerBounds.Width / 2.0f;
+                float maxOuterRadiusY = outerBounds.Height / 2.0f;
+                float outerRadiusX = Math.Min(maxOuterRadiusX, maxOuterRadiusX * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+                float outerRadiusY = Math.Min(maxOuterRadiusY, maxOuterRadiusY * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+                // Ensure non-negative radius
+                outerRadiusX = Math.Max(0f, outerRadiusX);
+                outerRadiusY = Math.Max(0f, outerRadiusY);
+
+
+                if (float.IsFinite(outerRadiusX) && float.IsFinite(outerRadiusY))
                 {
-                    float fillInsetWidth = Math.Max(0f, outerBounds.Width - approxBorderThickness);
-                    float fillInsetHeight = Math.Max(0f, outerBounds.Height - approxBorderThickness);
+                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                    RoundedRectangle roundedRect = new(outerRectF, outerRadiusX, outerRadiusY); // Use potentially different X/Y radius
 
-                    if (fillInsetWidth > 0 && fillInsetHeight > 0)
+                    // 1. Draw Fill
+                    if (hasVisibleFill && fillBrush is not null)
                     {
-                        Rect fillBounds = new Rect(outerBounds.X + halfApproxBorder, outerBounds.Y + halfApproxBorder, fillInsetWidth, fillInsetHeight);
-                        float fillRadius = Math.Max(0f, outerRadius - halfApproxBorder);
-
-                        System.Drawing.RectangleF fillRectF = new(fillBounds.X, fillBounds.Y, fillBounds.Width, fillBounds.Height);
-                        RoundedRectangle fillRoundedRect = new(fillRectF, fillRadius, fillRadius);
-                        renderTarget.FillRoundedRectangle(fillRoundedRect, fillBrush);
+                        renderTarget.FillRoundedRectangle(roundedRect, fillBrush);
                     }
+
+                    // 2. Draw Border (using approximated thickness)
+                    if (hasVisibleBorder && borderBrush is not null && approxBorderThickness > 0)
+                    {
+                        // Use the SAME roundedRect definition
+                        renderTarget.DrawRoundedRectangle(roundedRect, borderBrush, approxBorderThickness);
+                    }
+                    return; // Finished rounded drawing
                 }
-
-                // 2. Draw Border (using approximated thickness and inset)
-                if (hasVisibleBorder) // Check if border should be drawn at all
-                {
-                    float borderPathWidth = Math.Max(0f, outerBounds.Width - approxBorderThickness);
-                    float borderPathHeight = Math.Max(0f, outerBounds.Height - approxBorderThickness);
-
-                    if (borderPathWidth > 0 && borderPathHeight > 0)
-                    {
-                        Rect borderPathBounds = new Rect(outerBounds.X + halfApproxBorder, outerBounds.Y + halfApproxBorder, borderPathWidth, borderPathHeight);
-                        float borderPathRadius = Math.Max(0f, outerRadius - halfApproxBorder);
-
-                        System.Drawing.RectangleF borderPathRectF = new(borderPathBounds.X, borderPathBounds.Y, borderPathBounds.Width, borderPathBounds.Height);
-                        RoundedRectangle borderPathRoundedRect = new(borderPathRectF, borderPathRadius, borderPathRadius);
-                        renderTarget.DrawRoundedRectangle(borderPathRoundedRect, borderBrush, approxBorderThickness);
-                    }
-                    else if (!hasVisibleFill) // Border thicker than shape, fill outer bounds if no inner fill
-                    {
-                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                        RoundedRectangle outerRoundedRect = new(outerRectF, outerRadius, outerRadius);
-                        renderTarget.FillRoundedRectangle(outerRoundedRect, borderBrush);
-                    }
-                }
-                return; // Finished rounded (approximated) drawing
+                // Fallback to sharp corners if radius calculation resulted in NaN/Infinity
             }
-            // Fallback to sharp if radius calculation failed
+
+            // --- Sharp Corners (Roundness <= 0 or Fallback) ---
+            // This path is taken if Roundness <= 0 or if rounded calculation failed
+
+            // 1. Draw Fill (inset correctly by individual border lengths)
+            if (hasVisibleFill && fillBrush is not null)
+            {
+                float fillX = pos.X + borderLeft;
+                float fillY = pos.Y + borderTop;
+                float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+                float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+
+                if (fillWidth > 0 && fillHeight > 0)
+                {
+                    Rect fillBounds = new Rect(fillX, fillY, fillWidth, fillHeight);
+                    renderTarget.FillRectangle(fillBounds, fillBrush);
+                }
+            }
+
+            // 2. Draw Border (as four separate rectangles)
+            if (hasVisibleBorder && borderBrush is not null)
+            {
+                // Top Border
+                if (borderTop > 0)
+                {
+                    renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, borderTop), borderBrush);
+                }
+                // Bottom Border
+                if (borderBottom > 0)
+                {
+                    renderTarget.FillRectangle(new Rect(pos.X, pos.Y + size.Y - borderBottom, size.X, borderBottom), borderBrush);
+                }
+                // Left Border (avoiding corners already drawn)
+                if (borderLeft > 0)
+                {
+                    float leftHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+                    if (leftHeight > 0)
+                    {
+                        renderTarget.FillRectangle(new Rect(pos.X, pos.Y + borderTop, borderLeft, leftHeight), borderBrush);
+                    }
+                }
+                // Right Border (avoiding corners already drawn)
+                if (borderRight > 0)
+                {
+                    float rightHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+                    if (rightHeight > 0)
+                    {
+                        renderTarget.FillRectangle(new Rect(pos.X + size.X - borderRight, pos.Y + borderTop, borderRight, rightHeight), borderBrush);
+                    }
+                }
+            }
         }
-
-        // --- Sharp Corners (Accurate Independent Borders) ---
-        // This path is taken if Roundness <= 0 or if rounded calculation failed
-
-        // 1. Draw Fill (inset correctly by individual border lengths)
-        if (hasVisibleFill)
+        finally
         {
-            float fillX = pos.X + borderLeft;
-            float fillY = pos.Y + borderTop;
-            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-
-            if (fillWidth > 0 && fillHeight > 0)
-            {
-                Rect fillBounds = new Rect(fillX, fillY, fillWidth, fillHeight);
-                renderTarget.FillRectangle(fillBounds, fillBrush);
-            }
-            // else: Fill area is completely covered by borders.
-        }
-
-        // 2. Draw Border (as four separate rectangles)
-        if (hasVisibleBorder)
-        {
-            // Top Border
-            if (borderTop > 0)
-            {
-                renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, borderTop), borderBrush);
-            }
-            // Bottom Border
-            if (borderBottom > 0)
-            {
-                renderTarget.FillRectangle(new Rect(pos.X, pos.Y + size.Y - borderBottom, size.X, borderBottom), borderBrush);
-            }
-            // Left Border (avoiding corners already drawn)
-            if (borderLeft > 0)
-            {
-                float leftHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-                if (leftHeight > 0)
-                {
-                    renderTarget.FillRectangle(new Rect(pos.X, pos.Y + borderTop, borderLeft, leftHeight), borderBrush);
-                }
-            }
-            // Right Border (avoiding corners already drawn)
-            if (borderRight > 0)
-            {
-                float rightHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-                if (rightHeight > 0)
-                {
-                    renderTarget.FillRectangle(new Rect(pos.X + size.X - borderRight, pos.Y + borderTop, borderRight, rightHeight), borderBrush);
-                }
-            }
+            renderTarget.AntialiasMode = originalAntialiasMode; // Restore original AA mode
         }
     }
 }
