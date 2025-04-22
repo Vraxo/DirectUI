@@ -1,4 +1,4 @@
-﻿// Direct2DAppWindow.cs - Resolved AlphaMode ambiguity
+﻿// Direct2DAppWindow.cs - Updated to call UI.DoButton
 using System;
 using System.Numerics; // System.Numerics for Vector2
 
@@ -16,37 +16,38 @@ using DW = Vortice.DirectWrite;
 using D2DFactoryType = Vortice.Direct2D1.FactoryType;
 using SizeI = Vortice.Mathematics.SizeI;
 using Rect = Vortice.Mathematics.Rect;
-using Vortice.DCommon; // This using caused the ambiguity
 
-// Explicitly qualify PixelFormat from DCommon if needed elsewhere,
-// but for the RenderTargetProperties, we need DXGI.PixelFormat.
-// using DCommonPixelFormat = Vortice.DCommon.PixelFormat;
+using DirectUI;
+using Vortice.DCommon;
 
-namespace DirectUI; // File-scoped namespace
+namespace DirectUI;
 
 public class Direct2DAppWindow : Win32Window
 {
+    // --- Core Factories ---
     private ID2D1Factory1? _d2dFactory;
     private IDWriteFactory? _dwriteFactory;
+
+    // --- Render Target ---
     private ID2D1HwndRenderTarget? _renderTarget;
 
-    private ID2D1SolidColorBrush? _textBrush;
-    private ID2D1SolidColorBrush? _buttonBackgroundBrush;
-    private ID2D1SolidColorBrush? _buttonHoverBrush;
+    // --- UI Elements ---
+    private Button? _myTestButton;
 
-    private IDWriteTextFormat? _buttonTextFormat;
-
+    // --- Window State ---
     private Color4 _backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f);
+    private bool _graphicsInitialized = false;
 
+    // --- Input State Tracking ---
     private Vector2 _currentMousePos = new(-1, -1);
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
 
-    private bool _graphicsInitialized = false;
-
-    public Direct2DAppWindow(string title = "Vortice D2D UI Window", int width = 800, int height = 600)
+    public Direct2DAppWindow(string title = "Vortice DirectUI Window", int width = 800, int height = 600)
         : base(title, width, height)
     { }
+
+    // --- Initialization & Cleanup ---
 
     protected override bool Initialize()
     {
@@ -60,17 +61,25 @@ public class Direct2DAppWindow : Win32Window
         CleanupGraphics();
     }
 
+    // --- Core Loop ---
+
     protected override void OnPaint()
     {
-        if (!_graphicsInitialized || _renderTarget is null)
+        if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
         {
             if (!_graphicsInitialized && Handle != nint.Zero)
             {
+                Console.WriteLine("Graphics not ready in OnPaint, attempting initialization...");
                 InitializeGraphics();
-                if (!_graphicsInitialized || _renderTarget is null) return;
+                if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
+                {
+                    _wasLeftMouseClickedThisFrame = false;
+                    return;
+                }
             }
             else
             {
+                _wasLeftMouseClickedThisFrame = false;
                 return;
             }
         }
@@ -80,22 +89,29 @@ public class Direct2DAppWindow : Win32Window
             _renderTarget.BeginDraw();
             _renderTarget.Clear(_backgroundColor);
 
-            float buttonLeft = 50;
-            float buttonTop = 50;
-            float buttonWidth = 150;
-            float buttonHeight = 40;
-            var buttonBounds = new Rect(buttonLeft, buttonTop, buttonLeft + buttonWidth, buttonTop + buttonHeight);
-            string buttonText = "Vortice Btn";
-            string buttonId = "MyVorticeButton";
+            // --- Prepare UI Context ---
+            var inputState = new InputState(
+                _currentMousePos,
+                _wasLeftMouseClickedThisFrame,
+                _isLeftMouseButtonDown
+            );
 
-            bool clicked = DoButton(buttonId, buttonText, buttonBounds);
+            var drawingContext = new DrawingContext(_renderTarget, _dwriteFactory);
 
-            if (clicked)
+            // --- Process and Draw UI Elements ---
+            if (_myTestButton is not null)
             {
-                Console.WriteLine($"Button '{buttonId}' was clicked!");
-                _backgroundColor = new Color4((float)Random.Shared.NextDouble(), 0.5f, 0.5f, 1.0f);
+                // Use the RENAMED method UI.DoButton
+                bool clicked = UI.DoButton(drawingContext, inputState, _myTestButton);
+
+                if (clicked)
+                {
+                    Console.WriteLine($"Button '{_myTestButton.Text}' was clicked!");
+                    _backgroundColor = new Color4((float)Random.Shared.NextDouble(), 0.5f, 0.5f, 1.0f);
+                }
             }
 
+            // --- End Drawing ---
             Result endDrawResult = _renderTarget.EndDraw();
 
             if (endDrawResult.Failure)
@@ -127,15 +143,18 @@ public class Direct2DAppWindow : Win32Window
         }
     }
 
+    // --- Event Handlers ---
+
     protected override void OnSize(int width, int height)
     {
         if (_graphicsInitialized && _renderTarget is not null)
         {
+            Console.WriteLine($"Window resized to {width}x{height}. Resizing render target...");
             try
             {
                 var newPixelSize = new SizeI(width, height);
                 _renderTarget.Resize(newPixelSize);
-                Console.WriteLine($"Resized render target to {width}x{height}");
+                Console.WriteLine($"Successfully resized render target.");
             }
             catch (SharpGenException ex)
             {
@@ -156,11 +175,10 @@ public class Direct2DAppWindow : Win32Window
         }
         else if (!_graphicsInitialized && Handle != nint.Zero)
         {
-            Console.WriteLine("Graphics not initialized. Attempting Graphics initialization during OnSize...");
+            Console.WriteLine("Graphics not initialized during OnSize. Attempting Graphics initialization...");
             InitializeGraphics();
         }
     }
-
 
     protected override void OnMouseMove(int x, int y)
     {
@@ -196,8 +214,11 @@ public class Direct2DAppWindow : Win32Window
 
     protected override bool OnClose()
     {
+        Console.WriteLine("Close requested.");
         return true;
     }
+
+    // --- Graphics Management ---
 
     private bool InitializeGraphics()
     {
@@ -214,7 +235,6 @@ public class Direct2DAppWindow : Win32Window
             factoryResult.CheckError();
             if (_d2dFactory is null) throw new InvalidOperationException("D2D Factory creation failed silently.");
 
-
             Result dwriteResult = DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out _dwriteFactory);
             dwriteResult.CheckError();
             if (_dwriteFactory is null) throw new InvalidOperationException("DWrite Factory creation failed silently.");
@@ -229,7 +249,6 @@ public class Direct2DAppWindow : Win32Window
                 return false;
             }
 
-            // Explicitly qualify PixelFormat and AlphaMode to resolve ambiguity
             var dxgiPixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, (Vortice.DCommon.AlphaMode)Vortice.DXGI.AlphaMode.Premultiplied);
             var renderTargetProperties = new RenderTargetProperties(dxgiPixelFormat);
 
@@ -243,26 +262,19 @@ public class Direct2DAppWindow : Win32Window
             _renderTarget = _d2dFactory.CreateHwndRenderTarget(renderTargetProperties, hwndRenderTargetProperties);
             if (_renderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
 
-
             _renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
 
-            _textBrush = _renderTarget.CreateSolidColorBrush(Colors.White);
-            _buttonBackgroundBrush = _renderTarget.CreateSolidColorBrush(new Color4(0.2f, 0.2f, 0.8f, 1.0f));
-            _buttonHoverBrush = _renderTarget.CreateSolidColorBrush(new Color4(0.4f, 0.4f, 0.9f, 1.0f));
-
-            if (_textBrush is null || _buttonBackgroundBrush is null || _buttonHoverBrush is null)
+            _myTestButton = new Button
             {
-                throw new InvalidOperationException("Failed to create one or more brushes.");
-            }
-
-            _buttonTextFormat = _dwriteFactory.CreateTextFormat("Segoe UI", FontWeight.Normal, FontStyle.Normal, FontStretch.Normal, 16.0f);
-            if (_buttonTextFormat is null)
-            {
-                throw new InvalidOperationException("Text format creation failed.");
-            }
-
-            _buttonTextFormat.TextAlignment = TextAlignment.Center;
-            _buttonTextFormat.ParagraphAlignment = ParagraphAlignment.Center;
+                Position = new Vector2(50, 50),
+                Size = new Vector2(150, 40),
+                Text = "زنتو گاییدم وای"
+            };
+            _myTestButton.Clicked += (sender) => {
+                Console.WriteLine($"Event Handler: Button '{sender.Text}' Received Click!");
+            };
+            _myTestButton.MouseEntered += (sender) => Console.WriteLine($"Event Handler: Mouse entered Button '{sender.Text}'");
+            _myTestButton.MouseExited += (sender) => Console.WriteLine($"Event Handler: Mouse exited Button '{sender.Text}'");
 
             Console.WriteLine($"Vortice Graphics initialized successfully for HWND {Handle}.");
             _graphicsInitialized = true;
@@ -284,92 +296,37 @@ public class Direct2DAppWindow : Win32Window
         }
     }
 
-
     private void CleanupGraphics()
     {
-        if (_d2dFactory is not null || _renderTarget is not null)
+        bool resourcesExisted = _d2dFactory is not null || _renderTarget is not null;
+        if (resourcesExisted)
             Console.WriteLine("Cleaning up Vortice Graphics resources...");
 
-        _buttonTextFormat?.Dispose();
-        _buttonTextFormat = null;
-        _buttonHoverBrush?.Dispose();
-        _buttonHoverBrush = null;
-        _buttonBackgroundBrush?.Dispose();
-        _buttonBackgroundBrush = null;
-        _textBrush?.Dispose();
-        _textBrush = null;
+        UI.CleanupResources(); // Cleanup UI cache
 
-        _renderTarget?.Dispose();
-        _renderTarget = null;
-
-        _dwriteFactory?.Dispose();
-        _dwriteFactory = null;
-        _d2dFactory?.Dispose();
-        _d2dFactory = null;
+        _renderTarget?.Dispose(); _renderTarget = null;
+        _dwriteFactory?.Dispose(); _dwriteFactory = null;
+        _d2dFactory?.Dispose(); _d2dFactory = null;
 
         _graphicsInitialized = false;
-        // Console.WriteLine("Finished cleaning graphics resources."); // Optional: Keep this if you prefer
+
+        if (resourcesExisted)
+            Console.WriteLine("Finished cleaning graphics resources.");
     }
 
-
-    private bool DoButton(string id, string text, Rect bounds)
-    {
-        if (_renderTarget is null || _buttonBackgroundBrush is null || _buttonHoverBrush is null ||
-            _textBrush is null || _buttonTextFormat is null)
-        {
-            // Console.WriteLine($"Warning: DoButton called with null resources (ID: {id}).");
-            return false;
-        }
-
-        bool isHovering = bounds.Contains(_currentMousePos.X, _currentMousePos.Y);
-        bool wasClicked = false;
-
-        ID2D1SolidColorBrush backgroundBrush = isHovering
-            ? _buttonHoverBrush
-            : _buttonBackgroundBrush;
-
-        if (isHovering && _wasLeftMouseClickedThisFrame)
-        {
-            wasClicked = true;
-        }
-
-        try
-        {
-            _renderTarget.FillRectangle(bounds, backgroundBrush);
-            _renderTarget.DrawRectangle(bounds, _textBrush);
-            _renderTarget.DrawText(text, _buttonTextFormat, bounds, _textBrush);
-        }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
-        {
-            Console.WriteLine($"Render target needs recreation (Caught SharpGenException in DoButton for ID: {id}): {ex.Message}");
-            _graphicsInitialized = false;
-            CleanupGraphics();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error drawing button (ID: {id}): {ex}");
-            _graphicsInitialized = false;
-            CleanupGraphics();
-            return false;
-        }
-
-        return wasClicked;
-    }
-
+    // --- Helpers ---
 
     private SizeI GetClientRectSize()
     {
         if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
         {
-            int width = Math.Max(0, r.right - r.left);
-            int height = Math.Max(0, r.bottom - r.top);
+            int width = Math.Max(1, r.right - r.left);
+            int height = Math.Max(1, r.bottom - r.top);
             return new SizeI(width, height);
         }
 
-        int baseWidth = Math.Max(0, Width); // Use property from base class
-        int baseHeight = Math.Max(0, Height); // Use property from base class
-        // Log only if handle is non-zero but GetClientRect failed
+        int baseWidth = Math.Max(1, Width);
+        int baseHeight = Math.Max(1, Height);
         if (Handle != nint.Zero)
         {
             Console.WriteLine($"GetClientRect failed. Falling back to base size: {baseWidth}x{baseHeight}");
