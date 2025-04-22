@@ -1,14 +1,14 @@
-﻿// Direct2DAppWindow.cs - Updated to call UI.DoButton
+﻿// Direct2DAppWindow.cs - Made more generic for UI derivation
 using System;
-using System.Numerics; // System.Numerics for Vector2
+using System.Numerics;
 
 using Vortice;
-using Vortice.Mathematics; // Provides Color4, Rect, SizeI etc.
+using Vortice.Mathematics;
 
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
-using Vortice.DXGI; // Provides Format, AlphaMode etc.
-using SharpGen.Runtime; // Required for SharpGenException
+using Vortice.DXGI;
+using SharpGen.Runtime;
 
 using D2D = Vortice.Direct2D1;
 using DW = Vortice.DirectWrite;
@@ -18,32 +18,33 @@ using SizeI = Vortice.Mathematics.SizeI;
 using Rect = Vortice.Mathematics.Rect;
 
 using DirectUI;
-using Vortice.DCommon;
+using Vortice.DCommon; // Still need this for DrawingContext/InputState
 
 namespace DirectUI;
 
+// Base window class responsible for setting up Direct2D and the main loop
 public class Direct2DAppWindow : Win32Window
 {
-    // --- Core Factories ---
-    private ID2D1Factory1? _d2dFactory;
-    private IDWriteFactory? _dwriteFactory;
+    // --- Core Factories (Protected for potential use by derived classes) ---
+    protected ID2D1Factory1? _d2dFactory;
+    protected IDWriteFactory? _dwriteFactory;
 
-    // --- Render Target ---
-    private ID2D1HwndRenderTarget? _renderTarget;
+    // --- Render Target (Protected) ---
+    protected ID2D1HwndRenderTarget? _renderTarget;
 
-    // --- UI Elements ---
-    private Button? _myTestButton;
+    // --- Removed UI Elements ---
+    // private Button? _myTestButton; // Moved to derived class
 
     // --- Window State ---
-    private Color4 _backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f);
-    private bool _graphicsInitialized = false;
+    protected Color4 _backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f); // Protected if derived class wants to change it
+    protected bool _graphicsInitialized = false;
 
-    // --- Input State Tracking ---
-    private Vector2 _currentMousePos = new(-1, -1);
-    private bool _isLeftMouseButtonDown = false;
-    private bool _wasLeftMouseClickedThisFrame = false;
+    // --- Input State Tracking (Protected) ---
+    protected Vector2 _currentMousePos = new(-1, -1);
+    protected bool _isLeftMouseButtonDown = false;
+    protected bool _wasLeftMouseClickedThisFrame = false;
 
-    public Direct2DAppWindow(string title = "Vortice DirectUI Window", int width = 800, int height = 600)
+    public Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
         : base(title, width, height)
     { }
 
@@ -69,7 +70,6 @@ public class Direct2DAppWindow : Win32Window
         {
             if (!_graphicsInitialized && Handle != nint.Zero)
             {
-                Console.WriteLine("Graphics not ready in OnPaint, attempting initialization...");
                 InitializeGraphics();
                 if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
                 {
@@ -98,18 +98,8 @@ public class Direct2DAppWindow : Win32Window
 
             var drawingContext = new DrawingContext(_renderTarget, _dwriteFactory);
 
-            // --- Process and Draw UI Elements ---
-            if (_myTestButton is not null)
-            {
-                // Use the RENAMED method UI.DoButton
-                bool clicked = UI.DoButton(drawingContext, inputState, _myTestButton);
-
-                if (clicked)
-                {
-                    Console.WriteLine($"Button '{_myTestButton.Text}' was clicked!");
-                    _backgroundColor = new Color4((float)Random.Shared.NextDouble(), 0.5f, 0.5f, 1.0f);
-                }
-            }
+            // --- Call derived class implementation for UI drawing ---
+            DrawUIContent(drawingContext, inputState); // NEW VIRTUAL METHOD CALL
 
             // --- End Drawing ---
             Result endDrawResult = _renderTarget.EndDraw();
@@ -135,7 +125,7 @@ public class Direct2DAppWindow : Win32Window
         {
             Console.WriteLine($"Rendering Error: {ex}");
             _graphicsInitialized = false;
-            CleanupGraphics();
+            CleanupGraphics(); // Consider if all errors should stop graphics
         }
         finally
         {
@@ -143,7 +133,18 @@ public class Direct2DAppWindow : Win32Window
         }
     }
 
-    // --- Event Handlers ---
+    // --- New Virtual Method for UI Content ---
+    /// <summary>
+    /// Override this method in a derived class to draw UI elements.
+    /// Called within OnPaint after BeginDraw and Clear.
+    /// </summary>
+    protected virtual void DrawUIContent(DrawingContext context, InputState input)
+    {
+        // Base implementation does nothing.
+    }
+
+
+    // --- Event Handlers (Remain in base class to capture input) ---
 
     protected override void OnSize(int width, int height)
     {
@@ -175,15 +176,11 @@ public class Direct2DAppWindow : Win32Window
         }
         else if (!_graphicsInitialized && Handle != nint.Zero)
         {
-            Console.WriteLine("Graphics not initialized during OnSize. Attempting Graphics initialization...");
             InitializeGraphics();
         }
     }
 
-    protected override void OnMouseMove(int x, int y)
-    {
-        _currentMousePos = new Vector2(x, y);
-    }
+    protected override void OnMouseMove(int x, int y) { _currentMousePos = new Vector2(x, y); }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
@@ -206,21 +203,15 @@ public class Direct2DAppWindow : Win32Window
 
     protected override void OnKeyDown(int keyCode)
     {
-        if (keyCode == NativeMethods.VK_ESCAPE)
-        {
-            Close();
-        }
+        if (keyCode == NativeMethods.VK_ESCAPE) { Close(); }
+        // Derived classes could override to handle other keys for UI interaction
     }
 
-    protected override bool OnClose()
-    {
-        Console.WriteLine("Close requested.");
-        return true;
-    }
+    protected override bool OnClose() { return true; }
 
     // --- Graphics Management ---
 
-    private bool InitializeGraphics()
+    protected virtual bool InitializeGraphics() // Made virtual if derived needs to add steps
     {
         if (_graphicsInitialized) return true;
         if (Handle == nint.Zero) return false;
@@ -239,7 +230,6 @@ public class Direct2DAppWindow : Win32Window
             dwriteResult.CheckError();
             if (_dwriteFactory is null) throw new InvalidOperationException("DWrite Factory creation failed silently.");
 
-
             var clientRectSize = GetClientRectSize();
             if (clientRectSize.Width <= 0 || clientRectSize.Height <= 0)
             {
@@ -249,9 +239,8 @@ public class Direct2DAppWindow : Win32Window
                 return false;
             }
 
-            var dxgiPixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, (Vortice.DCommon.AlphaMode)Vortice.DXGI.AlphaMode.Premultiplied);
+            var dxgiPixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied);
             var renderTargetProperties = new RenderTargetProperties(dxgiPixelFormat);
-
             var hwndRenderTargetProperties = new HwndRenderTargetProperties
             {
                 Hwnd = Handle,
@@ -264,17 +253,7 @@ public class Direct2DAppWindow : Win32Window
 
             _renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
 
-            _myTestButton = new Button
-            {
-                Position = new Vector2(50, 50),
-                Size = new Vector2(150, 40),
-                Text = "زنتو گاییدم وای"
-            };
-            _myTestButton.Clicked += (sender) => {
-                Console.WriteLine($"Event Handler: Button '{sender.Text}' Received Click!");
-            };
-            _myTestButton.MouseEntered += (sender) => Console.WriteLine($"Event Handler: Mouse entered Button '{sender.Text}'");
-            _myTestButton.MouseExited += (sender) => Console.WriteLine($"Event Handler: Mouse exited Button '{sender.Text}'");
+            // Removed UI Element Initialization (_myTestButton)
 
             Console.WriteLine($"Vortice Graphics initialized successfully for HWND {Handle}.");
             _graphicsInitialized = true;
@@ -283,40 +262,33 @@ public class Direct2DAppWindow : Win32Window
         catch (SharpGenException ex)
         {
             Console.WriteLine($"Graphics Initialization failed (SharpGenException): {ex.Message} HRESULT: {ex.ResultCode}");
-            CleanupGraphics();
-            _graphicsInitialized = false;
-            return false;
+            CleanupGraphics(); _graphicsInitialized = false; return false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Graphics Initialization failed (General Exception): {ex}");
-            CleanupGraphics();
-            _graphicsInitialized = false;
-            return false;
+            CleanupGraphics(); _graphicsInitialized = false; return false;
         }
     }
 
-    private void CleanupGraphics()
+    protected virtual void CleanupGraphics() // Made virtual
     {
         bool resourcesExisted = _d2dFactory is not null || _renderTarget is not null;
-        if (resourcesExisted)
-            Console.WriteLine("Cleaning up Vortice Graphics resources...");
+        if (resourcesExisted) Console.WriteLine("Cleaning up Vortice Graphics resources...");
 
-        UI.CleanupResources(); // Cleanup UI cache
+        UI.CleanupResources(); // Still clean UI cache here
 
         _renderTarget?.Dispose(); _renderTarget = null;
         _dwriteFactory?.Dispose(); _dwriteFactory = null;
         _d2dFactory?.Dispose(); _d2dFactory = null;
-
         _graphicsInitialized = false;
 
-        if (resourcesExisted)
-            Console.WriteLine("Finished cleaning graphics resources.");
+        if (resourcesExisted) Console.WriteLine("Finished cleaning graphics resources.");
     }
 
     // --- Helpers ---
 
-    private SizeI GetClientRectSize()
+    protected SizeI GetClientRectSize() // Made protected
     {
         if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
         {
@@ -324,13 +296,8 @@ public class Direct2DAppWindow : Win32Window
             int height = Math.Max(1, r.bottom - r.top);
             return new SizeI(width, height);
         }
-
-        int baseWidth = Math.Max(1, Width);
-        int baseHeight = Math.Max(1, Height);
-        if (Handle != nint.Zero)
-        {
-            Console.WriteLine($"GetClientRect failed. Falling back to base size: {baseWidth}x{baseHeight}");
-        }
+        int baseWidth = Math.Max(1, Width); int baseHeight = Math.Max(1, Height);
+        if (Handle != nint.Zero) { Console.WriteLine($"GetClientRect failed. Falling back to base size: {baseWidth}x{baseHeight}"); }
         return new SizeI(baseWidth, baseHeight);
     }
 }

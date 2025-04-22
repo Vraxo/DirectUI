@@ -10,7 +10,7 @@ public class Program
         Console.WriteLine("Starting Refactored Direct2D Application...");
 
         // Use 'using' to ensure Dispose is called automatically
-        using (var appWindow = new Direct2DAppWindow("My Refactored D2D App", 1024, 768))
+        using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
         {
             try
             {
