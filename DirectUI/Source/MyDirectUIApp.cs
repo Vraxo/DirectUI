@@ -25,7 +25,7 @@ public class MyDirectUIApp : Direct2DAppWindow
         // 1. Create the pack with global settings
         buttonTheme = new ButtonStylePack()
         {
-            Roundness = 1f,
+            Roundness = 0f,
             BorderLength = 1.0f, // Sets all borders to 1.0f for ALL states initially
             FontSize = 14f,
         };
