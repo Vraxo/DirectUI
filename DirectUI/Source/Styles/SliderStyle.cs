@@ -1,5 +1,5 @@
-﻿// NEW: SliderStyle.cs
-// Summary: Defines the visual styles for different parts of a slider track (background/foreground).
+﻿// MODIFIED: Styles/SliderStyle.cs
+// Summary: Updated default BoxStyle initializations to use BorderLength instead of BorderThickness.
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -8,18 +8,17 @@ public class SliderStyle
 {
     public BoxStyle Background { get; set; } = new()
     {
-        FillColor = DefaultTheme.DisabledFill, // Darker background typical for sliders
+        FillColor = DefaultTheme.DisabledFill,
         BorderColor = DefaultTheme.NormalBorder,
-        Roundness = 0.5f, // Default to rounded track
-        BorderThickness = 1.0f
+        Roundness = 0.5f,
+        BorderLength = 1.0f // Use new property
     };
 
     public BoxStyle Foreground { get; set; } = new()
     {
-        FillColor = DefaultTheme.Accent, // Use accent for the filled part
-        BorderColor = Colors.Transparent, // Often no border on foreground
-        Roundness = 0.5f, // Match background roundness
-        BorderThickness = 0.0f
+        FillColor = DefaultTheme.Accent,
+        BorderColor = Colors.Transparent,
+        Roundness = 0.5f,
+        BorderLength = 0.0f // Use new property
     };
-    // Note: Grabber style is handled by ButtonStylePack in SliderDefinition
 }

@@ -1,4 +1,5 @@
-﻿// ButtonStylePack.cs
+﻿// MODIFIED: Styles/ButtonStylePack.cs
+// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle.
 using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
@@ -17,26 +18,19 @@ public sealed class ButtonStylePack
 
     public ButtonStylePack()
     {
-        // Apply default theme colors/styles
         Hover.FillColor = DefaultTheme.HoverFill;
-        Hover.BorderColor = DefaultTheme.HoverBorder; // Added default
+        Hover.BorderColor = DefaultTheme.HoverBorder;
 
         Pressed.FillColor = DefaultTheme.Accent;
-        Pressed.BorderColor = DefaultTheme.AccentBorder; // Added default
+        Pressed.BorderColor = DefaultTheme.AccentBorder;
 
         Disabled.FillColor = DefaultTheme.DisabledFill;
         Disabled.BorderColor = DefaultTheme.DisabledBorder;
         Disabled.FontColor = DefaultTheme.DisabledText;
 
-        // Focused state defaults (if/when implemented)
-        // Focused.BorderColor = DefaultTheme.FocusBorder;
-        // Focused.BorderThickness = 2.0f; // Example
-
-        Current = Normal; // Start with Normal style
+        Current = Normal;
     }
 
-    // Method to update the Current style based on button state
-    // This will be called by the UI logic
     public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled /*, bool isFocused */)
     {
         if (isDisabled)
@@ -47,10 +41,6 @@ public sealed class ButtonStylePack
         {
             Current = Pressed;
         }
-        // else if (isFocused && !isHovering) // Focus state TBD
-        // {
-        //     Current = Focused;
-        // }
         else if (isHovering)
         {
             Current = Hover;
@@ -60,8 +50,6 @@ public sealed class ButtonStylePack
             Current = Normal;
         }
     }
-
-    // --- Convenience Setters (Optional but can be useful) ---
 
     private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled /*, Focused*/];
 
@@ -100,10 +88,19 @@ public sealed class ButtonStylePack
         set => SetAll(s => s.Roundness = value);
     }
 
+    // Updated setter
+    public float BorderLength
+    {
+        set => SetAll(s => s.BorderLength = value);
+    }
+
+    // Obsolete - kept for backward compatibility or remove if breaking change is ok
+    [Obsolete("Use BorderLength instead.")]
     public float BorderThickness
     {
-        set => SetAll(s => s.BorderThickness = value);
+        set => SetAll(s => s.BorderLength = value);
     }
+
 
     public Color4 FillColor
     {
@@ -119,12 +116,8 @@ public sealed class ButtonStylePack
     {
         foreach (ButtonStyle style in AllStyles)
         {
-            // Also update Current if it happens to be one of the base styles
-            // Note: This direct application might be overridden by UpdateCurrentStyle later
             setter(style);
         }
-        // Re-apply to Current just in case it was a distinct instance,
-        // though UpdateCurrentStyle is the main way Current is set.
         setter(Current);
     }
 }
