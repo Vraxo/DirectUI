@@ -1,5 +1,4 @@
 ﻿// Button.cs
-// Modified GlobalBounds getter to use Rect(x, y, width, height) constructor.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -30,7 +29,7 @@ public class Button
     public string Text { get; set; } = "";
     public Vector2 TextOffset { get; set; } = Vector2.Zero;
     public Alignment TextAlignment { get; set; } = new(HAlignment.Center, VAlignment.Center);
-    public ButtonStylePack Themes { get; set; } = new();
+    public ButtonStylePack Themes { get; set; } = new(); // Ensure initialized
     public ActionMode LeftClickActionMode { get; set; } = ActionMode.Release;
     public bool AutoWidth { get; set; } = false;
     public Vector2 TextMargin { get; set; } = new(10, 5);
@@ -45,39 +44,20 @@ public class Button
     {
         get
         {
-            Console.WriteLine($"  [GlobalBounds Getter] Position=({Position.X},{Position.Y}), Origin=({Origin.X},{Origin.Y}), Size=({Size.X},{Size.Y})");
-
-            // Calculate components
-            float posX = Position.X;
-            float posY = Position.Y;
-            float originX = Origin.X;
-            float originY = Origin.Y;
-            float sizeX = Size.X;
-            float sizeY = Size.Y;
-
-            float x = posX - originX; // This is 'left' or 'x'
-            float y = posY - originY; // This is 'top' or 'y'
-            float width = sizeX;      // Use size directly for width
-            float height = sizeY;     // Use size directly for height
-
-            Console.WriteLine($"  [GlobalBounds Getter] Using Constructor: Rect(x={x}, y={y}, width={width}, height={height})");
-
-            // --- Use alternative Rect constructor ---
+            float x = Position.X - Origin.X;
+            float y = Position.Y - Origin.Y;
+            float width = Size.X;
+            float height = Size.Y;
             var calculatedBounds = new Rect(x, y, width, height);
-            // --- End alternative ---
-
-            Console.WriteLine($"  [GlobalBounds Getter] Constructed=({calculatedBounds.Left}, {calculatedBounds.Top}, {calculatedBounds.Right}, {calculatedBounds.Bottom})");
-            Console.WriteLine($"  [GlobalBounds Getter] Constructed Width={calculatedBounds.Width}, Height={calculatedBounds.Height}"); // Log Width/Height too
-
             return calculatedBounds;
         }
     }
 
-    public event Action<Button>? Clicked;
-    public event Action<Button>? MouseEntered;
-    public event Action<Button>? MouseExited;
+    // REMOVED public events: Clicked, MouseEntered, MouseExited
 
-    public bool Update()
+    // Update now returns true if clicked this frame, false otherwise
+    // This method is called internally by UI.Button
+    internal bool Update()
     {
         ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
         IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
@@ -85,18 +65,14 @@ public class Button
 
         if (renderTarget is null || dwriteFactory is null)
         {
-            Console.WriteLine("Error: Button.Update called outside of UI.BeginFrame/EndFrame scope.");
+            // This case is already checked in UI.Button, but added defensively
+            Console.WriteLine("Error: Button.Update called outside of UI context.");
             return false;
         }
-
-        Console.WriteLine($"Button Update Start: Size=({Size.X}, {Size.Y})");
 
         Rect bounds = GlobalBounds;
         bool wasClickedThisFrame = false;
         bool previousHoverState = IsHovering;
-
-        Console.WriteLine($"Button Update Bounds Check: Size=({Size.X}, {Size.Y}), Captured Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
-
 
         if (Disabled)
         {
@@ -114,7 +90,7 @@ public class Button
                     IsPressed = true;
                     if (LeftClickActionMode is Button.ActionMode.Press)
                     {
-                        InvokeClick();
+                        // Internal flag set, UI.Button will return true
                         wasClickedThisFrame = true;
                     }
                 }
@@ -122,73 +98,66 @@ public class Button
                 {
                     if (IsHovering && LeftClickActionMode is Button.ActionMode.Release)
                     {
-                        InvokeClick();
+                        // Internal flag set, UI.Button will return true
                         wasClickedThisFrame = true;
                     }
-                    IsPressed = false;
+                    IsPressed = false; // Reset pressed state regardless of hover
                 }
                 else if (!input.IsLeftMouseDown)
                 {
+                    // Ensure pressed state is cleared if mouse is released outside
                     IsPressed = false;
                 }
             }
+            // Add similar logic here for Right mouse button if Behavior allows
         }
 
+        // Optional: Handle internal state changes (like hover effects) if needed,
+        // even though public events are removed.
         if (IsHovering && !previousHoverState)
         {
-            InvokeMouseEnter();
+            InvokeMouseEnter(); // Still potentially useful for internal logic/theming
         }
         else if (!IsHovering && previousHoverState)
         {
-            InvokeMouseExit();
+            InvokeMouseExit(); // Still potentially useful for internal logic/theming
         }
 
-        UpdateStyle();
-        PerformAutoWidth(dwriteFactory);
+        UpdateStyle(); // Update Current theme based on state
+        PerformAutoWidth(dwriteFactory); // Adjust size if needed
 
         try
         {
-            Console.WriteLine($"Button Draw Prep: Size=({Size.X}, {Size.Y})");
-            Rect boundsForDraw = GlobalBounds;
-            Console.WriteLine($"Button Draw Prep: Bounds For Draw=({boundsForDraw.Left}, {boundsForDraw.Top}, {boundsForDraw.Right}, {boundsForDraw.Bottom})");
-
             DrawBackground(renderTarget);
             DrawText(renderTarget, dwriteFactory);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
             Console.WriteLine($"Render target needs recreation (Caught SharpGenException during Button drawing): {ex.Message}");
-            UI.CleanupResources();
+            UI.CleanupResources(); // Request resource cleanup
+            // Need a way to signal the main loop to reinitialize, returning false might suffice for now
             return false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Unhandled error during Button drawing: {ex}");
-            UI.CleanupResources();
+            // Depending on severity, might want to signal failure
             return false;
         }
 
+        // Return the click status determined earlier
         return wasClickedThisFrame;
     }
 
-    internal void InvokeClick()
-    {
-        Clicked?.Invoke(this);
-    }
-
-    internal void InvokeMouseEnter()
-    {
-        MouseEntered?.Invoke(this);
-    }
-
-    internal void InvokeMouseExit()
-    {
-        MouseExited?.Invoke(this);
-    }
+    // Kept internal methods for potential future use or complex internal logic
+    internal void InvokeClick() { /* No longer needed externally */ }
+    internal void InvokeMouseEnter() { /* Can be used for internal effects */ }
+    internal void InvokeMouseExit() { /* Can be used for internal effects */ }
 
     internal void UpdateStyle()
     {
-        Themes.UpdateCurrentStyle(IsHovering, IsPressed, Disabled);
+        // Themes might be null if UI.Button wasn't called correctly, add null check
+        Themes?.UpdateCurrentStyle(IsHovering, IsPressed, Disabled);
     }
 
     internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
@@ -234,32 +203,38 @@ public class Button
             return;
         }
 
-        //Vector2 textSize = MeasureText(dwriteFactory);
-        //float desiredWidth = textSize.X + TextMargin.X * 2;
-        //if (desiredWidth > 0)
-        //{
-        //    Size = new Vector2(desiredWidth, Size.Y);
-        //}
+        Vector2 textSize = MeasureText(dwriteFactory);
+        float desiredWidth = textSize.X + TextMargin.X * 2;
+        if (desiredWidth > 0)
+        {
+            // Only update width, keep height
+            Size = new Vector2(desiredWidth, Size.Y);
+        }
     }
 
     private void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        Console.WriteLine($"  [DrawBackground Start] Size=({Size.X},{Size.Y})");
         Rect bounds = GlobalBounds;
-        Console.WriteLine($"  [DrawBackground Start] Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+        ButtonStyle? style = Themes?.Current; // Null check
 
-        ButtonStyle style = Themes.Current;
+        if (style is null) return; // Cannot draw without style
 
         ID2D1SolidColorBrush fillBrush = UI.GetOrCreateBrush(style.FillColor);
         ID2D1SolidColorBrush borderBrush = UI.GetOrCreateBrush(style.BorderColor);
 
+        // Check if brushes are valid (GetOrCreateBrush returns null on failure)
         bool canFill = style.FillColor.A > 0 && fillBrush is not null;
         bool canDrawBorder = style.BorderThickness > 0 && style.BorderColor.A > 0 && borderBrush is not null;
 
-        if (style.Roundness > 0.0f && bounds.Width > 0 && bounds.Height > 0)
+        // Ensure bounds are valid before drawing
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+        if (style.Roundness > 0.0f)
         {
-            var radiusX = float.Max(0, bounds.Width * style.Roundness * 0.5f);
-            var radiusY = float.Max(0, bounds.Height * style.Roundness * 0.5f);
+            // Ensure radii are not negative
+            var radiusX = Math.Max(0, bounds.Width * style.Roundness * 0.5f);
+            var radiusY = Math.Max(0, bounds.Height * style.Roundness * 0.5f);
+            // Vortice uses System.Drawing.RectangleF for RoundedRectangle ctor overload
             RoundedRectangle roundedRect = new((System.Drawing.RectangleF)bounds, radiusX, radiusY);
 
             if (canFill)
@@ -291,9 +266,11 @@ public class Button
             return;
         }
 
-        ButtonStyle style = Themes.Current;
+        ButtonStyle? style = Themes?.Current; // Null check
+        if (style is null) return;
+
         ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
-        if (textBrush is null)
+        if (textBrush is null) // Check if brush creation succeeded
         {
             return;
         }
@@ -327,11 +304,15 @@ public class Button
             };
 
             Rect bounds = GlobalBounds;
-            Console.WriteLine($"  [DrawText Start] Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+            // Ensure valid bounds for layout
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
             Rect layoutRect = bounds;
             layoutRect.Left += TextOffset.X;
             layoutRect.Top += TextOffset.Y;
+            // Adjust right/bottom based on offset too if needed, though DrawText usually clips
+            // layoutRect.Right += TextOffset.X; // Not typically needed
+            // layoutRect.Bottom += TextOffset.Y;
 
             renderTarget.DrawText(Text, textFormat, layoutRect, textBrush);
         }
