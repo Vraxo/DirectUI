@@ -1,7 +1,8 @@
-﻿// Direct2DAppWindow.cs
-// Ensured CleanupGraphics calls UI.CleanupResources. No other functional changes needed here.
+﻿// MODIFIED: Direct2DAppWindow.cs
+// Summary: Changed PresentOptions from None to Immediately in HwndRenderTargetProperties to attempt disabling VSync throttling.
 using System;
 using System.Numerics;
+using System.Diagnostics;
 
 using Vortice;
 using Vortice.Mathematics;
@@ -36,6 +37,19 @@ public abstract class Direct2DAppWindow : Win32Window
     protected bool isLeftMouseButtonDown = false;
     protected bool wasLeftMouseClickedThisFrame = false;
 
+    // --- FPS Counter Fields ---
+    private Stopwatch fpsTimer = new();
+    private long lastFpsUpdateTimeTicks = 0;
+    private int frameCountSinceUpdate = 0;
+    private float currentFps = 0.0f;
+    private const long FpsUpdateIntervalTicks = TimeSpan.TicksPerSecond / 2;
+    private ID2D1SolidColorBrush? fpsTextBrush;
+    private IDWriteTextFormat? fpsTextFormat;
+    private readonly Color4 fpsTextColor = DefaultTheme.Text;
+    private readonly string fpsFontName = "Consolas";
+    private readonly float fpsFontSize = 14.0f;
+    // --- End FPS Counter Fields ---
+
     public Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
         : base(title, width, height)
     { }
@@ -49,11 +63,34 @@ public abstract class Direct2DAppWindow : Win32Window
     protected override void Cleanup()
     {
         Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
-        CleanupGraphics(); // This now also cleans UI resources
+        CleanupGraphics();
     }
 
     protected override void OnPaint()
     {
+        // --- FPS Timer Update ---
+        if (!fpsTimer.IsRunning)
+        {
+            fpsTimer.Start();
+            lastFpsUpdateTimeTicks = fpsTimer.ElapsedTicks;
+            frameCountSinceUpdate = 0;
+        }
+
+        frameCountSinceUpdate++;
+        long elapsedTicks = fpsTimer.ElapsedTicks;
+        long timeSinceLastUpdate = elapsedTicks - lastFpsUpdateTimeTicks;
+
+        if (timeSinceLastUpdate >= FpsUpdateIntervalTicks)
+        {
+            float secondsElapsed = (float)timeSinceLastUpdate / TimeSpan.TicksPerSecond;
+            currentFps = (secondsElapsed > 0.001f) ? (frameCountSinceUpdate / secondsElapsed) : 0.0f;
+            frameCountSinceUpdate = 0;
+            lastFpsUpdateTimeTicks = elapsedTicks;
+            Invalidate();
+        }
+        // --- End FPS Timer Update ---
+
+
         if (!graphicsInitialized || renderTarget is null || dwriteFactory is null)
         {
             if (!graphicsInitialized && Handle != nint.Zero)
@@ -62,12 +99,12 @@ public abstract class Direct2DAppWindow : Win32Window
                 if (!graphicsInitialized || renderTarget is null || dwriteFactory is null)
                 {
                     wasLeftMouseClickedThisFrame = false;
-                    return; // Initialization failed or still pending
+                    return;
                 }
             }
             else
             {
-                wasLeftMouseClickedThisFrame = false; // Cannot paint without graphics
+                wasLeftMouseClickedThisFrame = false;
                 return;
             }
         }
@@ -81,12 +118,22 @@ public abstract class Direct2DAppWindow : Win32Window
                 currentMousePos,
                 wasLeftMouseClickedThisFrame,
                 isLeftMouseButtonDown
-            // Add Right mouse button state here if needed
             );
 
             var drawingContext = new DrawingContext(renderTarget, dwriteFactory);
 
-            DrawUIContent(drawingContext, inputState); // Call derived class (MyDirectUIApp)
+            // --- Draw Main UI Content ---
+            DrawUIContent(drawingContext, inputState);
+
+            // --- Draw FPS Counter ---
+            if (fpsTextBrush is not null && fpsTextFormat is not null)
+            {
+                string fpsText = $"FPS: {currentFps:F1}";
+                Rect fpsLayoutRect = new Rect(5f, 5f, 150f, 30f);
+                renderTarget.DrawText(fpsText, fpsTextFormat, fpsLayoutRect, fpsTextBrush);
+            }
+            // --- End Draw FPS Counter ---
+
 
             Result endDrawResult = renderTarget.EndDraw();
 
@@ -96,9 +143,8 @@ public abstract class Direct2DAppWindow : Win32Window
                 if (endDrawResult.Code == D2D.ResultCode.RecreateTarget.Code)
                 {
                     Console.WriteLine("Render target needs recreation (Detected in EndDraw).");
-                    graphicsInitialized = false; // Mark for reinitialization
-                    CleanupGraphics(); // Clean up old resources
-                    // Optionally schedule re-initialization for the next frame/paint
+                    graphicsInitialized = false;
+                    CleanupGraphics();
                 }
             }
         }
@@ -111,20 +157,18 @@ public abstract class Direct2DAppWindow : Win32Window
         catch (Exception ex)
         {
             Console.WriteLine($"Rendering Error: {ex}");
-            // Decide if error is recoverable or requires cleanup/shutdown
-            graphicsInitialized = false; // Assume non-recoverable for now
+            graphicsInitialized = false;
             CleanupGraphics();
         }
         finally
         {
-            wasLeftMouseClickedThisFrame = false; // Reset click flag for next frame
+            wasLeftMouseClickedThisFrame = false;
         }
     }
 
     protected virtual void DrawUIContent(DrawingContext context, InputState input)
     {
         // Base implementation does nothing.
-        // Derived classes like MyDirectUIApp override this.
     }
 
     protected override void OnSize(int width, int height)
@@ -135,12 +179,24 @@ public abstract class Direct2DAppWindow : Win32Window
             try
             {
                 var newPixelSize = new SizeI(width, height);
-                // Important: Resizing invalidates device-dependent resources like brushes.
-                // We clear the brush cache in UI.CleanupResources, which will be called if
-                // resizing fails and triggers recreation. A robust solution might clear
-                // the cache here *before* resizing, or handle potential brush errors gracefully.
-                // For now, we rely on the RecreateTarget error handling.
+                fpsTextBrush?.Dispose();
+                fpsTextBrush = null;
+
                 renderTarget.Resize(newPixelSize);
+
+                try
+                {
+                    if (renderTarget is not null)
+                    {
+                        fpsTextBrush = renderTarget.CreateSolidColorBrush(fpsTextColor);
+                        Console.WriteLine("Recreated FPS brush after resize.");
+                    }
+                }
+                catch (Exception brushEx)
+                {
+                    Console.WriteLine($"Warning: Failed to recreate FPS brush after resize: {brushEx.Message}");
+                }
+
                 Console.WriteLine($"Successfully resized render target.");
             }
             catch (SharpGenException ex)
@@ -150,7 +206,7 @@ public abstract class Direct2DAppWindow : Win32Window
                 {
                     Console.WriteLine("Render target needs recreation (Detected in Resize Exception).");
                     graphicsInitialized = false;
-                    CleanupGraphics(); // Clean up old resources, including UI cache
+                    CleanupGraphics();
                 }
             }
             catch (Exception ex)
@@ -162,12 +218,11 @@ public abstract class Direct2DAppWindow : Win32Window
         }
         else if (!graphicsInitialized && Handle != nint.Zero)
         {
-            // Attempt initialization if not done yet and window exists
             InitializeGraphics();
         }
     }
 
-    protected override void OnMouseMove(int x, int y) { currentMousePos = new Vector2(x, y); Invalidate(); } // Added Invalidate
+    protected override void OnMouseMove(int x, int y) { currentMousePos = new Vector2(x, y); Invalidate(); }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
@@ -177,8 +232,7 @@ public abstract class Direct2DAppWindow : Win32Window
             isLeftMouseButtonDown = true;
             wasLeftMouseClickedThisFrame = true;
         }
-        // Handle other buttons if needed
-        Invalidate(); // Request redraw on click
+        Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
@@ -188,8 +242,7 @@ public abstract class Direct2DAppWindow : Win32Window
         {
             isLeftMouseButtonDown = false;
         }
-        // Handle other buttons if needed
-        Invalidate(); // Request redraw on release
+        Invalidate();
     }
 
     protected override void OnKeyDown(int keyCode)
@@ -198,11 +251,10 @@ public abstract class Direct2DAppWindow : Win32Window
         {
             Close();
         }
-        // Derived classes could override to handle other keys for UI interaction
-        // Maybe call Invalidate() if key affects visual state
+        Invalidate();
     }
 
-    protected override bool OnClose() { return true; } // Allow window to close
+    protected override bool OnClose() { return true; }
 
     protected virtual bool InitializeGraphics()
     {
@@ -213,7 +265,7 @@ public abstract class Direct2DAppWindow : Win32Window
 
         try
         {
-            CleanupGraphics(); // Ensure clean state
+            CleanupGraphics();
 
             Result factoryResult = D2D1.D2D1CreateFactory(D2DFactoryType.SingleThreaded, out d2dFactory);
             factoryResult.CheckError();
@@ -227,8 +279,7 @@ public abstract class Direct2DAppWindow : Win32Window
             if (clientRectSize.Width <= 0 || clientRectSize.Height <= 0)
             {
                 Console.WriteLine($"Invalid client rect size ({clientRectSize.Width}x{clientRectSize.Height}). Aborting graphics initialization.");
-                dwriteFactory?.Dispose(); dwriteFactory = null;
-                d2dFactory?.Dispose(); d2dFactory = null;
+                CleanupGraphics();
                 return false;
             }
 
@@ -238,13 +289,41 @@ public abstract class Direct2DAppWindow : Win32Window
             {
                 Hwnd = Handle,
                 PixelSize = new SizeI(clientRectSize.Width, clientRectSize.Height),
-                PresentOptions = PresentOptions.None // Use None or Immediately based on needs
+                // --- CHANGE HERE ---
+                PresentOptions = PresentOptions.Immediately // Attempt to disable VSync throttling
+                // --- END CHANGE ---
             };
 
             renderTarget = d2dFactory.CreateHwndRenderTarget(renderTargetProperties, hwndRenderTargetProperties);
             if (renderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
 
-            renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype; // Good default
+            renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
+
+            // --- Initialize FPS Resources ---
+            try
+            {
+                fpsTextFormat?.Dispose();
+                fpsTextFormat = dwriteFactory.CreateTextFormat(fpsFontName, null, FontWeight.Normal, FontStyle.Normal, FontStretch.Normal, fpsFontSize, "en-us");
+                fpsTextFormat.TextAlignment = DW.TextAlignment.Leading;
+                fpsTextFormat.ParagraphAlignment = ParagraphAlignment.Near;
+
+                fpsTextBrush?.Dispose();
+                fpsTextBrush = renderTarget.CreateSolidColorBrush(fpsTextColor);
+                Console.WriteLine("Created FPS drawing resources.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Warning: Failed to create FPS drawing resources: {ex.Message}");
+                fpsTextFormat?.Dispose(); fpsTextFormat = null;
+                fpsTextBrush?.Dispose(); fpsTextBrush = null;
+            }
+            // Reset and Start timer
+            frameCountSinceUpdate = 0;
+            currentFps = 0;
+            lastFpsUpdateTimeTicks = 0;
+            fpsTimer.Restart();
+            // --- End Initialize FPS Resources ---
+
 
             Console.WriteLine($"Vortice Graphics initialized successfully for HWND {Handle}.");
             graphicsInitialized = true;
@@ -267,14 +346,17 @@ public abstract class Direct2DAppWindow : Win32Window
         bool resourcesExisted = d2dFactory is not null || renderTarget is not null || dwriteFactory is not null;
         if (resourcesExisted) Console.WriteLine("Cleaning up Vortice Graphics resources...");
 
-        // --- Crucially, clean up UI resources FIRST ---
-        // Brushes depend on the render target, elements might hold references.
+        fpsTimer.Stop();
+
+        fpsTextBrush?.Dispose(); fpsTextBrush = null;
+        fpsTextFormat?.Dispose(); fpsTextFormat = null;
+
         UI.CleanupResources();
 
         renderTarget?.Dispose(); renderTarget = null;
         dwriteFactory?.Dispose(); dwriteFactory = null;
         d2dFactory?.Dispose(); d2dFactory = null;
-        graphicsInitialized = false; // Mark as uninitialized
+        graphicsInitialized = false;
 
         if (resourcesExisted) Console.WriteLine("Finished cleaning graphics resources.");
     }
@@ -283,12 +365,10 @@ public abstract class Direct2DAppWindow : Win32Window
     {
         if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
         {
-            // Ensure minimum size of 1x1 to avoid issues with Direct2D
             int width = Math.Max(1, r.right - r.left);
             int height = Math.Max(1, r.bottom - r.top);
             return new SizeI(width, height);
         }
-        // Fallback to stored size if GetClientRect fails, ensuring minimum 1x1
         int baseWidth = Math.Max(1, Width);
         int baseHeight = Math.Max(1, Height);
         if (Handle != nint.Zero)

@@ -29,7 +29,6 @@ public class BoxStyle
 
 <file path="Button.cs">
 // Button.cs
-// Modified GlobalBounds getter to use Rect(x, y, width, height) constructor.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -60,7 +59,7 @@ public class Button
     public string Text { get; set; } = "";
     public Vector2 TextOffset { get; set; } = Vector2.Zero;
     public Alignment TextAlignment { get; set; } = new(HAlignment.Center, VAlignment.Center);
-    public ButtonStylePack Themes { get; set; } = new();
+    public ButtonStylePack Themes { get; set; } = new(); // Ensure initialized
     public ActionMode LeftClickActionMode { get; set; } = ActionMode.Release;
     public bool AutoWidth { get; set; } = false;
     public Vector2 TextMargin { get; set; } = new(10, 5);
@@ -75,39 +74,20 @@ public class Button
     {
         get
         {
-            Console.WriteLine($"  [GlobalBounds Getter] Position=({Position.X},{Position.Y}), Origin=({Origin.X},{Origin.Y}), Size=({Size.X},{Size.Y})");
-
-            // Calculate components
-            float posX = Position.X;
-            float posY = Position.Y;
-            float originX = Origin.X;
-            float originY = Origin.Y;
-            float sizeX = Size.X;
-            float sizeY = Size.Y;
-
-            float x = posX - originX; // This is 'left' or 'x'
-            float y = posY - originY; // This is 'top' or 'y'
-            float width = sizeX;      // Use size directly for width
-            float height = sizeY;     // Use size directly for height
-
-            Console.WriteLine($"  [GlobalBounds Getter] Using Constructor: Rect(x={x}, y={y}, width={width}, height={height})");
-
-            // --- Use alternative Rect constructor ---
+            float x = Position.X - Origin.X;
+            float y = Position.Y - Origin.Y;
+            float width = Size.X;
+            float height = Size.Y;
             var calculatedBounds = new Rect(x, y, width, height);
-            // --- End alternative ---
-
-            Console.WriteLine($"  [GlobalBounds Getter] Constructed=({calculatedBounds.Left}, {calculatedBounds.Top}, {calculatedBounds.Right}, {calculatedBounds.Bottom})");
-            Console.WriteLine($"  [GlobalBounds Getter] Constructed Width={calculatedBounds.Width}, Height={calculatedBounds.Height}"); // Log Width/Height too
-
             return calculatedBounds;
         }
     }
 
-    public event Action<Button>? Clicked;
-    public event Action<Button>? MouseEntered;
-    public event Action<Button>? MouseExited;
+    // REMOVED public events: Clicked, MouseEntered, MouseExited
 
-    public bool Update()
+    // Update now returns true if clicked this frame, false otherwise
+    // This method is called internally by UI.Button
+    internal bool Update()
     {
         ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
         IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
@@ -115,18 +95,14 @@ public class Button
 
         if (renderTarget is null || dwriteFactory is null)
         {
-            Console.WriteLine("Error: Button.Update called outside of UI.BeginFrame/EndFrame scope.");
+            // This case is already checked in UI.Button, but added defensively
+            Console.WriteLine("Error: Button.Update called outside of UI context.");
             return false;
         }
-
-        Console.WriteLine($"Button Update Start: Size=({Size.X}, {Size.Y})");
 
         Rect bounds = GlobalBounds;
         bool wasClickedThisFrame = false;
         bool previousHoverState = IsHovering;
-
-        Console.WriteLine($"Button Update Bounds Check: Size=({Size.X}, {Size.Y}), Captured Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
-
 
         if (Disabled)
         {
@@ -144,7 +120,7 @@ public class Button
                     IsPressed = true;
                     if (LeftClickActionMode is Button.ActionMode.Press)
                     {
-                        InvokeClick();
+                        // Internal flag set, UI.Button will return true
                         wasClickedThisFrame = true;
                     }
                 }
@@ -152,73 +128,66 @@ public class Button
                 {
                     if (IsHovering && LeftClickActionMode is Button.ActionMode.Release)
                     {
-                        InvokeClick();
+                        // Internal flag set, UI.Button will return true
                         wasClickedThisFrame = true;
                     }
-                    IsPressed = false;
+                    IsPressed = false; // Reset pressed state regardless of hover
                 }
                 else if (!input.IsLeftMouseDown)
                 {
+                    // Ensure pressed state is cleared if mouse is released outside
                     IsPressed = false;
                 }
             }
+            // Add similar logic here for Right mouse button if Behavior allows
         }
 
+        // Optional: Handle internal state changes (like hover effects) if needed,
+        // even though public events are removed.
         if (IsHovering && !previousHoverState)
         {
-            InvokeMouseEnter();
+            InvokeMouseEnter(); // Still potentially useful for internal logic/theming
         }
         else if (!IsHovering && previousHoverState)
         {
-            InvokeMouseExit();
+            InvokeMouseExit(); // Still potentially useful for internal logic/theming
         }
 
-        UpdateStyle();
-        PerformAutoWidth(dwriteFactory);
+        UpdateStyle(); // Update Current theme based on state
+        PerformAutoWidth(dwriteFactory); // Adjust size if needed
 
         try
         {
-            Console.WriteLine($"Button Draw Prep: Size=({Size.X}, {Size.Y})");
-            Rect boundsForDraw = GlobalBounds;
-            Console.WriteLine($"Button Draw Prep: Bounds For Draw=({boundsForDraw.Left}, {boundsForDraw.Top}, {boundsForDraw.Right}, {boundsForDraw.Bottom})");
-
             DrawBackground(renderTarget);
             DrawText(renderTarget, dwriteFactory);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
             Console.WriteLine($"Render target needs recreation (Caught SharpGenException during Button drawing): {ex.Message}");
-            UI.CleanupResources();
+            UI.CleanupResources(); // Request resource cleanup
+            // Need a way to signal the main loop to reinitialize, returning false might suffice for now
             return false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Unhandled error during Button drawing: {ex}");
-            UI.CleanupResources();
+            // Depending on severity, might want to signal failure
             return false;
         }
 
+        // Return the click status determined earlier
         return wasClickedThisFrame;
     }
 
-    internal void InvokeClick()
-    {
-        Clicked?.Invoke(this);
-    }
-
-    internal void InvokeMouseEnter()
-    {
-        MouseEntered?.Invoke(this);
-    }
-
-    internal void InvokeMouseExit()
-    {
-        MouseExited?.Invoke(this);
-    }
+    // Kept internal methods for potential future use or complex internal logic
+    internal void InvokeClick() { /* No longer needed externally */ }
+    internal void InvokeMouseEnter() { /* Can be used for internal effects */ }
+    internal void InvokeMouseExit() { /* Can be used for internal effects */ }
 
     internal void UpdateStyle()
     {
-        Themes.UpdateCurrentStyle(IsHovering, IsPressed, Disabled);
+        // Themes might be null if UI.Button wasn't called correctly, add null check
+        Themes?.UpdateCurrentStyle(IsHovering, IsPressed, Disabled);
     }
 
     internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
@@ -264,32 +233,38 @@ public class Button
             return;
         }
 
-        //Vector2 textSize = MeasureText(dwriteFactory);
-        //float desiredWidth = textSize.X + TextMargin.X * 2;
-        //if (desiredWidth > 0)
-        //{
-        //    Size = new Vector2(desiredWidth, Size.Y);
-        //}
+        Vector2 textSize = MeasureText(dwriteFactory);
+        float desiredWidth = textSize.X + TextMargin.X * 2;
+        if (desiredWidth > 0)
+        {
+            // Only update width, keep height
+            Size = new Vector2(desiredWidth, Size.Y);
+        }
     }
 
     private void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        Console.WriteLine($"  [DrawBackground Start] Size=({Size.X},{Size.Y})");
         Rect bounds = GlobalBounds;
-        Console.WriteLine($"  [DrawBackground Start] Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+        ButtonStyle? style = Themes?.Current; // Null check
 
-        ButtonStyle style = Themes.Current;
+        if (style is null) return; // Cannot draw without style
 
         ID2D1SolidColorBrush fillBrush = UI.GetOrCreateBrush(style.FillColor);
         ID2D1SolidColorBrush borderBrush = UI.GetOrCreateBrush(style.BorderColor);
 
+        // Check if brushes are valid (GetOrCreateBrush returns null on failure)
         bool canFill = style.FillColor.A > 0 && fillBrush is not null;
         bool canDrawBorder = style.BorderThickness > 0 && style.BorderColor.A > 0 && borderBrush is not null;
 
-        if (style.Roundness > 0.0f && bounds.Width > 0 && bounds.Height > 0)
+        // Ensure bounds are valid before drawing
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+        if (style.Roundness > 0.0f)
         {
-            var radiusX = float.Max(0, bounds.Width * style.Roundness * 0.5f);
-            var radiusY = float.Max(0, bounds.Height * style.Roundness * 0.5f);
+            // Ensure radii are not negative
+            var radiusX = Math.Max(0, bounds.Width * style.Roundness * 0.5f);
+            var radiusY = Math.Max(0, bounds.Height * style.Roundness * 0.5f);
+            // Vortice uses System.Drawing.RectangleF for RoundedRectangle ctor overload
             RoundedRectangle roundedRect = new((System.Drawing.RectangleF)bounds, radiusX, radiusY);
 
             if (canFill)
@@ -321,9 +296,11 @@ public class Button
             return;
         }
 
-        ButtonStyle style = Themes.Current;
+        ButtonStyle? style = Themes?.Current; // Null check
+        if (style is null) return;
+
         ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
-        if (textBrush is null)
+        if (textBrush is null) // Check if brush creation succeeded
         {
             return;
         }
@@ -357,11 +334,15 @@ public class Button
             };
 
             Rect bounds = GlobalBounds;
-            Console.WriteLine($"  [DrawText Start] Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+            // Ensure valid bounds for layout
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
             Rect layoutRect = bounds;
             layoutRect.Left += TextOffset.X;
             layoutRect.Top += TextOffset.Y;
+            // Adjust right/bottom based on offset too if needed, though DrawText usually clips
+            // layoutRect.Right += TextOffset.X; // Not typically needed
+            // layoutRect.Bottom += TextOffset.Y;
 
             renderTarget.DrawText(Text, textFormat, layoutRect, textBrush);
         }
@@ -370,6 +351,31 @@ public class Button
             textFormat?.Dispose();
         }
     }
+}
+</file>
+
+<file path="ButtonDefinition.cs">
+// ButtonDefinition.cs
+using System.Numerics;
+using Vortice.Mathematics; // For Color4 if needed directly, though ButtonStylePack handles colors
+
+namespace DirectUI;
+
+public class ButtonDefinition
+{
+    public Vector2 Position { get; set; } = Vector2.Zero;
+    public Vector2 Size { get; set; } = new(84, 28); // Default size
+    public string Text { get; set; } = "";
+    public ButtonStylePack? Theme { get; set; } = null; // Optional theme override
+    public Vector2? Origin { get; set; } = null; // Use null to indicate default (Vector2.Zero)
+    public Alignment? TextAlignment { get; set; } = null; // Use null for default (Center, Center)
+    public Vector2? TextOffset { get; set; } = null; // Use null for default (Vector2.Zero)
+    public bool AutoWidth { get; set; } = false;
+    public Vector2? TextMargin { get; set; } = null; // Use null for default (10, 5)
+    public Button.ClickBehavior Behavior { get; set; } = Button.ClickBehavior.Left;
+    public Button.ActionMode LeftClickActionMode { get; set; } = Button.ActionMode.Release;
+    public bool Disabled { get; set; } = false;
+    public object? UserData { get; set; } = null;
 }
 </file>
 
@@ -565,7 +571,8 @@ public static class DefaultTheme
 </file>
 
 <file path="Direct2DAppWindow.cs">
-// Direct2DAppWindow.cs - Made more generic for UI derivation
+// Direct2DAppWindow.cs
+// Ensured CleanupGraphics calls UI.CleanupResources. No other functional changes needed here.
 using System;
 using System.Numerics;
 
@@ -585,37 +592,26 @@ using SizeI = Vortice.Mathematics.SizeI;
 using Rect = Vortice.Mathematics.Rect;
 
 using DirectUI;
-using Vortice.DCommon; // Still need this for DrawingContext/InputState
+using Vortice.DCommon;
 
 namespace DirectUI;
 
-// Base window class responsible for setting up Direct2D and the main loop
-public class Direct2DAppWindow : Win32Window
+public abstract class Direct2DAppWindow : Win32Window
 {
-    // --- Core Factories (Protected for potential use by derived classes) ---
-    protected ID2D1Factory1? _d2dFactory;
-    protected IDWriteFactory? _dwriteFactory;
+    protected ID2D1Factory1? d2dFactory;
+    protected IDWriteFactory? dwriteFactory;
+    protected ID2D1HwndRenderTarget? renderTarget;
 
-    // --- Render Target (Protected) ---
-    protected ID2D1HwndRenderTarget? _renderTarget;
+    protected Color4 backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f);
+    protected bool graphicsInitialized = false;
 
-    // --- Removed UI Elements ---
-    // private Button? _myTestButton; // Moved to derived class
-
-    // --- Window State ---
-    protected Color4 backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f); // Protected if derived class wants to change it
-    protected bool _graphicsInitialized = false;
-
-    // --- Input State Tracking (Protected) ---
-    protected Vector2 _currentMousePos = new(-1, -1);
-    protected bool _isLeftMouseButtonDown = false;
-    protected bool _wasLeftMouseClickedThisFrame = false;
+    protected Vector2 currentMousePos = new(-1, -1);
+    protected bool isLeftMouseButtonDown = false;
+    protected bool wasLeftMouseClickedThisFrame = false;
 
     public Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
         : base(title, width, height)
     { }
-
-    // --- Initialization & Cleanup ---
 
     protected override bool Initialize()
     {
@@ -626,50 +622,46 @@ public class Direct2DAppWindow : Win32Window
     protected override void Cleanup()
     {
         Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
-        CleanupGraphics();
+        CleanupGraphics(); // This now also cleans UI resources
     }
-
-    // --- Core Loop ---
 
     protected override void OnPaint()
     {
-        if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
+        if (!graphicsInitialized || renderTarget is null || dwriteFactory is null)
         {
-            if (!_graphicsInitialized && Handle != nint.Zero)
+            if (!graphicsInitialized && Handle != nint.Zero)
             {
                 InitializeGraphics();
-                if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
+                if (!graphicsInitialized || renderTarget is null || dwriteFactory is null)
                 {
-                    _wasLeftMouseClickedThisFrame = false;
-                    return;
+                    wasLeftMouseClickedThisFrame = false;
+                    return; // Initialization failed or still pending
                 }
             }
             else
             {
-                _wasLeftMouseClickedThisFrame = false;
+                wasLeftMouseClickedThisFrame = false; // Cannot paint without graphics
                 return;
             }
         }
 
         try
         {
-            _renderTarget.BeginDraw();
-            _renderTarget.Clear(backgroundColor);
+            renderTarget.BeginDraw();
+            renderTarget.Clear(backgroundColor);
 
-            // --- Prepare UI Context ---
             var inputState = new InputState(
-                _currentMousePos,
-                _wasLeftMouseClickedThisFrame,
-                _isLeftMouseButtonDown
+                currentMousePos,
+                wasLeftMouseClickedThisFrame,
+                isLeftMouseButtonDown
+            // Add Right mouse button state here if needed
             );
 
-            var drawingContext = new DrawingContext(_renderTarget, _dwriteFactory);
+            var drawingContext = new DrawingContext(renderTarget, dwriteFactory);
 
-            // --- Call derived class implementation for UI drawing ---
-            DrawUIContent(drawingContext, inputState); // NEW VIRTUAL METHOD CALL
+            DrawUIContent(drawingContext, inputState); // Call derived class (MyDirectUIApp)
 
-            // --- End Drawing ---
-            Result endDrawResult = _renderTarget.EndDraw();
+            Result endDrawResult = renderTarget.EndDraw();
 
             if (endDrawResult.Failure)
             {
@@ -677,51 +669,51 @@ public class Direct2DAppWindow : Win32Window
                 if (endDrawResult.Code == D2D.ResultCode.RecreateTarget.Code)
                 {
                     Console.WriteLine("Render target needs recreation (Detected in EndDraw).");
-                    _graphicsInitialized = false;
-                    CleanupGraphics();
+                    graphicsInitialized = false; // Mark for reinitialization
+                    CleanupGraphics(); // Clean up old resources
+                    // Optionally schedule re-initialization for the next frame/paint
                 }
             }
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
         {
             Console.WriteLine($"Render target needs recreation (Caught SharpGenException in OnPaint): {ex.Message}");
-            _graphicsInitialized = false;
+            graphicsInitialized = false;
             CleanupGraphics();
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Rendering Error: {ex}");
-            _graphicsInitialized = false;
-            CleanupGraphics(); // Consider if all errors should stop graphics
+            // Decide if error is recoverable or requires cleanup/shutdown
+            graphicsInitialized = false; // Assume non-recoverable for now
+            CleanupGraphics();
         }
         finally
         {
-            _wasLeftMouseClickedThisFrame = false;
+            wasLeftMouseClickedThisFrame = false; // Reset click flag for next frame
         }
     }
 
-    // --- New Virtual Method for UI Content ---
-    /// <summary>
-    /// Override this method in a derived class to draw UI elements.
-    /// Called within OnPaint after BeginDraw and Clear.
-    /// </summary>
     protected virtual void DrawUIContent(DrawingContext context, InputState input)
     {
         // Base implementation does nothing.
+        // Derived classes like MyDirectUIApp override this.
     }
-
-
-    // --- Event Handlers (Remain in base class to capture input) ---
 
     protected override void OnSize(int width, int height)
     {
-        if (_graphicsInitialized && _renderTarget is not null)
+        if (graphicsInitialized && renderTarget is not null)
         {
             Console.WriteLine($"Window resized to {width}x{height}. Resizing render target...");
             try
             {
                 var newPixelSize = new SizeI(width, height);
-                _renderTarget.Resize(newPixelSize);
+                // Important: Resizing invalidates device-dependent resources like brushes.
+                // We clear the brush cache in UI.CleanupResources, which will be called if
+                // resizing fails and triggers recreation. A robust solution might clear
+                // the cache here *before* resizing, or handle potential brush errors gracefully.
+                // For now, we rely on the RecreateTarget error handling.
+                renderTarget.Resize(newPixelSize);
                 Console.WriteLine($"Successfully resized render target.");
             }
             catch (SharpGenException ex)
@@ -730,79 +722,86 @@ public class Direct2DAppWindow : Win32Window
                 if (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
                 {
                     Console.WriteLine("Render target needs recreation (Detected in Resize Exception).");
-                    _graphicsInitialized = false;
-                    CleanupGraphics();
+                    graphicsInitialized = false;
+                    CleanupGraphics(); // Clean up old resources, including UI cache
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Failed to resize Render Target (General Exception): {ex}");
-                _graphicsInitialized = false;
+                graphicsInitialized = false;
                 CleanupGraphics();
             }
         }
-        else if (!_graphicsInitialized && Handle != nint.Zero)
+        else if (!graphicsInitialized && Handle != nint.Zero)
         {
+            // Attempt initialization if not done yet and window exists
             InitializeGraphics();
         }
     }
 
-    protected override void OnMouseMove(int x, int y) { _currentMousePos = new Vector2(x, y); }
+    protected override void OnMouseMove(int x, int y) { currentMousePos = new Vector2(x, y); Invalidate(); } // Added Invalidate
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _currentMousePos = new Vector2(x, y);
+        currentMousePos = new Vector2(x, y);
         if (button == MouseButton.Left)
         {
-            _isLeftMouseButtonDown = true;
-            _wasLeftMouseClickedThisFrame = true;
+            isLeftMouseButtonDown = true;
+            wasLeftMouseClickedThisFrame = true;
         }
+        // Handle other buttons if needed
+        Invalidate(); // Request redraw on click
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _currentMousePos = new Vector2(x, y);
+        currentMousePos = new Vector2(x, y);
         if (button == MouseButton.Left)
         {
-            _isLeftMouseButtonDown = false;
+            isLeftMouseButtonDown = false;
         }
+        // Handle other buttons if needed
+        Invalidate(); // Request redraw on release
     }
 
     protected override void OnKeyDown(int keyCode)
     {
-        if (keyCode == NativeMethods.VK_ESCAPE) { Close(); }
+        if (keyCode == NativeMethods.VK_ESCAPE)
+        {
+            Close();
+        }
         // Derived classes could override to handle other keys for UI interaction
+        // Maybe call Invalidate() if key affects visual state
     }
 
-    protected override bool OnClose() { return true; }
+    protected override bool OnClose() { return true; } // Allow window to close
 
-    // --- Graphics Management ---
-
-    protected virtual bool InitializeGraphics() // Made virtual if derived needs to add steps
+    protected virtual bool InitializeGraphics()
     {
-        if (_graphicsInitialized) return true;
+        if (graphicsInitialized) return true;
         if (Handle == nint.Zero) return false;
 
         Console.WriteLine($"Attempting Graphics Initialization for HWND {Handle}...");
 
         try
         {
-            CleanupGraphics();
+            CleanupGraphics(); // Ensure clean state
 
-            Result factoryResult = D2D1.D2D1CreateFactory(D2DFactoryType.SingleThreaded, out _d2dFactory);
+            Result factoryResult = D2D1.D2D1CreateFactory(D2DFactoryType.SingleThreaded, out d2dFactory);
             factoryResult.CheckError();
-            if (_d2dFactory is null) throw new InvalidOperationException("D2D Factory creation failed silently.");
+            if (d2dFactory is null) throw new InvalidOperationException("D2D Factory creation failed silently.");
 
-            Result dwriteResult = DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out _dwriteFactory);
+            Result dwriteResult = DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out dwriteFactory);
             dwriteResult.CheckError();
-            if (_dwriteFactory is null) throw new InvalidOperationException("DWrite Factory creation failed silently.");
+            if (dwriteFactory is null) throw new InvalidOperationException("DWrite Factory creation failed silently.");
 
             var clientRectSize = GetClientRectSize();
             if (clientRectSize.Width <= 0 || clientRectSize.Height <= 0)
             {
                 Console.WriteLine($"Invalid client rect size ({clientRectSize.Width}x{clientRectSize.Height}). Aborting graphics initialization.");
-                _dwriteFactory?.Dispose(); _dwriteFactory = null;
-                _d2dFactory?.Dispose(); _d2dFactory = null;
+                dwriteFactory?.Dispose(); dwriteFactory = null;
+                d2dFactory?.Dispose(); d2dFactory = null;
                 return false;
             }
 
@@ -812,59 +811,63 @@ public class Direct2DAppWindow : Win32Window
             {
                 Hwnd = Handle,
                 PixelSize = new SizeI(clientRectSize.Width, clientRectSize.Height),
-                PresentOptions = PresentOptions.None
+                PresentOptions = PresentOptions.None // Use None or Immediately based on needs
             };
 
-            _renderTarget = _d2dFactory.CreateHwndRenderTarget(renderTargetProperties, hwndRenderTargetProperties);
-            if (_renderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
+            renderTarget = d2dFactory.CreateHwndRenderTarget(renderTargetProperties, hwndRenderTargetProperties);
+            if (renderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
 
-            _renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
-
-            // Removed UI Element Initialization (_myTestButton)
+            renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype; // Good default
 
             Console.WriteLine($"Vortice Graphics initialized successfully for HWND {Handle}.");
-            _graphicsInitialized = true;
+            graphicsInitialized = true;
             return true;
         }
         catch (SharpGenException ex)
         {
             Console.WriteLine($"Graphics Initialization failed (SharpGenException): {ex.Message} HRESULT: {ex.ResultCode}");
-            CleanupGraphics(); _graphicsInitialized = false; return false;
+            CleanupGraphics(); graphicsInitialized = false; return false;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Graphics Initialization failed (General Exception): {ex}");
-            CleanupGraphics(); _graphicsInitialized = false; return false;
+            CleanupGraphics(); graphicsInitialized = false; return false;
         }
     }
 
-    protected virtual void CleanupGraphics() // Made virtual
+    protected virtual void CleanupGraphics()
     {
-        bool resourcesExisted = _d2dFactory is not null || _renderTarget is not null;
+        bool resourcesExisted = d2dFactory is not null || renderTarget is not null || dwriteFactory is not null;
         if (resourcesExisted) Console.WriteLine("Cleaning up Vortice Graphics resources...");
 
-        UI.CleanupResources(); // Still clean UI cache here
+        // --- Crucially, clean up UI resources FIRST ---
+        // Brushes depend on the render target, elements might hold references.
+        UI.CleanupResources();
 
-        _renderTarget?.Dispose(); _renderTarget = null;
-        _dwriteFactory?.Dispose(); _dwriteFactory = null;
-        _d2dFactory?.Dispose(); _d2dFactory = null;
-        _graphicsInitialized = false;
+        renderTarget?.Dispose(); renderTarget = null;
+        dwriteFactory?.Dispose(); dwriteFactory = null;
+        d2dFactory?.Dispose(); d2dFactory = null;
+        graphicsInitialized = false; // Mark as uninitialized
 
         if (resourcesExisted) Console.WriteLine("Finished cleaning graphics resources.");
     }
 
-    // --- Helpers ---
-
-    protected SizeI GetClientRectSize() // Made protected
+    protected SizeI GetClientRectSize()
     {
         if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
         {
+            // Ensure minimum size of 1x1 to avoid issues with Direct2D
             int width = Math.Max(1, r.right - r.left);
             int height = Math.Max(1, r.bottom - r.top);
             return new SizeI(width, height);
         }
-        int baseWidth = Math.Max(1, Width); int baseHeight = Math.Max(1, Height);
-        if (Handle != nint.Zero) { Console.WriteLine($"GetClientRect failed. Falling back to base size: {baseWidth}x{baseHeight}"); }
+        // Fallback to stored size if GetClientRect fails, ensuring minimum 1x1
+        int baseWidth = Math.Max(1, Width);
+        int baseHeight = Math.Max(1, Height);
+        if (Handle != nint.Zero)
+        {
+            Console.WriteLine($"GetClientRect failed. Falling back to stored size: {baseWidth}x{baseHeight}");
+        }
         return new SizeI(baseWidth, baseHeight);
     }
 }
@@ -917,7 +920,6 @@ public readonly struct InputState
 
 <file path="MyDirectUIApp.cs">
 // MyDirectUIApp.cs
-// Added BorderThickness = 0 to the ButtonStylePack initialization.
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -926,42 +928,63 @@ namespace DirectUI;
 
 public class MyDirectUIApp : Direct2DAppWindow
 {
-    private readonly Button button;
+    private readonly ButtonStylePack buttonTheme; // Keep theme reusable
 
     public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
         : base(title, width, height)
     {
-        button = new()
+        buttonTheme = new ButtonStylePack()
         {
-            Position = new(50, 50),
-            Text = "OK",
-            Themes = new()
-            {
-                Roundness = 0.05f,
-            },
+            Roundness = 0.05f,
         };
-
-        button.Clicked += HandleTestButtonClick;
     }
 
     protected override void DrawUIContent(DrawingContext context, InputState input)
     {
         UI.BeginFrame(context, input);
 
-        button.Update();
+
+        if (UI.Button("OkButton", new()
+        {
+            Position = new(50, 50),
+            Size = new(84, 28),
+            Text = "OK",
+            Theme = buttonTheme,
+            Disabled = false
+        }))
+        {
+            backgroundColor = new(
+                (float)Random.Shared.NextDouble() * 0.8f + 0.1f,
+                (float)Random.Shared.NextDouble() * 0.5f + 0.2f,
+                (float)Random.Shared.NextDouble() * 0.5f + 0.2f,
+                1.0f
+            );
+
+            Invalidate();
+        }
+
+        if (UI.Button("CancelButton", new()
+        {
+            Position = new(150, 50),
+            Size = new(84, 28),
+            Text = "Cancel",
+            Theme = buttonTheme,
+            Disabled = false
+        }))
+        {
+            Console.WriteLine($"IMGUI Style: Button 'CancelButton' was clicked!");
+        }
+
+        UI.Button("DisabledButton", new ButtonDefinition()
+        {
+            Position = new(250, 50),
+            Size = new(100, 28),
+            Text = "Disabled",
+            Theme = buttonTheme,
+            Disabled = true
+        });
 
         UI.EndFrame();
-    }
-
-    private void HandleTestButtonClick(Button sender)
-    {
-        Console.WriteLine($"Event Handler: Button '{sender.Text}' was clicked! Changing background.");
-        backgroundColor = new Color4(
-            (float)Random.Shared.NextDouble() * 0.8f + 0.1f,
-            (float)Random.Shared.NextDouble() * 0.5f + 0.2f,
-            (float)Random.Shared.NextDouble() * 0.5f + 0.2f,
-            1.0f
-        );
     }
 }
 </file>
@@ -1164,7 +1187,9 @@ public class Program
 <file path="UI.cs">
 // UI.cs
 using SharpGen.Runtime;
+using System;
 using System.Collections.Generic;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -1176,14 +1201,12 @@ public static class UI
     private static ID2D1HwndRenderTarget? currentRenderTarget;
     private static IDWriteFactory? currentDWriteFactory;
     private static InputState currentInputState;
+    private static readonly Dictionary<string, object> uiElements = new();
+    private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
 
-    // Expose context via public static properties
     public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
     public static IDWriteFactory? CurrentDWriteFactory => currentDWriteFactory;
     public static InputState CurrentInputState => currentInputState;
-
-
-    private static readonly Dictionary<Color4, ID2D1SolidColorBrush> BrushCache = new();
 
     public static void BeginFrame(DrawingContext context, InputState input)
     {
@@ -1196,22 +1219,77 @@ public static class UI
     {
         currentRenderTarget = null;
         currentDWriteFactory = null;
-        // No need to clear struct currentInputState explicitly
     }
 
-    // Removed DoButton method
+    // Updated signature to take ButtonDefinition
+    public static bool Button(string id, ButtonDefinition definition)
+    {
+        if (CurrentRenderTarget is null || CurrentDWriteFactory is null)
+        {
+            Console.WriteLine($"Error: UI.Button('{id}') called outside BeginFrame/EndFrame.");
+            return false;
+        }
+        if (definition is null)
+        {
+            Console.WriteLine($"Error: UI.Button('{id}') called with a null definition.");
+            return false;
+        }
 
-    // Now uses the static CurrentRenderTarget property internally
+        Button buttonInstance;
+
+        if (uiElements.TryGetValue(id, out object? element) && element is Button existingButton)
+        {
+            buttonInstance = existingButton;
+        }
+        else
+        {
+            Console.WriteLine($"Creating new Button instance for ID: {id}");
+            buttonInstance = new Button();
+            uiElements[id] = buttonInstance;
+        }
+
+        // Apply properties from the definition object
+        buttonInstance.Position = definition.Position;
+        buttonInstance.Size = definition.Size;
+        buttonInstance.Text = definition.Text;
+
+        // Use provided theme or ensure default
+        if (definition.Theme is not null)
+        {
+            buttonInstance.Themes = definition.Theme;
+        }
+        else if (buttonInstance.Themes is null)
+        {
+            buttonInstance.Themes = new ButtonStylePack();
+        }
+
+        // Apply optional properties using defaults if definition property is null
+        buttonInstance.Origin = definition.Origin ?? Vector2.Zero;
+        buttonInstance.TextAlignment = definition.TextAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
+        buttonInstance.TextOffset = definition.TextOffset ?? Vector2.Zero;
+        buttonInstance.AutoWidth = definition.AutoWidth;
+        buttonInstance.TextMargin = definition.TextMargin ?? new Vector2(10, 5); // Match Button default
+        buttonInstance.Behavior = definition.Behavior;
+        buttonInstance.LeftClickActionMode = definition.LeftClickActionMode;
+        buttonInstance.Disabled = definition.Disabled;
+        buttonInstance.UserData = definition.UserData;
+
+
+        // Button.Update performs state checks, drawing, and returns click status
+        bool clicked = buttonInstance.Update();
+
+        return clicked;
+    }
+
     public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
     {
         if (CurrentRenderTarget is null)
         {
-            // This should ideally not happen if BeginFrame/EndFrame are used correctly
             Console.WriteLine("Error: GetOrCreateBrush called with no active render target.");
             return null!;
         }
 
-        if (BrushCache.TryGetValue(color, out ID2D1SolidColorBrush? brush))
+        if (brushCache.TryGetValue(color, out ID2D1SolidColorBrush? brush))
         {
             if (brush is not null)
             {
@@ -1219,17 +1297,16 @@ public static class UI
             }
             else
             {
-                BrushCache.Remove(color);
+                brushCache.Remove(color);
             }
         }
 
         try
         {
-            // Use the static property
             brush = CurrentRenderTarget.CreateSolidColorBrush(color);
             if (brush is not null)
             {
-                BrushCache[color] = brush;
+                brushCache[color] = brush;
                 return brush;
             }
             else
@@ -1254,13 +1331,23 @@ public static class UI
     public static void CleanupResources()
     {
         Console.WriteLine("UI Resource Cleanup: Disposing cached brushes...");
-        int count = BrushCache.Count;
-        foreach (var pair in BrushCache)
+        int count = brushCache.Count;
+        foreach (var pair in brushCache)
         {
             pair.Value?.Dispose();
         }
-        BrushCache.Clear();
+        brushCache.Clear();
         Console.WriteLine($"UI Resource Cleanup finished. Disposed {count} brushes.");
+
+        // Optional: Dispose UI elements if they implement IDisposable
+        // foreach(var pair in uiElements)
+        // {
+        //    if (pair.Value is IDisposable disposableElement)
+        //    {
+        //        disposableElement.Dispose();
+        //    }
+        // }
+        // uiElements.Clear(); // Be careful if cleanup happens often
     }
 }
 </file>
