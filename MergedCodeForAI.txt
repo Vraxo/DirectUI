@@ -1,0 +1,1428 @@
+<file path="Alignment.cs">
+// Alignment.cs
+namespace DirectUI;
+
+public enum HAlignment { Left, Center, Right }
+public enum VAlignment { Top, Center, Bottom }
+
+public struct Alignment(HAlignment horizontal, VAlignment vertical)
+{
+    public HAlignment Horizontal { get; set; } = horizontal;
+    public VAlignment Vertical { get; set; } = vertical;
+}
+</file>
+
+<file path="BoxStyle.cs">
+// BoxStyle.cs
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public class BoxStyle
+{
+    public float Roundness { get; set; } = 0.2f; // Relative roundness (0 = sharp, 1 = fully rounded)
+    public Color4 FillColor { get; set; } = DefaultTheme.NormalFill;
+    public Color4 BorderColor { get; set; } = DefaultTheme.NormalBorder;
+    public float BorderThickness { get; set; } = 1.0f; // Uniform border thickness
+}
+</file>
+
+<file path="Button.cs">
+// Button.cs
+// Modified GlobalBounds getter to use Rect(x, y, width, height) constructor.
+using System;
+using System.Numerics;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+using Vortice.Direct2D1;
+using SharpGen.Runtime;
+
+namespace DirectUI;
+
+public class Button
+{
+    public enum ActionMode
+    {
+        Release,
+        Press
+    }
+
+    public enum ClickBehavior
+    {
+        Left,
+        Right,
+        Both
+    }
+
+    public Vector2 Position { get; set; } = Vector2.Zero;
+    public Vector2 Size { get; set; } = new(84, 28);
+    public Vector2 Origin { get; set; } = Vector2.Zero;
+    public string Text { get; set; } = "";
+    public Vector2 TextOffset { get; set; } = Vector2.Zero;
+    public Alignment TextAlignment { get; set; } = new(HAlignment.Center, VAlignment.Center);
+    public ButtonStylePack Themes { get; set; } = new();
+    public ActionMode LeftClickActionMode { get; set; } = ActionMode.Release;
+    public bool AutoWidth { get; set; } = false;
+    public Vector2 TextMargin { get; set; } = new(10, 5);
+    public ClickBehavior Behavior { get; set; } = ClickBehavior.Left;
+    public bool Disabled { get; set; } = false;
+    public object? UserData { get; set; } = null;
+
+    public bool IsHovering { get; internal set; } = false;
+    public bool IsPressed { get; internal set; } = false;
+
+    public Rect GlobalBounds
+    {
+        get
+        {
+            Console.WriteLine($"  [GlobalBounds Getter] Position=({Position.X},{Position.Y}), Origin=({Origin.X},{Origin.Y}), Size=({Size.X},{Size.Y})");
+
+            // Calculate components
+            float posX = Position.X;
+            float posY = Position.Y;
+            float originX = Origin.X;
+            float originY = Origin.Y;
+            float sizeX = Size.X;
+            float sizeY = Size.Y;
+
+            float x = posX - originX; // This is 'left' or 'x'
+            float y = posY - originY; // This is 'top' or 'y'
+            float width = sizeX;      // Use size directly for width
+            float height = sizeY;     // Use size directly for height
+
+            Console.WriteLine($"  [GlobalBounds Getter] Using Constructor: Rect(x={x}, y={y}, width={width}, height={height})");
+
+            // --- Use alternative Rect constructor ---
+            var calculatedBounds = new Rect(x, y, width, height);
+            // --- End alternative ---
+
+            Console.WriteLine($"  [GlobalBounds Getter] Constructed=({calculatedBounds.Left}, {calculatedBounds.Top}, {calculatedBounds.Right}, {calculatedBounds.Bottom})");
+            Console.WriteLine($"  [GlobalBounds Getter] Constructed Width={calculatedBounds.Width}, Height={calculatedBounds.Height}"); // Log Width/Height too
+
+            return calculatedBounds;
+        }
+    }
+
+    public event Action<Button>? Clicked;
+    public event Action<Button>? MouseEntered;
+    public event Action<Button>? MouseExited;
+
+    public bool Update()
+    {
+        ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
+        IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
+        InputState input = UI.CurrentInputState;
+
+        if (renderTarget is null || dwriteFactory is null)
+        {
+            Console.WriteLine("Error: Button.Update called outside of UI.BeginFrame/EndFrame scope.");
+            return false;
+        }
+
+        Console.WriteLine($"Button Update Start: Size=({Size.X}, {Size.Y})");
+
+        Rect bounds = GlobalBounds;
+        bool wasClickedThisFrame = false;
+        bool previousHoverState = IsHovering;
+
+        Console.WriteLine($"Button Update Bounds Check: Size=({Size.X}, {Size.Y}), Captured Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+
+
+        if (Disabled)
+        {
+            IsHovering = false;
+            IsPressed = false;
+        }
+        else
+        {
+            IsHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+
+            if (Behavior is Button.ClickBehavior.Left or Button.ClickBehavior.Both)
+            {
+                if (IsHovering && input.WasLeftMousePressedThisFrame)
+                {
+                    IsPressed = true;
+                    if (LeftClickActionMode is Button.ActionMode.Press)
+                    {
+                        InvokeClick();
+                        wasClickedThisFrame = true;
+                    }
+                }
+                else if (IsPressed && !input.IsLeftMouseDown)
+                {
+                    if (IsHovering && LeftClickActionMode is Button.ActionMode.Release)
+                    {
+                        InvokeClick();
+                        wasClickedThisFrame = true;
+                    }
+                    IsPressed = false;
+                }
+                else if (!input.IsLeftMouseDown)
+                {
+                    IsPressed = false;
+                }
+            }
+        }
+
+        if (IsHovering && !previousHoverState)
+        {
+            InvokeMouseEnter();
+        }
+        else if (!IsHovering && previousHoverState)
+        {
+            InvokeMouseExit();
+        }
+
+        UpdateStyle();
+        PerformAutoWidth(dwriteFactory);
+
+        try
+        {
+            Console.WriteLine($"Button Draw Prep: Size=({Size.X}, {Size.Y})");
+            Rect boundsForDraw = GlobalBounds;
+            Console.WriteLine($"Button Draw Prep: Bounds For Draw=({boundsForDraw.Left}, {boundsForDraw.Top}, {boundsForDraw.Right}, {boundsForDraw.Bottom})");
+
+            DrawBackground(renderTarget);
+            DrawText(renderTarget, dwriteFactory);
+        }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
+        {
+            Console.WriteLine($"Render target needs recreation (Caught SharpGenException during Button drawing): {ex.Message}");
+            UI.CleanupResources();
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Unhandled error during Button drawing: {ex}");
+            UI.CleanupResources();
+            return false;
+        }
+
+        return wasClickedThisFrame;
+    }
+
+    internal void InvokeClick()
+    {
+        Clicked?.Invoke(this);
+    }
+
+    internal void InvokeMouseEnter()
+    {
+        MouseEntered?.Invoke(this);
+    }
+
+    internal void InvokeMouseExit()
+    {
+        MouseExited?.Invoke(this);
+    }
+
+    internal void UpdateStyle()
+    {
+        Themes.UpdateCurrentStyle(IsHovering, IsPressed, Disabled);
+    }
+
+    internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
+    {
+        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null)
+        {
+            return Vector2.Zero;
+        }
+
+        IDWriteTextFormat? textFormat = null;
+        try
+        {
+            ButtonStyle style = Themes.Current;
+            textFormat = dwriteFactory.CreateTextFormat(
+                style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us"
+            );
+
+            if (textFormat is null)
+            {
+                Console.WriteLine("Warning: Failed to create TextFormat for measurement.");
+                return Vector2.Zero;
+            }
+
+            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, float.MaxValue, float.MaxValue);
+            TextMetrics textMetrics = textLayout.Metrics;
+            return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error measuring text: {ex.Message}");
+            return Vector2.Zero;
+        }
+        finally
+        {
+            textFormat?.Dispose();
+        }
+    }
+
+    internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
+    {
+        if (!AutoWidth)
+        {
+            return;
+        }
+
+        //Vector2 textSize = MeasureText(dwriteFactory);
+        //float desiredWidth = textSize.X + TextMargin.X * 2;
+        //if (desiredWidth > 0)
+        //{
+        //    Size = new Vector2(desiredWidth, Size.Y);
+        //}
+    }
+
+    private void DrawBackground(ID2D1RenderTarget renderTarget)
+    {
+        Console.WriteLine($"  [DrawBackground Start] Size=({Size.X},{Size.Y})");
+        Rect bounds = GlobalBounds;
+        Console.WriteLine($"  [DrawBackground Start] Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+
+        ButtonStyle style = Themes.Current;
+
+        ID2D1SolidColorBrush fillBrush = UI.GetOrCreateBrush(style.FillColor);
+        ID2D1SolidColorBrush borderBrush = UI.GetOrCreateBrush(style.BorderColor);
+
+        bool canFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool canDrawBorder = style.BorderThickness > 0 && style.BorderColor.A > 0 && borderBrush is not null;
+
+        if (style.Roundness > 0.0f && bounds.Width > 0 && bounds.Height > 0)
+        {
+            var radiusX = float.Max(0, bounds.Width * style.Roundness * 0.5f);
+            var radiusY = float.Max(0, bounds.Height * style.Roundness * 0.5f);
+            RoundedRectangle roundedRect = new((System.Drawing.RectangleF)bounds, radiusX, radiusY);
+
+            if (canFill)
+            {
+                renderTarget.FillRoundedRectangle(roundedRect, fillBrush);
+            }
+            if (canDrawBorder)
+            {
+                renderTarget.DrawRoundedRectangle(roundedRect, borderBrush, style.BorderThickness);
+            }
+        }
+        else
+        {
+            if (canFill)
+            {
+                renderTarget.FillRectangle(bounds, fillBrush);
+            }
+            if (canDrawBorder)
+            {
+                renderTarget.DrawRectangle(bounds, borderBrush, style.BorderThickness);
+            }
+        }
+    }
+
+    private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
+    {
+        if (string.IsNullOrEmpty(Text))
+        {
+            return;
+        }
+
+        ButtonStyle style = Themes.Current;
+        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
+        if (textBrush is null)
+        {
+            return;
+        }
+
+        IDWriteTextFormat? textFormat = null;
+        try
+        {
+            textFormat = dwriteFactory.CreateTextFormat(
+                style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us"
+            );
+
+            if (textFormat is null)
+            {
+                Console.WriteLine("Error: Failed to create TextFormat for drawing.");
+                return;
+            }
+
+            textFormat.TextAlignment = TextAlignment.Horizontal switch
+            {
+                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                _ => Vortice.DirectWrite.TextAlignment.Leading
+            };
+            textFormat.ParagraphAlignment = TextAlignment.Vertical switch
+            {
+                VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near,
+                VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center,
+                VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far,
+                _ => Vortice.DirectWrite.ParagraphAlignment.Near
+            };
+
+            Rect bounds = GlobalBounds;
+            Console.WriteLine($"  [DrawText Start] Bounds=({bounds.Left}, {bounds.Top}, {bounds.Right}, {bounds.Bottom})");
+
+            Rect layoutRect = bounds;
+            layoutRect.Left += TextOffset.X;
+            layoutRect.Top += TextOffset.Y;
+
+            renderTarget.DrawText(Text, textFormat, layoutRect, textBrush);
+        }
+        finally
+        {
+            textFormat?.Dispose();
+        }
+    }
+}
+</file>
+
+<file path="ButtonStyle.cs">
+// ButtonStyle.cs
+using Vortice.Mathematics;
+using Vortice.DirectWrite; // For Font related enums eventually
+
+namespace DirectUI;
+
+public class ButtonStyle : BoxStyle
+{
+    // DirectWrite Font properties will be managed elsewhere (e.g., IDWriteTextFormat)
+    // public float FontSpacing { get; set; } = 0; // Handled by TextFormat
+    // public float FontSize { get; set; } = 16; // Handled by TextFormat
+    // public Font? Font { get; set; } = null; // Represented by TextFormat
+    public Color4 FontColor { get; set; } = DefaultTheme.Text;
+
+    // Properties needed for creating IDWriteTextFormat
+    public string FontName { get; set; } = "Segoe UI";
+    public float FontSize { get; set; } = 16.0f;
+    public FontWeight FontWeight { get; set; } = FontWeight.Normal;
+    public FontStyle FontStyle { get; set; } = FontStyle.Normal;
+    public FontStretch FontStretch { get; set; } = FontStretch.Normal;
+}
+</file>
+
+<file path="ButtonStylePack.cs">
+// ButtonStylePack.cs
+using System.Collections.Generic;
+using System;
+using Vortice.Mathematics;
+using Vortice.DirectWrite;
+
+namespace DirectUI;
+
+public sealed class ButtonStylePack
+{
+    public ButtonStyle Current { get; private set; }
+    public ButtonStyle Normal { get; set; } = new();
+    public ButtonStyle Hover { get; set; } = new();
+    public ButtonStyle Pressed { get; set; } = new();
+    public ButtonStyle Disabled { get; set; } = new();
+    // public ButtonStyle Focused { get; set; } = new(); // Focus state not implemented yet
+
+    public ButtonStylePack()
+    {
+        // Apply default theme colors/styles
+        Hover.FillColor = DefaultTheme.HoverFill;
+        Hover.BorderColor = DefaultTheme.HoverBorder; // Added default
+
+        Pressed.FillColor = DefaultTheme.Accent;
+        Pressed.BorderColor = DefaultTheme.AccentBorder; // Added default
+
+        Disabled.FillColor = DefaultTheme.DisabledFill;
+        Disabled.BorderColor = DefaultTheme.DisabledBorder;
+        Disabled.FontColor = DefaultTheme.DisabledText;
+
+        // Focused state defaults (if/when implemented)
+        // Focused.BorderColor = DefaultTheme.FocusBorder;
+        // Focused.BorderThickness = 2.0f; // Example
+
+        Current = Normal; // Start with Normal style
+    }
+
+    // Method to update the Current style based on button state
+    // This will be called by the UI logic
+    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled /*, bool isFocused */)
+    {
+        if (isDisabled)
+        {
+            Current = Disabled;
+        }
+        else if (isPressed)
+        {
+            Current = Pressed;
+        }
+        // else if (isFocused && !isHovering) // Focus state TBD
+        // {
+        //     Current = Focused;
+        // }
+        else if (isHovering)
+        {
+            Current = Hover;
+        }
+        else
+        {
+            Current = Normal;
+        }
+    }
+
+    // --- Convenience Setters (Optional but can be useful) ---
+
+    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled /*, Focused*/];
+
+    public string FontName
+    {
+        set => SetAll(s => s.FontName = value);
+    }
+
+    public float FontSize
+    {
+        set => SetAll(s => s.FontSize = value);
+    }
+
+    public FontWeight FontWeight
+    {
+        set => SetAll(s => s.FontWeight = value);
+    }
+
+    public FontStyle FontStyle
+    {
+        set => SetAll(s => s.FontStyle = value);
+    }
+
+    public FontStretch FontStretch
+    {
+        set => SetAll(s => s.FontStretch = value);
+    }
+
+    public Color4 FontColor
+    {
+        set => SetAll(s => s.FontColor = value);
+    }
+
+    public float Roundness
+    {
+        set => SetAll(s => s.Roundness = value);
+    }
+
+    public float BorderThickness
+    {
+        set => SetAll(s => s.BorderThickness = value);
+    }
+
+    public Color4 FillColor
+    {
+        set => SetAll(s => s.FillColor = value);
+    }
+
+    public Color4 BorderColor
+    {
+        set => SetAll(s => s.BorderColor = value);
+    }
+
+    private void SetAll(Action<ButtonStyle> setter)
+    {
+        foreach (ButtonStyle style in AllStyles)
+        {
+            // Also update Current if it happens to be one of the base styles
+            // Note: This direct application might be overridden by UpdateCurrentStyle later
+            setter(style);
+        }
+        // Re-apply to Current just in case it was a distinct instance,
+        // though UpdateCurrentStyle is the main way Current is set.
+        setter(Current);
+    }
+}
+</file>
+
+<file path="DefaultTheme.cs">
+// DefaultTheme.cs
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+// Defines default colors for the UI theme
+public static class DefaultTheme
+{
+    // Basic Palette
+    public static readonly Color4 White = Colors.White;
+    public static readonly Color4 Black = Colors.Black;
+    public static readonly Color4 Transparent = Colors.Transparent;
+
+    // UI Element Colors (Examples, adjust as needed)
+    public static readonly Color4 NormalFill = new Color4(0.25f, 0.25f, 0.3f, 1.0f);
+    public static readonly Color4 NormalBorder = new Color4(0.4f, 0.4f, 0.45f, 1.0f);
+
+    public static readonly Color4 HoverFill = new Color4(0.35f, 0.35f, 0.4f, 1.0f);
+    public static readonly Color4 HoverBorder = new Color4(0.5f, 0.5f, 0.55f, 1.0f);
+
+    public static readonly Color4 Accent = new Color4(0.2f, 0.4f, 0.8f, 1.0f); // Used for Pressed Fill
+    public static readonly Color4 AccentBorder = new Color4(0.3f, 0.5f, 0.9f, 1.0f); // Used for Pressed Border
+
+    public static readonly Color4 DisabledFill = new Color4(0.2f, 0.2f, 0.2f, 0.8f);
+    public static readonly Color4 DisabledBorder = new Color4(0.3f, 0.3f, 0.3f, 0.8f);
+    public static readonly Color4 DisabledText = new Color4(0.5f, 0.5f, 0.5f, 1.0f);
+
+    public static readonly Color4 FocusBorder = Colors.LightSkyBlue; // Example focus color
+
+    public static readonly Color4 Text = Colors.WhiteSmoke;
+}
+</file>
+
+<file path="Direct2DAppWindow.cs">
+// Direct2DAppWindow.cs - Made more generic for UI derivation
+using System;
+using System.Numerics;
+
+using Vortice;
+using Vortice.Mathematics;
+
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.DXGI;
+using SharpGen.Runtime;
+
+using D2D = Vortice.Direct2D1;
+using DW = Vortice.DirectWrite;
+
+using D2DFactoryType = Vortice.Direct2D1.FactoryType;
+using SizeI = Vortice.Mathematics.SizeI;
+using Rect = Vortice.Mathematics.Rect;
+
+using DirectUI;
+using Vortice.DCommon; // Still need this for DrawingContext/InputState
+
+namespace DirectUI;
+
+// Base window class responsible for setting up Direct2D and the main loop
+public class Direct2DAppWindow : Win32Window
+{
+    // --- Core Factories (Protected for potential use by derived classes) ---
+    protected ID2D1Factory1? _d2dFactory;
+    protected IDWriteFactory? _dwriteFactory;
+
+    // --- Render Target (Protected) ---
+    protected ID2D1HwndRenderTarget? _renderTarget;
+
+    // --- Removed UI Elements ---
+    // private Button? _myTestButton; // Moved to derived class
+
+    // --- Window State ---
+    protected Color4 backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f); // Protected if derived class wants to change it
+    protected bool _graphicsInitialized = false;
+
+    // --- Input State Tracking (Protected) ---
+    protected Vector2 _currentMousePos = new(-1, -1);
+    protected bool _isLeftMouseButtonDown = false;
+    protected bool _wasLeftMouseClickedThisFrame = false;
+
+    public Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
+        : base(title, width, height)
+    { }
+
+    // --- Initialization & Cleanup ---
+
+    protected override bool Initialize()
+    {
+        Console.WriteLine("Direct2DAppWindow initializing Vortice Graphics...");
+        return InitializeGraphics();
+    }
+
+    protected override void Cleanup()
+    {
+        Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
+        CleanupGraphics();
+    }
+
+    // --- Core Loop ---
+
+    protected override void OnPaint()
+    {
+        if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
+        {
+            if (!_graphicsInitialized && Handle != nint.Zero)
+            {
+                InitializeGraphics();
+                if (!_graphicsInitialized || _renderTarget is null || _dwriteFactory is null)
+                {
+                    _wasLeftMouseClickedThisFrame = false;
+                    return;
+                }
+            }
+            else
+            {
+                _wasLeftMouseClickedThisFrame = false;
+                return;
+            }
+        }
+
+        try
+        {
+            _renderTarget.BeginDraw();
+            _renderTarget.Clear(backgroundColor);
+
+            // --- Prepare UI Context ---
+            var inputState = new InputState(
+                _currentMousePos,
+                _wasLeftMouseClickedThisFrame,
+                _isLeftMouseButtonDown
+            );
+
+            var drawingContext = new DrawingContext(_renderTarget, _dwriteFactory);
+
+            // --- Call derived class implementation for UI drawing ---
+            DrawUIContent(drawingContext, inputState); // NEW VIRTUAL METHOD CALL
+
+            // --- End Drawing ---
+            Result endDrawResult = _renderTarget.EndDraw();
+
+            if (endDrawResult.Failure)
+            {
+                Console.WriteLine($"EndDraw failed: {endDrawResult.Description}");
+                if (endDrawResult.Code == D2D.ResultCode.RecreateTarget.Code)
+                {
+                    Console.WriteLine("Render target needs recreation (Detected in EndDraw).");
+                    _graphicsInitialized = false;
+                    CleanupGraphics();
+                }
+            }
+        }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
+        {
+            Console.WriteLine($"Render target needs recreation (Caught SharpGenException in OnPaint): {ex.Message}");
+            _graphicsInitialized = false;
+            CleanupGraphics();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Rendering Error: {ex}");
+            _graphicsInitialized = false;
+            CleanupGraphics(); // Consider if all errors should stop graphics
+        }
+        finally
+        {
+            _wasLeftMouseClickedThisFrame = false;
+        }
+    }
+
+    // --- New Virtual Method for UI Content ---
+    /// <summary>
+    /// Override this method in a derived class to draw UI elements.
+    /// Called within OnPaint after BeginDraw and Clear.
+    /// </summary>
+    protected virtual void DrawUIContent(DrawingContext context, InputState input)
+    {
+        // Base implementation does nothing.
+    }
+
+
+    // --- Event Handlers (Remain in base class to capture input) ---
+
+    protected override void OnSize(int width, int height)
+    {
+        if (_graphicsInitialized && _renderTarget is not null)
+        {
+            Console.WriteLine($"Window resized to {width}x{height}. Resizing render target...");
+            try
+            {
+                var newPixelSize = new SizeI(width, height);
+                _renderTarget.Resize(newPixelSize);
+                Console.WriteLine($"Successfully resized render target.");
+            }
+            catch (SharpGenException ex)
+            {
+                Console.WriteLine($"Failed to resize Render Target (SharpGenException): {ex.Message} HRESULT: {ex.ResultCode}");
+                if (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
+                {
+                    Console.WriteLine("Render target needs recreation (Detected in Resize Exception).");
+                    _graphicsInitialized = false;
+                    CleanupGraphics();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to resize Render Target (General Exception): {ex}");
+                _graphicsInitialized = false;
+                CleanupGraphics();
+            }
+        }
+        else if (!_graphicsInitialized && Handle != nint.Zero)
+        {
+            InitializeGraphics();
+        }
+    }
+
+    protected override void OnMouseMove(int x, int y) { _currentMousePos = new Vector2(x, y); }
+
+    protected override void OnMouseDown(MouseButton button, int x, int y)
+    {
+        _currentMousePos = new Vector2(x, y);
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = true;
+            _wasLeftMouseClickedThisFrame = true;
+        }
+    }
+
+    protected override void OnMouseUp(MouseButton button, int x, int y)
+    {
+        _currentMousePos = new Vector2(x, y);
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = false;
+        }
+    }
+
+    protected override void OnKeyDown(int keyCode)
+    {
+        if (keyCode == NativeMethods.VK_ESCAPE) { Close(); }
+        // Derived classes could override to handle other keys for UI interaction
+    }
+
+    protected override bool OnClose() { return true; }
+
+    // --- Graphics Management ---
+
+    protected virtual bool InitializeGraphics() // Made virtual if derived needs to add steps
+    {
+        if (_graphicsInitialized) return true;
+        if (Handle == nint.Zero) return false;
+
+        Console.WriteLine($"Attempting Graphics Initialization for HWND {Handle}...");
+
+        try
+        {
+            CleanupGraphics();
+
+            Result factoryResult = D2D1.D2D1CreateFactory(D2DFactoryType.SingleThreaded, out _d2dFactory);
+            factoryResult.CheckError();
+            if (_d2dFactory is null) throw new InvalidOperationException("D2D Factory creation failed silently.");
+
+            Result dwriteResult = DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out _dwriteFactory);
+            dwriteResult.CheckError();
+            if (_dwriteFactory is null) throw new InvalidOperationException("DWrite Factory creation failed silently.");
+
+            var clientRectSize = GetClientRectSize();
+            if (clientRectSize.Width <= 0 || clientRectSize.Height <= 0)
+            {
+                Console.WriteLine($"Invalid client rect size ({clientRectSize.Width}x{clientRectSize.Height}). Aborting graphics initialization.");
+                _dwriteFactory?.Dispose(); _dwriteFactory = null;
+                _d2dFactory?.Dispose(); _d2dFactory = null;
+                return false;
+            }
+
+            var dxgiPixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied);
+            var renderTargetProperties = new RenderTargetProperties(dxgiPixelFormat);
+            var hwndRenderTargetProperties = new HwndRenderTargetProperties
+            {
+                Hwnd = Handle,
+                PixelSize = new SizeI(clientRectSize.Width, clientRectSize.Height),
+                PresentOptions = PresentOptions.None
+            };
+
+            _renderTarget = _d2dFactory.CreateHwndRenderTarget(renderTargetProperties, hwndRenderTargetProperties);
+            if (_renderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
+
+            _renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
+
+            // Removed UI Element Initialization (_myTestButton)
+
+            Console.WriteLine($"Vortice Graphics initialized successfully for HWND {Handle}.");
+            _graphicsInitialized = true;
+            return true;
+        }
+        catch (SharpGenException ex)
+        {
+            Console.WriteLine($"Graphics Initialization failed (SharpGenException): {ex.Message} HRESULT: {ex.ResultCode}");
+            CleanupGraphics(); _graphicsInitialized = false; return false;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Graphics Initialization failed (General Exception): {ex}");
+            CleanupGraphics(); _graphicsInitialized = false; return false;
+        }
+    }
+
+    protected virtual void CleanupGraphics() // Made virtual
+    {
+        bool resourcesExisted = _d2dFactory is not null || _renderTarget is not null;
+        if (resourcesExisted) Console.WriteLine("Cleaning up Vortice Graphics resources...");
+
+        UI.CleanupResources(); // Still clean UI cache here
+
+        _renderTarget?.Dispose(); _renderTarget = null;
+        _dwriteFactory?.Dispose(); _dwriteFactory = null;
+        _d2dFactory?.Dispose(); _d2dFactory = null;
+        _graphicsInitialized = false;
+
+        if (resourcesExisted) Console.WriteLine("Finished cleaning graphics resources.");
+    }
+
+    // --- Helpers ---
+
+    protected SizeI GetClientRectSize() // Made protected
+    {
+        if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
+        {
+            int width = Math.Max(1, r.right - r.left);
+            int height = Math.Max(1, r.bottom - r.top);
+            return new SizeI(width, height);
+        }
+        int baseWidth = Math.Max(1, Width); int baseHeight = Math.Max(1, Height);
+        if (Handle != nint.Zero) { Console.WriteLine($"GetClientRect failed. Falling back to base size: {baseWidth}x{baseHeight}"); }
+        return new SizeI(baseWidth, baseHeight);
+    }
+}
+</file>
+
+<file path="DrawingContext.cs">
+// DrawingContext.cs
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+
+namespace DirectUI;
+
+// Holds rendering resources needed for UI drawing
+public readonly struct DrawingContext
+{
+    public readonly ID2D1HwndRenderTarget RenderTarget;
+    public readonly IDWriteFactory DWriteFactory;
+    // Could potentially add D2DFactory later if needed
+
+    public DrawingContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory)
+    {
+        RenderTarget = renderTarget;
+        DWriteFactory = dwriteFactory;
+    }
+}
+</file>
+
+<file path="InputState.cs">
+// InputState.cs
+using System.Numerics;
+
+namespace DirectUI;
+
+// Holds input state needed for UI processing in a single frame
+public readonly struct InputState
+{
+    public readonly Vector2 MousePosition;
+    public readonly bool WasLeftMousePressedThisFrame; // True if the left button went down this frame
+    public readonly bool IsLeftMouseDown; // True if the left button is currently held down
+    // Add fields for Right mouse button if ClickBehavior.Right/Both is used
+
+    public InputState(Vector2 mousePosition, bool wasLeftMousePressedThisFrame, bool isLeftMouseDown)
+    {
+        MousePosition = mousePosition;
+        WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
+        IsLeftMouseDown = isLeftMouseDown;
+    }
+}
+</file>
+
+<file path="MyDirectUIApp.cs">
+// MyDirectUIApp.cs
+// Added BorderThickness = 0 to the ButtonStylePack initialization.
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public class MyDirectUIApp : Direct2DAppWindow
+{
+    private readonly Button button;
+
+    public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
+        : base(title, width, height)
+    {
+        button = new()
+        {
+            Position = new(50, 50),
+            Text = "OK",
+            Themes = new()
+            {
+                Roundness = 0.05f,
+            },
+        };
+
+        button.Clicked += HandleTestButtonClick;
+    }
+
+    protected override void DrawUIContent(DrawingContext context, InputState input)
+    {
+        UI.BeginFrame(context, input);
+
+        button.Update();
+
+        UI.EndFrame();
+    }
+
+    private void HandleTestButtonClick(Button sender)
+    {
+        Console.WriteLine($"Event Handler: Button '{sender.Text}' was clicked! Changing background.");
+        backgroundColor = new Color4(
+            (float)Random.Shared.NextDouble() * 0.8f + 0.1f,
+            (float)Random.Shared.NextDouble() * 0.5f + 0.2f,
+            (float)Random.Shared.NextDouble() * 0.5f + 0.2f,
+            1.0f
+        );
+    }
+}
+</file>
+
+<file path="NativeMethods.cs">
+using System;
+using System.Runtime.InteropServices;
+
+// No changes needed here if it was correct from the previous step.
+// Ensure these constants are defined:
+// WM_NCCREATE, WM_CREATE, WM_NCDESTROY, WM_PAINT, WM_DESTROY, WM_SIZE,
+// WM_CLOSE, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_QUIT
+// GWLP_USERDATA, VK_ESCAPE, etc.
+// And the structs: WNDCLASSEX, MSG, POINT, RECT, CREATESTRUCT
+// And the functions: RegisterClassEx, CreateWindowEx, GetMessage, etc.
+// And the delegates: WndProc
+
+namespace DirectUI;
+
+internal static class NativeMethods
+{
+    // --- Constants ---
+    public const uint CS_HREDRAW = 0x0002;
+    public const uint CS_VREDRAW = 0x0001;
+    public const uint CS_OWNDC = 0x0020;
+
+    public const uint WS_OVERLAPPEDWINDOW = 0xCF0000;
+    public const uint WS_VISIBLE = 0x10000000;
+
+    public const int WM_NCCREATE = 0x0081;
+    public const int WM_CREATE = 0x0001;
+    public const int WM_NCDESTROY = 0x0082;
+    public const int WM_PAINT = 0x000F;
+    public const int WM_DESTROY = 0x0002;
+    public const int WM_SIZE = 0x0005;
+    public const int WM_CLOSE = 0x0010;
+    public const int WM_KEYDOWN = 0x0100;
+    public const int WM_LBUTTONDOWN = 0x0201;
+    public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
+    public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
+    public const int WM_QUIT = 0x0012;
+
+    public const int CW_USEDEFAULT = unchecked((int)0x80000000);
+    public const int SW_SHOWNORMAL = 1;
+    public const int VK_ESCAPE = 0x1B;
+    public const int GWLP_USERDATA = -21;
+
+    // --- Structures ---
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    public struct WNDCLASSEX
+    { /* ... as before ... */
+        public int cbSize;
+        public uint style;
+        public WndProc lpfnWndProc; // Use delegate type directly
+        public int cbClsExtra;
+        public int cbWndExtra;
+        public IntPtr hInstance;
+        public IntPtr hIcon;
+        public IntPtr hCursor;
+        public IntPtr hbrBackground;
+        public string lpszMenuName;
+        public string lpszClassName;
+        public IntPtr hIconSm;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct MSG
+    { /* ... as before ... */
+        public IntPtr hwnd;
+        public uint message;
+        public IntPtr wParam;
+        public IntPtr lParam;
+        public uint time;
+        public POINT pt;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct POINT
+    { /* ... as before ... */
+        public int X;
+        public int Y;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct RECT
+    { /* ... as before ... */
+        public int left;
+        public int top;
+        public int right;
+        public int bottom;
+    }
+    [StructLayout(LayoutKind.Sequential)]
+    public struct CREATESTRUCT
+    { /* ... as before ... */
+        public IntPtr lpCreateParams;
+        public IntPtr hInstance;
+        public IntPtr hMenu;
+        public IntPtr hwndParent;
+        public int cy; // Height
+        public int cx; // Width
+        public int y;  // Top
+        public int x;  // Left
+        public int style;
+        [MarshalAs(UnmanagedType.LPWStr)] // Assuming Unicode
+        public string lpszName;
+        [MarshalAs(UnmanagedType.LPWStr)] // Assuming Unicode
+        public string lpszClass;
+        public int dwExStyle;
+    }
+
+    // --- Delegates ---
+    public delegate IntPtr WndProc(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
+
+    // --- Functions ---
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern ushort RegisterClassEx([In] ref WNDCLASSEX lpwcx);
+    [DllImport("user32.dll", SetLastError = true, CharSet = CharSet.Auto)]
+    public static extern IntPtr CreateWindowEx(uint dwExStyle, string lpClassName, string lpWindowName, uint dwStyle, int x, int y, int nWidth, int nHeight, IntPtr hWndParent, IntPtr hMenu, IntPtr hInstance, IntPtr lpParam);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool ShowWindow(IntPtr hWnd, int nCmdShow);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool UpdateWindow(IntPtr hWnd);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool DestroyWindow(IntPtr hWnd);
+    [DllImport("user32.dll")]
+    public static extern IntPtr DefWindowProc(IntPtr hWnd, uint uMsg, IntPtr wParam, IntPtr lParam);
+    [DllImport("user32.dll")]
+    public static extern void PostQuitMessage(int nExitCode);
+    [DllImport("user32.dll")]
+    public static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
+    [DllImport("user32.dll")]
+    public static extern bool TranslateMessage([In] ref MSG lpMsg);
+    [DllImport("user32.dll")]
+    public static extern IntPtr DispatchMessage([In] ref MSG lpmsg);
+    [DllImport("user32.dll")]
+    public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
+    [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
+    public static extern IntPtr GetModuleHandle(string lpModuleName);
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern bool InvalidateRect(IntPtr hWnd, IntPtr lpRect, bool bErase);
+    [DllImport("user32.dll")]
+    public static extern IntPtr LoadCursor(IntPtr hInstance, int lpCursorName);
+    [DllImport("user32.dll")]
+    public static extern IntPtr LoadIcon(IntPtr hInstance, IntPtr lpIconName);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr64(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+    [DllImport("user32.dll", EntryPoint = "SetWindowLongW", SetLastError = true)]
+    private static extern IntPtr SetWindowLong32(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongPtrW", SetLastError = true)]
+    private static extern IntPtr GetWindowLongPtr64(IntPtr hWnd, int nIndex);
+    [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
+    private static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
+
+    public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
+    {
+        if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);
+        else return SetWindowLong32(hWnd, nIndex, dwNewLong);
+    }
+    public static IntPtr GetWindowLongPtr(IntPtr hWnd, int nIndex)
+    {
+        if (IntPtr.Size == 8) return GetWindowLongPtr64(hWnd, nIndex);
+        else return GetWindowLong32(hWnd, nIndex);
+    }
+
+    // --- Helpers ---
+    public static short LoWord(IntPtr val) => unchecked((short)(long)val);
+    public static short HiWord(IntPtr val) => unchecked((short)((long)val >> 16));
+}
+</file>
+
+<file path="Program.cs">
+using System;
+
+namespace DirectUI;
+
+public class Program
+{
+    [STAThread] // Important for COM (Direct2D) and Win32 APIs
+    static void Main(string[] args)
+    {
+        Console.WriteLine("Starting Refactored Direct2D Application...");
+
+        // Use 'using' to ensure Dispose is called automatically
+        using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
+        {
+            try
+            {
+                appWindow.Run(); // Creates window, enters message loop
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Unhandled exception in Run: {ex}");
+                // Log exception, show message box, etc.
+            }
+        } // appWindow.Dispose() is called here
+
+        Console.WriteLine("Application finished.");
+        // Console.ReadKey(); // Optional: Keep console open after exit
+    }
+}
+</file>
+
+<file path="UI.cs">
+// UI.cs
+using SharpGen.Runtime;
+using System.Collections.Generic;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static class UI
+{
+    private static ID2D1HwndRenderTarget? currentRenderTarget;
+    private static IDWriteFactory? currentDWriteFactory;
+    private static InputState currentInputState;
+
+    // Expose context via public static properties
+    public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
+    public static IDWriteFactory? CurrentDWriteFactory => currentDWriteFactory;
+    public static InputState CurrentInputState => currentInputState;
+
+
+    private static readonly Dictionary<Color4, ID2D1SolidColorBrush> BrushCache = new();
+
+    public static void BeginFrame(DrawingContext context, InputState input)
+    {
+        currentRenderTarget = context.RenderTarget;
+        currentDWriteFactory = context.DWriteFactory;
+        currentInputState = input;
+    }
+
+    public static void EndFrame()
+    {
+        currentRenderTarget = null;
+        currentDWriteFactory = null;
+        // No need to clear struct currentInputState explicitly
+    }
+
+    // Removed DoButton method
+
+    // Now uses the static CurrentRenderTarget property internally
+    public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
+    {
+        if (CurrentRenderTarget is null)
+        {
+            // This should ideally not happen if BeginFrame/EndFrame are used correctly
+            Console.WriteLine("Error: GetOrCreateBrush called with no active render target.");
+            return null!;
+        }
+
+        if (BrushCache.TryGetValue(color, out ID2D1SolidColorBrush? brush))
+        {
+            if (brush is not null)
+            {
+                return brush;
+            }
+            else
+            {
+                BrushCache.Remove(color);
+            }
+        }
+
+        try
+        {
+            // Use the static property
+            brush = CurrentRenderTarget.CreateSolidColorBrush(color);
+            if (brush is not null)
+            {
+                BrushCache[color] = brush;
+                return brush;
+            }
+            else
+            {
+                Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}");
+                return null!;
+            }
+        }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
+        {
+            Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). Clearing cache.");
+            CleanupResources();
+            return null!;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating brush for color {color}: {ex.Message}");
+            return null!;
+        }
+    }
+
+    public static void CleanupResources()
+    {
+        Console.WriteLine("UI Resource Cleanup: Disposing cached brushes...");
+        int count = BrushCache.Count;
+        foreach (var pair in BrushCache)
+        {
+            pair.Value?.Dispose();
+        }
+        BrushCache.Clear();
+        Console.WriteLine($"UI Resource Cleanup finished. Disposed {count} brushes.");
+    }
+}
+</file>
+
+<file path="Win32Window.cs">
+using System;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
+using System.Collections.Generic;
+
+namespace DirectUI;
+
+public abstract class Win32Window : IDisposable
+{
+    // --- Ensure this class is identical to the previous version ---
+    // Including:
+    // Fields: _windowClassName, _windowTitle, _initialWidth, _initialHeight, _hwnd, _hInstance, _wndProcDelegate, _isDisposed, RegisteredClassNames, _gcHandle
+    // Properties: Handle, Width, Height
+    // Constructor: Win32Window(...)
+    // Methods: Run(), TryCreateWindow(), WindowProcedure(static), HandleMessage(virtual), Close(), Invalidate()
+    // Virtual Methods: Initialize(), OnPaint(), OnSize(), OnMouseDown(), OnMouseUp(), OnMouseMove(), OnKeyDown(), OnClose(), OnDestroy(), Cleanup()
+    // IDisposable: Dispose(), Dispose(bool), Finalizer ~Win32Window()
+
+    // --- Class Members (example subset) ---
+    private readonly string _windowClassName;
+    private readonly string _windowTitle;
+    private readonly int _initialWidth;
+    private readonly int _initialHeight;
+    private IntPtr _hwnd = IntPtr.Zero;
+    private IntPtr _hInstance = IntPtr.Zero;
+    private NativeMethods.WndProc _wndProcDelegate;
+    private bool _isDisposed = false;
+    private static readonly HashSet<string> RegisteredClassNames = new HashSet<string>();
+    private GCHandle _gcHandle;
+
+    public IntPtr Handle => _hwnd;
+    public int Width { get; protected set; } // Changed to protected set
+    public int Height { get; protected set; } // Changed to protected set
+
+    // --- Constructor ---
+    protected Win32Window(string title, int width, int height, string className = null)
+    {
+        _windowTitle = title ?? "Win32 Window";
+        _initialWidth = width > 0 ? width : 800;
+        _initialHeight = height > 0 ? height : 600;
+        Width = _initialWidth;
+        Height = _initialHeight;
+        _windowClassName = className ?? ("Win32Window_" + Guid.NewGuid().ToString("N"));
+        _wndProcDelegate = WindowProcedure; // Pin delegate
+    }
+
+    // --- Methods (Ensure Run, TryCreateWindow, WindowProcedure, HandleMessage are as before) ---
+    public void Run()
+    { /* ... as before ... */
+        if (_hwnd != IntPtr.Zero) throw new InvalidOperationException("Window already created.");
+        if (!TryCreateWindow()) { Console.WriteLine("Window creation failed."); Dispose(); return; }
+        if (!Initialize()) { Console.WriteLine("Derived init failed."); Dispose(); return; }
+        NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNORMAL);
+        NativeMethods.UpdateWindow(_hwnd);
+        NativeMethods.MSG msg;
+        while (NativeMethods.GetMessage(out msg, IntPtr.Zero, 0, 0))
+        { NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg); }
+        Console.WriteLine("Exiting message loop.");
+    }
+
+    private bool TryCreateWindow()
+    { /* ... as before ... */
+        _hInstance = NativeMethods.GetModuleHandle(null);
+        if (_hInstance == IntPtr.Zero) _hInstance = Process.GetCurrentProcess().Handle;
+        lock (RegisteredClassNames)
+        {
+            if (!RegisteredClassNames.Contains(_windowClassName))
+            {
+                var wndClass = new NativeMethods.WNDCLASSEX
+                { /* ... fill struct ... */
+                    cbSize = Marshal.SizeOf(typeof(NativeMethods.WNDCLASSEX)),
+                    style = NativeMethods.CS_HREDRAW | NativeMethods.CS_VREDRAW,
+                    lpfnWndProc = _wndProcDelegate,
+                    hInstance = _hInstance,
+                    lpszClassName = _windowClassName,
+                    hIcon = NativeMethods.LoadIcon(IntPtr.Zero, (IntPtr)32512),
+                    hCursor = NativeMethods.LoadCursor(IntPtr.Zero, 32512),
+                };
+                if (NativeMethods.RegisterClassEx(ref wndClass) == 0) { Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}"); return false; }
+                RegisteredClassNames.Add(_windowClassName); Console.WriteLine($"Class '{_windowClassName}' registered.");
+            }
+        }
+        _gcHandle = GCHandle.Alloc(this);
+        _hwnd = NativeMethods.CreateWindowEx(0, _windowClassName, _windowTitle, NativeMethods.WS_OVERLAPPEDWINDOW | NativeMethods.WS_VISIBLE,
+            NativeMethods.CW_USEDEFAULT, NativeMethods.CW_USEDEFAULT, _initialWidth, _initialHeight, IntPtr.Zero, IntPtr.Zero, _hInstance, GCHandle.ToIntPtr(_gcHandle));
+        if (_hwnd == IntPtr.Zero) { Console.WriteLine($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}"); if (_gcHandle.IsAllocated) _gcHandle.Free(); return false; }
+        Console.WriteLine($"Window created: {_hwnd}"); return true;
+    }
+
+    private static IntPtr WindowProcedure(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    { /* ... as before ... */
+        Win32Window window = null;
+        if (msg == NativeMethods.WM_NCCREATE)
+        {
+            var cs = Marshal.PtrToStructure<NativeMethods.CREATESTRUCT>(lParam);
+            var handle = GCHandle.FromIntPtr(cs.lpCreateParams); window = handle.Target as Win32Window;
+            NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, GCHandle.ToIntPtr(handle));
+            Console.WriteLine($"WM_NCCREATE: Associated instance with HWND {hWnd}");
+        }
+        else
+        {
+            IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
+            if (ptr != IntPtr.Zero) { var handle = GCHandle.FromIntPtr(ptr); window = handle.Target as Win32Window; }
+        }
+        if (window != null) { try { return window.HandleMessage(hWnd, msg, wParam, lParam); } catch (Exception ex) { Console.WriteLine($"Error handling msg {msg}: {ex}"); } }
+        return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+    }
+
+    protected virtual IntPtr HandleMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
+    { /* ... as before ... */
+        switch (msg)
+        {
+            case NativeMethods.WM_PAINT: OnPaint(); return IntPtr.Zero;
+            case NativeMethods.WM_SIZE: Width = NativeMethods.LoWord(lParam); Height = NativeMethods.HiWord(lParam); OnSize(Width, Height); return IntPtr.Zero;
+            case NativeMethods.WM_MOUSEMOVE: OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero; // Ensure exists
+            case NativeMethods.WM_LBUTTONDOWN: OnMouseDown(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero; // Ensure exists
+            case NativeMethods.WM_LBUTTONUP: OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero; // Ensure exists
+            case NativeMethods.WM_KEYDOWN: OnKeyDown((int)wParam); return IntPtr.Zero;
+            case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
+            case NativeMethods.WM_DESTROY: Console.WriteLine($"WM_DESTROY for {hWnd}."); OnDestroy(); NativeMethods.PostQuitMessage(0); return IntPtr.Zero;
+            case NativeMethods.WM_NCDESTROY: Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}."); IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA); if (ptr != IntPtr.Zero) { var handle = GCHandle.FromIntPtr(ptr); if (handle.IsAllocated) handle.Free(); NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero); } if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr) { _gcHandle = default; } _hwnd = IntPtr.Zero; return IntPtr.Zero;
+            default: return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+        }
+    }
+
+    public void Close() { if (_hwnd != IntPtr.Zero) NativeMethods.DestroyWindow(_hwnd); }
+    public void Invalidate() { if (_hwnd != IntPtr.Zero) NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false); }
+
+    // --- Virtual Methods (Ensure all needed methods are declared) ---
+    protected virtual bool Initialize() { return true; }
+    protected virtual void OnPaint() { }
+    protected virtual void OnSize(int width, int height) { }
+    protected virtual void OnMouseDown(MouseButton button, int x, int y) { }
+    protected virtual void OnMouseUp(MouseButton button, int x, int y) { }     // Ensure exists
+    protected virtual void OnMouseMove(int x, int y) { }     // Ensure exists
+    protected virtual void OnKeyDown(int keyCode) { }
+    protected virtual bool OnClose() { return true; }
+    protected virtual void OnDestroy() { }
+    protected virtual void Cleanup() { }
+
+    // --- IDisposable (Ensure implementation is as before) ---
+    public void Dispose() { Dispose(true); GC.SuppressFinalize(this); }
+    protected virtual void Dispose(bool disposing)
+    { /* ... as before ... */
+        if (!_isDisposed)
+        {
+            if (disposing) { Console.WriteLine("Disposing Win32Window (managed)..."); Cleanup(); }
+            Console.WriteLine("Disposing Win32Window (unmanaged)...");
+            if (_hwnd != IntPtr.Zero) { Console.WriteLine($"Destroying window {_hwnd} during Dispose..."); NativeMethods.DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
+            else { if (_gcHandle.IsAllocated) { Console.WriteLine("Freeing dangling GCHandle..."); _gcHandle.Free(); } }
+            _isDisposed = true; Console.WriteLine("Win32Window disposed.");
+        }
+    }
+    ~Win32Window() { Console.WriteLine("Win32Window Finalizer!"); Dispose(false); }
+}
+
+// Ensure MouseButton enum exists
+public enum MouseButton { Left, Right, Middle, XButton1, XButton2 }
+</file>
+
