@@ -1,5 +1,4 @@
-﻿// MODIFIED: InternalSliderLogic.cs
-// Summary: Updated UpdateAndDraw method signature (already done) and how HandleInput is called.
+﻿// Summary: UpdateAndDraw now checks the '!UI.nonSliderElementClaimedPress' flag before executing the deferred track click value jump. HandleInput now calls the general 'UI.SetPotentialCaptorForFrame'.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -29,13 +28,15 @@ internal abstract class InternalSliderLogic
     protected Vector2 trackPosition;
     protected float trackMinBound;
     protected float trackMaxBound;
+    protected bool pendingTrackClickValueJump = false;
+    protected float trackClickPosition = 0f;
+    protected string GlobalId { get; private set; } = string.Empty;
 
     // --- Calculated Properties ---
     public Rect GlobalBounds => new(Position.X - Origin.X, Position.Y - Origin.Y, Size.X, Size.Y);
 
     // --- Abstract Methods ---
     protected abstract void CalculateTrackBounds();
-    // UpdateHoverStates can be simplified or removed if HandleInput does all hover logic
     protected abstract void UpdateHoverStates(Vector2 mousePos);
     protected abstract float HandleInput(string id, InputState input, float currentValue);
     protected abstract float ConvertPositionToValue(float position);
@@ -46,9 +47,11 @@ internal abstract class InternalSliderLogic
     // --- Common Logic ---
     internal float UpdateAndDraw(string id, InputState input, DrawingContext context, float currentValue)
     {
+        GlobalId = id;
         trackPosition = Position - Origin;
         CalculateTrackBounds();
 
+        pendingTrackClickValueJump = false;
         float newValue = currentValue;
 
         if (Disabled)
@@ -56,14 +59,32 @@ internal abstract class InternalSliderLogic
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
+            if (UI.ActivelyPressedElementId == id) UI.ClearActivePress(id);
         }
         else
         {
-            // Hover states and potential target setting will now happen inside HandleInput
+            // HandleInput sets potential target, calls SetPotentialCaptorForFrame,
+            // sets pendingTrackClickValueJump, and returns value updated by DRAG.
             newValue = HandleInput(id, input, currentValue);
         }
 
-        // Update grabber theme based on the state set *within* HandleInput
+        // Deferred Track Click Value Jump Check
+        // Check if:
+        // 1. A track click was initiated earlier (pending flag is true)
+        // 2. This slider ended up being the final input captor for the frame
+        // 3. A non-slider element (button) processed LATER did NOT claim the press
+        if (pendingTrackClickValueJump && UI.InputCaptorId == id && !UI.nonSliderElementClaimedPress)
+        {
+            // Perform the value jump calculation now
+            newValue = ConvertPositionToValue(trackClickPosition);
+            newValue = ApplyStep(newValue);
+            newValue = Math.Clamp(newValue, MinValue, MaxValue);
+        }
+        // Always reset flag after check
+        pendingTrackClickValueJump = false;
+
+
+        // Update visual style based on final state
         UpdateGrabberThemeStyle();
 
         if (context.RenderTarget is null)
@@ -72,6 +93,7 @@ internal abstract class InternalSliderLogic
             return newValue;
         }
 
+        // --- Drawing ---
         try
         {
             DrawBackground(context.RenderTarget);
@@ -91,7 +113,6 @@ internal abstract class InternalSliderLogic
     }
 
     // --- Helper Methods ---
-    // No changes needed
     protected float ApplyStep(float value)
     {
         float clampedValue = Math.Clamp(value, MinValue, MaxValue);
@@ -115,11 +136,12 @@ internal abstract class InternalSliderLogic
 
     protected void UpdateGrabberThemeStyle()
     {
+        isGrabberPressed = UI.ActivelyPressedElementId == GlobalId;
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
+
     // --- Drawing Methods ---
-    // No changes needed
     protected void DrawBackground(ID2D1RenderTarget renderTarget)
     {
         UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);

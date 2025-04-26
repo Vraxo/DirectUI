@@ -1,4 +1,4 @@
-﻿// Summary: Introduced dragInProgressFromPreviousFrame flag, set in BeginFrame. This flag is used in widgets to prevent interference with existing drags while allowing correct capture overwriting for new presses within the same frame.
+﻿// Summary: Added 'nonSliderElementClaimedPress' flag. Reset in BeginFrame. Widgets will use this to coordinate press handling between sliders and other elements like buttons.
 using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
@@ -28,8 +28,9 @@ public static class UI
     private static string? inputCaptorId = null;
     private static string? potentialInputTargetId = null;
     private static string? activelyPressedElementId = null;
-    // Flag to indicate if a drag was already ongoing when the frame started
-    internal static bool dragInProgressFromPreviousFrame = false; // Made internal for widget access
+    internal static bool dragInProgressFromPreviousFrame = false;
+    // NEW FLAG: Tracks if a non-slider element (like a button) claimed the press event this frame.
+    internal static bool nonSliderElementClaimedPress = false;
 
     // --- Public/Internal Properties ---
     public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
@@ -47,21 +48,18 @@ public static class UI
         currentInputState = input;
         containerStack.Clear();
 
-        // Determine if drag was active *before* this frame's processing begins
-        // This depends on the state *persisted* in activelyPressedElementId from the END of the last frame.
         dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
 
         // Reset FRAME-SPECIFIC flags
         captureAttemptedThisFrame = false;
         inputCaptorId = null;
         potentialInputTargetId = null;
+        nonSliderElementClaimedPress = false; // Reset the new flag
 
-        // Reset PERSISTENT active state ONLY if mouse is UP
         if (!input.IsLeftMouseDown)
         {
             activelyPressedElementId = null;
         }
-        // If mouse IS down, activelyPressedElementId persists, and dragInProgressFromPreviousFrame will be true.
     }
 
     public static void EndFrame()
@@ -87,19 +85,25 @@ public static class UI
         potentialInputTargetId = id;
     }
 
-    /// <summary>
-    /// Called by elements attempting to capture a *new* press event this frame.
-    /// Overwrites any previous potential captor from earlier in the frame.
-    /// Assumes the calling element has already verified it's the current PotentialInputTargetId
-    /// and that no drag was in progress from a previous frame.
-    /// </summary>
     internal static void SetPotentialCaptorForFrame(string id)
     {
-        // This should only be called if dragInProgressFromPreviousFrame is false.
+        // This method is now primarily called by sliders or other non-button widgets.
+        // Buttons will call the new method below.
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
-        activelyPressedElementId = id; // Tentatively set active element for this frame.
+        activelyPressedElementId = id;
+        // DO NOT set nonSliderElementClaimedPress here.
     }
+
+    // New method specifically for buttons (or similar priority elements)
+    internal static void SetButtonPotentialCaptorForFrame(string id)
+    {
+        captureAttemptedThisFrame = true;
+        inputCaptorId = id;             // Overwrite previous captor
+        activelyPressedElementId = id; // Set as active
+        nonSliderElementClaimedPress = true; // Mark that a button claimed it
+    }
+
 
     internal static void ClearActivePress(string id)
     {
@@ -185,7 +189,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        bool clicked = buttonInstance.Update(id);
+        bool clicked = buttonInstance.Update(id); // Button.Update will call SetButtonPotentialCaptorForFrame
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(buttonInstance.Size);
@@ -209,7 +213,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
@@ -233,7 +237,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);

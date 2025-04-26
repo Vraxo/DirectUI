@@ -1,4 +1,4 @@
-﻿// Summary: Changed the press condition to check '!UI.dragInProgressFromPreviousFrame' instead of complicated active element checks.
+﻿// Summary: Changed the press handling logic to call the new 'UI.SetButtonPotentialCaptorForFrame' method.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -89,21 +89,16 @@ public class Button
             // 3. Handle Mouse Press Attempt (Overwriting Logic)
             if (primaryActionPressedThisFrame)
             {
-                // Check if:
-                // a) This button is hovered
-                // b) This button is the *current* potential target
-                // c) A drag was NOT already in progress from a previous frame
+                // Check if hovered, is potential target, and no drag was already active.
                 if (IsHovering && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
                 {
-                    // Conditions met to potentially capture the press.
-                    // Mark this button as the latest potential captor (overwrites previous this frame).
-                    UI.SetPotentialCaptorForFrame(id);
+                    // Use the dedicated button method to claim potential capture AND set the flag.
+                    UI.SetButtonPotentialCaptorForFrame(id);
                 }
             }
 
             // 4. Determine CURRENT Visual Pressed State
-            // Button appears pressed if it is the element being actively held down.
-            // This state is now correctly set by the *last* element to call SetPotentialCaptorForFrame this frame.
+            // Visual state depends on whether this button is the globally active element.
             isPressed = (UI.ActivelyPressedElementId == id);
 
         } // End !Disabled block
@@ -128,6 +123,7 @@ public class Button
 
 
         // --- Final Click Determination ---
+        // Click happens if mode is Press AND this button was the final captor for the frame.
         if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == id)
         {
             wasClickedThisFrame = true;

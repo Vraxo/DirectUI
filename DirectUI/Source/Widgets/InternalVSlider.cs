@@ -1,4 +1,4 @@
-﻿// Summary: Changed the press condition to check '!UI.dragInProgressFromPreviousFrame'.
+﻿// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -42,110 +42,77 @@ internal class InternalVSliderLogic : InternalSliderLogic
         // 2. Handle Mouse Release
         if (UI.ActivelyPressedElementId == id && !input.IsLeftMouseDown)
         {
-            isGrabberPressed = false;
             UI.ClearActivePress(id);
         }
 
         // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            // Check if slider is hovered, is potential target, AND no drag was already happening.
             if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
+                // Use the general captor method (doesn't set the button flag)
                 UI.SetPotentialCaptorForFrame(id);
-                isGrabberPressed = true; // Local state activation
 
-                // Jump value if click was on track (not grabber)
                 if (isTrackHovered && !isGrabberHovered)
                 {
-                    float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-                    newValue = ConvertPositionToValue(clampedY);
-                    newValue = ApplyStep(newValue);
+                    pendingTrackClickValueJump = true;
+                    trackClickPosition = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
                 }
             }
         }
 
-        // 4. Handle Mouse Held/Drag (Checks current active element, which is correct)
+        // 4. Handle Mouse Held/Drag
         if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
         {
-            isGrabberPressed = true;
-
-            float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-            newValue = ConvertPositionToValue(clampedY);
-            newValue = ApplyStep(newValue);
-        }
-        // If mouse is up OR this slider is NOT the active element anymore, ensure local press state is false
-        else if (!input.IsLeftMouseDown || UI.ActivelyPressedElementId != id)
-        {
-            isGrabberPressed = false;
+            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            {
+                float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
+                newValue = ConvertPositionToValue(clampedY);
+                newValue = ApplyStep(newValue);
+                newValue = Math.Clamp(newValue, MinValue, MaxValue);
+            }
         }
 
-        return Math.Clamp(newValue, MinValue, MaxValue);
+        return newValue;
     }
 
     // --- Other methods unchanged ---
     protected override float ConvertPositionToValue(float position)
     {
         if (trackMaxBound <= trackMinBound) return MinValue;
-
         float normalized = (position - trackMinBound) / (trackMaxBound - trackMinBound);
         normalized = Math.Clamp(normalized, 0.0f, 1.0f);
-
-        if (Direction == VSliderDirection.BottomToTop)
-        {
-            normalized = 1.0f - normalized;
-        }
-
+        if (Direction == VSliderDirection.BottomToTop) { normalized = 1.0f - normalized; }
         float rawValue = MinValue + normalized * (MaxValue - MinValue);
         return rawValue;
     }
-
     protected override Vector2 CalculateGrabberPosition(float currentValue)
     {
         float valueRange = MaxValue - MinValue;
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0;
-
-        if (Direction == VSliderDirection.BottomToTop)
-        {
-            normalizedValue = 1.0f - normalizedValue;
-        }
-
+        if (Direction == VSliderDirection.BottomToTop) { normalizedValue = 1.0f - normalizedValue; }
         float trackHeight = Size.Y;
         float centerY = trackMinBound + normalizedValue * trackHeight;
-
         float yPos = centerY - (GrabberSize.Y / 2.0f);
         float xPos = trackPosition.X + (Size.X / 2.0f) - (GrabberSize.X / 2.0f);
-
         float minY = trackPosition.Y;
         float maxY = trackPosition.Y + Size.Y - GrabberSize.Y;
         if (maxY < minY) maxY = minY;
         yPos = Math.Clamp(yPos, minY, maxY);
-
         return new Vector2(xPos, yPos);
     }
-
     protected override void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue)
     {
         float valueRange = MaxValue - MinValue;
         if (valueRange <= 0 || renderTarget is null) return;
-
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0.0f;
         float foregroundHeight = Size.Y * normalizedValue;
-
         if (foregroundHeight <= 0.001f) return;
-
         Rect clipRect;
-        if (Direction == VSliderDirection.BottomToTop)
-        {
-            clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight);
-        }
-        else // TopToBottom
-        {
-            clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight);
-        }
-
+        if (Direction == VSliderDirection.BottomToTop) { clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight); }
+        else { clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight); }
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
         UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
