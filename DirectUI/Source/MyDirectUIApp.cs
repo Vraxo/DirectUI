@@ -44,7 +44,7 @@ public class MyDirectUIApp : Direct2DAppWindow
         // --- Special Theme ---
         // This initialization was already correct because it mainly set colors
         // after setting a global BorderLength = 0.0f.
-        specialButtonTheme = new ButtonStylePack()
+        specialButtonTheme = new()
         {
             Roundness = 0.5f,
             BorderLength = 0.0f, // Sets all borders to 0 for all states
@@ -58,14 +58,25 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         // --- Slider Themes ---
         // These seem correct as they set global properties and then modify specific states.
-        sliderTheme = new SliderStyle()
+        sliderTheme = new()
         {
-            Background = { Roundness = 0.2f, FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f), BorderLength = 0 },
-            Foreground = { Roundness = 0.2f, FillColor = DefaultTheme.Accent, BorderLength = 0 }
+            Background = 
+            { 
+                Roundness = 0.2f,
+                FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f),
+                BorderLength = 0 
+            },
+
+            Foreground = 
+            {
+                Roundness = 0.2f,
+                FillColor = DefaultTheme.Accent,
+                BorderLength = 0
+            }
         };
 
         // Slider Grabber Theme
-        sliderGrabberTheme = new ButtonStylePack()
+        sliderGrabberTheme = new()
         {
             Roundness = 0.5f,
             BorderLength = 1.0f, // Set all borders to 1.0f for all states
@@ -93,7 +104,7 @@ public class MyDirectUIApp : Direct2DAppWindow
         float windowHeight = GetClientRectSize().Height;
         float availableGridWidth = windowWidth - gridStartX - 50;
         float availableGridHeight = windowHeight - gridStartY - 50;
-        Vector2 gridAvailableSize = new Vector2(Math.Max(1, availableGridWidth), Math.Max(1, availableGridHeight));
+        Vector2 gridAvailableSize = new(float.Max(1, availableGridWidth), float.Max(1, availableGridHeight));
         int numberOfColumns = 3;
         Vector2 cellGap = new Vector2(10, 10);
 
@@ -110,9 +121,26 @@ public class MyDirectUIApp : Direct2DAppWindow
         gridSlider2 = UI.VSlider("GridSlider2", gridSlider2, new() { Size = new(20, 80), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
 
         // Row 3 (These use specialButtonTheme with BorderLength = 0)
-        UI.Button("GridBtn5", new() { Size = new(80, 25), Text = "Cell 7", Theme = specialButtonTheme }); // Should have 0 border
-        UI.Button("GridBtn6", new() { Size = new(120, 25), Text = "Cell 8 - Wider", Theme = specialButtonTheme }); // Should have 0 border
-        UI.Button("GridBtn7", new() { Size = new(80, 25), Text = "Cell 9", Theme = specialButtonTheme }); // Should have 0 border
+        UI.Button("GridBtn5", new() 
+        { 
+            Size = new(80, 25), 
+            Text = "Cell 7",
+            Theme = specialButtonTheme 
+        });
+
+        UI.Button("GridBtn6",new()
+        { 
+            Size = new(120, 25),
+            Text = "Cell 8 - Wider",
+            Theme = specialButtonTheme 
+        }); // Should have 0 border
+
+        UI.Button("GridBtn7", new() 
+        { 
+            Size = new(80, 25), 
+            Text = "Cell 9", 
+            Theme = specialButtonTheme 
+        }); // Should have 0 border
 
         UI.EndGridContainer();
 
