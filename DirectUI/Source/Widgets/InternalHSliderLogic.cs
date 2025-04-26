@@ -1,4 +1,4 @@
-﻿// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
+﻿// Summary: HandleInput now only returns a modified value if actively dragging. Otherwise returns currentValue. Sets pending flags as before.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -19,21 +19,19 @@ internal class InternalHSliderLogic : InternalSliderLogic
 
     protected override void UpdateHoverStates(Vector2 mousePos) { }
 
+    // Returns currentValue unless actively dragging this slider.
+    // Sets pendingTrackClickValueJump if track is pressed.
     protected override float HandleInput(string id, InputState input, float currentValue)
     {
-        float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
 
         // 1. Calculate Hover States & Set Potential Target
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
-
         Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
         isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
-
         bool isSliderHovered = isGrabberHovered || isTrackHovered;
-
         if (isSliderHovered)
         {
             UI.SetPotentialInputTarget(id);
@@ -50,13 +48,12 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
-                // Use the general captor method (doesn't set the button flag)
-                UI.SetPotentialCaptorForFrame(id);
-
+                UI.SetPotentialCaptorForFrame(id); // Attempt capture
                 if (isTrackHovered && !isGrabberHovered)
                 {
-                    pendingTrackClickValueJump = true;
-                    trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
+                    pendingTrackClickValueJump = true; // Mark pending jump
+                    trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound); // Store click pos
+                    // DO NOT MODIFY value here - return currentValue below
                 }
             }
         }
@@ -64,16 +61,21 @@ internal class InternalHSliderLogic : InternalSliderLogic
         // 4. Handle Mouse Held/Drag
         if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
         {
-            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            // If dragging (and not just starting a deferred jump), calculate and return the dragged value.
+            if (!pendingTrackClickValueJump)
             {
                 float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-                newValue = ConvertPositionToValue(clampedX);
-                newValue = ApplyStep(newValue);
-                newValue = Math.Clamp(newValue, MinValue, MaxValue);
+                float draggedValue = ConvertPositionToValue(clampedX);
+                draggedValue = ApplyStep(draggedValue);
+                draggedValue = Math.Clamp(draggedValue, MinValue, MaxValue);
+                return draggedValue; // Return the value modified by drag
             }
+            // If pending jump, fall through to return original currentValue
         }
 
-        return newValue;
+        // If not dragging, or pending jump, return the unmodified current value.
+        // The jump, if it happens, will be handled later in UpdateAndDraw.
+        return currentValue;
     }
 
     // --- Other methods unchanged ---
