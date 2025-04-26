@@ -1,4 +1,4 @@
-﻿// MyDirectUIApp.cs
+﻿// Summary: Changed the grid layout to place two HSliders next to each other in the second row to facilitate testing overlap on resize. Renamed gridSlider2 to gridSlider2H.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -13,41 +13,28 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly SliderStyle sliderTheme;
     private readonly ButtonStylePack sliderGrabberTheme;
     private float horizontalSliderValue = 0.5f;
-    private float verticalSliderValue = 0.25f;
-    private float nestedSliderValue = 0.75f;
+    private float verticalSliderValue = 0.25f; // Keep this for potential future use
+    private float nestedSliderValue = 0.75f; // Keep this for potential future use
     private float gridSlider1 = 0.1f;
-    private float gridSlider2 = 0.9f;
+    private float gridSlider2H = 0.9f; // Renamed for clarity, now horizontal
 
     public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
         : base(title, width, height)
     {
         // --- Button Theme (Corrected Initialization) ---
-        // 1. Create the pack with global settings
         buttonTheme = new ButtonStylePack()
         {
             Roundness = 0f,
-            BorderLength = 1.0f, // Sets all borders to 1.0f for ALL states initially
+            BorderLength = 1.0f,
             FontSize = 14f,
         };
-
-        // 2. NOW modify the existing Normal instance
         buttonTheme.Normal.BorderLengthBottom = 10.0f;
-        // Now, buttonTheme.Normal should have:
-        // - BorderLengthTop = 1.0f (from global setter)
-        // - BorderLengthRight = 1.0f (from global setter)
-        // - BorderLengthBottom = 10.0f (from explicit override)
-        // - BorderLengthLeft = 1.0f (from global setter)
-        // - Roundness = 0.0f (from global setter)
-        // - FontSize = 14f (from global setter)
-        // - Default Fill/Border/Font colors (from ButtonStylePack constructor defaults)
 
         // --- Special Theme ---
-        // This initialization was already correct because it mainly set colors
-        // after setting a global BorderLength = 0.0f.
         specialButtonTheme = new()
         {
             Roundness = 0.5f,
-            BorderLength = 0.0f, // Sets all borders to 0 for all states
+            BorderLength = 0.0f,
             FontSize = 14f,
             FontWeight = FontWeight.Bold,
             Normal = { FillColor = new Color4(0.3f, 0.5f, 0.3f, 1.0f), BorderColor = Colors.Transparent },
@@ -57,17 +44,15 @@ public class MyDirectUIApp : Direct2DAppWindow
         };
 
         // --- Slider Themes ---
-        // These seem correct as they set global properties and then modify specific states.
         sliderTheme = new()
         {
-            Background = 
-            { 
+            Background =
+            {
                 Roundness = 0.2f,
                 FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f),
-                BorderLength = 0 
+                BorderLength = 0
             },
-
-            Foreground = 
+            Foreground =
             {
                 Roundness = 0.2f,
                 FillColor = DefaultTheme.Accent,
@@ -75,11 +60,10 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
         };
 
-        // Slider Grabber Theme
         sliderGrabberTheme = new()
         {
             Roundness = 0.5f,
-            BorderLength = 1.0f, // Set all borders to 1.0f for all states
+            BorderLength = 1.0f,
             Normal = { FillColor = new Color4(0.6f, 0.6f, 0.65f, 1.0f), BorderColor = new Color4(0.8f, 0.8f, 0.8f, 1.0f) },
             Hover = { FillColor = new Color4(0.75f, 0.75f, 0.8f, 1.0f), BorderColor = Colors.WhiteSmoke },
             Pressed = { FillColor = Colors.WhiteSmoke, BorderColor = DefaultTheme.Accent }
@@ -92,7 +76,6 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         // --- HBox with Buttons (Top Row) ---
         UI.BeginHBoxContainer("ActionButtons", new Vector2(50, 50), gap: 10.0f);
-        // These buttons use 'buttonTheme'. When not hovered/pressed, they should now show the 10px bottom border correctly.
         if (UI.Button("OkButton", new() { Size = new(84, 28), Text = "OK", Theme = buttonTheme })) { backgroundColor = Colors.DarkSlateGray; Invalidate(); }
         if (UI.Button("CancelButton", new() { Size = new(84, 28), Text = "Cancel", Theme = buttonTheme })) { /* log */ }
         UI.EndHBoxContainer();
@@ -110,37 +93,24 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         UI.BeginGridContainer("MainGrid", new Vector2(gridStartX, gridStartY), gridAvailableSize, numberOfColumns, cellGap);
 
+        // --- Grid Content ---
+
         // Row 1
-        UI.Button("GridBtn1", new() { Size = new(100, 30), Text = "Grid Cell 1", Theme = buttonTheme }); // Should have 10px bottom border
+        UI.Button("GridBtn1", new() { Size = new(100, 30), Text = "Grid Cell 1", Theme = buttonTheme });
+        UI.Button("GridBtnA", new() { Size = new(100, 30), Text = "Grid Cell 2", Theme = buttonTheme });
+        UI.Button("GridBtnB", new() { Size = new(100, 30), Text = "Grid Cell 3", Theme = buttonTheme });
+
+
+        // Row 2: Two HSliders next to each other
         gridSlider1 = UI.HSlider("GridSlider1", gridSlider1, new() { Size = new(150, 20), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
-        UI.Button("GridBtn2", new() { Size = new(100, 30), Text = "Grid Cell 3", Theme = buttonTheme }); // Should have 10px bottom border
+        gridSlider2H = UI.HSlider("GridSlider2H", gridSlider2H, new() { Size = new(150, 20), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme }); // Changed to HSlider
+        UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 6", Theme = buttonTheme });
 
-        // Row 2
-        UI.Button("GridBtn3", new() { Size = new(100, 50), Text = "Taller Button", Theme = buttonTheme }); // Should have 10px bottom border
-        UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 5", Theme = buttonTheme }); // Should have 10px bottom border
-        gridSlider2 = UI.VSlider("GridSlider2", gridSlider2, new() { Size = new(20, 80), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
 
-        // Row 3 (These use specialButtonTheme with BorderLength = 0)
-        UI.Button("GridBtn5", new() 
-        { 
-            Size = new(80, 25), 
-            Text = "Cell 7",
-            Theme = specialButtonTheme 
-        });
-
-        UI.Button("GridBtn6",new()
-        { 
-            Size = new(120, 25),
-            Text = "Cell 8 - Wider",
-            Theme = specialButtonTheme 
-        }); // Should have 0 border
-
-        UI.Button("GridBtn7", new() 
-        { 
-            Size = new(80, 25), 
-            Text = "Cell 9", 
-            Theme = specialButtonTheme 
-        }); // Should have 0 border
+        // Row 3 (Special buttons)
+        UI.Button("GridBtn7", new() { Size = new(80, 25), Text = "Cell 7", Theme = specialButtonTheme });
+        UI.Button("GridBtn8", new() { Size = new(120, 25), Text = "Cell 8 - Wider", Theme = specialButtonTheme });
+        UI.Button("GridBtn9", new() { Size = new(80, 25), Text = "Cell 9", Theme = specialButtonTheme });
 
         UI.EndGridContainer();
 
