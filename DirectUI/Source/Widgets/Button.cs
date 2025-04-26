@@ -1,12 +1,12 @@
-﻿// Summary: Changed the press handling logic to call the new 'UI.SetButtonPotentialCaptorForFrame' method.
+﻿// Widgets/Button.cs
+namespace DirectUI;
+
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
 using Vortice.Direct2D1;
 using SharpGen.Runtime;
-
-namespace DirectUI;
 
 public class Button
 {
@@ -28,9 +28,7 @@ public class Button
     public bool Disabled { get; set; } = false;
     public object? UserData { get; set; } = null;
 
-    // Internal state managed locally
     public bool IsHovering { get; internal set; } = false;
-    private bool isPressed = false;
 
     public Rect GlobalBounds
     {
@@ -40,90 +38,112 @@ public class Button
             float y = Position.Y - Origin.Y;
             float width = Math.Max(0, Size.X);
             float height = Math.Max(0, Size.Y);
-            var calculatedBounds = new Rect(x, y, width, height);
+            Rect calculatedBounds = new(x, y, width, height);
+
             return calculatedBounds;
         }
     }
 
-    // --- Main Update Method ---
+    private bool isPressed = false;
+
+
     internal bool Update(string id)
     {
         ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
         IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
         InputState input = UI.CurrentInputState;
 
-        if (renderTarget is null || dwriteFactory is null) return false;
+        if (renderTarget is null || dwriteFactory is null)
+        {
+            return false;
+        }
 
         bool wasClickedThisFrame = false;
-        isPressed = false;
+
+        isPressed = false; // Reset visual pressed state for the frame
 
         if (Disabled)
         {
             IsHovering = false;
-            if (UI.ActivelyPressedElementId == id) UI.ClearActivePress(id);
+            if (UI.ActivelyPressedElementId == id)
+            {
+                UI.ClearActivePress(id);
+            }
         }
-        else
+        else // Element is Enabled
         {
-            // 1. Check Hover State & Set Potential Target
             Rect bounds = GlobalBounds;
+
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+
             if (IsHovering)
             {
                 UI.SetPotentialInputTarget(id);
             }
 
-            // Relevant Input States
+            // Determine relevant actions based on behavior
             bool primaryActionHeld = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.IsLeftMouseDown;
             bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
+            // Add Right button logic here if Behavior.Right/Both is implemented fully
 
-            // 2. Handle Mouse Release Logic
+            // Handle Release Action
             if (!primaryActionHeld && UI.ActivelyPressedElementId == id)
             {
                 if (IsHovering && LeftClickActionMode is ActionMode.Release)
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(id);
+                UI.ClearActivePress(id); // Clear press regardless of hover on release
             }
 
-            // 3. Handle Mouse Press Attempt (Overwriting Logic)
+            // Handle Press Attempt (potential capture)
             if (primaryActionPressedThisFrame)
             {
-                // Check if hovered, is potential target, and no drag was already active.
+                // Can only capture press if hovered, it's the potential target, and no drag was already in progress from a previous frame
                 if (IsHovering && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
                 {
-                    // Use the dedicated button method to claim potential capture AND set the flag.
+                    // Attempt to capture input - this overwrites previous captors for the frame
                     UI.SetButtonPotentialCaptorForFrame(id);
                 }
             }
 
-            // 4. Determine CURRENT Visual Pressed State
-            // Visual state depends on whether this button is the globally active element.
+            // Determine visual pressed state for this frame (is it the element currently held down?)
             isPressed = (UI.ActivelyPressedElementId == id);
 
-        } // End !Disabled block
+        } // End Enabled block
 
         // --- Update Style & Size ---
-        UpdateStyle();
-        PerformAutoWidth(dwriteFactory);
+        UpdateStyle(); // Update based on IsHovering, isPressed, Disabled
+        PerformAutoWidth(dwriteFactory); // Adjust size if needed
 
         // --- Drawing ---
         try
         {
-            if (GlobalBounds.Width > 0 && GlobalBounds.Height > 0)
+            Rect currentBounds = GlobalBounds; // Recalculate in case AutoWidth changed it
+
+            if (currentBounds.Width > 0 && currentBounds.Height > 0)
             {
                 DrawBackground(renderTarget);
                 DrawText(renderTarget, dwriteFactory);
             }
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
-        { Console.WriteLine($"Render target needs recreation: {ex.Message}"); UI.CleanupResources(); return false; }
+        {
+            // Retained log message for recoverable graphics issue.
+            Console.WriteLine($"Render target needs recreation during Button draw: {ex.Message}");
+            UI.CleanupResources(); // Clear brushes which are now invalid
+            return false; // Cannot continue drawing
+        }
         catch (Exception ex)
-        { Console.WriteLine($"Error drawing button: {ex}"); return false; }
+        {
+            // Retained log message for unexpected error.
+            Console.WriteLine($"Error drawing button {id}: {ex}");
+            return false; // Indicate error
+        }
 
 
-        // --- Final Click Determination ---
-        // Click happens if mode is Press AND this button was the final captor for the frame.
+        // --- Final Click Determination (for Press mode) ---
+        // Click happens now if mode is Press AND this button was the final input captor for the frame.
         if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == id)
         {
             wasClickedThisFrame = true;
@@ -132,8 +152,6 @@ public class Button
         return wasClickedThisFrame;
     }
 
-
-    // --- Internal Logic Methods ---
     internal void UpdateStyle()
     {
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
@@ -141,54 +159,167 @@ public class Button
 
     internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
     {
-        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null) return Vector2.Zero;
+        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null)
+        {
+            return Vector2.Zero;
+        }
+
         IDWriteTextFormat? textFormat = null;
+
         try
         {
-            ButtonStyle style = Themes.Current;
-            textFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (textFormat is null) { Console.WriteLine("Warning: Failed to create TextFormat for measurement."); return Vector2.Zero; }
-            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, float.MaxValue, float.MaxValue);
+            ButtonStyle style = Themes.Current; // Assume Themes and Current are not null due to check above/initialization
+
+            textFormat = dwriteFactory.CreateTextFormat(
+                style.FontName,
+                null, // font collection
+                style.FontWeight,
+                style.FontStyle,
+                style.FontStretch,
+                style.FontSize,
+                "en-us" // locale
+            );
+
+            if (textFormat is null)
+            {
+                // Retained log message for unexpected font system issue.
+                Console.WriteLine("Warning: Failed to create TextFormat for measurement.");
+                return Vector2.Zero;
+            }
+
+            // Use using for disposable TextLayout
+            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(
+                Text,
+                textFormat,
+                float.MaxValue, // Max width
+                float.MaxValue  // Max height
+            );
+
             TextMetrics textMetrics = textLayout.Metrics;
+
             return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
         }
-        catch (Exception ex) { Console.WriteLine($"Error measuring text: {ex.Message}"); return Vector2.Zero; }
-        finally { textFormat?.Dispose(); }
+        catch (Exception ex)
+        {
+            // Retained log message for unexpected error.
+            Console.WriteLine($"Error measuring text for button: {ex.Message}");
+            return Vector2.Zero;
+        }
+        finally
+        {
+            textFormat?.Dispose();
+        }
     }
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
     {
-        if (!AutoWidth || dwriteFactory is null) return;
-        Vector2 textSize = MeasureText(dwriteFactory); float desiredWidth = textSize.X + TextMargin.X * 2;
-        if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f) { Size = new Vector2(desiredWidth, Size.Y); }
-        else if (desiredWidth <= 0 && Size.X != 0) { /* Optional: Reset size or set MinWidth */ }
+        if (!AutoWidth || dwriteFactory is null)
+        {
+            return;
+        }
+
+        Vector2 textSize = MeasureText(dwriteFactory);
+        float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
+
+        // Use a small epsilon to avoid floating point jitter
+        if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f)
+        {
+            Size = new Vector2(desiredWidth, Size.Y);
+        }
+        else if (desiredWidth <= 0 && Size.X != 0)
+        {
+            // Optional: Handle case where text becomes empty - maybe reset to a MinWidth?
+            // For now, do nothing, keeping potentially previous non-zero width.
+        }
     }
 
-    // --- Drawing Methods ---
     private void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        Rect bounds = GlobalBounds; ButtonStyle? style = Themes?.Current;
-        if (style is null || bounds.Width <= 0 || bounds.Height <= 0) return;
+        Rect bounds = GlobalBounds;
+        ButtonStyle? style = Themes?.Current;
+
+        // Early exit if nothing to draw
+        if (style is null || bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
         UI.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
     }
 
     private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
     {
-        if (string.IsNullOrEmpty(Text)) return; ButtonStyle? style = Themes?.Current; if (style is null) return;
-        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor); if (textBrush is null) return;
+        // Early exits for common cases
+        if (string.IsNullOrEmpty(Text)) return;
+        ButtonStyle? style = Themes?.Current;
+        if (style is null) return;
+
+        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
+        if (textBrush is null) return; // Brush creation failed (error logged in GetOrCreateBrush)
+
         IDWriteTextFormat? textFormat = null;
         try
         {
-            textFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (textFormat is null) return;
-            textFormat.TextAlignment = TextAlignment.Horizontal switch { HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading, HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center, HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing, _ => Vortice.DirectWrite.TextAlignment.Leading };
-            textFormat.ParagraphAlignment = TextAlignment.Vertical switch { VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near, VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center, VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far, _ => Vortice.DirectWrite.ParagraphAlignment.Near };
-            Rect bounds = GlobalBounds; if (bounds.Width <= 0 || bounds.Height <= 0) return;
-            Rect layoutRect = bounds; layoutRect.Left += TextOffset.X; layoutRect.Top += TextOffset.Y;
-            renderTarget.DrawText(Text, textFormat, layoutRect, textBrush, DrawTextOptions.Clip);
+            textFormat = dwriteFactory.CreateTextFormat(
+                style.FontName,
+                null,
+                style.FontWeight,
+                style.FontStyle,
+                style.FontStretch,
+                style.FontSize,
+                "en-us"
+            );
+
+            if (textFormat is null) return; // Should not happen if MeasureText succeeded, but check anyway
+
+            // Apply Alignment
+            textFormat.TextAlignment = TextAlignment.Horizontal switch
+            {
+                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                _ => Vortice.DirectWrite.TextAlignment.Leading
+            };
+            textFormat.ParagraphAlignment = TextAlignment.Vertical switch
+            {
+                VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near,
+                VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center,
+                VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far,
+                _ => Vortice.DirectWrite.ParagraphAlignment.Near
+            };
+
+            Rect bounds = GlobalBounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0) return; // Avoid drawing in zero-size rect
+
+            // Apply offset to layout rectangle
+            Rect layoutRect = bounds;
+            layoutRect.Left += TextOffset.X;
+            layoutRect.Top += TextOffset.Y;
+            // Note: Width/Height remain the button's bounds for centering/alignment calculations within DrawText
+
+            renderTarget.DrawText(
+                Text,
+                textFormat,
+                layoutRect, // The area where text can be drawn
+                textBrush,
+                DrawTextOptions.Clip // Clip text to the layoutRect automatically
+            );
         }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code) { Console.WriteLine($"Text Draw failed (RecreateTarget): {ex.Message}."); textFormat = null; }
-        catch (Exception ex) { Console.WriteLine($"Error drawing button text: {ex.Message}"); }
-        finally { textFormat?.Dispose(); }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
+        {
+            // Retained log message for recoverable graphics issue.
+            Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
+            // Don't dispose textFormat here, it might be invalid anyway. Resource cleanup happens externally.
+            textFormat = null; // Ensure finally doesn't try to dispose potentially bad pointer
+        }
+        catch (Exception ex)
+        {
+            // Retained log message for unexpected error.
+            Console.WriteLine($"Error drawing button text: {ex.Message}");
+        }
+        finally
+        {
+            textFormat?.Dispose();
+        }
     }
 }

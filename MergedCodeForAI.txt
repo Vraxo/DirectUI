@@ -441,7 +441,7 @@ public readonly struct InputState
 </file>
 
 <file path="MyDirectUIApp.cs">
-// MyDirectUIApp.cs
+// Summary: Changed the grid layout to place two HSliders next to each other in the second row to facilitate testing overlap on resize. Renamed gridSlider2 to gridSlider2H.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -456,41 +456,28 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly SliderStyle sliderTheme;
     private readonly ButtonStylePack sliderGrabberTheme;
     private float horizontalSliderValue = 0.5f;
-    private float verticalSliderValue = 0.25f;
-    private float nestedSliderValue = 0.75f;
+    private float verticalSliderValue = 0.25f; // Keep this for potential future use
+    private float nestedSliderValue = 0.75f; // Keep this for potential future use
     private float gridSlider1 = 0.1f;
-    private float gridSlider2 = 0.9f;
+    private float gridSlider2H = 0.9f; // Renamed for clarity, now horizontal
 
     public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
         : base(title, width, height)
     {
         // --- Button Theme (Corrected Initialization) ---
-        // 1. Create the pack with global settings
         buttonTheme = new ButtonStylePack()
         {
             Roundness = 0f,
-            BorderLength = 1.0f, // Sets all borders to 1.0f for ALL states initially
+            BorderLength = 1.0f,
             FontSize = 14f,
         };
-
-        // 2. NOW modify the existing Normal instance
         buttonTheme.Normal.BorderLengthBottom = 10.0f;
-        // Now, buttonTheme.Normal should have:
-        // - BorderLengthTop = 1.0f (from global setter)
-        // - BorderLengthRight = 1.0f (from global setter)
-        // - BorderLengthBottom = 10.0f (from explicit override)
-        // - BorderLengthLeft = 1.0f (from global setter)
-        // - Roundness = 0.0f (from global setter)
-        // - FontSize = 14f (from global setter)
-        // - Default Fill/Border/Font colors (from ButtonStylePack constructor defaults)
 
         // --- Special Theme ---
-        // This initialization was already correct because it mainly set colors
-        // after setting a global BorderLength = 0.0f.
         specialButtonTheme = new()
         {
             Roundness = 0.5f,
-            BorderLength = 0.0f, // Sets all borders to 0 for all states
+            BorderLength = 0.0f,
             FontSize = 14f,
             FontWeight = FontWeight.Bold,
             Normal = { FillColor = new Color4(0.3f, 0.5f, 0.3f, 1.0f), BorderColor = Colors.Transparent },
@@ -500,17 +487,15 @@ public class MyDirectUIApp : Direct2DAppWindow
         };
 
         // --- Slider Themes ---
-        // These seem correct as they set global properties and then modify specific states.
         sliderTheme = new()
         {
-            Background = 
-            { 
+            Background =
+            {
                 Roundness = 0.2f,
                 FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f),
-                BorderLength = 0 
+                BorderLength = 0
             },
-
-            Foreground = 
+            Foreground =
             {
                 Roundness = 0.2f,
                 FillColor = DefaultTheme.Accent,
@@ -518,11 +503,10 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
         };
 
-        // Slider Grabber Theme
         sliderGrabberTheme = new()
         {
             Roundness = 0.5f,
-            BorderLength = 1.0f, // Set all borders to 1.0f for all states
+            BorderLength = 1.0f,
             Normal = { FillColor = new Color4(0.6f, 0.6f, 0.65f, 1.0f), BorderColor = new Color4(0.8f, 0.8f, 0.8f, 1.0f) },
             Hover = { FillColor = new Color4(0.75f, 0.75f, 0.8f, 1.0f), BorderColor = Colors.WhiteSmoke },
             Pressed = { FillColor = Colors.WhiteSmoke, BorderColor = DefaultTheme.Accent }
@@ -535,7 +519,6 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         // --- HBox with Buttons (Top Row) ---
         UI.BeginHBoxContainer("ActionButtons", new Vector2(50, 50), gap: 10.0f);
-        // These buttons use 'buttonTheme'. When not hovered/pressed, they should now show the 10px bottom border correctly.
         if (UI.Button("OkButton", new() { Size = new(84, 28), Text = "OK", Theme = buttonTheme })) { backgroundColor = Colors.DarkSlateGray; Invalidate(); }
         if (UI.Button("CancelButton", new() { Size = new(84, 28), Text = "Cancel", Theme = buttonTheme })) { /* log */ }
         UI.EndHBoxContainer();
@@ -553,37 +536,24 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         UI.BeginGridContainer("MainGrid", new Vector2(gridStartX, gridStartY), gridAvailableSize, numberOfColumns, cellGap);
 
+        // --- Grid Content ---
+
         // Row 1
-        UI.Button("GridBtn1", new() { Size = new(100, 30), Text = "Grid Cell 1", Theme = buttonTheme }); // Should have 10px bottom border
+        UI.Button("GridBtn1", new() { Size = new(100, 30), Text = "Grid Cell 1", Theme = buttonTheme });
+        UI.Button("GridBtnA", new() { Size = new(100, 30), Text = "Grid Cell 2", Theme = buttonTheme });
+        UI.Button("GridBtnB", new() { Size = new(100, 30), Text = "Grid Cell 3", Theme = buttonTheme });
+
+
+        // Row 2: Two HSliders next to each other
         gridSlider1 = UI.HSlider("GridSlider1", gridSlider1, new() { Size = new(150, 20), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
-        UI.Button("GridBtn2", new() { Size = new(100, 30), Text = "Grid Cell 3", Theme = buttonTheme }); // Should have 10px bottom border
+        gridSlider2H = UI.HSlider("GridSlider2H", gridSlider2H, new() { Size = new(150, 20), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme }); // Changed to HSlider
+        UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 6", Theme = buttonTheme });
 
-        // Row 2
-        UI.Button("GridBtn3", new() { Size = new(100, 50), Text = "Taller Button", Theme = buttonTheme }); // Should have 10px bottom border
-        UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 5", Theme = buttonTheme }); // Should have 10px bottom border
-        gridSlider2 = UI.VSlider("GridSlider2", gridSlider2, new() { Size = new(20, 80), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
 
-        // Row 3 (These use specialButtonTheme with BorderLength = 0)
-        UI.Button("GridBtn5", new() 
-        { 
-            Size = new(80, 25), 
-            Text = "Cell 7",
-            Theme = specialButtonTheme 
-        });
-
-        UI.Button("GridBtn6",new()
-        { 
-            Size = new(120, 25),
-            Text = "Cell 8 - Wider",
-            Theme = specialButtonTheme 
-        }); // Should have 0 border
-
-        UI.Button("GridBtn7", new() 
-        { 
-            Size = new(80, 25), 
-            Text = "Cell 9", 
-            Theme = specialButtonTheme 
-        }); // Should have 0 border
+        // Row 3 (Special buttons)
+        UI.Button("GridBtn7", new() { Size = new(80, 25), Text = "Cell 7", Theme = specialButtonTheme });
+        UI.Button("GridBtn8", new() { Size = new(120, 25), Text = "Cell 8 - Wider", Theme = specialButtonTheme });
+        UI.Button("GridBtn9", new() { Size = new(80, 25), Text = "Cell 9", Theme = specialButtonTheme });
 
         UI.EndGridContainer();
 
@@ -788,8 +758,7 @@ public class Program
 </file>
 
 <file path="UI.cs">
-// MODIFIED: UI.cs
-// Summary: Corrected input handling logic. SetPotentialInputTarget always updates potential target. TryCaptureInput validates against potential target and global state. ActivelyPressedElementId tracks held state. potentialInputTargetId is private.
+// Summary: Added 'nonSliderElementClaimedPress' flag. Reset in BeginFrame. Widgets will use this to coordinate press handling between sliders and other elements like buttons.
 using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
@@ -814,17 +783,22 @@ public static class UI
     private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
     private static readonly Stack<object> containerStack = new();
 
-    private static bool inputCapturedThisFrame = false; // True ONLY if a TryCaptureInput succeeded *this frame*. Reset every frame.
-    private static string? inputCaptorId = null;        // ID of the element that captured the press *this frame*. Reset every frame.
-    private static string? potentialInputTargetId = null; // ID of the last element hovered under the cursor this frame. Reset every frame.
-    private static string? activelyPressedElementId = null; // ID of the element currently being held down (persists across frames until release).
+    // Input State
+    private static bool captureAttemptedThisFrame = false;
+    private static string? inputCaptorId = null;
+    private static string? potentialInputTargetId = null;
+    private static string? activelyPressedElementId = null;
+    internal static bool dragInProgressFromPreviousFrame = false;
+    // NEW FLAG: Tracks if a non-slider element (like a button) claimed the press event this frame.
+    internal static bool nonSliderElementClaimedPress = false;
 
-    // --- Public Properties ---
+    // --- Public/Internal Properties ---
     public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
     public static IDWriteFactory? CurrentDWriteFactory => currentDWriteFactory;
     public static InputState CurrentInputState => currentInputState;
-    // Read-only access to the currently held element, useful for widgets.
     public static string? ActivelyPressedElementId => activelyPressedElementId;
+    public static string? InputCaptorId => inputCaptorId;
+    internal static string? PotentialInputTargetId => potentialInputTargetId;
 
     // --- Frame Management ---
     public static void BeginFrame(DrawingContext context, InputState input)
@@ -834,13 +808,15 @@ public static class UI
         currentInputState = input;
         containerStack.Clear();
 
+        dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
+
         // Reset FRAME-SPECIFIC flags
-        inputCapturedThisFrame = false;
+        captureAttemptedThisFrame = false;
         inputCaptorId = null;
         potentialInputTargetId = null;
+        nonSliderElementClaimedPress = false; // Reset the new flag
 
-        // Reset PERSISTENT active state ONLY if mouse is UP
-        if (!input.IsLeftMouseDown) // Assuming left mouse button focus
+        if (!input.IsLeftMouseDown)
         {
             activelyPressedElementId = null;
         }
@@ -859,70 +835,47 @@ public static class UI
 
     // --- Input Capture & Targeting ---
 
-    /// <summary>
-    /// Checks if input focus is currently held by any element (persists across frames).
-    /// Widgets should generally check this *before* attempting a new capture.
-    /// </summary>
     public static bool IsElementActive()
     {
         return activelyPressedElementId is not null;
     }
 
-    /// <summary>
-    /// Checks if input was captured by *any* element earlier *within the current frame*.
-    /// Used internally by TryCaptureInput.
-    /// </summary>
-    private static bool WasInputCapturedThisFrame() // Changed back to private, internal check
-    {
-        return inputCapturedThisFrame;
-    }
-
-
-    /// <summary>
-    /// Called by hovered elements to declare themselves as the current potential input target.
-    /// The last element processed that calls this in a frame becomes the target.
-    /// </summary>
     internal static void SetPotentialInputTarget(string id)
     {
-        // Always allow setting the potential target. Capture logic will verify later.
         potentialInputTargetId = id;
     }
 
-    /// <summary>
-    /// Attempts to capture a *new* press event for the element with the given ID.
-    /// Succeeds only if no element is actively pressed, no *other* element captured input this frame,
-    /// AND the calling element is the current potential target. Sets the actively pressed element on success.
-    /// </summary>
-    /// <returns>True if input was successfully captured by this element *this frame*, false otherwise.</returns>
-    internal static bool TryCaptureInput(string id)
+    internal static void SetPotentialCaptorForFrame(string id)
     {
-        // Can only capture a NEW press if:
-        // 1. Nothing is currently being held down (!IsElementActive())
-        // 2. No other element has already captured the press *this frame* (!WasInputCapturedThisFrame())
-        // 3. This specific element IS the last one that declared itself as potential target (potentialInputTargetId == id)
-        if (!IsElementActive() && !WasInputCapturedThisFrame() && potentialInputTargetId == id)
-        {
-            inputCapturedThisFrame = true; // Mark capture for this frame only
-            inputCaptorId = id;           // Record which element captured this frame's press
-            activelyPressedElementId = id; // Set as the element being actively held down
-            return true; // Successfully captured this frame
-        }
-        return false; // Failed to capture
+        // This method is now primarily called by sliders or other non-button widgets.
+        // Buttons will call the new method below.
+        captureAttemptedThisFrame = true;
+        inputCaptorId = id;
+        activelyPressedElementId = id;
+        // DO NOT set nonSliderElementClaimedPress here.
     }
 
-    /// <summary>
-    /// Clears the actively pressed element state. Called by the element upon detecting its release.
-    /// </summary>
+    // New method specifically for buttons (or similar priority elements)
+    internal static void SetButtonPotentialCaptorForFrame(string id)
+    {
+        captureAttemptedThisFrame = true;
+        inputCaptorId = id;             // Overwrite previous captor
+        activelyPressedElementId = id; // Set as active
+        nonSliderElementClaimedPress = true; // Mark that a button claimed it
+    }
+
+
     internal static void ClearActivePress(string id)
     {
-        // Only clear if the calling element is the one currently marked as active
         if (activelyPressedElementId == id)
         {
             activelyPressedElementId = null;
         }
     }
 
+
     // --- Containers ---
+    // No changes needed
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
         Vector2 startPosition = ApplyLayout(position);
@@ -979,6 +932,7 @@ public static class UI
     }
 
     // --- Widgets ---
+    // No changes needed
     public static bool Button(string id, ButtonDefinition definition)
     {
         if (!IsContextValid() || definition is null) return false;
@@ -995,7 +949,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        bool clicked = buttonInstance.Update(id);
+        bool clicked = buttonInstance.Update(id); // Button.Update will call SetButtonPotentialCaptorForFrame
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(buttonInstance.Size);
@@ -1019,7 +973,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
@@ -1043,7 +997,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
@@ -1052,6 +1006,7 @@ public static class UI
 
 
     // --- Helper Methods ---
+    // No changes needed
     private static bool IsContextValid()
     {
         if (CurrentRenderTarget is null || CurrentDWriteFactory is null) { Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid."); return false; }
@@ -1083,6 +1038,7 @@ public static class UI
 
 
     // --- Layout Helpers ---
+    // No changes needed
     private static Vector2 ApplyLayout(Vector2 defaultPosition) { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition; }
     private static void AdvanceLayout(Vector2 elementSize) { if (IsInLayoutContainer()) { AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y))); } }
     private static bool IsInLayoutContainer() => containerStack.Count > 0;
@@ -1107,6 +1063,7 @@ public static class UI
     }
 
     // --- Brush Cache ---
+    // No changes needed
     public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
     {
         if (CurrentRenderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
@@ -1123,6 +1080,7 @@ public static class UI
     }
 
     // --- Resource Cleanup ---
+    // No changes needed
     public static void CleanupResources()
     {
         Console.WriteLine("UI Resource Cleanup: Disposing cached brushes..."); int count = brushCache.Count;
@@ -1131,6 +1089,7 @@ public static class UI
     }
 
     // --- SHARED DRAWING HELPERS ---
+    // No changes needed
     internal static void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
     {
         if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0) return;
@@ -1731,8 +1690,7 @@ public class SliderStyle
 </file>
 
 <file path="Widgets\Button.cs">
-// CORRECTED: Button.cs
-// Summary: Correctly uses UI interaction states. Visual state (IsPressed) mirrors global active state for this button's ID. Capture attempt respects potential target.
+// Summary: Changed the press handling logic to call the new 'UI.SetButtonPotentialCaptorForFrame' method.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -1764,8 +1722,7 @@ public class Button
 
     // Internal state managed locally
     public bool IsHovering { get; internal set; } = false;
-    // IsPressed is now purely determined by the global active state below
-    private bool isPressed = false; // Internal field for UpdateStyle
+    private bool isPressed = false;
 
     public Rect GlobalBounds
     {
@@ -1789,9 +1746,8 @@ public class Button
 
         if (renderTarget is null || dwriteFactory is null) return false;
 
-        Rect bounds = GlobalBounds;
         bool wasClickedThisFrame = false;
-        isPressed = false; // Reset visual state assumption for the frame
+        isPressed = false;
 
         if (Disabled)
         {
@@ -1801,15 +1757,16 @@ public class Button
         else
         {
             // 1. Check Hover State & Set Potential Target
+            Rect bounds = GlobalBounds;
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (IsHovering)
             {
-                UI.SetPotentialInputTarget(id); // Declare potential target if hovered
+                UI.SetPotentialInputTarget(id);
             }
 
             // Relevant Input States
-            bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
             bool primaryActionHeld = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.IsLeftMouseDown;
+            bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
 
             // 2. Handle Mouse Release Logic
             if (!primaryActionHeld && UI.ActivelyPressedElementId == id)
@@ -1818,33 +1775,28 @@ public class Button
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(id); // Clear the global active state
+                UI.ClearActivePress(id);
             }
 
-            // 3. Handle Mouse Press Attempt
+            // 3. Handle Mouse Press Attempt (Overwriting Logic)
             if (primaryActionPressedThisFrame)
             {
-                // Only try capture if hovering *and* this element is the potential target *and* nothing is active/captured.
-                // TryCaptureInput handles the active/captured/potential checks internally.
-                if (IsHovering && UI.TryCaptureInput(id))
+                // Check if hovered, is potential target, and no drag was already active.
+                if (IsHovering && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
                 {
-                    // Successfully captured! This button is now the active element.
-                    // The visual state (isPressed) will be set correctly in step 4.
-                    if (LeftClickActionMode is ActionMode.Press)
-                    {
-                        wasClickedThisFrame = true; // Click happens on press
-                    }
+                    // Use the dedicated button method to claim potential capture AND set the flag.
+                    UI.SetButtonPotentialCaptorForFrame(id);
                 }
             }
 
             // 4. Determine CURRENT Visual Pressed State
-            // This button should appear pressed IF AND ONLY IF it is the active element globally.
+            // Visual state depends on whether this button is the globally active element.
             isPressed = (UI.ActivelyPressedElementId == id);
 
         } // End !Disabled block
 
         // --- Update Style & Size ---
-        UpdateStyle(); // Uses local IsHovering and the correctly determined isPressed
+        UpdateStyle();
         PerformAutoWidth(dwriteFactory);
 
         // --- Drawing ---
@@ -1861,13 +1813,21 @@ public class Button
         catch (Exception ex)
         { Console.WriteLine($"Error drawing button: {ex}"); return false; }
 
+
+        // --- Final Click Determination ---
+        // Click happens if mode is Press AND this button was the final captor for the frame.
+        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == id)
+        {
+            wasClickedThisFrame = true;
+        }
+
         return wasClickedThisFrame;
     }
+
 
     // --- Internal Logic Methods ---
     internal void UpdateStyle()
     {
-        // Uses the local IsHovering and the internal isPressed field managed within Update()
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
     }
 
@@ -1952,8 +1912,7 @@ public class ButtonDefinition
 </file>
 
 <file path="Widgets\InternalHSliderLogic.cs">
-// MODIFIED: InternalHSliderLogic.cs
-// Summary: Updated HandleInput to perform hover checks, call UI.SetPotentialInputTarget, and use UI.TryCaptureInput. Removed separate UpdateHoverStates call.
+// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -1972,7 +1931,6 @@ internal class InternalHSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.X + Size.X;
     }
 
-    // This can potentially be removed if HandleInput does all necessary hover updates
     protected override void UpdateHoverStates(Vector2 mousePos) { }
 
     protected override float HandleInput(string id, InputState input, float currentValue)
@@ -1983,136 +1941,92 @@ internal class InternalHSliderLogic : InternalSliderLogic
         // 1. Calculate Hover States & Set Potential Target
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
-        bool preciseGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
+        isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
 
-        Rect trackBounds = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
-        bool basicTrackHovered = trackBounds.Contains(mousePos.X, mousePos.Y);
+        Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
+        isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
 
-        // Update internal hover state fields used for theming
-        isGrabberHovered = preciseGrabberHovered;
-        isTrackHovered = basicTrackHovered; // Store basic track hover as well
+        bool isSliderHovered = isGrabberHovered || isTrackHovered;
 
-        // If hovered over grabber OR track, declare as potential target
-        if (isGrabberHovered || isTrackHovered)
+        if (isSliderHovered)
         {
             UI.SetPotentialInputTarget(id);
         }
 
         // 2. Handle Mouse Release
-        if (isGrabberPressed && !input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == id && !input.IsLeftMouseDown)
         {
-            isGrabberPressed = false;
+            UI.ClearActivePress(id);
         }
 
-        // 3. Handle Mouse Press
-        if (!isGrabberPressed && input.WasLeftMousePressedThisFrame)
+        // 3. Handle Mouse Press Attempt
+        if (input.WasLeftMousePressedThisFrame)
         {
-            // Check if *any* part of the slider (track or grabber) is hovered
-            bool isSliderHovered = isGrabberHovered || isTrackHovered;
-
-            if (isSliderHovered)
+            if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
-                // Try to capture input ONLY if this slider is the potential target
-                if (UI.TryCaptureInput(id))
-                {
-                    // Successfully captured!
-                    isGrabberPressed = true; // Always start press state
+                // Use the general captor method (doesn't set the button flag)
+                UI.SetPotentialCaptorForFrame(id);
 
-                    // If click was on track (not grabber), jump value immediately
-                    if (isTrackHovered && !isGrabberHovered)
-                    {
-                        float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-                        newValue = ConvertPositionToValue(clampedX);
-                        newValue = ApplyStep(newValue);
-                    }
-                    // No value change needed if click was directly on grabber
+                if (isTrackHovered && !isGrabberHovered)
+                {
+                    pendingTrackClickValueJump = true;
+                    trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
                 }
-                // else: Capture failed
             }
         }
 
         // 4. Handle Mouse Held/Drag
-        if (isGrabberPressed && input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
         {
-            isGrabberPressed = true; // Maintain state
-
-            float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-            newValue = ConvertPositionToValue(clampedX);
-            newValue = ApplyStep(newValue);
-        }
-        // Ensure consistency if mouse released
-        else if (!input.IsLeftMouseDown)
-        {
-            isGrabberPressed = false;
+            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            {
+                float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
+                newValue = ConvertPositionToValue(clampedX);
+                newValue = ApplyStep(newValue);
+                newValue = Math.Clamp(newValue, MinValue, MaxValue);
+            }
         }
 
-
-        return Math.Clamp(newValue, MinValue, MaxValue);
+        return newValue;
     }
 
     // --- Other methods unchanged ---
     protected override float ConvertPositionToValue(float position)
     {
         if (trackMaxBound <= trackMinBound) return MinValue;
-
         float normalized = (position - trackMinBound) / (trackMaxBound - trackMinBound);
         normalized = Math.Clamp(normalized, 0.0f, 1.0f);
-
-        if (Direction == HSliderDirection.RightToLeft)
-        {
-            normalized = 1.0f - normalized;
-        }
-
+        if (Direction == HSliderDirection.RightToLeft) { normalized = 1.0f - normalized; }
         float rawValue = MinValue + normalized * (MaxValue - MinValue);
         return rawValue;
     }
-
     protected override Vector2 CalculateGrabberPosition(float currentValue)
     {
         float valueRange = MaxValue - MinValue;
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0;
-
-        if (Direction == HSliderDirection.RightToLeft)
-        {
-            normalizedValue = 1.0f - normalizedValue;
-        }
-
+        if (Direction == HSliderDirection.RightToLeft) { normalizedValue = 1.0f - normalizedValue; }
         float trackWidth = Size.X;
         float centerX = trackMinBound + normalizedValue * trackWidth;
-
         float xPos = centerX - (GrabberSize.X / 2.0f);
         float yPos = trackPosition.Y + (Size.Y / 2.0f) - (GrabberSize.Y / 2.0f);
-
         float minX = trackPosition.X;
         float maxX = trackPosition.X + Size.X - GrabberSize.X;
         if (maxX < minX) maxX = minX;
         xPos = Math.Clamp(xPos, minX, maxX);
-
         return new Vector2(xPos, yPos);
     }
-
     protected override void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue)
     {
         float valueRange = MaxValue - MinValue;
         if (valueRange <= 0 || renderTarget is null) return;
-
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0.0f;
         float foregroundWidth = Size.X * normalizedValue;
-
         if (foregroundWidth <= 0.001f) return;
-
         Rect clipRect;
-        if (Direction == HSliderDirection.RightToLeft)
-        {
-            clipRect = new Rect(trackPosition.X + Size.X - foregroundWidth, trackPosition.Y, foregroundWidth, Size.Y);
-        }
-        else // LeftToRight
-        {
-            clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y);
-        }
-
+        if (Direction == HSliderDirection.RightToLeft) { clipRect = new Rect(trackPosition.X + Size.X - foregroundWidth, trackPosition.Y, foregroundWidth, Size.Y); }
+        else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
         UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
@@ -2121,8 +2035,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
 </file>
 
 <file path="Widgets\InternalSliderLogic.cs">
-// MODIFIED: InternalSliderLogic.cs
-// Summary: Updated UpdateAndDraw method signature (already done) and how HandleInput is called.
+// Summary: UpdateAndDraw now checks the '!UI.nonSliderElementClaimedPress' flag before executing the deferred track click value jump. HandleInput now calls the general 'UI.SetPotentialCaptorForFrame'.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -2152,13 +2065,15 @@ internal abstract class InternalSliderLogic
     protected Vector2 trackPosition;
     protected float trackMinBound;
     protected float trackMaxBound;
+    protected bool pendingTrackClickValueJump = false;
+    protected float trackClickPosition = 0f;
+    protected string GlobalId { get; private set; } = string.Empty;
 
     // --- Calculated Properties ---
     public Rect GlobalBounds => new(Position.X - Origin.X, Position.Y - Origin.Y, Size.X, Size.Y);
 
     // --- Abstract Methods ---
     protected abstract void CalculateTrackBounds();
-    // UpdateHoverStates can be simplified or removed if HandleInput does all hover logic
     protected abstract void UpdateHoverStates(Vector2 mousePos);
     protected abstract float HandleInput(string id, InputState input, float currentValue);
     protected abstract float ConvertPositionToValue(float position);
@@ -2169,9 +2084,11 @@ internal abstract class InternalSliderLogic
     // --- Common Logic ---
     internal float UpdateAndDraw(string id, InputState input, DrawingContext context, float currentValue)
     {
+        GlobalId = id;
         trackPosition = Position - Origin;
         CalculateTrackBounds();
 
+        pendingTrackClickValueJump = false;
         float newValue = currentValue;
 
         if (Disabled)
@@ -2179,14 +2096,32 @@ internal abstract class InternalSliderLogic
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
+            if (UI.ActivelyPressedElementId == id) UI.ClearActivePress(id);
         }
         else
         {
-            // Hover states and potential target setting will now happen inside HandleInput
+            // HandleInput sets potential target, calls SetPotentialCaptorForFrame,
+            // sets pendingTrackClickValueJump, and returns value updated by DRAG.
             newValue = HandleInput(id, input, currentValue);
         }
 
-        // Update grabber theme based on the state set *within* HandleInput
+        // Deferred Track Click Value Jump Check
+        // Check if:
+        // 1. A track click was initiated earlier (pending flag is true)
+        // 2. This slider ended up being the final input captor for the frame
+        // 3. A non-slider element (button) processed LATER did NOT claim the press
+        if (pendingTrackClickValueJump && UI.InputCaptorId == id && !UI.nonSliderElementClaimedPress)
+        {
+            // Perform the value jump calculation now
+            newValue = ConvertPositionToValue(trackClickPosition);
+            newValue = ApplyStep(newValue);
+            newValue = Math.Clamp(newValue, MinValue, MaxValue);
+        }
+        // Always reset flag after check
+        pendingTrackClickValueJump = false;
+
+
+        // Update visual style based on final state
         UpdateGrabberThemeStyle();
 
         if (context.RenderTarget is null)
@@ -2195,6 +2130,7 @@ internal abstract class InternalSliderLogic
             return newValue;
         }
 
+        // --- Drawing ---
         try
         {
             DrawBackground(context.RenderTarget);
@@ -2214,7 +2150,6 @@ internal abstract class InternalSliderLogic
     }
 
     // --- Helper Methods ---
-    // No changes needed
     protected float ApplyStep(float value)
     {
         float clampedValue = Math.Clamp(value, MinValue, MaxValue);
@@ -2238,11 +2173,12 @@ internal abstract class InternalSliderLogic
 
     protected void UpdateGrabberThemeStyle()
     {
+        isGrabberPressed = UI.ActivelyPressedElementId == GlobalId;
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
+
     // --- Drawing Methods ---
-    // No changes needed
     protected void DrawBackground(ID2D1RenderTarget renderTarget)
     {
         UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
@@ -2257,8 +2193,7 @@ internal abstract class InternalSliderLogic
 </file>
 
 <file path="Widgets\InternalVSlider.cs">
-// MODIFIED: InternalVSliderLogic.cs
-// Summary: Updated HandleInput to perform hover checks, call UI.SetPotentialInputTarget, and use UI.TryCaptureInput. Removed separate UpdateHoverStates call.
+// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -2277,7 +2212,6 @@ internal class InternalVSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.Y + Size.Y;
     }
 
-    // This can potentially be removed if HandleInput does all necessary hover updates
     protected override void UpdateHoverStates(Vector2 mousePos) { }
 
     protected override float HandleInput(string id, InputState input, float currentValue)
@@ -2288,125 +2222,92 @@ internal class InternalVSliderLogic : InternalSliderLogic
         // 1. Calculate Hover States & Set Potential Target
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
-        bool preciseGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
+        isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
 
-        Rect trackBounds = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
-        bool basicTrackHovered = trackBounds.Contains(mousePos.X, mousePos.Y);
+        Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
+        isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
 
-        isGrabberHovered = preciseGrabberHovered;
-        isTrackHovered = basicTrackHovered;
+        bool isSliderHovered = isGrabberHovered || isTrackHovered;
 
-        if (isGrabberHovered || isTrackHovered)
+        if (isSliderHovered)
         {
             UI.SetPotentialInputTarget(id);
         }
 
         // 2. Handle Mouse Release
-        if (isGrabberPressed && !input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == id && !input.IsLeftMouseDown)
         {
-            isGrabberPressed = false;
+            UI.ClearActivePress(id);
         }
 
-        // 3. Handle Mouse Press
-        if (!isGrabberPressed && input.WasLeftMousePressedThisFrame)
+        // 3. Handle Mouse Press Attempt
+        if (input.WasLeftMousePressedThisFrame)
         {
-            bool isSliderHovered = isGrabberHovered || isTrackHovered;
-
-            if (isSliderHovered)
+            if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
-                if (UI.TryCaptureInput(id))
+                // Use the general captor method (doesn't set the button flag)
+                UI.SetPotentialCaptorForFrame(id);
+
+                if (isTrackHovered && !isGrabberHovered)
                 {
-                    isGrabberPressed = true;
-                    if (isTrackHovered && !isGrabberHovered)
-                    {
-                        float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-                        newValue = ConvertPositionToValue(clampedY);
-                        newValue = ApplyStep(newValue);
-                    }
+                    pendingTrackClickValueJump = true;
+                    trackClickPosition = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
                 }
             }
         }
 
         // 4. Handle Mouse Held/Drag
-        if (isGrabberPressed && input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
         {
-            isGrabberPressed = true;
-
-            float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-            newValue = ConvertPositionToValue(clampedY);
-            newValue = ApplyStep(newValue);
-        }
-        else if (!input.IsLeftMouseDown)
-        {
-            isGrabberPressed = false;
+            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            {
+                float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
+                newValue = ConvertPositionToValue(clampedY);
+                newValue = ApplyStep(newValue);
+                newValue = Math.Clamp(newValue, MinValue, MaxValue);
+            }
         }
 
-        return Math.Clamp(newValue, MinValue, MaxValue);
+        return newValue;
     }
 
     // --- Other methods unchanged ---
     protected override float ConvertPositionToValue(float position)
     {
         if (trackMaxBound <= trackMinBound) return MinValue;
-
         float normalized = (position - trackMinBound) / (trackMaxBound - trackMinBound);
         normalized = Math.Clamp(normalized, 0.0f, 1.0f);
-
-        if (Direction == VSliderDirection.BottomToTop)
-        {
-            normalized = 1.0f - normalized;
-        }
-
+        if (Direction == VSliderDirection.BottomToTop) { normalized = 1.0f - normalized; }
         float rawValue = MinValue + normalized * (MaxValue - MinValue);
         return rawValue;
     }
-
     protected override Vector2 CalculateGrabberPosition(float currentValue)
     {
         float valueRange = MaxValue - MinValue;
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0;
-
-        if (Direction == VSliderDirection.BottomToTop)
-        {
-            normalizedValue = 1.0f - normalizedValue;
-        }
-
+        if (Direction == VSliderDirection.BottomToTop) { normalizedValue = 1.0f - normalizedValue; }
         float trackHeight = Size.Y;
         float centerY = trackMinBound + normalizedValue * trackHeight;
-
         float yPos = centerY - (GrabberSize.Y / 2.0f);
         float xPos = trackPosition.X + (Size.X / 2.0f) - (GrabberSize.X / 2.0f);
-
         float minY = trackPosition.Y;
         float maxY = trackPosition.Y + Size.Y - GrabberSize.Y;
         if (maxY < minY) maxY = minY;
         yPos = Math.Clamp(yPos, minY, maxY);
-
         return new Vector2(xPos, yPos);
     }
-
     protected override void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue)
     {
         float valueRange = MaxValue - MinValue;
         if (valueRange <= 0 || renderTarget is null) return;
-
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0.0f;
         float foregroundHeight = Size.Y * normalizedValue;
-
         if (foregroundHeight <= 0.001f) return;
-
         Rect clipRect;
-        if (Direction == VSliderDirection.BottomToTop)
-        {
-            clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight);
-        }
-        else // TopToBottom
-        {
-            clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight);
-        }
-
+        if (Direction == VSliderDirection.BottomToTop) { clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight); }
+        else { clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight); }
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
         UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();

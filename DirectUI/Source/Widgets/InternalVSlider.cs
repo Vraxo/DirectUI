@@ -1,4 +1,4 @@
-﻿// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
+﻿// Summary: Press handling now calls the new 'UI.SetButtonPotentialCaptorForFrame' method. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -50,8 +50,11 @@ internal class InternalVSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
-                // Use the general captor method (doesn't set the button flag)
-                UI.SetPotentialCaptorForFrame(id);
+                // --- CHANGE HERE ---
+                // Use the dedicated button method to claim potential capture AND set the flag.
+                // This makes slider capture behavior identical to button capture behavior.
+                UI.SetButtonPotentialCaptorForFrame(id);
+                // --- END CHANGE ---
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
