@@ -1,4 +1,5 @@
-﻿// Summary: Changed the grid layout to place two HSliders next to each other in the second row to facilitate testing overlap on resize. Renamed gridSlider2 to gridSlider2H.
+﻿// MODIFIED: MyDirectUIApp.cs
+// Summary: Applied user's change to buttonTheme initialization.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -21,19 +22,20 @@ public class MyDirectUIApp : Direct2DAppWindow
     public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
         : base(title, width, height)
     {
-        // --- Button Theme (Corrected Initialization) ---
+        // --- Button Theme (User's version from prompt) ---
         buttonTheme = new ButtonStylePack()
         {
-            Roundness = 0f,
-            BorderLength = 1.0f,
+            Roundness = 1f, // Changed from 0f
+            BorderLength = 1.0f, // Sets all 4 sides initially
             FontSize = 14f,
+            Normal = { BorderLengthBottom = 10 } // Specific override
         };
-        buttonTheme.Normal.BorderLengthBottom = 10.0f;
+        // Note: The explicit Normal assignment might override the general BorderLength = 1.0f for the Normal state's bottom border.
 
         // --- Special Theme ---
         specialButtonTheme = new()
         {
-            Roundness = 0.5f,
+            Roundness = 1f,
             BorderLength = 0.0f,
             FontSize = 14f,
             FontWeight = FontWeight.Bold,
@@ -50,20 +52,20 @@ public class MyDirectUIApp : Direct2DAppWindow
             {
                 Roundness = 0.2f,
                 FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f),
-                BorderLength = 0
+                BorderLength = 0 // Uses new property
             },
             Foreground =
             {
                 Roundness = 0.2f,
                 FillColor = DefaultTheme.Accent,
-                BorderLength = 0
+                BorderLength = 0 // Uses new property
             }
         };
 
         sliderGrabberTheme = new()
         {
             Roundness = 0.5f,
-            BorderLength = 1.0f,
+            BorderLength = 1.0f, // Uses new property
             Normal = { FillColor = new Color4(0.6f, 0.6f, 0.65f, 1.0f), BorderColor = new Color4(0.8f, 0.8f, 0.8f, 1.0f) },
             Hover = { FillColor = new Color4(0.75f, 0.75f, 0.8f, 1.0f), BorderColor = Colors.WhiteSmoke },
             Pressed = { FillColor = Colors.WhiteSmoke, BorderColor = DefaultTheme.Accent }
@@ -89,21 +91,54 @@ public class MyDirectUIApp : Direct2DAppWindow
         float availableGridHeight = windowHeight - gridStartY - 50;
         Vector2 gridAvailableSize = new(float.Max(1, availableGridWidth), float.Max(1, availableGridHeight));
         int numberOfColumns = 3;
-        Vector2 cellGap = new Vector2(10, 10);
+        Vector2 cellGap = new(10, 10);
 
-        UI.BeginGridContainer("MainGrid", new Vector2(gridStartX, gridStartY), gridAvailableSize, numberOfColumns, cellGap);
+        UI.BeginGridContainer(
+            "MainGrid",
+            new(gridStartX, gridStartY),
+            gridAvailableSize,
+            numberOfColumns,
+            cellGap);
 
         // --- Grid Content ---
 
         // Row 1
-        UI.Button("GridBtn1", new() { Size = new(100, 30), Text = "Grid Cell 1", Theme = buttonTheme });
-        UI.Button("GridBtnA", new() { Size = new(100, 30), Text = "Grid Cell 2", Theme = buttonTheme });
-        UI.Button("GridBtnB", new() { Size = new(100, 30), Text = "Grid Cell 3", Theme = buttonTheme });
+        UI.Button("GridBtn1", new() 
+        { 
+            Size = new(100, 30), 
+            Text = "Grid Cell 1",
+            Theme = buttonTheme
+        });
 
+        UI.Button("GridBtnA", new()
+        {
+            Size = new(100, 30),
+            Text = "Grid Cell 2",
+            Theme = buttonTheme
+        });
+
+        UI.Button("GridBtnB", new() 
+        {
+            Size = new(100, 30),
+            Text = "Grid Cell 3",
+            Theme = buttonTheme
+        });
 
         // Row 2: Two HSliders next to each other
-        gridSlider1 = UI.HSlider("GridSlider1", gridSlider1, new() { Size = new(150, 20), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme });
-        gridSlider2H = UI.HSlider("GridSlider2H", gridSlider2H, new() { Size = new(150, 20), Theme = sliderTheme, GrabberTheme = sliderGrabberTheme }); // Changed to HSlider
+        gridSlider1 = UI.HSlider("GridSlider1", gridSlider1, new() 
+        { 
+            Size = new(150, 20), 
+            Theme = sliderTheme, 
+            GrabberTheme = sliderGrabberTheme 
+        });
+
+        gridSlider2H = UI.HSlider("GridSlider2H", gridSlider2H, new() 
+        {
+            Size = new(150, 20),
+            Theme = sliderTheme,
+            GrabberTheme = sliderGrabberTheme
+        });
+
         UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 6", Theme = buttonTheme });
 
 

@@ -1,4 +1,5 @@
-﻿// Summary: Added 'nonSliderElementClaimedPress' flag. Reset in BeginFrame. Widgets will use this to coordinate press handling between sliders and other elements like buttons.
+﻿// MODIFIED: UI.cs
+// Summary: Rewrote DrawBoxStyleHelper for both rounded and non-rounded rectangles. Rounded now draws border area first, then fill area on top. Non-rounded also draws border first, then fill.
 using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
@@ -29,7 +30,6 @@ public static class UI
     private static string? potentialInputTargetId = null;
     private static string? activelyPressedElementId = null;
     internal static bool dragInProgressFromPreviousFrame = false;
-    // NEW FLAG: Tracks if a non-slider element (like a button) claimed the press event this frame.
     internal static bool nonSliderElementClaimedPress = false;
 
     // --- Public/Internal Properties ---
@@ -50,11 +50,10 @@ public static class UI
 
         dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
 
-        // Reset FRAME-SPECIFIC flags
         captureAttemptedThisFrame = false;
         inputCaptorId = null;
         potentialInputTargetId = null;
-        nonSliderElementClaimedPress = false; // Reset the new flag
+        nonSliderElementClaimedPress = false;
 
         if (!input.IsLeftMouseDown)
         {
@@ -87,23 +86,18 @@ public static class UI
 
     internal static void SetPotentialCaptorForFrame(string id)
     {
-        // This method is now primarily called by sliders or other non-button widgets.
-        // Buttons will call the new method below.
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
         activelyPressedElementId = id;
-        // DO NOT set nonSliderElementClaimedPress here.
     }
 
-    // New method specifically for buttons (or similar priority elements)
     internal static void SetButtonPotentialCaptorForFrame(string id)
     {
         captureAttemptedThisFrame = true;
-        inputCaptorId = id;             // Overwrite previous captor
-        activelyPressedElementId = id; // Set as active
-        nonSliderElementClaimedPress = true; // Mark that a button claimed it
+        inputCaptorId = id;
+        activelyPressedElementId = id;
+        nonSliderElementClaimedPress = true;
     }
-
 
     internal static void ClearActivePress(string id)
     {
@@ -113,9 +107,7 @@ public static class UI
         }
     }
 
-
     // --- Containers ---
-    // No changes needed
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
         Vector2 startPosition = ApplyLayout(position);
@@ -172,7 +164,6 @@ public static class UI
     }
 
     // --- Widgets ---
-    // No changes needed
     public static bool Button(string id, ButtonDefinition definition)
     {
         if (!IsContextValid() || definition is null) return false;
@@ -189,7 +180,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        bool clicked = buttonInstance.Update(id); // Button.Update will call SetButtonPotentialCaptorForFrame
+        bool clicked = buttonInstance.Update(id);
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(buttonInstance.Size);
@@ -213,7 +204,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
@@ -237,16 +228,14 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 
-
     // --- Helper Methods ---
-    // No changes needed
     private static bool IsContextValid()
     {
         if (CurrentRenderTarget is null || CurrentDWriteFactory is null) { Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid."); return false; }
@@ -276,9 +265,7 @@ public static class UI
         instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
     }
 
-
     // --- Layout Helpers ---
-    // No changes needed
     private static Vector2 ApplyLayout(Vector2 defaultPosition) { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition; }
     private static void AdvanceLayout(Vector2 elementSize) { if (IsInLayoutContainer()) { AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y))); } }
     private static bool IsInLayoutContainer() => containerStack.Count > 0;
@@ -303,7 +290,6 @@ public static class UI
     }
 
     // --- Brush Cache ---
-    // No changes needed
     public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
     {
         if (CurrentRenderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
@@ -320,7 +306,6 @@ public static class UI
     }
 
     // --- Resource Cleanup ---
-    // No changes needed
     public static void CleanupResources()
     {
         Console.WriteLine("UI Resource Cleanup: Disposing cached brushes..."); int count = brushCache.Count;
@@ -329,48 +314,99 @@ public static class UI
     }
 
     // --- SHARED DRAWING HELPERS ---
-    // No changes needed
     internal static void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
     {
         if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0) return;
-        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor); ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
-        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0);
-        if (!hasVisibleFill && !hasVisibleBorder) return;
-        float borderTop = Math.Max(0f, style.BorderLengthTop); float borderRight = Math.Max(0f, style.BorderLengthRight); float borderBottom = Math.Max(0f, style.BorderLengthBottom); float borderLeft = Math.Max(0f, style.BorderLengthLeft);
 
+        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor);
+        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
+
+        float borderTop = Math.Max(0f, style.BorderLengthTop);
+        float borderRight = Math.Max(0f, style.BorderLengthRight);
+        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
+        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
+
+        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
+
+        if (!hasVisibleFill && !hasVisibleBorder) return;
+
+        // --- Rounded Rectangle Rendering (Layered Approach) ---
         if (style.Roundness > 0.0f)
         {
-            float avgHorizontalBorder = (borderLeft + borderRight) / 2.0f; float avgVerticalBorder = (borderTop + borderBottom) / 2.0f; float approxBorderThickness = Math.Max(avgHorizontalBorder, avgVerticalBorder); float halfApproxBorder = approxBorderThickness / 2.0f;
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y); float maxOuterRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f); float outerRadius = Math.Max(0f, maxOuterRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
-            if (float.IsFinite(outerRadius) && outerRadius >= 0)
+            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+            float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
+            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+
+            if (float.IsFinite(radius) && radius >= 0)
             {
+                // 1. Draw Border Area (Outer Rounded Rectangle)
+                if (hasVisibleBorder)
+                {
+                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                    RoundedRectangle outerRoundedRect = new(outerRectF, radius, radius);
+                    renderTarget.FillRoundedRectangle(outerRoundedRect, borderBrush);
+                }
+
+                // 2. Draw Fill Area (Inner Rounded Rectangle on top)
                 if (hasVisibleFill)
                 {
-                    float fillInsetWidth = Math.Max(0f, outerBounds.Width - approxBorderThickness); float fillInsetHeight = Math.Max(0f, outerBounds.Height - approxBorderThickness);
-                    if (fillInsetWidth > 0 && fillInsetHeight > 0) { Rect fillBounds = new Rect(outerBounds.X + halfApproxBorder, outerBounds.Y + halfApproxBorder, fillInsetWidth, fillInsetHeight); float fillRadius = Math.Max(0f, outerRadius - halfApproxBorder); System.Drawing.RectangleF fillRectF = new(fillBounds.X, fillBounds.Y, fillBounds.Width, fillBounds.Height); RoundedRectangle fillRoundedRect = new(fillRectF, fillRadius, fillRadius); renderTarget.FillRoundedRectangle(fillRoundedRect, fillBrush); }
-                    else if (fillBrush is not null) { System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height); RoundedRectangle outerRoundedRect = new(outerRectF, outerRadius, outerRadius); renderTarget.FillRoundedRectangle(outerRoundedRect, fillBrush); }
+                    float fillX = pos.X + borderLeft;
+                    float fillY = pos.Y + borderTop;
+                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+
+                    if (fillWidth > 0 && fillHeight > 0)
+                    {
+                        // Adjust inner radius - clamp at zero. Use average border thickness for approximation.
+                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
+                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
+                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
+                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
+
+                        System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
+                        RoundedRectangle fillRoundedRect = new(fillRectF, innerRadiusX, innerRadiusY);
+                        renderTarget.FillRoundedRectangle(fillRoundedRect, fillBrush);
+                    }
+                    // If fill consumes the whole area (e.g., no border), draw it directly using outer bounds/radius
+                    else if (!hasVisibleBorder && fillBrush is not null)
+                    {
+                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                        RoundedRectangle outerRoundedRect = new(outerRectF, radius, radius);
+                        renderTarget.FillRoundedRectangle(outerRoundedRect, fillBrush);
+                    }
                 }
-                if (hasVisibleBorder && approxBorderThickness > 0)
-                {
-                    float borderPathWidth = Math.Max(0f, outerBounds.Width - approxBorderThickness); float borderPathHeight = Math.Max(0f, outerBounds.Height - approxBorderThickness);
-                    if (borderPathWidth > 0 && borderPathHeight > 0) { Rect borderPathBounds = new Rect(outerBounds.X + halfApproxBorder, outerBounds.Y + halfApproxBorder, borderPathWidth, borderPathHeight); float borderPathRadius = Math.Max(0f, outerRadius - halfApproxBorder); System.Drawing.RectangleF borderPathRectF = new(borderPathBounds.X, borderPathBounds.Y, borderPathBounds.Width, borderPathBounds.Height); RoundedRectangle borderPathRoundedRect = new(borderPathRectF, borderPathRadius, borderPathRadius); renderTarget.DrawRoundedRectangle(borderPathRoundedRect, borderBrush, approxBorderThickness); }
-                    else if (!hasVisibleFill || fillBrush is null) { System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height); RoundedRectangle outerRoundedRect = new(outerRectF, outerRadius, outerRadius); renderTarget.FillRoundedRectangle(outerRoundedRect, borderBrush); }
-                }
-                return;
+                return; // Handled rounded case
             }
+            // Fall through to sharp rendering if radius calculation failed
         }
-        if (hasVisibleFill)
-        {
-            float fillX = pos.X + borderLeft; float fillY = pos.Y + borderTop; float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight); float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-            if (fillWidth > 0 && fillHeight > 0) { renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush); }
-            else if (fillBrush is not null && borderLeft + borderRight >= size.X && borderTop + borderBottom >= size.Y) { renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush); }
-        }
+
+        // --- Non-Rounded Rectangle Rendering (Layered Approach) ---
+
+        // 1. Draw Border Area (Outer Rectangles)
         if (hasVisibleBorder && borderBrush is not null)
         {
-            if (borderTop > 0) renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, borderTop), borderBrush); if (borderBottom > 0) renderTarget.FillRectangle(new Rect(pos.X, pos.Y + size.Y - borderBottom, size.X, borderBottom), borderBrush);
-            if (borderLeft > 0) { float leftHeight = Math.Max(0f, size.Y - borderTop - borderBottom); if (leftHeight > 0) renderTarget.FillRectangle(new Rect(pos.X, pos.Y + borderTop, borderLeft, leftHeight), borderBrush); }
-            if (borderRight > 0) { float rightHeight = Math.Max(0f, size.Y - borderTop - borderBottom); if (rightHeight > 0) renderTarget.FillRectangle(new Rect(pos.X + size.X - borderRight, pos.Y + borderTop, borderRight, rightHeight), borderBrush); }
+            // Fill the entire background with border color first
+            renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), borderBrush);
+        }
+
+        // 2. Draw Fill Area (Inner Rectangle on top)
+        if (hasVisibleFill)
+        {
+            float fillX = pos.X + borderLeft;
+            float fillY = pos.Y + borderTop;
+            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+
+            if (fillWidth > 0 && fillHeight > 0)
+            {
+                renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+            }
+            // If fill consumes the whole area (e.g., no border), draw it directly
+            else if (!hasVisibleBorder && fillBrush is not null)
+            {
+                renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush);
+            }
         }
     }
 }

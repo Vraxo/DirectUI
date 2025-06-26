@@ -441,7 +441,8 @@ public readonly struct InputState
 </file>
 
 <file path="MyDirectUIApp.cs">
-// Summary: Changed the grid layout to place two HSliders next to each other in the second row to facilitate testing overlap on resize. Renamed gridSlider2 to gridSlider2H.
+// MODIFIED: MyDirectUIApp.cs
+// Summary: Applied user's change to buttonTheme initialization.
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
@@ -464,19 +465,20 @@ public class MyDirectUIApp : Direct2DAppWindow
     public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
         : base(title, width, height)
     {
-        // --- Button Theme (Corrected Initialization) ---
+        // --- Button Theme (User's version from prompt) ---
         buttonTheme = new ButtonStylePack()
         {
-            Roundness = 0f,
-            BorderLength = 1.0f,
+            Roundness = 1f, // Changed from 0f
+            BorderLength = 1.0f, // Sets all 4 sides initially
             FontSize = 14f,
+            Normal = { BorderLengthBottom = 10 } // Specific override
         };
-        buttonTheme.Normal.BorderLengthBottom = 10.0f;
+        // Note: The explicit Normal assignment might override the general BorderLength = 1.0f for the Normal state's bottom border.
 
         // --- Special Theme ---
         specialButtonTheme = new()
         {
-            Roundness = 0.5f,
+            Roundness = 1f,
             BorderLength = 0.0f,
             FontSize = 14f,
             FontWeight = FontWeight.Bold,
@@ -493,20 +495,20 @@ public class MyDirectUIApp : Direct2DAppWindow
             {
                 Roundness = 0.2f,
                 FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f),
-                BorderLength = 0
+                BorderLength = 0 // Uses new property
             },
             Foreground =
             {
                 Roundness = 0.2f,
                 FillColor = DefaultTheme.Accent,
-                BorderLength = 0
+                BorderLength = 0 // Uses new property
             }
         };
 
         sliderGrabberTheme = new()
         {
             Roundness = 0.5f,
-            BorderLength = 1.0f,
+            BorderLength = 1.0f, // Uses new property
             Normal = { FillColor = new Color4(0.6f, 0.6f, 0.65f, 1.0f), BorderColor = new Color4(0.8f, 0.8f, 0.8f, 1.0f) },
             Hover = { FillColor = new Color4(0.75f, 0.75f, 0.8f, 1.0f), BorderColor = Colors.WhiteSmoke },
             Pressed = { FillColor = Colors.WhiteSmoke, BorderColor = DefaultTheme.Accent }
@@ -758,7 +760,8 @@ public class Program
 </file>
 
 <file path="UI.cs">
-// Summary: Added 'nonSliderElementClaimedPress' flag. Reset in BeginFrame. Widgets will use this to coordinate press handling between sliders and other elements like buttons.
+// MODIFIED: UI.cs
+// Summary: Rewrote DrawBoxStyleHelper for both rounded and non-rounded rectangles. Rounded now draws border area first, then fill area on top. Non-rounded also draws border first, then fill.
 using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
@@ -789,7 +792,6 @@ public static class UI
     private static string? potentialInputTargetId = null;
     private static string? activelyPressedElementId = null;
     internal static bool dragInProgressFromPreviousFrame = false;
-    // NEW FLAG: Tracks if a non-slider element (like a button) claimed the press event this frame.
     internal static bool nonSliderElementClaimedPress = false;
 
     // --- Public/Internal Properties ---
@@ -810,11 +812,10 @@ public static class UI
 
         dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
 
-        // Reset FRAME-SPECIFIC flags
         captureAttemptedThisFrame = false;
         inputCaptorId = null;
         potentialInputTargetId = null;
-        nonSliderElementClaimedPress = false; // Reset the new flag
+        nonSliderElementClaimedPress = false;
 
         if (!input.IsLeftMouseDown)
         {
@@ -847,23 +848,18 @@ public static class UI
 
     internal static void SetPotentialCaptorForFrame(string id)
     {
-        // This method is now primarily called by sliders or other non-button widgets.
-        // Buttons will call the new method below.
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
         activelyPressedElementId = id;
-        // DO NOT set nonSliderElementClaimedPress here.
     }
 
-    // New method specifically for buttons (or similar priority elements)
     internal static void SetButtonPotentialCaptorForFrame(string id)
     {
         captureAttemptedThisFrame = true;
-        inputCaptorId = id;             // Overwrite previous captor
-        activelyPressedElementId = id; // Set as active
-        nonSliderElementClaimedPress = true; // Mark that a button claimed it
+        inputCaptorId = id;
+        activelyPressedElementId = id;
+        nonSliderElementClaimedPress = true;
     }
-
 
     internal static void ClearActivePress(string id)
     {
@@ -873,9 +869,7 @@ public static class UI
         }
     }
 
-
     // --- Containers ---
-    // No changes needed
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
         Vector2 startPosition = ApplyLayout(position);
@@ -932,7 +926,6 @@ public static class UI
     }
 
     // --- Widgets ---
-    // No changes needed
     public static bool Button(string id, ButtonDefinition definition)
     {
         if (!IsContextValid() || definition is null) return false;
@@ -949,7 +942,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        bool clicked = buttonInstance.Update(id); // Button.Update will call SetButtonPotentialCaptorForFrame
+        bool clicked = buttonInstance.Update(id);
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(buttonInstance.Size);
@@ -973,7 +966,7 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
@@ -997,16 +990,14 @@ public static class UI
             if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
             { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue); // Slider logic now checks nonSliderElementClaimedPress
+        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
         if (pushedClip && CurrentRenderTarget is not null)
         { CurrentRenderTarget.PopAxisAlignedClip(); }
         AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 
-
     // --- Helper Methods ---
-    // No changes needed
     private static bool IsContextValid()
     {
         if (CurrentRenderTarget is null || CurrentDWriteFactory is null) { Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid."); return false; }
@@ -1036,9 +1027,7 @@ public static class UI
         instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
     }
 
-
     // --- Layout Helpers ---
-    // No changes needed
     private static Vector2 ApplyLayout(Vector2 defaultPosition) { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition; }
     private static void AdvanceLayout(Vector2 elementSize) { if (IsInLayoutContainer()) { AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y))); } }
     private static bool IsInLayoutContainer() => containerStack.Count > 0;
@@ -1063,7 +1052,6 @@ public static class UI
     }
 
     // --- Brush Cache ---
-    // No changes needed
     public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
     {
         if (CurrentRenderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
@@ -1080,7 +1068,6 @@ public static class UI
     }
 
     // --- Resource Cleanup ---
-    // No changes needed
     public static void CleanupResources()
     {
         Console.WriteLine("UI Resource Cleanup: Disposing cached brushes..."); int count = brushCache.Count;
@@ -1089,48 +1076,99 @@ public static class UI
     }
 
     // --- SHARED DRAWING HELPERS ---
-    // No changes needed
     internal static void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
     {
         if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0) return;
-        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor); ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
-        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0);
-        if (!hasVisibleFill && !hasVisibleBorder) return;
-        float borderTop = Math.Max(0f, style.BorderLengthTop); float borderRight = Math.Max(0f, style.BorderLengthRight); float borderBottom = Math.Max(0f, style.BorderLengthBottom); float borderLeft = Math.Max(0f, style.BorderLengthLeft);
 
+        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor);
+        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
+
+        float borderTop = Math.Max(0f, style.BorderLengthTop);
+        float borderRight = Math.Max(0f, style.BorderLengthRight);
+        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
+        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
+
+        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
+
+        if (!hasVisibleFill && !hasVisibleBorder) return;
+
+        // --- Rounded Rectangle Rendering (Layered Approach) ---
         if (style.Roundness > 0.0f)
         {
-            float avgHorizontalBorder = (borderLeft + borderRight) / 2.0f; float avgVerticalBorder = (borderTop + borderBottom) / 2.0f; float approxBorderThickness = Math.Max(avgHorizontalBorder, avgVerticalBorder); float halfApproxBorder = approxBorderThickness / 2.0f;
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y); float maxOuterRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f); float outerRadius = Math.Max(0f, maxOuterRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
-            if (float.IsFinite(outerRadius) && outerRadius >= 0)
+            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+            float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
+            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+
+            if (float.IsFinite(radius) && radius >= 0)
             {
+                // 1. Draw Border Area (Outer Rounded Rectangle)
+                if (hasVisibleBorder)
+                {
+                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                    RoundedRectangle outerRoundedRect = new(outerRectF, radius, radius);
+                    renderTarget.FillRoundedRectangle(outerRoundedRect, borderBrush);
+                }
+
+                // 2. Draw Fill Area (Inner Rounded Rectangle on top)
                 if (hasVisibleFill)
                 {
-                    float fillInsetWidth = Math.Max(0f, outerBounds.Width - approxBorderThickness); float fillInsetHeight = Math.Max(0f, outerBounds.Height - approxBorderThickness);
-                    if (fillInsetWidth > 0 && fillInsetHeight > 0) { Rect fillBounds = new Rect(outerBounds.X + halfApproxBorder, outerBounds.Y + halfApproxBorder, fillInsetWidth, fillInsetHeight); float fillRadius = Math.Max(0f, outerRadius - halfApproxBorder); System.Drawing.RectangleF fillRectF = new(fillBounds.X, fillBounds.Y, fillBounds.Width, fillBounds.Height); RoundedRectangle fillRoundedRect = new(fillRectF, fillRadius, fillRadius); renderTarget.FillRoundedRectangle(fillRoundedRect, fillBrush); }
-                    else if (fillBrush is not null) { System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height); RoundedRectangle outerRoundedRect = new(outerRectF, outerRadius, outerRadius); renderTarget.FillRoundedRectangle(outerRoundedRect, fillBrush); }
+                    float fillX = pos.X + borderLeft;
+                    float fillY = pos.Y + borderTop;
+                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+
+                    if (fillWidth > 0 && fillHeight > 0)
+                    {
+                        // Adjust inner radius - clamp at zero. Use average border thickness for approximation.
+                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
+                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
+                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
+                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
+
+                        System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
+                        RoundedRectangle fillRoundedRect = new(fillRectF, innerRadiusX, innerRadiusY);
+                        renderTarget.FillRoundedRectangle(fillRoundedRect, fillBrush);
+                    }
+                    // If fill consumes the whole area (e.g., no border), draw it directly using outer bounds/radius
+                    else if (!hasVisibleBorder && fillBrush is not null)
+                    {
+                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                        RoundedRectangle outerRoundedRect = new(outerRectF, radius, radius);
+                        renderTarget.FillRoundedRectangle(outerRoundedRect, fillBrush);
+                    }
                 }
-                if (hasVisibleBorder && approxBorderThickness > 0)
-                {
-                    float borderPathWidth = Math.Max(0f, outerBounds.Width - approxBorderThickness); float borderPathHeight = Math.Max(0f, outerBounds.Height - approxBorderThickness);
-                    if (borderPathWidth > 0 && borderPathHeight > 0) { Rect borderPathBounds = new Rect(outerBounds.X + halfApproxBorder, outerBounds.Y + halfApproxBorder, borderPathWidth, borderPathHeight); float borderPathRadius = Math.Max(0f, outerRadius - halfApproxBorder); System.Drawing.RectangleF borderPathRectF = new(borderPathBounds.X, borderPathBounds.Y, borderPathBounds.Width, borderPathBounds.Height); RoundedRectangle borderPathRoundedRect = new(borderPathRectF, borderPathRadius, borderPathRadius); renderTarget.DrawRoundedRectangle(borderPathRoundedRect, borderBrush, approxBorderThickness); }
-                    else if (!hasVisibleFill || fillBrush is null) { System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height); RoundedRectangle outerRoundedRect = new(outerRectF, outerRadius, outerRadius); renderTarget.FillRoundedRectangle(outerRoundedRect, borderBrush); }
-                }
-                return;
+                return; // Handled rounded case
             }
+            // Fall through to sharp rendering if radius calculation failed
         }
-        if (hasVisibleFill)
-        {
-            float fillX = pos.X + borderLeft; float fillY = pos.Y + borderTop; float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight); float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-            if (fillWidth > 0 && fillHeight > 0) { renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush); }
-            else if (fillBrush is not null && borderLeft + borderRight >= size.X && borderTop + borderBottom >= size.Y) { renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush); }
-        }
+
+        // --- Non-Rounded Rectangle Rendering (Layered Approach) ---
+
+        // 1. Draw Border Area (Outer Rectangles)
         if (hasVisibleBorder && borderBrush is not null)
         {
-            if (borderTop > 0) renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, borderTop), borderBrush); if (borderBottom > 0) renderTarget.FillRectangle(new Rect(pos.X, pos.Y + size.Y - borderBottom, size.X, borderBottom), borderBrush);
-            if (borderLeft > 0) { float leftHeight = Math.Max(0f, size.Y - borderTop - borderBottom); if (leftHeight > 0) renderTarget.FillRectangle(new Rect(pos.X, pos.Y + borderTop, borderLeft, leftHeight), borderBrush); }
-            if (borderRight > 0) { float rightHeight = Math.Max(0f, size.Y - borderTop - borderBottom); if (rightHeight > 0) renderTarget.FillRectangle(new Rect(pos.X + size.X - borderRight, pos.Y + borderTop, borderRight, rightHeight), borderBrush); }
+            // Fill the entire background with border color first
+            renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), borderBrush);
+        }
+
+        // 2. Draw Fill Area (Inner Rectangle on top)
+        if (hasVisibleFill)
+        {
+            float fillX = pos.X + borderLeft;
+            float fillY = pos.Y + borderTop;
+            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+
+            if (fillWidth > 0 && fillHeight > 0)
+            {
+                renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+            }
+            // If fill consumes the whole area (e.g., no border), draw it directly
+            else if (!hasVisibleBorder && fillBrush is not null)
+            {
+                renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush);
+            }
         }
     }
 }
@@ -1504,7 +1542,7 @@ public class ButtonStyle : BoxStyle
 
 <file path="Styles\ButtonStylePack.cs">
 // MODIFIED: Styles/ButtonStylePack.cs
-// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle.
+// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle. Added Obsolete attribute to BorderThickness.
 using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
@@ -1550,6 +1588,10 @@ public sealed class ButtonStylePack
         {
             Current = Hover;
         }
+        //else if (isFocused) // Future focus state
+        //{
+        //    Current = Focused;
+        //}
         else
         {
             Current = Normal;
@@ -1606,7 +1648,6 @@ public sealed class ButtonStylePack
         set => SetAll(s => s.BorderLength = value);
     }
 
-
     public Color4 FillColor
     {
         set => SetAll(s => s.FillColor = value);
@@ -1623,7 +1664,10 @@ public sealed class ButtonStylePack
         {
             setter(style);
         }
-        setter(Current);
+        // Update Current directly after modifying the source styles
+        // No need to call setter(Current) separately if UpdateCurrentStyle is called later.
+        // If UpdateCurrentStyle might not be called, uncommenting setter(Current) ensures immediate consistency.
+        // setter(Current);
     }
 }
 </file>
@@ -1690,15 +1734,15 @@ public class SliderStyle
 </file>
 
 <file path="Widgets\Button.cs">
-// Summary: Changed the press handling logic to call the new 'UI.SetButtonPotentialCaptorForFrame' method.
+// Widgets/Button.cs
+namespace DirectUI;
+
 using System;
 using System.Numerics;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
 using Vortice.Direct2D1;
 using SharpGen.Runtime;
-
-namespace DirectUI;
 
 public class Button
 {
@@ -1720,9 +1764,7 @@ public class Button
     public bool Disabled { get; set; } = false;
     public object? UserData { get; set; } = null;
 
-    // Internal state managed locally
     public bool IsHovering { get; internal set; } = false;
-    private bool isPressed = false;
 
     public Rect GlobalBounds
     {
@@ -1732,90 +1774,112 @@ public class Button
             float y = Position.Y - Origin.Y;
             float width = Math.Max(0, Size.X);
             float height = Math.Max(0, Size.Y);
-            var calculatedBounds = new Rect(x, y, width, height);
+            Rect calculatedBounds = new(x, y, width, height);
+
             return calculatedBounds;
         }
     }
 
-    // --- Main Update Method ---
+    private bool isPressed = false;
+
+
     internal bool Update(string id)
     {
         ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
         IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
         InputState input = UI.CurrentInputState;
 
-        if (renderTarget is null || dwriteFactory is null) return false;
+        if (renderTarget is null || dwriteFactory is null)
+        {
+            return false;
+        }
 
         bool wasClickedThisFrame = false;
-        isPressed = false;
+
+        isPressed = false; // Reset visual pressed state for the frame
 
         if (Disabled)
         {
             IsHovering = false;
-            if (UI.ActivelyPressedElementId == id) UI.ClearActivePress(id);
+            if (UI.ActivelyPressedElementId == id)
+            {
+                UI.ClearActivePress(id);
+            }
         }
-        else
+        else // Element is Enabled
         {
-            // 1. Check Hover State & Set Potential Target
             Rect bounds = GlobalBounds;
+
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+
             if (IsHovering)
             {
                 UI.SetPotentialInputTarget(id);
             }
 
-            // Relevant Input States
+            // Determine relevant actions based on behavior
             bool primaryActionHeld = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.IsLeftMouseDown;
             bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
+            // Add Right button logic here if Behavior.Right/Both is implemented fully
 
-            // 2. Handle Mouse Release Logic
+            // Handle Release Action
             if (!primaryActionHeld && UI.ActivelyPressedElementId == id)
             {
                 if (IsHovering && LeftClickActionMode is ActionMode.Release)
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(id);
+                UI.ClearActivePress(id); // Clear press regardless of hover on release
             }
 
-            // 3. Handle Mouse Press Attempt (Overwriting Logic)
+            // Handle Press Attempt (potential capture)
             if (primaryActionPressedThisFrame)
             {
-                // Check if hovered, is potential target, and no drag was already active.
+                // Can only capture press if hovered, it's the potential target, and no drag was already in progress from a previous frame
                 if (IsHovering && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
                 {
-                    // Use the dedicated button method to claim potential capture AND set the flag.
+                    // Attempt to capture input - this overwrites previous captors for the frame
                     UI.SetButtonPotentialCaptorForFrame(id);
                 }
             }
 
-            // 4. Determine CURRENT Visual Pressed State
-            // Visual state depends on whether this button is the globally active element.
+            // Determine visual pressed state for this frame (is it the element currently held down?)
             isPressed = (UI.ActivelyPressedElementId == id);
 
-        } // End !Disabled block
+        } // End Enabled block
 
         // --- Update Style & Size ---
-        UpdateStyle();
-        PerformAutoWidth(dwriteFactory);
+        UpdateStyle(); // Update based on IsHovering, isPressed, Disabled
+        PerformAutoWidth(dwriteFactory); // Adjust size if needed
 
         // --- Drawing ---
         try
         {
-            if (GlobalBounds.Width > 0 && GlobalBounds.Height > 0)
+            Rect currentBounds = GlobalBounds; // Recalculate in case AutoWidth changed it
+
+            if (currentBounds.Width > 0 && currentBounds.Height > 0)
             {
                 DrawBackground(renderTarget);
                 DrawText(renderTarget, dwriteFactory);
             }
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
-        { Console.WriteLine($"Render target needs recreation: {ex.Message}"); UI.CleanupResources(); return false; }
+        {
+            // Retained log message for recoverable graphics issue.
+            Console.WriteLine($"Render target needs recreation during Button draw: {ex.Message}");
+            UI.CleanupResources(); // Clear brushes which are now invalid
+            return false; // Cannot continue drawing
+        }
         catch (Exception ex)
-        { Console.WriteLine($"Error drawing button: {ex}"); return false; }
+        {
+            // Retained log message for unexpected error.
+            Console.WriteLine($"Error drawing button {id}: {ex}");
+            return false; // Indicate error
+        }
 
 
-        // --- Final Click Determination ---
-        // Click happens if mode is Press AND this button was the final captor for the frame.
+        // --- Final Click Determination (for Press mode) ---
+        // Click happens now if mode is Press AND this button was the final input captor for the frame.
         if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == id)
         {
             wasClickedThisFrame = true;
@@ -1824,8 +1888,6 @@ public class Button
         return wasClickedThisFrame;
     }
 
-
-    // --- Internal Logic Methods ---
     internal void UpdateStyle()
     {
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
@@ -1833,55 +1895,168 @@ public class Button
 
     internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
     {
-        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null) return Vector2.Zero;
+        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null)
+        {
+            return Vector2.Zero;
+        }
+
         IDWriteTextFormat? textFormat = null;
+
         try
         {
-            ButtonStyle style = Themes.Current;
-            textFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (textFormat is null) { Console.WriteLine("Warning: Failed to create TextFormat for measurement."); return Vector2.Zero; }
-            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, float.MaxValue, float.MaxValue);
+            ButtonStyle style = Themes.Current; // Assume Themes and Current are not null due to check above/initialization
+
+            textFormat = dwriteFactory.CreateTextFormat(
+                style.FontName,
+                null, // font collection
+                style.FontWeight,
+                style.FontStyle,
+                style.FontStretch,
+                style.FontSize,
+                "en-us" // locale
+            );
+
+            if (textFormat is null)
+            {
+                // Retained log message for unexpected font system issue.
+                Console.WriteLine("Warning: Failed to create TextFormat for measurement.");
+                return Vector2.Zero;
+            }
+
+            // Use using for disposable TextLayout
+            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(
+                Text,
+                textFormat,
+                float.MaxValue, // Max width
+                float.MaxValue  // Max height
+            );
+
             TextMetrics textMetrics = textLayout.Metrics;
+
             return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
         }
-        catch (Exception ex) { Console.WriteLine($"Error measuring text: {ex.Message}"); return Vector2.Zero; }
-        finally { textFormat?.Dispose(); }
+        catch (Exception ex)
+        {
+            // Retained log message for unexpected error.
+            Console.WriteLine($"Error measuring text for button: {ex.Message}");
+            return Vector2.Zero;
+        }
+        finally
+        {
+            textFormat?.Dispose();
+        }
     }
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
     {
-        if (!AutoWidth || dwriteFactory is null) return;
-        Vector2 textSize = MeasureText(dwriteFactory); float desiredWidth = textSize.X + TextMargin.X * 2;
-        if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f) { Size = new Vector2(desiredWidth, Size.Y); }
-        else if (desiredWidth <= 0 && Size.X != 0) { /* Optional: Reset size or set MinWidth */ }
+        if (!AutoWidth || dwriteFactory is null)
+        {
+            return;
+        }
+
+        Vector2 textSize = MeasureText(dwriteFactory);
+        float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
+
+        // Use a small epsilon to avoid floating point jitter
+        if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f)
+        {
+            Size = new Vector2(desiredWidth, Size.Y);
+        }
+        else if (desiredWidth <= 0 && Size.X != 0)
+        {
+            // Optional: Handle case where text becomes empty - maybe reset to a MinWidth?
+            // For now, do nothing, keeping potentially previous non-zero width.
+        }
     }
 
-    // --- Drawing Methods ---
     private void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        Rect bounds = GlobalBounds; ButtonStyle? style = Themes?.Current;
-        if (style is null || bounds.Width <= 0 || bounds.Height <= 0) return;
+        Rect bounds = GlobalBounds;
+        ButtonStyle? style = Themes?.Current;
+
+        // Early exit if nothing to draw
+        if (style is null || bounds.Width <= 0 || bounds.Height <= 0)
+        {
+            return;
+        }
+
         UI.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
     }
 
     private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
     {
-        if (string.IsNullOrEmpty(Text)) return; ButtonStyle? style = Themes?.Current; if (style is null) return;
-        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor); if (textBrush is null) return;
+        // Early exits for common cases
+        if (string.IsNullOrEmpty(Text)) return;
+        ButtonStyle? style = Themes?.Current;
+        if (style is null) return;
+
+        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
+        if (textBrush is null) return; // Brush creation failed (error logged in GetOrCreateBrush)
+
         IDWriteTextFormat? textFormat = null;
         try
         {
-            textFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (textFormat is null) return;
-            textFormat.TextAlignment = TextAlignment.Horizontal switch { HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading, HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center, HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing, _ => Vortice.DirectWrite.TextAlignment.Leading };
-            textFormat.ParagraphAlignment = TextAlignment.Vertical switch { VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near, VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center, VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far, _ => Vortice.DirectWrite.ParagraphAlignment.Near };
-            Rect bounds = GlobalBounds; if (bounds.Width <= 0 || bounds.Height <= 0) return;
-            Rect layoutRect = bounds; layoutRect.Left += TextOffset.X; layoutRect.Top += TextOffset.Y;
-            renderTarget.DrawText(Text, textFormat, layoutRect, textBrush, DrawTextOptions.Clip);
+            textFormat = dwriteFactory.CreateTextFormat(
+                style.FontName,
+                null,
+                style.FontWeight,
+                style.FontStyle,
+                style.FontStretch,
+                style.FontSize,
+                "en-us"
+            );
+
+            if (textFormat is null) return; // Should not happen if MeasureText succeeded, but check anyway
+
+            // Apply Alignment
+            textFormat.TextAlignment = TextAlignment.Horizontal switch
+            {
+                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                _ => Vortice.DirectWrite.TextAlignment.Leading
+            };
+            textFormat.ParagraphAlignment = TextAlignment.Vertical switch
+            {
+                VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near,
+                VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center,
+                VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far,
+                _ => Vortice.DirectWrite.ParagraphAlignment.Near
+            };
+
+            Rect bounds = GlobalBounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0) return; // Avoid drawing in zero-size rect
+
+            // Apply offset to layout rectangle
+            Rect layoutRect = bounds;
+            layoutRect.Left += TextOffset.X;
+            layoutRect.Top += TextOffset.Y;
+            // Note: Width/Height remain the button's bounds for centering/alignment calculations within DrawText
+
+            renderTarget.DrawText(
+                Text,
+                textFormat,
+                layoutRect, // The area where text can be drawn
+                textBrush,
+                DrawTextOptions.Clip // Clip text to the layoutRect automatically
+            );
         }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code) { Console.WriteLine($"Text Draw failed (RecreateTarget): {ex.Message}."); textFormat = null; }
-        catch (Exception ex) { Console.WriteLine($"Error drawing button text: {ex.Message}"); }
-        finally { textFormat?.Dispose(); }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
+        {
+            // Retained log message for recoverable graphics issue.
+            Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
+            // Don't dispose textFormat here, it might be invalid anyway. Resource cleanup happens externally.
+            textFormat = null; // Ensure finally doesn't try to dispose potentially bad pointer
+        }
+        catch (Exception ex)
+        {
+            // Retained log message for unexpected error.
+            Console.WriteLine($"Error drawing button text: {ex.Message}");
+        }
+        finally
+        {
+            textFormat?.Dispose();
+        }
     }
 }
 </file>
@@ -1912,7 +2087,7 @@ public class ButtonDefinition
 </file>
 
 <file path="Widgets\InternalHSliderLogic.cs">
-// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
+// Summary: Press handling now calls the new 'UI.SetButtonPotentialCaptorForFrame' method. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -1964,8 +2139,11 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
-                // Use the general captor method (doesn't set the button flag)
-                UI.SetPotentialCaptorForFrame(id);
+                // --- CHANGE HERE ---
+                // Use the dedicated button method to claim potential capture AND set the flag.
+                // This makes slider capture behavior identical to button capture behavior.
+                UI.SetButtonPotentialCaptorForFrame(id);
+                // --- END CHANGE ---
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -2193,7 +2371,7 @@ internal abstract class InternalSliderLogic
 </file>
 
 <file path="Widgets\InternalVSlider.cs">
-// Summary: Press handling now calls the general UI.SetPotentialCaptorForFrame. Deferred logic check moved entirely to base class.
+// Summary: Press handling now calls the new 'UI.SetButtonPotentialCaptorForFrame' method. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -2245,8 +2423,11 @@ internal class InternalVSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
             {
-                // Use the general captor method (doesn't set the button flag)
-                UI.SetPotentialCaptorForFrame(id);
+                // --- CHANGE HERE ---
+                // Use the dedicated button method to claim potential capture AND set the flag.
+                // This makes slider capture behavior identical to button capture behavior.
+                UI.SetButtonPotentialCaptorForFrame(id);
+                // --- END CHANGE ---
 
                 if (isTrackHovered && !isGrabberHovered)
                 {

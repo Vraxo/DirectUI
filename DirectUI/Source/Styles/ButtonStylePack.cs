@@ -1,5 +1,5 @@
 ﻿// MODIFIED: Styles/ButtonStylePack.cs
-// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle.
+// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle. Added Obsolete attribute to BorderThickness.
 using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
@@ -45,6 +45,10 @@ public sealed class ButtonStylePack
         {
             Current = Hover;
         }
+        //else if (isFocused) // Future focus state
+        //{
+        //    Current = Focused;
+        //}
         else
         {
             Current = Normal;
@@ -101,7 +105,6 @@ public sealed class ButtonStylePack
         set => SetAll(s => s.BorderLength = value);
     }
 
-
     public Color4 FillColor
     {
         set => SetAll(s => s.FillColor = value);
@@ -118,6 +121,9 @@ public sealed class ButtonStylePack
         {
             setter(style);
         }
-        setter(Current);
+        // Update Current directly after modifying the source styles
+        // No need to call setter(Current) separately if UpdateCurrentStyle is called later.
+        // If UpdateCurrentStyle might not be called, uncommenting setter(Current) ensures immediate consistency.
+        // setter(Current);
     }
 }
