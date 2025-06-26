@@ -2,6 +2,7 @@
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using static System.Net.Mime.MediaTypeNames;
 using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
@@ -64,7 +65,7 @@ public static partial class UI
         }
     }
 
-    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left)
+    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
 
@@ -72,6 +73,7 @@ public static partial class UI
         var renderTarget = CurrentRenderTarget!;
         var windowWidth = renderTarget.Size.Width;
         var windowHeight = renderTarget.Size.Height;
+        var availableHeight = windowHeight - topOffset;
 
         // --- Input and Resizing Logic ---
         if (!definition.Disabled)
@@ -80,7 +82,7 @@ public static partial class UI
             float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
             handleWidth = Math.Min(handleWidth, currentWidth);
             float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
-            Rect handleRect = new Rect(handleX, 0, handleWidth, windowHeight);
+            Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (isHoveringHandle) SetPotentialInputTarget(id);
@@ -97,15 +99,15 @@ public static partial class UI
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
         currentWidth = Math.Max(0, currentWidth);
         float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-        Rect panelRect = new Rect(finalPanelX, 0, currentWidth, windowHeight);
+        Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
             DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
         }
 
         // --- Container & Clipping Logic ---
-        Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, definition.Padding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, windowHeight - (definition.Padding.Y * 2)));
+        Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, topOffset + definition.Padding.Y);
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, availableHeight - (definition.Padding.Y * 2)));
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
@@ -133,7 +135,7 @@ public static partial class UI
         containerStack.Pop();
     }
 
-    public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace)
+    public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
 
@@ -142,10 +144,15 @@ public static partial class UI
         var windowWidth = renderTarget.Size.Width;
         var windowHeight = renderTarget.Size.Height;
         var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
+        var maxAllowedHeight = windowHeight - topOffset;
+        var effectiveMaxHeight = Math.Min(definition.MaxHeight, maxAllowedHeight);
+
 
         // --- Input and Resizing Logic ---
         if (!definition.Disabled)
         {
+            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
+
             float panelY = windowHeight - currentHeight;
             float handleHeight = definition.ResizeHandleWidth;
             handleHeight = Math.Min(handleHeight, currentHeight);
@@ -157,13 +164,14 @@ public static partial class UI
             if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
             if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
             {
-                currentHeight = Math.Clamp(windowHeight - input.MousePosition.Y, definition.MinHeight, definition.MaxHeight);
+                float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
+                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);
             }
         }
 
         // --- Drawing ---
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentHeight = Math.Max(0, currentHeight);
+        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)

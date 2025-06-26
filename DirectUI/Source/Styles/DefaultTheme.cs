@@ -15,8 +15,10 @@ public static class DefaultTheme
         public static readonly Color4 FillLighter = new Color4(58 / 255f, 58 / 255f, 58 / 255f, 1.0f);  // #3A3A3A
         public static readonly Color4 Border = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f);      // #151515 (Matches window background)
 
-        public static readonly Color4 Hover = new Color4(0 / 255f, 122 / 255f, 204 / 255f, 1.0f);     // A nice blue #007ACC
-        public static readonly Color4 HoverBorder = new Color4(0 / 255f, 150 / 255f, 255 / 255f, 1.0f); // Lighter blue
+        // --- CHANGE HERE ---
+        // Changed from blue to a light gray for a more authentic UE5 feel.
+        public static readonly Color4 Hover = new Color4(160 / 255f, 160 / 255f, 160 / 255f, 1.0f);   // #A0A0A0
+        // --- END CHANGE ---
 
         public static readonly Color4 Accent = new Color4(255 / 255f, 171 / 255f, 0 / 255f, 1.0f);     // Orange #FFAB00
         public static readonly Color4 AccentBorder = new Color4(255 / 255f, 187 / 255f, 51 / 255f, 1.0f); // Lighter Orange
@@ -54,14 +56,14 @@ public static class DefaultTheme
     // --- ACTIVE THEME: UE5 ---
     public static readonly Color4 NormalFill = Ue5ThemeColors.Fill;
     public static readonly Color4 NormalBorder = Ue5ThemeColors.Border;
-    public static readonly Color4 HoverFill = Ue5ThemeColors.FillLighter; // Subtle gray change for hover fill
-    public static readonly Color4 HoverBorder = Ue5ThemeColors.Hover;     // Blue border on hover
-    public static readonly Color4 Accent = Ue5ThemeColors.Accent;         // Orange accent for pressed
+    public static readonly Color4 HoverFill = Ue5ThemeColors.FillLighter;    // Subtle gray change for hover fill
+    public static readonly Color4 HoverBorder = Ue5ThemeColors.Hover;        // Light gray border on hover
+    public static readonly Color4 Accent = Ue5ThemeColors.Accent;            // Orange accent for pressed
     public static readonly Color4 AccentBorder = Ue5ThemeColors.AccentBorder;
     public static readonly Color4 DisabledFill = Ue5ThemeColors.DisabledFill;
     public static readonly Color4 DisabledBorder = Ue5ThemeColors.DisabledBorder;
     public static readonly Color4 DisabledText = Ue5ThemeColors.DisabledText;
-    public static readonly Color4 FocusBorder = Ue5ThemeColors.Hover;       // Use blue for focus
+    public static readonly Color4 FocusBorder = Ue5ThemeColors.Hover;        // Use gray for focus
     public static readonly Color4 Text = Ue5ThemeColors.Text;
 
     /*

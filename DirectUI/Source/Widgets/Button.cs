@@ -58,8 +58,12 @@ public class Button
             return false;
         }
 
-        bool wasClickedThisFrame = false;
+        // --- Sizing (MUST be done before hit-testing) ---
+        // This is now independent of hover/press state and ensures correct bounds.
+        PerformAutoWidth(dwriteFactory);
 
+        // --- Input Logic & State Update ---
+        bool wasClickedThisFrame = false;
         isPressed = false; // Reset visual pressed state for the frame
 
         if (Disabled)
@@ -72,7 +76,7 @@ public class Button
         }
         else // Element is Enabled
         {
-            Rect bounds = GlobalBounds;
+            Rect bounds = GlobalBounds; // NOW uses correct size from AutoWidth
 
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
 
@@ -112,14 +116,12 @@ public class Button
 
         } // End Enabled block
 
-        // --- Update Style & Size ---
-        UpdateStyle(); // Update based on IsHovering, isPressed, Disabled
-        PerformAutoWidth(dwriteFactory); // Adjust size if needed
+        // --- Final Style Update & Drawing ---
+        UpdateStyle(); // Update style based on the now-calculated states
 
-        // --- Drawing ---
         try
         {
-            Rect currentBounds = GlobalBounds; // Recalculate in case AutoWidth changed it
+            Rect currentBounds = GlobalBounds; // Bounds are now final for this frame
 
             if (currentBounds.Width > 0 && currentBounds.Height > 0)
             {
@@ -157,9 +159,9 @@ public class Button
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
     }
 
-    internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
+    internal Vector2 MeasureText(IDWriteFactory dwriteFactory, ButtonStyle styleToUse)
     {
-        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null)
+        if (string.IsNullOrEmpty(Text) || styleToUse is null || dwriteFactory is null)
         {
             return Vector2.Zero;
         }
@@ -168,15 +170,13 @@ public class Button
 
         try
         {
-            ButtonStyle style = Themes.Current; // Assume Themes and Current are not null due to check above/initialization
-
             textFormat = dwriteFactory.CreateTextFormat(
-                style.FontName,
+                styleToUse.FontName,
                 null, // font collection
-                style.FontWeight,
-                style.FontStyle,
-                style.FontStretch,
-                style.FontSize,
+                styleToUse.FontWeight,
+                styleToUse.FontStyle,
+                styleToUse.FontStretch,
+                styleToUse.FontSize,
                 "en-us" // locale
             );
 
@@ -213,12 +213,14 @@ public class Button
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
     {
-        if (!AutoWidth || dwriteFactory is null)
+        if (!AutoWidth || dwriteFactory is null || Themes is null)
         {
             return;
         }
 
-        Vector2 textSize = MeasureText(dwriteFactory);
+        // Always measure using the Normal theme to ensure consistent size across states.
+        // This relies on the font properties being set consistently across the style pack.
+        Vector2 textSize = MeasureText(dwriteFactory, Themes.Normal);
         float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
 
         // Use a small epsilon to avoid floating point jitter
