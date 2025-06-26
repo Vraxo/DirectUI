@@ -1,4 +1,5 @@
 ﻿using System;
+using System.IO;
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -22,18 +23,35 @@ namespace DirectUI
             // Set a dark background color that matches the new theme
             backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
 
-            // --- Initialize Tree Data ---
-            _fileRoot = new TreeNode<string>("Root", "C:/", true);
-            var docs = _fileRoot.AddChild("Documents", "C:/Docs", true);
-            docs.AddChild("Work", "C:/Docs/Work");
-            var proj = docs.AddChild("Projects", "C:/Docs/Projects", true);
-            proj.AddChild("DirectUI", "C:/Docs/Projects/DirectUI");
-            proj.AddChild("Old Stuff", "C:/Docs/Projects/Old");
-            docs.AddChild("Personal", "C:/Docs/Personal");
+            // --- Initialize Tree Data from YAML ---
+            try
+            {
+                // The user requested this specific, absolute path.
+                string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
+                if (File.Exists(scenePath))
+                {
+                    _fileRoot = SceneParser.Parse(scenePath);
+                }
+                else
+                {
+                    Console.WriteLine($"Warning: Scene file not found at '{scenePath}'. Loading default tree.");
+                    _fileRoot = CreateDefaultTree();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error parsing scene file. Loading default tree. Error: {ex.Message}");
+                _fileRoot = CreateDefaultTree();
+            }
+        }
 
-            var downloads = _fileRoot.AddChild("Downloads", "C:/Downloads");
-            downloads.AddChild("Installer.exe", "C:/Downloads/Installer.exe");
-            downloads.AddChild("archive.zip", "C:/Downloads/archive.zip");
+        private TreeNode<string> CreateDefaultTree()
+        {
+            // Fallback tree if YAML parsing fails
+            var root = new TreeNode<string>("Error", "Could not load scene", true);
+            root.AddChild("Please check file path and format.", "");
+            root.AddChild(@"Path: D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml", "");
+            return root;
         }
 
         protected override void DrawUIContent(DrawingContext context, InputState input)
