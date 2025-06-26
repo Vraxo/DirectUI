@@ -150,7 +150,7 @@ public static partial class UI
         // --- Layout the node row using a temporary HBox ---
         float indentSize = treeState.IndentLineState.Count * style.Indent;
         string currentId = $"{parentId}_{index}_{node.Text.GetHashCode()}";
-        BeginHBoxContainer(currentId + "_row", startLayoutPos + new Vector2(indentSize, 0), 2);
+        BeginHBoxContainer(currentId + "_row", startLayoutPos + new Vector2(indentSize, 0), 5);
 
         // --- Toggle Button ---
         if (node.Children.Count > 0)
@@ -159,7 +159,7 @@ public static partial class UI
             {
                 Text = node.IsExpanded ? "-" : "+",
                 Theme = style.ToggleStyle,
-                Size = new Vector2(style.RowHeight - 4, style.RowHeight - 4),
+                Size = new Vector2(style.RowHeight - 4, style.RowHeight),
                 TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
             };
             if (Button(currentId + "_toggle", toggleDef))

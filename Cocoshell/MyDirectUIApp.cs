@@ -128,11 +128,14 @@ namespace DirectUI
             // --- Left Panel ---
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
+            // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
+            UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
             UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
             if (clickedNode is not null)
             {
                 Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
             }
+            UI.EndVBoxContainer();
 
             UI.EndResizableVPanel();
 

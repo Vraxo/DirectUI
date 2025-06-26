@@ -1,4 +1,5 @@
-﻿using Vortice.Mathematics;
+﻿using DirectUI;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -6,7 +7,7 @@ public class TreeStyle
 {
     public float Indent { get; set; } = 19f;
     public float RowHeight { get; set; } = 22f;
-    public Color4 LineColor { get; set; } = DefaultTheme.DisabledBorder;
+    public Color4 LineColor { get; set; } = DefaultTheme.HoverBorder;
     public ButtonStylePack ToggleStyle { get; set; }
     public ButtonStylePack NodeLabelStyle { get; set; }
 

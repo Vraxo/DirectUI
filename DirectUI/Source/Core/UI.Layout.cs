@@ -33,17 +33,39 @@ public static partial class UI
             case HBoxContainerState hbox:
                 {
                     if (elementSize.Y > hbox.MaxElementHeight) hbox.MaxElementHeight = elementSize.Y;
-                    float advanceX = (hbox.AccumulatedWidth > 0 ? hbox.Gap : 0) + elementSize.X;
+
+                    // Add the width of the element just drawn to the total
+                    hbox.AccumulatedWidth += elementSize.X;
+                    // Add the gap to the total width if this wasn't the first element
+                    if (hbox.ElementCount > 0)
+                    {
+                        hbox.AccumulatedWidth += hbox.Gap;
+                    }
+
+                    // Advance the cursor for the next element's position
+                    float advanceX = elementSize.X + hbox.Gap;
                     hbox.CurrentPosition = new Vector2(hbox.CurrentPosition.X + advanceX, hbox.CurrentPosition.Y);
-                    hbox.AccumulatedWidth = hbox.CurrentPosition.X - hbox.StartPosition.X;
+
+                    hbox.ElementCount++;
                     break;
                 }
             case VBoxContainerState vbox:
                 {
                     if (elementSize.X > vbox.MaxElementWidth) vbox.MaxElementWidth = elementSize.X;
-                    float advanceY = (vbox.AccumulatedHeight > 0 ? vbox.Gap : 0) + elementSize.Y;
+
+                    // Add the height of the element just drawn to the total
+                    vbox.AccumulatedHeight += elementSize.Y;
+                    // Add the gap to the total height if this wasn't the first element
+                    if (vbox.ElementCount > 0)
+                    {
+                        vbox.AccumulatedHeight += vbox.Gap;
+                    }
+
+                    // Advance the cursor for the next element's position
+                    float advanceY = elementSize.Y + vbox.Gap;
                     vbox.CurrentPosition = new Vector2(vbox.CurrentPosition.X, vbox.CurrentPosition.Y + advanceY);
-                    vbox.AccumulatedHeight = vbox.CurrentPosition.Y - vbox.StartPosition.Y;
+
+                    vbox.ElementCount++;
                     break;
                 }
             case GridContainerState grid:
@@ -53,20 +75,35 @@ public static partial class UI
                 }
             case ResizablePanelState panel:
                 {
+                    // This is just a wrapper, so we pass the call down to its inner VBox.
+                    // We need to get a mutable reference to the inner VBox to do this.
                     var innerVBox = panel.InnerVBox;
                     if (elementSize.X > innerVBox.MaxElementWidth) innerVBox.MaxElementWidth = elementSize.X;
-                    float advanceY = (innerVBox.AccumulatedHeight > 0 ? innerVBox.Gap : 0) + elementSize.Y;
+
+                    innerVBox.AccumulatedHeight += elementSize.Y;
+                    if (innerVBox.ElementCount > 0)
+                    {
+                        innerVBox.AccumulatedHeight += innerVBox.Gap;
+                    }
+                    float advanceY = elementSize.Y + innerVBox.Gap;
                     innerVBox.CurrentPosition = new Vector2(innerVBox.CurrentPosition.X, innerVBox.CurrentPosition.Y + advanceY);
-                    innerVBox.AccumulatedHeight = innerVBox.CurrentPosition.Y - innerVBox.StartPosition.Y;
+                    innerVBox.ElementCount++;
                     break;
                 }
             case ResizableHPanelState hpanel:
                 {
+                    // This is just a wrapper, so we pass the call down to its inner HBox.
                     var innerHBox = hpanel.InnerHBox;
                     if (elementSize.Y > innerHBox.MaxElementHeight) innerHBox.MaxElementHeight = elementSize.Y;
-                    float advanceX = (innerHBox.AccumulatedWidth > 0 ? innerHBox.Gap : 0) + elementSize.X;
+
+                    innerHBox.AccumulatedWidth += elementSize.X;
+                    if (innerHBox.ElementCount > 0)
+                    {
+                        innerHBox.AccumulatedWidth += innerHBox.Gap;
+                    }
+                    float advanceX = elementSize.X + innerHBox.Gap;
                     innerHBox.CurrentPosition = new Vector2(innerHBox.CurrentPosition.X + advanceX, innerHBox.CurrentPosition.Y);
-                    innerHBox.AccumulatedWidth = innerHBox.CurrentPosition.X - innerHBox.StartPosition.X;
+                    innerHBox.ElementCount++;
                     break;
                 }
             default:

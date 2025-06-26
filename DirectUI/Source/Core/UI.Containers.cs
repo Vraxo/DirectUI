@@ -12,8 +12,7 @@ public static partial class UI
     // --- Containers ---
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Vector2 startPosition = ApplyLayout(position);
-        var containerState = new HBoxContainerState(id, startPosition, gap);
+        var containerState = new HBoxContainerState(id, position, gap);
         containerStack.Push(containerState);
     }
     public static void EndHBoxContainer()
@@ -26,8 +25,7 @@ public static partial class UI
     }
     public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Vector2 startPosition = ApplyLayout(position);
-        var containerState = new VBoxContainerState(id, startPosition, gap);
+        var containerState = new VBoxContainerState(id, position, gap);
         containerStack.Push(containerState);
     }
     public static void EndVBoxContainer()
@@ -40,8 +38,7 @@ public static partial class UI
     }
     public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        Vector2 startPosition = ApplyLayout(position);
-        var containerState = new GridContainerState(id, startPosition, availableSize, numColumns, gap);
+        var containerState = new GridContainerState(id, position, availableSize, numColumns, gap);
         containerStack.Push(containerState);
     }
     public static void EndGridContainer()
