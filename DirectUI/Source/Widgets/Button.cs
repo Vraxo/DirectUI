@@ -51,6 +51,7 @@ public class Button
         ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
         IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
         InputState input = UI.CurrentInputState;
+        var intId = id.GetHashCode();
 
         if (renderTarget is null || dwriteFactory is null)
         {
@@ -68,9 +69,9 @@ public class Button
         if (Disabled)
         {
             IsHovering = false;
-            if (UI.ActivelyPressedElementId == id)
+            if (UI.ActivelyPressedElementId == intId)
             {
-                UI.ClearActivePress(id);
+                UI.ClearActivePress(intId);
             }
         }
         else // Element is Enabled
@@ -81,7 +82,7 @@ public class Button
 
             if (IsHovering)
             {
-                UI.SetPotentialInputTarget(id);
+                UI.SetPotentialInputTarget(intId);
             }
 
             // Determine relevant actions based on behavior
@@ -90,28 +91,28 @@ public class Button
             // Add Right button logic here if Behavior.Right/Both is implemented fully
 
             // Handle Release Action
-            if (!primaryActionHeld && UI.ActivelyPressedElementId == id)
+            if (!primaryActionHeld && UI.ActivelyPressedElementId == intId)
             {
                 if (IsHovering && LeftClickActionMode is ActionMode.Release)
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(id); // Clear press regardless of hover on release
+                UI.ClearActivePress(intId); // Clear press regardless of hover on release
             }
 
             // Handle Press Attempt (potential capture)
             if (primaryActionPressedThisFrame)
             {
                 // Can only capture press if hovered, it's the potential target, and no drag was already in progress from a previous frame
-                if (IsHovering && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
+                if (IsHovering && UI.PotentialInputTargetId == intId && !UI.dragInProgressFromPreviousFrame)
                 {
                     // Attempt to capture input - this overwrites previous captors for the frame
-                    UI.SetButtonPotentialCaptorForFrame(id);
+                    UI.SetButtonPotentialCaptorForFrame(intId);
                 }
             }
 
             // Determine visual pressed state for this frame (is it the element currently held down?)
-            isPressed = (UI.ActivelyPressedElementId == id);
+            isPressed = (UI.ActivelyPressedElementId == intId);
 
         } // End Enabled block
 
@@ -145,7 +146,7 @@ public class Button
 
         // --- Final Click Determination (for Press mode) ---
         // Click happens now if mode is Press AND this button was the final input captor for the frame.
-        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == id)
+        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == intId)
         {
             wasClickedThisFrame = true;
         }

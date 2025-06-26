@@ -1,4 +1,10 @@
-﻿using System;
+﻿using DirectUI;
+using System.Buffers.Text;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+
+using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
@@ -14,7 +20,7 @@ public static partial class UI
     /// This is ideal for performance-critical loops like tree views.
     /// </summary>
     internal static bool StatelessButton(
-        string id,
+        int id,
         Rect bounds,
         string text,
         ButtonStylePack stylePack,

@@ -849,8 +849,6 @@ internal class GridContainerState
 </file>
 
 <file path="Containers\HBoxContainerState.cs">
-// MODIFIED: HBoxContainerState.cs
-// Summary: Added the missing StartPosition property.
 using System.Numerics;
 
 namespace DirectUI;
@@ -858,16 +856,17 @@ namespace DirectUI;
 internal class HBoxContainerState
 {
     internal string Id { get; }
-    internal Vector2 StartPosition { get; } // Added missing property
+    internal Vector2 StartPosition { get; }
     internal Vector2 CurrentPosition { get; set; }
     internal float Gap { get; }
     internal float MaxElementHeight { get; set; } = 0f;
     internal float AccumulatedWidth { get; set; } = 0f;
+    internal int ElementCount { get; set; } = 0;
 
     internal HBoxContainerState(string id, Vector2 startPosition, float gap)
     {
         Id = id;
-        StartPosition = startPosition; // Initialize the new property
+        StartPosition = startPosition;
         CurrentPosition = startPosition;
         Gap = gap;
     }
@@ -911,8 +910,6 @@ internal class ResizablePanelState
 </file>
 
 <file path="Containers\VBoxContainerState.cs">
-// NEW: VBoxContainerState.cs
-// Summary: State object to manage layout within a vertical container.
 using System.Numerics;
 
 namespace DirectUI;
@@ -925,6 +922,7 @@ internal class VBoxContainerState
     internal float Gap { get; }
     internal float MaxElementWidth { get; set; } = 0f; // Track width for container bounds
     internal float AccumulatedHeight { get; set; } = 0f; // Track height for container bounds
+    internal int ElementCount { get; set; } = 0;
 
     internal VBoxContainerState(string id, Vector2 startPosition, float gap)
     {
@@ -951,8 +949,7 @@ public static partial class UI
     // --- Containers ---
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Vector2 startPosition = ApplyLayout(position);
-        var containerState = new HBoxContainerState(id, startPosition, gap);
+        var containerState = new HBoxContainerState(id, position, gap);
         containerStack.Push(containerState);
     }
     public static void EndHBoxContainer()
@@ -965,8 +962,7 @@ public static partial class UI
     }
     public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Vector2 startPosition = ApplyLayout(position);
-        var containerState = new VBoxContainerState(id, startPosition, gap);
+        var containerState = new VBoxContainerState(id, position, gap);
         containerStack.Push(containerState);
     }
     public static void EndVBoxContainer()
@@ -979,8 +975,7 @@ public static partial class UI
     }
     public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        Vector2 startPosition = ApplyLayout(position);
-        var containerState = new GridContainerState(id, startPosition, availableSize, numColumns, gap);
+        var containerState = new GridContainerState(id, position, availableSize, numColumns, gap);
         containerStack.Push(containerState);
     }
     public static void EndGridContainer()
@@ -1007,6 +1002,7 @@ public static partial class UI
     public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
+        var intId = id.GetHashCode();
 
         var input = CurrentInputState;
         var renderTarget = CurrentRenderTarget!;
@@ -1024,10 +1020,10 @@ public static partial class UI
             Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) SetPotentialInputTarget(id);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(id);
-            if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
-            if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
+            if (isHoveringHandle) SetPotentialInputTarget(intId);
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == intId && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(intId);
+            if (ActivelyPressedElementId == intId && !input.IsLeftMouseDown) ClearActivePress(intId);
+            if (ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
                 else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
@@ -1077,6 +1073,7 @@ public static partial class UI
     public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
+        var intId = id.GetHashCode();
 
         var input = CurrentInputState;
         var renderTarget = CurrentRenderTarget!;
@@ -1098,10 +1095,10 @@ public static partial class UI
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) SetPotentialInputTarget(id);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(id);
-            if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
-            if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
+            if (isHoveringHandle) SetPotentialInputTarget(intId);
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == intId && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(intId);
+            if (ActivelyPressedElementId == intId && !input.IsLeftMouseDown) ClearActivePress(intId);
+            if (ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
                 currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);
@@ -1151,8 +1148,6 @@ public static partial class UI
 </file>
 
 <file path="Core\UI.cs">
-// MODIFIED: UI.cs
-// Summary: Rewrote DrawBoxStyleHelper for both rounded and non-rounded rectangles. Rounded now draws border area first, then fill area on top. Non-rounded also draws border first, then fill.
 using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
@@ -1164,24 +1159,73 @@ using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
 
+internal class TreeViewState
+{
+    internal string Id { get; }
+    internal TreeStyle Style { get; }
+    internal Stack<bool> IndentLineState { get; } = new();
+
+    internal TreeViewState(string id, TreeStyle style)
+    {
+        Id = id;
+        Style = style;
+    }
+}
+
+
 public enum HSliderDirection { LeftToRight, RightToLeft }
 public enum VSliderDirection { TopToBottom, BottomToTop }
 
 public static partial class UI
 {
+    // --- Font Caching Key ---
+    private readonly struct FontKey : IEquatable<FontKey>
+    {
+        public readonly string FontName;
+        public readonly float FontSize;
+        public readonly FontWeight FontWeight;
+        public readonly FontStyle FontStyle;
+        public readonly FontStretch FontStretch;
+
+        public FontKey(ButtonStyle style)
+        {
+            FontName = style.FontName;
+            FontSize = style.FontSize;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontStretch = style.FontStretch;
+        }
+
+        public bool Equals(FontKey other)
+        {
+            return FontName == other.FontName &&
+                   FontSize.Equals(other.FontSize) &&
+                   FontWeight == other.FontWeight &&
+                   FontStyle == other.FontStyle &&
+                   FontStretch == other.FontStretch;
+        }
+
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
+
     // --- State fields ---
     private static ID2D1HwndRenderTarget? currentRenderTarget;
     private static IDWriteFactory? currentDWriteFactory;
     private static InputState currentInputState;
     private static readonly Dictionary<string, object> uiElements = new();
     private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
+    private static readonly Dictionary<FontKey, IDWriteTextFormat> textFormatCache = new();
     private static readonly Stack<object> containerStack = new();
+    private static readonly Stack<TreeViewState> treeStateStack = new();
 
     // Input State
     private static bool captureAttemptedThisFrame = false;
-    private static string? inputCaptorId = null;
-    private static string? potentialInputTargetId = null;
-    private static string? activelyPressedElementId = null;
+    private static int inputCaptorId = 0;
+    private static int potentialInputTargetId = 0;
+    private static int activelyPressedElementId = 0;
     internal static bool dragInProgressFromPreviousFrame = false;
     internal static bool nonSliderElementClaimedPress = false;
 
@@ -1189,9 +1233,9 @@ public static partial class UI
     public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
     public static IDWriteFactory? CurrentDWriteFactory => currentDWriteFactory;
     public static InputState CurrentInputState => currentInputState;
-    public static string? ActivelyPressedElementId => activelyPressedElementId;
-    public static string? InputCaptorId => inputCaptorId;
-    internal static string? PotentialInputTargetId => potentialInputTargetId;
+    public static int ActivelyPressedElementId => activelyPressedElementId;
+    public static int InputCaptorId => inputCaptorId;
+    internal static int PotentialInputTargetId => potentialInputTargetId;
 
     // --- Frame Management ---
     public static void BeginFrame(DrawingContext context, InputState input)
@@ -1200,12 +1244,13 @@ public static partial class UI
         currentDWriteFactory = context.DWriteFactory;
         currentInputState = input;
         containerStack.Clear();
+        treeStateStack.Clear();
 
-        dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
+        dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId != 0;
 
         captureAttemptedThisFrame = false;
-        inputCaptorId = null;
-        potentialInputTargetId = null;
+        inputCaptorId = 0;
+        potentialInputTargetId = 0;
         nonSliderElementClaimedPress = false;
 
         // The active element is now cleared by the element itself upon release,
@@ -1220,30 +1265,51 @@ public static partial class UI
             Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {containerStack.Count} containers left open at EndFrame.");
             containerStack.Clear();
         }
+        if (treeStateStack.Count > 0)
+        {
+            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {treeStateStack.Count} trees left open at EndFrame.");
+            treeStateStack.Clear();
+        }
         currentRenderTarget = null;
         currentDWriteFactory = null;
     }
+
+    internal static void BeginTree(string id, TreeStyle style)
+    {
+        treeStateStack.Push(new TreeViewState(id, style));
+    }
+
+    internal static void EndTree()
+    {
+        if (treeStateStack.Count == 0)
+        {
+            Console.WriteLine("Error: EndTree called without a matching BeginTree.");
+            return;
+        }
+        treeStateStack.Pop();
+    }
+
 
     // --- Input Capture & Targeting ---
 
     public static bool IsElementActive()
     {
-        return activelyPressedElementId is not null;
+        return activelyPressedElementId is not 0;
     }
 
-    internal static void SetPotentialInputTarget(string id)
+    internal static void SetPotentialInputTarget(int id)
     {
         potentialInputTargetId = id;
     }
 
-    internal static void SetPotentialCaptorForFrame(string id)
+    internal static void SetPotentialCaptorForFrame(int id)
     {
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
         activelyPressedElementId = id;
     }
 
-    internal static void SetButtonPotentialCaptorForFrame(string id)
+    internal static void SetButtonPotentialCaptorForFrame(int id)
     {
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
@@ -1251,11 +1317,11 @@ public static partial class UI
         nonSliderElementClaimedPress = true;
     }
 
-    internal static void ClearActivePress(string id)
+    internal static void ClearActivePress(int id)
     {
         if (activelyPressedElementId == id)
         {
-            activelyPressedElementId = null;
+            activelyPressedElementId = 0;
         }
     }
 
@@ -1289,7 +1355,7 @@ public static partial class UI
         instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
     }
 
-    // --- Brush Cache ---
+    // --- Brush and Font Cache ---
     public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
     {
         if (CurrentRenderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
@@ -1305,12 +1371,81 @@ public static partial class UI
         catch (Exception ex) { Console.WriteLine($"Error creating brush for color {color}: {ex.Message}"); return null!; }
     }
 
+    public static IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
+    {
+        if (CurrentDWriteFactory is null) return null;
+
+        var key = new FontKey(style);
+        if (textFormatCache.TryGetValue(key, out var format))
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = CurrentDWriteFactory.CreateTextFormat(
+                style.FontName,
+                null,
+                style.FontWeight,
+                style.FontStyle,
+                style.FontStretch,
+                style.FontSize,
+                "en-us"
+            );
+            if (newFormat is not null)
+            {
+                textFormatCache[key] = newFormat;
+            }
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public static Vector2 MeasureText(IDWriteFactory dwriteFactory, string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || style is null)
+        {
+            return Vector2.Zero;
+        }
+
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
+        if (textFormat is null)
+        {
+            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
+            return Vector2.Zero;
+        }
+
+        using var textLayout = dwriteFactory.CreateTextLayout(
+            text,
+            textFormat,
+            float.MaxValue, // Max width
+            float.MaxValue  // Max height
+        );
+
+        TextMetrics textMetrics = textLayout.Metrics;
+        return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+    }
+
+
     // --- Resource Cleanup ---
     public static void CleanupResources()
     {
-        Console.WriteLine("UI Resource Cleanup: Disposing cached brushes..."); int count = brushCache.Count;
+        Console.WriteLine("UI Resource Cleanup: Disposing cached brushes and text formats...");
+        int brushCount = brushCache.Count;
         foreach (var pair in brushCache) { pair.Value?.Dispose(); }
-        brushCache.Clear(); Console.WriteLine($"UI Resource Cleanup finished. Disposed {count} brushes."); containerStack.Clear();
+        brushCache.Clear();
+
+        int formatCount = textFormatCache.Count;
+        foreach (var pair in textFormatCache) { pair.Value?.Dispose(); }
+        textFormatCache.Clear();
+
+        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes and {formatCount} text formats.");
+        containerStack.Clear();
+        treeStateStack.Clear();
     }
 }
 </file>
@@ -1460,17 +1595,39 @@ public static partial class UI
             case HBoxContainerState hbox:
                 {
                     if (elementSize.Y > hbox.MaxElementHeight) hbox.MaxElementHeight = elementSize.Y;
-                    float advanceX = (hbox.AccumulatedWidth > 0 ? hbox.Gap : 0) + elementSize.X;
+
+                    // Add the width of the element just drawn to the total
+                    hbox.AccumulatedWidth += elementSize.X;
+                    // Add the gap to the total width if this wasn't the first element
+                    if (hbox.ElementCount > 0)
+                    {
+                        hbox.AccumulatedWidth += hbox.Gap;
+                    }
+
+                    // Advance the cursor for the next element's position
+                    float advanceX = elementSize.X + hbox.Gap;
                     hbox.CurrentPosition = new Vector2(hbox.CurrentPosition.X + advanceX, hbox.CurrentPosition.Y);
-                    hbox.AccumulatedWidth = hbox.CurrentPosition.X - hbox.StartPosition.X;
+
+                    hbox.ElementCount++;
                     break;
                 }
             case VBoxContainerState vbox:
                 {
                     if (elementSize.X > vbox.MaxElementWidth) vbox.MaxElementWidth = elementSize.X;
-                    float advanceY = (vbox.AccumulatedHeight > 0 ? vbox.Gap : 0) + elementSize.Y;
+
+                    // Add the height of the element just drawn to the total
+                    vbox.AccumulatedHeight += elementSize.Y;
+                    // Add the gap to the total height if this wasn't the first element
+                    if (vbox.ElementCount > 0)
+                    {
+                        vbox.AccumulatedHeight += vbox.Gap;
+                    }
+
+                    // Advance the cursor for the next element's position
+                    float advanceY = elementSize.Y + vbox.Gap;
                     vbox.CurrentPosition = new Vector2(vbox.CurrentPosition.X, vbox.CurrentPosition.Y + advanceY);
-                    vbox.AccumulatedHeight = vbox.CurrentPosition.Y - vbox.StartPosition.Y;
+
+                    vbox.ElementCount++;
                     break;
                 }
             case GridContainerState grid:
@@ -1480,20 +1637,35 @@ public static partial class UI
                 }
             case ResizablePanelState panel:
                 {
+                    // This is just a wrapper, so we pass the call down to its inner VBox.
+                    // We need to get a mutable reference to the inner VBox to do this.
                     var innerVBox = panel.InnerVBox;
                     if (elementSize.X > innerVBox.MaxElementWidth) innerVBox.MaxElementWidth = elementSize.X;
-                    float advanceY = (innerVBox.AccumulatedHeight > 0 ? innerVBox.Gap : 0) + elementSize.Y;
+
+                    innerVBox.AccumulatedHeight += elementSize.Y;
+                    if (innerVBox.ElementCount > 0)
+                    {
+                        innerVBox.AccumulatedHeight += innerVBox.Gap;
+                    }
+                    float advanceY = elementSize.Y + innerVBox.Gap;
                     innerVBox.CurrentPosition = new Vector2(innerVBox.CurrentPosition.X, innerVBox.CurrentPosition.Y + advanceY);
-                    innerVBox.AccumulatedHeight = innerVBox.CurrentPosition.Y - innerVBox.StartPosition.Y;
+                    innerVBox.ElementCount++;
                     break;
                 }
             case ResizableHPanelState hpanel:
                 {
+                    // This is just a wrapper, so we pass the call down to its inner HBox.
                     var innerHBox = hpanel.InnerHBox;
                     if (elementSize.Y > innerHBox.MaxElementHeight) innerHBox.MaxElementHeight = elementSize.Y;
-                    float advanceX = (innerHBox.AccumulatedWidth > 0 ? innerHBox.Gap : 0) + elementSize.X;
+
+                    innerHBox.AccumulatedWidth += elementSize.X;
+                    if (innerHBox.ElementCount > 0)
+                    {
+                        innerHBox.AccumulatedWidth += innerHBox.Gap;
+                    }
+                    float advanceX = elementSize.X + innerHBox.Gap;
                     innerHBox.CurrentPosition = new Vector2(innerHBox.CurrentPosition.X + advanceX, innerHBox.CurrentPosition.Y);
-                    innerHBox.AccumulatedWidth = innerHBox.CurrentPosition.X - innerHBox.StartPosition.X;
+                    innerHBox.ElementCount++;
                     break;
                 }
             default:
@@ -1502,6 +1674,121 @@ public static partial class UI
                     break;
                 }
         }
+    }
+}
+</file>
+
+<file path="Core\UI.StatelessWidgets.cs">
+using DirectUI;
+using System.Buffers.Text;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+
+using System;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    /// <summary>
+    /// An internal, high-performance, stateless button drawing function.
+    /// It does not use the GetOrCreateElement cache and avoids allocations.
+    /// This is ideal for performance-critical loops like tree views.
+    /// </summary>
+    internal static bool StatelessButton(
+        int id,
+        Rect bounds,
+        string text,
+        ButtonStylePack stylePack,
+        Alignment textAlignment,
+        DirectUI.Button.ActionMode clickActionMode,
+        bool autoWidth = false,
+        Vector2? textMargin = null,
+        Vector2 textOffset = default)
+    {
+        var input = CurrentInputState;
+        var renderTarget = CurrentRenderTarget!;
+        var dwriteFactory = CurrentDWriteFactory!;
+
+        Vector2 finalSize = new(bounds.Width, bounds.Height);
+        if (autoWidth)
+        {
+            var measuredSize = MeasureText(dwriteFactory, text, stylePack.Normal);
+            var margin = textMargin ?? new Vector2(10, 5);
+            finalSize.X = measuredSize.X + margin.X * 2;
+        }
+        Rect finalBounds = new Rect(bounds.X, bounds.Y, finalSize.X, finalSize.Y);
+
+        // --- Input and State ---
+        bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool isPressed = ActivelyPressedElementId == id;
+        bool wasClickedThisFrame = false;
+
+        if (isHovering)
+        {
+            SetPotentialInputTarget(id);
+        }
+
+        if (!input.IsLeftMouseDown && isPressed)
+        {
+            if (isHovering && clickActionMode == DirectUI.Button.ActionMode.Release)
+            {
+                wasClickedThisFrame = true;
+            }
+            ClearActivePress(id);
+            isPressed = false; // Update visual state immediately
+        }
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame)
+        {
+            SetButtonPotentialCaptorForFrame(id);
+            isPressed = true; // Update visual state immediately
+        }
+
+        if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && InputCaptorId == id)
+        {
+            wasClickedThisFrame = true;
+        }
+
+        // --- Drawing ---
+        stylePack.UpdateCurrentStyle(isHovering, isPressed, false);
+        var currentStyle = stylePack.Current;
+
+        DrawBoxStyleHelper(renderTarget, new Vector2(finalBounds.X, finalBounds.Y), new Vector2(finalBounds.Width, finalBounds.Height), currentStyle);
+
+        // Draw Text
+        ID2D1SolidColorBrush textBrush = GetOrCreateBrush(currentStyle.FontColor);
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(currentStyle);
+        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        {
+            // Lightweight layout object is created and disposed here.
+            using var textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
+
+            textLayout.TextAlignment = textAlignment.Horizontal switch
+            {
+                HAlignment.Left => TextAlignment.Leading,
+                HAlignment.Center => TextAlignment.Center,
+                HAlignment.Right => TextAlignment.Trailing,
+                _ => TextAlignment.Leading
+            };
+            textLayout.ParagraphAlignment = textAlignment.Vertical switch
+            {
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
+            };
+
+            var drawOrigin = new Vector2(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y);
+            renderTarget.DrawTextLayout(drawOrigin, textLayout, textBrush);
+        }
+
+        return wasClickedThisFrame;
     }
 }
 </file>
@@ -1522,7 +1809,7 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return false;
         Button buttonInstance = GetOrCreateElement<Button>(id);
-        Vector2 elementPosition = GetCurrentLayoutPositionInternal();
+        Vector2 elementPosition = ApplyLayout(definition.Position);
         buttonInstance.Position = elementPosition;
         ApplyButtonDefinition(buttonInstance, definition);
 
@@ -1552,7 +1839,7 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalHSliderLogic sliderInstance = GetOrCreateElement<InternalHSliderLogic>(id);
-        Vector2 elementPosition = GetCurrentLayoutPositionInternal();
+        Vector2 elementPosition = ApplyLayout(definition.Position);
         sliderInstance.Position = elementPosition;
         ApplySliderDefinition(sliderInstance, definition);
         sliderInstance.Direction = definition.HorizontalDirection;
@@ -1583,7 +1870,7 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalVSliderLogic sliderInstance = GetOrCreateElement<InternalVSliderLogic>(id);
-        Vector2 elementPosition = GetCurrentLayoutPositionInternal();
+        Vector2 elementPosition = ApplyLayout(definition.Position);
         sliderInstance.Position = elementPosition;
         ApplySliderDefinition(sliderInstance, definition);
         sliderInstance.Direction = definition.VerticalDirection;
@@ -1609,6 +1896,108 @@ public static partial class UI
         AdvanceLayout(sliderInstance.Size);
 
         return newValue;
+    }
+
+    public static void Tree<T>(string id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
+    {
+        if (!IsContextValid() || root is null) { clickedNode = null; return; }
+
+        clickedNode = null;
+        var treeStyle = style ?? GetOrCreateElement<TreeStyle>(id + "_style");
+
+        BeginTree(id, treeStyle);
+        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
+        EndTree();
+    }
+
+    private static void ProcessTreeNodeRecursive<T>(int parentIdHash, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
+    {
+        if (treeStateStack.Count == 0) return;
+        var treeState = treeStateStack.Peek();
+        var style = treeState.Style;
+        var renderTarget = CurrentRenderTarget!;
+
+        // --- Get current position and draw hierarchy lines ---
+        var startLayoutPos = GetCurrentLayoutPositionInternal();
+        var brush = GetOrCreateBrush(style.LineColor);
+        if (brush is not null)
+        {
+            // Draw vertical lines for prior indent levels
+            int i = 0;
+            foreach (var shouldDrawLine in treeState.IndentLineState)
+            {
+                if (shouldDrawLine)
+                {
+                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
+                    renderTarget.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), brush, 1.0f);
+                }
+                i++;
+            }
+
+            // Draw horizontal line for the current node itself
+            if (treeState.IndentLineState.Count > 0)
+            {
+                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
+                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
+                renderTarget.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), brush, 1.0f);
+            }
+        }
+
+        // --- Manually lay out the node row ---
+        float indentSize = treeState.IndentLineState.Count * style.Indent;
+        var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
+        float currentX = nodeRowStartPos.X;
+        float gap = 5;
+
+        // --- ID Generation (Allocation-free) ---
+        int nodeHash = node.GetHashCode();
+        int toggleId = HashCode.Combine(parentIdHash, index, nodeHash, 0);
+        int labelId = HashCode.Combine(parentIdHash, index, nodeHash, 1);
+
+
+        // --- Toggle Button ---
+        float toggleWidth = style.RowHeight - 4;
+        if (node.Children.Count > 0)
+        {
+            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
+            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            {
+                node.IsExpanded = !node.IsExpanded;
+            }
+        }
+        currentX += toggleWidth;
+
+        // --- Label Button ---
+        currentX += gap; // Add gap before the label
+        var labelStyle = style.NodeLabelStyle;
+        var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
+        float labelMargin = 4;
+        var labelSize = MeasureText(CurrentDWriteFactory!, node.Text, labelStyle.Normal);
+        float labelWidth = labelSize.X + labelMargin * 2;
+        var labelOffset = new Vector2(labelMargin, 0);
+
+        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
+        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
+        {
+            clickedNode = node;
+        }
+        currentX += labelWidth;
+
+        // --- Advance parent layout ---
+        float totalWidth = (currentX - nodeRowStartPos.X);
+        AdvanceLayout(new Vector2(totalWidth, style.RowHeight));
+
+        // --- Recurse if expanded ---
+        if (node.IsExpanded && node.Children.Count > 0)
+        {
+            for (int childIdx = 0; childIdx < node.Children.Count; childIdx++)
+            {
+                bool isLastChild = childIdx == node.Children.Count - 1;
+                treeState.IndentLineState.Push(!isLastChild); // Don't draw vertical line past the last child
+                ProcessTreeNodeRecursive(toggleId, childIdx, node.Children[childIdx], ref clickedNode); // Pass parent's unique int ID
+                treeState.IndentLineState.Pop();
+            }
+        }
     }
 }
 </file>
@@ -2039,8 +2428,55 @@ public class SliderStyle
 }
 </file>
 
+<file path="Styles\TreeStyle.cs">
+using DirectUI;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public class TreeStyle
+{
+    public float Indent { get; set; } = 19f;
+    public float RowHeight { get; set; } = 22f;
+    public Color4 LineColor { get; set; } = DefaultTheme.HoverBorder;
+    public ButtonStylePack ToggleStyle { get; set; }
+    public ButtonStylePack NodeLabelStyle { get; set; }
+
+    public TreeStyle()
+    {
+        ToggleStyle = new ButtonStylePack
+        {
+            Roundness = 0.2f,
+            BorderLength = 1f,
+            FontName = "Consolas",
+            FontSize = 14
+        };
+        ToggleStyle.Normal.FillColor = DefaultTheme.NormalFill;
+        ToggleStyle.Normal.BorderColor = DefaultTheme.NormalBorder;
+        ToggleStyle.Hover.FillColor = DefaultTheme.HoverFill;
+        ToggleStyle.Hover.BorderColor = DefaultTheme.HoverBorder;
+        ToggleStyle.Pressed.FillColor = DefaultTheme.Accent;
+        ToggleStyle.Pressed.BorderColor = DefaultTheme.AccentBorder;
+
+        NodeLabelStyle = new ButtonStylePack
+        {
+            Roundness = 0f,
+            BorderLength = 0f,
+            FontName = "Segoe UI",
+            FontSize = 14
+        };
+        NodeLabelStyle.Normal.FillColor = Colors.Transparent;
+        NodeLabelStyle.Normal.FontColor = DefaultTheme.Text;
+        NodeLabelStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 0.5f); // Semi-transparent gray
+        NodeLabelStyle.Hover.FontColor = DefaultTheme.Text;
+        NodeLabelStyle.Pressed.FillColor = DefaultTheme.Accent;
+        NodeLabelStyle.Pressed.FontColor = Colors.White;
+        NodeLabelStyle.Pressed.BorderColor = DefaultTheme.AccentBorder;
+    }
+}
+</file>
+
 <file path="Widgets\Button.cs">
-// Widgets/Button.cs
 namespace DirectUI;
 
 using System;
@@ -2094,6 +2530,7 @@ public class Button
         ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
         IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
         InputState input = UI.CurrentInputState;
+        var intId = id.GetHashCode();
 
         if (renderTarget is null || dwriteFactory is null)
         {
@@ -2111,9 +2548,9 @@ public class Button
         if (Disabled)
         {
             IsHovering = false;
-            if (UI.ActivelyPressedElementId == id)
+            if (UI.ActivelyPressedElementId == intId)
             {
-                UI.ClearActivePress(id);
+                UI.ClearActivePress(intId);
             }
         }
         else // Element is Enabled
@@ -2124,7 +2561,7 @@ public class Button
 
             if (IsHovering)
             {
-                UI.SetPotentialInputTarget(id);
+                UI.SetPotentialInputTarget(intId);
             }
 
             // Determine relevant actions based on behavior
@@ -2133,28 +2570,28 @@ public class Button
             // Add Right button logic here if Behavior.Right/Both is implemented fully
 
             // Handle Release Action
-            if (!primaryActionHeld && UI.ActivelyPressedElementId == id)
+            if (!primaryActionHeld && UI.ActivelyPressedElementId == intId)
             {
                 if (IsHovering && LeftClickActionMode is ActionMode.Release)
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(id); // Clear press regardless of hover on release
+                UI.ClearActivePress(intId); // Clear press regardless of hover on release
             }
 
             // Handle Press Attempt (potential capture)
             if (primaryActionPressedThisFrame)
             {
                 // Can only capture press if hovered, it's the potential target, and no drag was already in progress from a previous frame
-                if (IsHovering && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
+                if (IsHovering && UI.PotentialInputTargetId == intId && !UI.dragInProgressFromPreviousFrame)
                 {
                     // Attempt to capture input - this overwrites previous captors for the frame
-                    UI.SetButtonPotentialCaptorForFrame(id);
+                    UI.SetButtonPotentialCaptorForFrame(intId);
                 }
             }
 
             // Determine visual pressed state for this frame (is it the element currently held down?)
-            isPressed = (UI.ActivelyPressedElementId == id);
+            isPressed = (UI.ActivelyPressedElementId == intId);
 
         } // End Enabled block
 
@@ -2188,7 +2625,7 @@ public class Button
 
         // --- Final Click Determination (for Press mode) ---
         // Click happens now if mode is Press AND this button was the final input captor for the frame.
-        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == id)
+        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == intId)
         {
             wasClickedThisFrame = true;
         }
@@ -2201,58 +2638,6 @@ public class Button
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
     }
 
-    internal Vector2 MeasureText(IDWriteFactory dwriteFactory, ButtonStyle styleToUse)
-    {
-        if (string.IsNullOrEmpty(Text) || styleToUse is null || dwriteFactory is null)
-        {
-            return Vector2.Zero;
-        }
-
-        IDWriteTextFormat? textFormat = null;
-
-        try
-        {
-            textFormat = dwriteFactory.CreateTextFormat(
-                styleToUse.FontName,
-                null, // font collection
-                styleToUse.FontWeight,
-                styleToUse.FontStyle,
-                styleToUse.FontStretch,
-                styleToUse.FontSize,
-                "en-us" // locale
-            );
-
-            if (textFormat is null)
-            {
-                // Retained log message for unexpected font system issue.
-                Console.WriteLine("Warning: Failed to create TextFormat for measurement.");
-                return Vector2.Zero;
-            }
-
-            // Use using for disposable TextLayout
-            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(
-                Text,
-                textFormat,
-                float.MaxValue, // Max width
-                float.MaxValue  // Max height
-            );
-
-            TextMetrics textMetrics = textLayout.Metrics;
-
-            return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
-        }
-        catch (Exception ex)
-        {
-            // Retained log message for unexpected error.
-            Console.WriteLine($"Error measuring text for button: {ex.Message}");
-            return Vector2.Zero;
-        }
-        finally
-        {
-            textFormat?.Dispose();
-        }
-    }
-
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
     {
         if (!AutoWidth || dwriteFactory is null || Themes is null)
@@ -2261,8 +2646,7 @@ public class Button
         }
 
         // Always measure using the Normal theme to ensure consistent size across states.
-        // This relies on the font properties being set consistently across the style pack.
-        Vector2 textSize = MeasureText(dwriteFactory, Themes.Normal);
+        Vector2 textSize = UI.MeasureText(dwriteFactory, Text, Themes.Normal);
         float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
 
         // Use a small epsilon to avoid floating point jitter
@@ -2293,77 +2677,67 @@ public class Button
 
     private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
     {
-        // Early exits for common cases
         if (string.IsNullOrEmpty(Text)) return;
         ButtonStyle? style = Themes?.Current;
         if (style is null) return;
 
         ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
-        if (textBrush is null) return; // Brush creation failed (error logged in GetOrCreateBrush)
+        if (textBrush is null) return;
 
-        IDWriteTextFormat? textFormat = null;
+        IDWriteTextFormat? textFormat = UI.GetOrCreateTextFormat(style);
+        if (textFormat is null) return;
+
+        IDWriteTextLayout? textLayout = null;
         try
         {
-            textFormat = dwriteFactory.CreateTextFormat(
-                style.FontName,
-                null,
-                style.FontWeight,
-                style.FontStyle,
-                style.FontStretch,
-                style.FontSize,
-                "en-us"
+            Rect bounds = GlobalBounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+            // Create a layout with the button's bounds as constraints.
+            textLayout = dwriteFactory.CreateTextLayout(
+                Text,
+                textFormat,
+                bounds.Width,
+                bounds.Height
             );
 
-            if (textFormat is null) return; // Should not happen if MeasureText succeeded, but check anyway
-
-            // Apply Alignment
-            textFormat.TextAlignment = TextAlignment.Horizontal switch
+            // Apply Alignment to the layout object itself.
+            textLayout.TextAlignment = TextAlignment.Horizontal switch
             {
                 HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
                 HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
                 HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
                 _ => Vortice.DirectWrite.TextAlignment.Leading
             };
-            textFormat.ParagraphAlignment = TextAlignment.Vertical switch
+            textLayout.ParagraphAlignment = TextAlignment.Vertical switch
             {
-                VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near,
-                VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center,
-                VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far,
-                _ => Vortice.DirectWrite.ParagraphAlignment.Near
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
             };
 
-            Rect bounds = GlobalBounds;
-            if (bounds.Width <= 0 || bounds.Height <= 0) return; // Avoid drawing in zero-size rect
+            // The origin point for drawing the layout.
+            var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
 
-            // Apply offset to layout rectangle
-            Rect layoutRect = bounds;
-            layoutRect.Left += TextOffset.X;
-            layoutRect.Top += TextOffset.Y;
-            // Note: Width/Height remain the button's bounds for centering/alignment calculations within DrawText
-
-            renderTarget.DrawText(
-                Text,
-                textFormat,
-                layoutRect, // The area where text can be drawn
+            renderTarget.DrawTextLayout(
+                textOrigin,
+                textLayout,
                 textBrush,
-                DrawTextOptions.Clip // Clip text to the layoutRect automatically
+                DrawTextOptions.None // Clipping is handled by the layout's dimensions.
             );
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
-            // Retained log message for recoverable graphics issue.
             Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
-            // Don't dispose textFormat here, it might be invalid anyway. Resource cleanup happens externally.
-            textFormat = null; // Ensure finally doesn't try to dispose potentially bad pointer
         }
         catch (Exception ex)
         {
-            // Retained log message for unexpected error.
             Console.WriteLine($"Error drawing button text: {ex.Message}");
         }
         finally
         {
-            textFormat?.Dispose();
+            textLayout?.Dispose();
         }
     }
 }
@@ -2395,7 +2769,6 @@ public class ButtonDefinition
 </file>
 
 <file path="Widgets\InternalHSliderLogic.cs">
-// Summary: Press handling now calls the new 'UI.SetButtonPotentialCaptorForFrame' method. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -2414,9 +2787,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.X + Size.X;
     }
 
-    protected override void UpdateHoverStates(Vector2 mousePos) { }
-
-    protected override float HandleInput(string id, InputState input, float currentValue)
+    protected override float HandleInput(InputState input, float currentValue)
     {
         float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
@@ -2433,25 +2804,21 @@ internal class InternalHSliderLogic : InternalSliderLogic
 
         if (isSliderHovered)
         {
-            UI.SetPotentialInputTarget(id);
+            UI.SetPotentialInputTarget(GlobalIntId);
         }
 
         // 2. Handle Mouse Release
-        if (UI.ActivelyPressedElementId == id && !input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
         {
-            UI.ClearActivePress(id);
+            UI.ClearActivePress(GlobalIntId);
         }
 
         // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
+            if (isSliderHovered && UI.PotentialInputTargetId == GlobalIntId && !UI.dragInProgressFromPreviousFrame)
             {
-                // --- CHANGE HERE ---
-                // Use the dedicated button method to claim potential capture AND set the flag.
-                // This makes slider capture behavior identical to button capture behavior.
-                UI.SetButtonPotentialCaptorForFrame(id);
-                // --- END CHANGE ---
+                UI.SetButtonPotentialCaptorForFrame(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -2462,7 +2829,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         }
 
         // 4. Handle Mouse Held/Drag
-        if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
         {
             if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
             {
@@ -2521,7 +2888,6 @@ internal class InternalHSliderLogic : InternalSliderLogic
 </file>
 
 <file path="Widgets\InternalSliderLogic.cs">
-// Summary: UpdateAndDraw now checks the '!UI.nonSliderElementClaimedPress' flag before executing the deferred track click value jump. HandleInput now calls the general 'UI.SetPotentialCaptorForFrame'.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -2554,14 +2920,15 @@ internal abstract class InternalSliderLogic
     protected bool pendingTrackClickValueJump = false;
     protected float trackClickPosition = 0f;
     protected string GlobalId { get; private set; } = string.Empty;
+    protected int GlobalIntId { get; private set; } = 0;
+
 
     // --- Calculated Properties ---
     public Rect GlobalBounds => new(Position.X - Origin.X, Position.Y - Origin.Y, Size.X, Size.Y);
 
     // --- Abstract Methods ---
     protected abstract void CalculateTrackBounds();
-    protected abstract void UpdateHoverStates(Vector2 mousePos);
-    protected abstract float HandleInput(string id, InputState input, float currentValue);
+    protected abstract float HandleInput(InputState input, float currentValue);
     protected abstract float ConvertPositionToValue(float position);
     protected abstract Vector2 CalculateGrabberPosition(float currentValue);
     protected abstract void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue);
@@ -2571,6 +2938,7 @@ internal abstract class InternalSliderLogic
     internal float UpdateAndDraw(string id, InputState input, DrawingContext context, float currentValue)
     {
         GlobalId = id;
+        GlobalIntId = id.GetHashCode();
         trackPosition = Position - Origin;
         CalculateTrackBounds();
 
@@ -2582,28 +2950,22 @@ internal abstract class InternalSliderLogic
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
-            if (UI.ActivelyPressedElementId == id) UI.ClearActivePress(id);
+            if (UI.ActivelyPressedElementId == GlobalIntId) UI.ClearActivePress(GlobalIntId);
         }
         else
         {
             // HandleInput sets potential target, calls SetPotentialCaptorForFrame,
             // sets pendingTrackClickValueJump, and returns value updated by DRAG.
-            newValue = HandleInput(id, input, currentValue);
+            newValue = HandleInput(input, currentValue);
         }
 
         // Deferred Track Click Value Jump Check
-        // Check if:
-        // 1. A track click was initiated earlier (pending flag is true)
-        // 2. This slider ended up being the final input captor for the frame
-        // 3. A non-slider element (button) processed LATER did NOT claim the press
-        if (pendingTrackClickValueJump && UI.InputCaptorId == id && !UI.nonSliderElementClaimedPress)
+        if (pendingTrackClickValueJump && UI.InputCaptorId == GlobalIntId && !UI.nonSliderElementClaimedPress)
         {
-            // Perform the value jump calculation now
             newValue = ConvertPositionToValue(trackClickPosition);
             newValue = ApplyStep(newValue);
             newValue = Math.Clamp(newValue, MinValue, MaxValue);
         }
-        // Always reset flag after check
         pendingTrackClickValueJump = false;
 
 
@@ -2659,7 +3021,7 @@ internal abstract class InternalSliderLogic
 
     protected void UpdateGrabberThemeStyle()
     {
-        isGrabberPressed = UI.ActivelyPressedElementId == GlobalId;
+        isGrabberPressed = UI.ActivelyPressedElementId == GlobalIntId;
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
@@ -2679,7 +3041,6 @@ internal abstract class InternalSliderLogic
 </file>
 
 <file path="Widgets\InternalVSlider.cs">
-// Summary: Press handling now calls the new 'UI.SetButtonPotentialCaptorForFrame' method. Deferred logic check moved entirely to base class.
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -2698,9 +3059,7 @@ internal class InternalVSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.Y + Size.Y;
     }
 
-    protected override void UpdateHoverStates(Vector2 mousePos) { }
-
-    protected override float HandleInput(string id, InputState input, float currentValue)
+    protected override float HandleInput(InputState input, float currentValue)
     {
         float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
@@ -2717,25 +3076,21 @@ internal class InternalVSliderLogic : InternalSliderLogic
 
         if (isSliderHovered)
         {
-            UI.SetPotentialInputTarget(id);
+            UI.SetPotentialInputTarget(GlobalIntId);
         }
 
         // 2. Handle Mouse Release
-        if (UI.ActivelyPressedElementId == id && !input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
         {
-            UI.ClearActivePress(id);
+            UI.ClearActivePress(GlobalIntId);
         }
 
         // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
+            if (isSliderHovered && UI.PotentialInputTargetId == GlobalIntId && !UI.dragInProgressFromPreviousFrame)
             {
-                // --- CHANGE HERE ---
-                // Use the dedicated button method to claim potential capture AND set the flag.
-                // This makes slider capture behavior identical to button capture behavior.
-                UI.SetButtonPotentialCaptorForFrame(id);
-                // --- END CHANGE ---
+                UI.SetButtonPotentialCaptorForFrame(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -2746,7 +3101,7 @@ internal class InternalVSliderLogic : InternalSliderLogic
         }
 
         // 4. Handle Mouse Held/Drag
-        if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
         {
             if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
             {
@@ -2872,6 +3227,45 @@ public class SliderDefinition
 }
 </file>
 
+<file path="Widgets\TreeNode.cs">
+using System.Collections.Generic;
+
+namespace DirectUI;
+
+/// <summary>
+/// Represents a node in a generic tree structure.
+/// </summary>
+/// <typeparam name="T">The type of the user data associated with the node.</typeparam>
+public class TreeNode<T>
+{
+    public string Text { get; set; }
+    public T UserData { get; set; }
+    public bool IsExpanded { get; set; }
+    public List<TreeNode<T>> Children { get; } = new();
+
+    public TreeNode(string text, T userData, bool expanded = false)
+    {
+        Text = text;
+        UserData = userData;
+        IsExpanded = expanded;
+    }
+
+    /// <summary>
+    /// Adds a new child node to this node.
+    /// </summary>
+    /// <param name="text">The display text of the child node.</param>
+    /// <param name="userData">The user data associated with the child node.</param>
+    /// <param name="expanded">Whether the child node is expanded by default.</param>
+    /// <returns>The newly created child node.</returns>
+    public TreeNode<T> AddChild(string text, T userData, bool expanded = false)
+    {
+        var child = new TreeNode<T>(text, userData, expanded);
+        Children.Add(child);
+        return child;
+    }
+}
+</file>
+
 <file path="MyDirectUIApp.cs">
 using System;
 using System.Numerics;
@@ -2886,12 +3280,29 @@ namespace DirectUI
         private float rightPanelWidth = 250f;
         private float bottomPanelHeight = 150f;
 
+        private readonly TreeNode<string> _fileRoot;
+        private readonly TreeStyle _treeStyle = new();
+
+
         // Constructor to match the call in Program.cs
         public MyDirectUIApp(string title, int width, int height)
             : base(title, width, height)
         {
             // Set a dark background color that matches the new theme
             backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
+
+            // --- Initialize Tree Data ---
+            _fileRoot = new TreeNode<string>("Root", "C:/", true);
+            var docs = _fileRoot.AddChild("Documents", "C:/Docs", true);
+            docs.AddChild("Work", "C:/Docs/Work");
+            var proj = docs.AddChild("Projects", "C:/Docs/Projects", true);
+            proj.AddChild("DirectUI", "C:/Docs/Projects/DirectUI");
+            proj.AddChild("Old Stuff", "C:/Docs/Projects/Old");
+            docs.AddChild("Personal", "C:/Docs/Personal");
+
+            var downloads = _fileRoot.AddChild("Downloads", "C:/Downloads");
+            downloads.AddChild("Installer.exe", "C:/Downloads/Installer.exe");
+            downloads.AddChild("archive.zip", "C:/Downloads/archive.zip");
         }
 
         protected override void DrawUIContent(DrawingContext context, InputState input)
@@ -2985,15 +3396,16 @@ namespace DirectUI
 
             // --- Left Panel ---
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
-            if (UI.Button("my_button", new ButtonDefinition { Text = "Click Me!", Theme = buttonTheme }))
+
+            // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
+            UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
+            UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+            if (clickedNode is not null)
             {
-                Console.WriteLine("Button was clicked!");
+                Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
             }
-            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
-            if (UI.Button("another_button", new ButtonDefinition { Text = $"Slider: {sliderValue:F2}", Theme = buttonTheme, AutoWidth = true }))
-            {
-                Console.WriteLine("Second button clicked!");
-            }
+            UI.EndVBoxContainer();
+
             UI.EndResizableVPanel();
 
             // --- Right Panel ---
@@ -3006,6 +3418,8 @@ namespace DirectUI
             {
                 Console.WriteLine("Right panel button 2 clicked!");
             }
+            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+
             UI.EndResizableVPanel();
 
             // --- Bottom Panel ---

@@ -65,6 +65,7 @@ public static partial class UI
     public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
+        var intId = id.GetHashCode();
 
         var input = CurrentInputState;
         var renderTarget = CurrentRenderTarget!;
@@ -82,10 +83,10 @@ public static partial class UI
             Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) SetPotentialInputTarget(id);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(id);
-            if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
-            if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
+            if (isHoveringHandle) SetPotentialInputTarget(intId);
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == intId && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(intId);
+            if (ActivelyPressedElementId == intId && !input.IsLeftMouseDown) ClearActivePress(intId);
+            if (ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
                 else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
@@ -135,6 +136,7 @@ public static partial class UI
     public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
+        var intId = id.GetHashCode();
 
         var input = CurrentInputState;
         var renderTarget = CurrentRenderTarget!;
@@ -156,10 +158,10 @@ public static partial class UI
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) SetPotentialInputTarget(id);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(id);
-            if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
-            if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
+            if (isHoveringHandle) SetPotentialInputTarget(intId);
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == intId && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(intId);
+            if (ActivelyPressedElementId == intId && !input.IsLeftMouseDown) ClearActivePress(intId);
+            if (ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
                 currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);

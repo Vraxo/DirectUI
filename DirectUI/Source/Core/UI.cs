@@ -1,8 +1,11 @@
-﻿using System.Numerics;
-using SharpGen.Runtime;
+﻿using SharpGen.Runtime;
+using System;
+using System.Collections.Generic;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
 
@@ -70,9 +73,9 @@ public static partial class UI
 
     // Input State
     private static bool captureAttemptedThisFrame = false;
-    private static string? inputCaptorId = null;
-    private static string? potentialInputTargetId = null;
-    private static string? activelyPressedElementId = null;
+    private static int inputCaptorId = 0;
+    private static int potentialInputTargetId = 0;
+    private static int activelyPressedElementId = 0;
     internal static bool dragInProgressFromPreviousFrame = false;
     internal static bool nonSliderElementClaimedPress = false;
 
@@ -80,9 +83,9 @@ public static partial class UI
     public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
     public static IDWriteFactory? CurrentDWriteFactory => currentDWriteFactory;
     public static InputState CurrentInputState => currentInputState;
-    public static string? ActivelyPressedElementId => activelyPressedElementId;
-    public static string? InputCaptorId => inputCaptorId;
-    internal static string? PotentialInputTargetId => potentialInputTargetId;
+    public static int ActivelyPressedElementId => activelyPressedElementId;
+    public static int InputCaptorId => inputCaptorId;
+    internal static int PotentialInputTargetId => potentialInputTargetId;
 
     // --- Frame Management ---
     public static void BeginFrame(DrawingContext context, InputState input)
@@ -93,11 +96,11 @@ public static partial class UI
         containerStack.Clear();
         treeStateStack.Clear();
 
-        dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
+        dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId != 0;
 
         captureAttemptedThisFrame = false;
-        inputCaptorId = null;
-        potentialInputTargetId = null;
+        inputCaptorId = 0;
+        potentialInputTargetId = 0;
         nonSliderElementClaimedPress = false;
 
         // The active element is now cleared by the element itself upon release,
@@ -141,22 +144,22 @@ public static partial class UI
 
     public static bool IsElementActive()
     {
-        return activelyPressedElementId is not null;
+        return activelyPressedElementId is not 0;
     }
 
-    internal static void SetPotentialInputTarget(string id)
+    internal static void SetPotentialInputTarget(int id)
     {
         potentialInputTargetId = id;
     }
 
-    internal static void SetPotentialCaptorForFrame(string id)
+    internal static void SetPotentialCaptorForFrame(int id)
     {
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
         activelyPressedElementId = id;
     }
 
-    internal static void SetButtonPotentialCaptorForFrame(string id)
+    internal static void SetButtonPotentialCaptorForFrame(int id)
     {
         captureAttemptedThisFrame = true;
         inputCaptorId = id;
@@ -164,11 +167,11 @@ public static partial class UI
         nonSliderElementClaimedPress = true;
     }
 
-    internal static void ClearActivePress(string id)
+    internal static void ClearActivePress(int id)
     {
         if (activelyPressedElementId == id)
         {
-            activelyPressedElementId = null;
+            activelyPressedElementId = 0;
         }
     }
 

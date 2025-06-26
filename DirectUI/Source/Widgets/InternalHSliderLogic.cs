@@ -1,5 +1,4 @@
-﻿// Summary: Press handling now calls the new 'UI.SetButtonPotentialCaptorForFrame' method. Deferred logic check moved entirely to base class.
-using System;
+﻿using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
@@ -17,9 +16,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.X + Size.X;
     }
 
-    protected override void UpdateHoverStates(Vector2 mousePos) { }
-
-    protected override float HandleInput(string id, InputState input, float currentValue)
+    protected override float HandleInput(InputState input, float currentValue)
     {
         float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
@@ -36,25 +33,21 @@ internal class InternalHSliderLogic : InternalSliderLogic
 
         if (isSliderHovered)
         {
-            UI.SetPotentialInputTarget(id);
+            UI.SetPotentialInputTarget(GlobalIntId);
         }
 
         // 2. Handle Mouse Release
-        if (UI.ActivelyPressedElementId == id && !input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
         {
-            UI.ClearActivePress(id);
+            UI.ClearActivePress(GlobalIntId);
         }
 
         // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && UI.PotentialInputTargetId == id && !UI.dragInProgressFromPreviousFrame)
+            if (isSliderHovered && UI.PotentialInputTargetId == GlobalIntId && !UI.dragInProgressFromPreviousFrame)
             {
-                // --- CHANGE HERE ---
-                // Use the dedicated button method to claim potential capture AND set the flag.
-                // This makes slider capture behavior identical to button capture behavior.
-                UI.SetButtonPotentialCaptorForFrame(id);
-                // --- END CHANGE ---
+                UI.SetButtonPotentialCaptorForFrame(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -65,7 +58,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         }
 
         // 4. Handle Mouse Held/Drag
-        if (UI.ActivelyPressedElementId == id && input.IsLeftMouseDown)
+        if (UI.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
         {
             if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
             {

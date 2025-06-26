@@ -110,11 +110,11 @@ public static partial class UI
         var treeStyle = style ?? GetOrCreateElement<TreeStyle>(id + "_style");
 
         BeginTree(id, treeStyle);
-        ProcessTreeNodeRecursive(id, 0, root, ref clickedNode);
+        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
         EndTree();
     }
 
-    private static void ProcessTreeNodeRecursive<T>(string parentId, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
+    private static void ProcessTreeNodeRecursive<T>(int parentIdHash, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
     {
         if (treeStateStack.Count == 0) return;
         var treeState = treeStateStack.Peek();
@@ -149,17 +149,22 @@ public static partial class UI
 
         // --- Manually lay out the node row ---
         float indentSize = treeState.IndentLineState.Count * style.Indent;
-        string currentId = $"{parentId}_{index}_{node.Text.GetHashCode()}";
         var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
         float currentX = nodeRowStartPos.X;
         float gap = 5;
+
+        // --- ID Generation (Allocation-free) ---
+        int nodeHash = node.GetHashCode();
+        int toggleId = HashCode.Combine(parentIdHash, index, nodeHash, 0);
+        int labelId = HashCode.Combine(parentIdHash, index, nodeHash, 1);
+
 
         // --- Toggle Button ---
         float toggleWidth = style.RowHeight - 4;
         if (node.Children.Count > 0)
         {
             var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (StatelessButton(currentId + "_toggle", bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -176,7 +181,7 @@ public static partial class UI
         var labelOffset = new Vector2(labelMargin, 0);
 
         var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (StatelessButton(currentId + "_label", labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
+        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
         {
             clickedNode = node;
         }
@@ -193,7 +198,7 @@ public static partial class UI
             {
                 bool isLastChild = childIdx == node.Children.Count - 1;
                 treeState.IndentLineState.Push(!isLastChild); // Don't draw vertical line past the last child
-                ProcessTreeNodeRecursive(currentId, childIdx, node.Children[childIdx], ref clickedNode);
+                ProcessTreeNodeRecursive(toggleId, childIdx, node.Children[childIdx], ref clickedNode); // Pass parent's unique int ID
                 treeState.IndentLineState.Pop();
             }
         }

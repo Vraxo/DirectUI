@@ -1,5 +1,4 @@
-﻿// Summary: UpdateAndDraw now checks the '!UI.nonSliderElementClaimedPress' flag before executing the deferred track click value jump. HandleInput now calls the general 'UI.SetPotentialCaptorForFrame'.
-using System;
+﻿using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
@@ -31,14 +30,15 @@ internal abstract class InternalSliderLogic
     protected bool pendingTrackClickValueJump = false;
     protected float trackClickPosition = 0f;
     protected string GlobalId { get; private set; } = string.Empty;
+    protected int GlobalIntId { get; private set; } = 0;
+
 
     // --- Calculated Properties ---
     public Rect GlobalBounds => new(Position.X - Origin.X, Position.Y - Origin.Y, Size.X, Size.Y);
 
     // --- Abstract Methods ---
     protected abstract void CalculateTrackBounds();
-    protected abstract void UpdateHoverStates(Vector2 mousePos);
-    protected abstract float HandleInput(string id, InputState input, float currentValue);
+    protected abstract float HandleInput(InputState input, float currentValue);
     protected abstract float ConvertPositionToValue(float position);
     protected abstract Vector2 CalculateGrabberPosition(float currentValue);
     protected abstract void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue);
@@ -48,6 +48,7 @@ internal abstract class InternalSliderLogic
     internal float UpdateAndDraw(string id, InputState input, DrawingContext context, float currentValue)
     {
         GlobalId = id;
+        GlobalIntId = id.GetHashCode();
         trackPosition = Position - Origin;
         CalculateTrackBounds();
 
@@ -59,28 +60,22 @@ internal abstract class InternalSliderLogic
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
-            if (UI.ActivelyPressedElementId == id) UI.ClearActivePress(id);
+            if (UI.ActivelyPressedElementId == GlobalIntId) UI.ClearActivePress(GlobalIntId);
         }
         else
         {
             // HandleInput sets potential target, calls SetPotentialCaptorForFrame,
             // sets pendingTrackClickValueJump, and returns value updated by DRAG.
-            newValue = HandleInput(id, input, currentValue);
+            newValue = HandleInput(input, currentValue);
         }
 
         // Deferred Track Click Value Jump Check
-        // Check if:
-        // 1. A track click was initiated earlier (pending flag is true)
-        // 2. This slider ended up being the final input captor for the frame
-        // 3. A non-slider element (button) processed LATER did NOT claim the press
-        if (pendingTrackClickValueJump && UI.InputCaptorId == id && !UI.nonSliderElementClaimedPress)
+        if (pendingTrackClickValueJump && UI.InputCaptorId == GlobalIntId && !UI.nonSliderElementClaimedPress)
         {
-            // Perform the value jump calculation now
             newValue = ConvertPositionToValue(trackClickPosition);
             newValue = ApplyStep(newValue);
             newValue = Math.Clamp(newValue, MinValue, MaxValue);
         }
-        // Always reset flag after check
         pendingTrackClickValueJump = false;
 
 
@@ -136,7 +131,7 @@ internal abstract class InternalSliderLogic
 
     protected void UpdateGrabberThemeStyle()
     {
-        isGrabberPressed = UI.ActivelyPressedElementId == GlobalId;
+        isGrabberPressed = UI.ActivelyPressedElementId == GlobalIntId;
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
