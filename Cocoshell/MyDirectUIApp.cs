@@ -124,7 +124,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             Theme = buttonTheme
         });
 
-        // Row 2: Two HSliders next to each other
         gridSlider1 = UI.HSlider("GridSlider1", gridSlider1, new() 
         { 
             Size = new(150, 20), 
@@ -139,13 +138,33 @@ public class MyDirectUIApp : Direct2DAppWindow
             GrabberTheme = sliderGrabberTheme
         });
 
-        UI.Button("GridBtn4", new() { Size = new(100, 30), Text = "Grid Cell 6", Theme = buttonTheme });
+        UI.Button("GridBtn4", new() 
+        {
+            Size = new(100, 30),
+            Text = "Grid Cell 6",
+            Theme = buttonTheme
+        });
 
+        UI.Button("GridBtn7", new() 
+        { 
+            Size = new(80, 25), 
+            Text = "Cell 7", 
+            Theme = specialButtonTheme 
+        });
 
-        // Row 3 (Special buttons)
-        UI.Button("GridBtn7", new() { Size = new(80, 25), Text = "Cell 7", Theme = specialButtonTheme });
-        UI.Button("GridBtn8", new() { Size = new(120, 25), Text = "Cell 8 - Wider", Theme = specialButtonTheme });
-        UI.Button("GridBtn9", new() { Size = new(80, 25), Text = "Cell 9", Theme = specialButtonTheme });
+        UI.Button("GridBtn8", new() 
+        { 
+            Size = new(120, 25), 
+            Text = "Cell 8 - Wider", 
+            Theme = specialButtonTheme 
+        });
+
+        UI.Button("GridBtn9", new() 
+        { 
+            Size = new(80, 25), 
+            Text = "Cell 9", 
+            Theme = specialButtonTheme 
+        });
 
         UI.EndGridContainer();
 

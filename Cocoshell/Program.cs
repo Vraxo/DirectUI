@@ -1,6 +1,4 @@
-﻿using System;
-
-namespace DirectUI;
+﻿using DirectUI;
 
 public class Program
 {
