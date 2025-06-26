@@ -1,5 +1,4 @@
-﻿// Widgets/Button.cs
-namespace DirectUI;
+﻿namespace DirectUI;
 
 using System;
 using System.Numerics;
@@ -161,34 +160,22 @@ public class Button
 
     internal Vector2 MeasureText(IDWriteFactory dwriteFactory, ButtonStyle styleToUse)
     {
-        if (string.IsNullOrEmpty(Text) || styleToUse is null || dwriteFactory is null)
+        if (string.IsNullOrEmpty(Text) || styleToUse is null)
         {
             return Vector2.Zero;
         }
 
-        IDWriteTextFormat? textFormat = null;
+        IDWriteTextFormat? textFormat = UI.GetOrCreateTextFormat(styleToUse);
+        if (textFormat is null)
+        {
+            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
+            return Vector2.Zero;
+        }
 
+        IDWriteTextLayout? textLayout = null;
         try
         {
-            textFormat = dwriteFactory.CreateTextFormat(
-                styleToUse.FontName,
-                null, // font collection
-                styleToUse.FontWeight,
-                styleToUse.FontStyle,
-                styleToUse.FontStretch,
-                styleToUse.FontSize,
-                "en-us" // locale
-            );
-
-            if (textFormat is null)
-            {
-                // Retained log message for unexpected font system issue.
-                Console.WriteLine("Warning: Failed to create TextFormat for measurement.");
-                return Vector2.Zero;
-            }
-
-            // Use using for disposable TextLayout
-            using IDWriteTextLayout textLayout = dwriteFactory.CreateTextLayout(
+            textLayout = dwriteFactory.CreateTextLayout(
                 Text,
                 textFormat,
                 float.MaxValue, // Max width
@@ -201,13 +188,12 @@ public class Button
         }
         catch (Exception ex)
         {
-            // Retained log message for unexpected error.
             Console.WriteLine($"Error measuring text for button: {ex.Message}");
             return Vector2.Zero;
         }
         finally
         {
-            textFormat?.Dispose();
+            textLayout?.Dispose();
         }
     }
 
@@ -251,77 +237,67 @@ public class Button
 
     private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
     {
-        // Early exits for common cases
         if (string.IsNullOrEmpty(Text)) return;
         ButtonStyle? style = Themes?.Current;
         if (style is null) return;
 
         ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
-        if (textBrush is null) return; // Brush creation failed (error logged in GetOrCreateBrush)
+        if (textBrush is null) return;
 
-        IDWriteTextFormat? textFormat = null;
+        IDWriteTextFormat? textFormat = UI.GetOrCreateTextFormat(style);
+        if (textFormat is null) return;
+
+        IDWriteTextLayout? textLayout = null;
         try
         {
-            textFormat = dwriteFactory.CreateTextFormat(
-                style.FontName,
-                null,
-                style.FontWeight,
-                style.FontStyle,
-                style.FontStretch,
-                style.FontSize,
-                "en-us"
+            Rect bounds = GlobalBounds;
+            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+
+            // Create a layout with the button's bounds as constraints.
+            textLayout = dwriteFactory.CreateTextLayout(
+                Text,
+                textFormat,
+                bounds.Width,
+                bounds.Height
             );
 
-            if (textFormat is null) return; // Should not happen if MeasureText succeeded, but check anyway
-
-            // Apply Alignment
-            textFormat.TextAlignment = TextAlignment.Horizontal switch
+            // Apply Alignment to the layout object itself.
+            textLayout.TextAlignment = TextAlignment.Horizontal switch
             {
                 HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
                 HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
                 HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
                 _ => Vortice.DirectWrite.TextAlignment.Leading
             };
-            textFormat.ParagraphAlignment = TextAlignment.Vertical switch
+            textLayout.ParagraphAlignment = TextAlignment.Vertical switch
             {
-                VAlignment.Top => Vortice.DirectWrite.ParagraphAlignment.Near,
-                VAlignment.Center => Vortice.DirectWrite.ParagraphAlignment.Center,
-                VAlignment.Bottom => Vortice.DirectWrite.ParagraphAlignment.Far,
-                _ => Vortice.DirectWrite.ParagraphAlignment.Near
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
             };
 
-            Rect bounds = GlobalBounds;
-            if (bounds.Width <= 0 || bounds.Height <= 0) return; // Avoid drawing in zero-size rect
+            // The origin point for drawing the layout.
+            var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
 
-            // Apply offset to layout rectangle
-            Rect layoutRect = bounds;
-            layoutRect.Left += TextOffset.X;
-            layoutRect.Top += TextOffset.Y;
-            // Note: Width/Height remain the button's bounds for centering/alignment calculations within DrawText
-
-            renderTarget.DrawText(
-                Text,
-                textFormat,
-                layoutRect, // The area where text can be drawn
+            renderTarget.DrawTextLayout(
+                textOrigin,
+                textLayout,
                 textBrush,
-                DrawTextOptions.Clip // Clip text to the layoutRect automatically
+                DrawTextOptions.None // Clipping is handled by the layout's dimensions.
             );
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
-            // Retained log message for recoverable graphics issue.
             Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
-            // Don't dispose textFormat here, it might be invalid anyway. Resource cleanup happens externally.
-            textFormat = null; // Ensure finally doesn't try to dispose potentially bad pointer
         }
         catch (Exception ex)
         {
-            // Retained log message for unexpected error.
             Console.WriteLine($"Error drawing button text: {ex.Message}");
         }
         finally
         {
-            textFormat?.Dispose();
+            textLayout?.Dispose();
         }
     }
 }

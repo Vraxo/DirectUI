@@ -1,6 +1,4 @@
-﻿// MODIFIED: UI.cs
-// Summary: Rewrote DrawBoxStyleHelper for both rounded and non-rounded rectangles. Rounded now draws border area first, then fill area on top. Non-rounded also draws border first, then fill.
-using SharpGen.Runtime;
+﻿using SharpGen.Runtime;
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -30,12 +28,46 @@ public enum VSliderDirection { TopToBottom, BottomToTop }
 
 public static partial class UI
 {
+    // --- Font Caching Key ---
+    private readonly struct FontKey : IEquatable<FontKey>
+    {
+        public readonly string FontName;
+        public readonly float FontSize;
+        public readonly FontWeight FontWeight;
+        public readonly FontStyle FontStyle;
+        public readonly FontStretch FontStretch;
+
+        public FontKey(ButtonStyle style)
+        {
+            FontName = style.FontName;
+            FontSize = style.FontSize;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontStretch = style.FontStretch;
+        }
+
+        public bool Equals(FontKey other)
+        {
+            return FontName == other.FontName &&
+                   FontSize.Equals(other.FontSize) &&
+                   FontWeight == other.FontWeight &&
+                   FontStyle == other.FontStyle &&
+                   FontStretch == other.FontStretch;
+        }
+
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
+
     // --- State fields ---
     private static ID2D1HwndRenderTarget? currentRenderTarget;
     private static IDWriteFactory? currentDWriteFactory;
     private static InputState currentInputState;
     private static readonly Dictionary<string, object> uiElements = new();
     private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
+    private static readonly Dictionary<FontKey, IDWriteTextFormat> textFormatCache = new();
     private static readonly Stack<object> containerStack = new();
     private static readonly Stack<TreeViewState> treeStateStack = new();
 
@@ -173,7 +205,7 @@ public static partial class UI
         instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
     }
 
-    // --- Brush Cache ---
+    // --- Brush and Font Cache ---
     public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
     {
         if (CurrentRenderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
@@ -189,12 +221,55 @@ public static partial class UI
         catch (Exception ex) { Console.WriteLine($"Error creating brush for color {color}: {ex.Message}"); return null!; }
     }
 
+    public static IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
+    {
+        if (CurrentDWriteFactory is null) return null;
+
+        var key = new FontKey(style);
+        if (textFormatCache.TryGetValue(key, out var format))
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = CurrentDWriteFactory.CreateTextFormat(
+                style.FontName,
+                null,
+                style.FontWeight,
+                style.FontStyle,
+                style.FontStretch,
+                style.FontSize,
+                "en-us"
+            );
+            if (newFormat is not null)
+            {
+                textFormatCache[key] = newFormat;
+            }
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
+            return null;
+        }
+    }
+
+
     // --- Resource Cleanup ---
     public static void CleanupResources()
     {
-        Console.WriteLine("UI Resource Cleanup: Disposing cached brushes..."); int count = brushCache.Count;
+        Console.WriteLine("UI Resource Cleanup: Disposing cached brushes and text formats...");
+        int brushCount = brushCache.Count;
         foreach (var pair in brushCache) { pair.Value?.Dispose(); }
-        brushCache.Clear(); Console.WriteLine($"UI Resource Cleanup finished. Disposed {count} brushes."); containerStack.Clear();
+        brushCache.Clear();
+
+        int formatCount = textFormatCache.Count;
+        foreach (var pair in textFormatCache) { pair.Value?.Dispose(); }
+        textFormatCache.Clear();
+
+        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes and {formatCount} text formats.");
+        containerStack.Clear();
         treeStateStack.Clear();
     }
 }
