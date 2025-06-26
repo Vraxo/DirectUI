@@ -1,5 +1,7 @@
 ﻿using DirectUI;
 
+namespace Cocoshell;
+
 public class Program
 {
     [STAThread] // Important for COM (Direct2D) and Win32 APIs

@@ -1,173 +1,65 @@
-﻿// MODIFIED: MyDirectUIApp.cs
-// Summary: Applied user's change to buttonTheme initialization.
-using System;
+﻿using System;
 using System.Numerics;
-using Vortice.DirectWrite;
-using Vortice.Mathematics;
+using DirectUI;
 
-namespace DirectUI;
+namespace Cocoshell;
 
 public class MyDirectUIApp : Direct2DAppWindow
 {
-    private readonly ButtonStylePack buttonTheme;
-    private readonly ButtonStylePack specialButtonTheme;
-    private readonly SliderStyle sliderTheme;
-    private readonly ButtonStylePack sliderGrabberTheme;
-    private float horizontalSliderValue = 0.5f;
-    private float verticalSliderValue = 0.25f; // Keep this for potential future use
-    private float nestedSliderValue = 0.75f; // Keep this for potential future use
-    private float gridSlider1 = 0.1f;
-    private float gridSlider2H = 0.9f; // Renamed for clarity, now horizontal
+    private float sliderValue = 0.5f;
+    private float panelWidth = 250f;
 
-    public MyDirectUIApp(string title = "My DirectUI App", int width = 800, int height = 600)
+    // Constructor to match the call in Program.cs
+    public MyDirectUIApp(string title, int width, int height)
         : base(title, width, height)
     {
-        // --- Button Theme (User's version from prompt) ---
-        buttonTheme = new ButtonStylePack()
-        {
-            Roundness = 1f, // Changed from 0f
-            BorderLength = 1.0f, // Sets all 4 sides initially
-            FontSize = 14f,
-            Normal = { BorderLengthBottom = 10 } // Specific override
-        };
-        // Note: The explicit Normal assignment might override the general BorderLength = 1.0f for the Normal state's bottom border.
-
-        // --- Special Theme ---
-        specialButtonTheme = new()
-        {
-            Roundness = 1f,
-            BorderLength = 0.0f,
-            FontSize = 14f,
-            FontWeight = FontWeight.Bold,
-            Normal = { FillColor = new Color4(0.3f, 0.5f, 0.3f, 1.0f), BorderColor = Colors.Transparent },
-            Hover = { FillColor = new Color4(0.4f, 0.6f, 0.4f, 1.0f), BorderColor = Colors.Transparent },
-            Pressed = { FillColor = new Color4(0.2f, 0.4f, 0.2f, 1.0f), BorderColor = Colors.Transparent },
-            Disabled = { FillColor = DefaultTheme.DisabledFill, FontColor = DefaultTheme.DisabledText, BorderColor = Colors.Transparent }
-        };
-
-        // --- Slider Themes ---
-        sliderTheme = new()
-        {
-            Background =
-            {
-                Roundness = 0.2f,
-                FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f),
-                BorderLength = 0 // Uses new property
-            },
-            Foreground =
-            {
-                Roundness = 0.2f,
-                FillColor = DefaultTheme.Accent,
-                BorderLength = 0 // Uses new property
-            }
-        };
-
-        sliderGrabberTheme = new()
-        {
-            Roundness = 0.5f,
-            BorderLength = 1.0f, // Uses new property
-            Normal = { FillColor = new Color4(0.6f, 0.6f, 0.65f, 1.0f), BorderColor = new Color4(0.8f, 0.8f, 0.8f, 1.0f) },
-            Hover = { FillColor = new Color4(0.75f, 0.75f, 0.8f, 1.0f), BorderColor = Colors.WhiteSmoke },
-            Pressed = { FillColor = Colors.WhiteSmoke, BorderColor = DefaultTheme.Accent }
-        };
+        // Initialization logic for the app can go here
     }
 
     protected override void DrawUIContent(DrawingContext context, InputState input)
     {
+        // Must call BeginFrame before any UI calls
         UI.BeginFrame(context, input);
 
-        // --- HBox with Buttons (Top Row) ---
-        UI.BeginHBoxContainer("ActionButtons", new Vector2(50, 50), gap: 10.0f);
-        if (UI.Button("OkButton", new() { Size = new(84, 28), Text = "OK", Theme = buttonTheme })) { backgroundColor = Colors.DarkSlateGray; Invalidate(); }
-        if (UI.Button("CancelButton", new() { Size = new(84, 28), Text = "Cancel", Theme = buttonTheme })) { /* log */ }
-        UI.EndHBoxContainer();
-
-        // --- Area for Grid ---
-        float gridStartX = 50;
-        float gridStartY = 100;
-        float windowWidth = GetClientRectSize().Width;
-        float windowHeight = GetClientRectSize().Height;
-        float availableGridWidth = windowWidth - gridStartX - 50;
-        float availableGridHeight = windowHeight - gridStartY - 50;
-        Vector2 gridAvailableSize = new(float.Max(1, availableGridWidth), float.Max(1, availableGridHeight));
-        int numberOfColumns = 3;
-        Vector2 cellGap = new(10, 10);
-
-        UI.BeginGridContainer(
-            "MainGrid",
-            new(gridStartX, gridStartY),
-            gridAvailableSize,
-            numberOfColumns,
-            cellGap);
-
-        // --- Grid Content ---
-
-        // Row 1
-        UI.Button("GridBtn1", new() 
-        { 
-            Size = new(100, 30), 
-            Text = "Grid Cell 1",
-            Theme = buttonTheme
-        });
-
-        UI.Button("GridBtnA", new()
+        // --- Define some styles ---
+        var buttonTheme = new ButtonStylePack
         {
-            Size = new(100, 30),
-            Text = "Grid Cell 2",
-            Theme = buttonTheme
-        });
+            Roundness = 0.2f,
+            BorderLength = 2,
+            FontName = "Segoe UI",
+            FontSize = 16,
+        };
 
-        UI.Button("GridBtnB", new() 
+        var panelDef = new ResizablePanelDefinition
         {
-            Size = new(100, 30),
-            Text = "Grid Cell 3",
-            Theme = buttonTheme
-        });
+            MinWidth = 150,
+            MaxWidth = 400,
+            Padding = new Vector2(10, 10),
+            Gap = 10
+        };
 
-        gridSlider1 = UI.HSlider("GridSlider1", gridSlider1, new() 
-        { 
-            Size = new(150, 20), 
-            Theme = sliderTheme, 
-            GrabberTheme = sliderGrabberTheme 
-        });
+        // --- UI Layout ---
+        UI.BeginResizableVPanel("left_panel", ref panelWidth, panelDef);
 
-        gridSlider2H = UI.HSlider("GridSlider2H", gridSlider2H, new() 
+        // Button
+        if (UI.Button("my_button", new ButtonDefinition { Text = "Click Me!", Theme = buttonTheme }))
         {
-            Size = new(150, 20),
-            Theme = sliderTheme,
-            GrabberTheme = sliderGrabberTheme
-        });
+            Console.WriteLine("Button was clicked!");
+        }
 
-        UI.Button("GridBtn4", new() 
+        // Slider
+        sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+
+        // A second button to show slider value
+        if (UI.Button("another_button", new ButtonDefinition { Text = $"Slider: {sliderValue:F2}", Theme = buttonTheme, AutoWidth = true }))
         {
-            Size = new(100, 30),
-            Text = "Grid Cell 6",
-            Theme = buttonTheme
-        });
+            Console.WriteLine("Second button clicked!");
+        }
 
-        UI.Button("GridBtn7", new() 
-        { 
-            Size = new(80, 25), 
-            Text = "Cell 7", 
-            Theme = specialButtonTheme 
-        });
+        UI.EndResizableVPanel();
 
-        UI.Button("GridBtn8", new() 
-        { 
-            Size = new(120, 25), 
-            Text = "Cell 8 - Wider", 
-            Theme = specialButtonTheme 
-        });
-
-        UI.Button("GridBtn9", new() 
-        { 
-            Size = new(80, 25), 
-            Text = "Cell 9", 
-            Theme = specialButtonTheme 
-        });
-
-        UI.EndGridContainer();
-
+        // --- End of UI ---
+        // Must call EndFrame after all UI calls
         UI.EndFrame();
     }
 }
