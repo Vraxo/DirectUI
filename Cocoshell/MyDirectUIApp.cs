@@ -59,7 +59,7 @@ namespace DirectUI
 
 
             // --- Left Panel ---
-            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, bottomPanelHeight);
+            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left);
             if (UI.Button("my_button", new ButtonDefinition { Text = "Click Me!", Theme = buttonTheme }))
             {
                 Console.WriteLine("Button was clicked!");
@@ -72,7 +72,7 @@ namespace DirectUI
             UI.EndResizableVPanel();
 
             // --- Right Panel ---
-            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, bottomPanelHeight);
+            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right);
             if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
             {
                 Console.WriteLine("Right panel button 1 clicked!");

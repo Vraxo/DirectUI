@@ -145,20 +145,59 @@ public abstract class Win32Window : IDisposable
     protected virtual void Cleanup() { }
 
     // --- IDisposable (Ensure implementation is as before) ---
-    public void Dispose() { Dispose(true); GC.SuppressFinalize(this); }
-    protected virtual void Dispose(bool disposing)
-    { /* ... as before ... */
-        if (!_isDisposed)
-        {
-            if (disposing) { Console.WriteLine("Disposing Win32Window (managed)..."); Cleanup(); }
-            Console.WriteLine("Disposing Win32Window (unmanaged)...");
-            if (_hwnd != IntPtr.Zero) { Console.WriteLine($"Destroying window {_hwnd} during Dispose..."); NativeMethods.DestroyWindow(_hwnd); _hwnd = IntPtr.Zero; }
-            else { if (_gcHandle.IsAllocated) { Console.WriteLine("Freeing dangling GCHandle..."); _gcHandle.Free(); } }
-            _isDisposed = true; Console.WriteLine("Win32Window disposed.");
-        }
+    public void Dispose()
+    {
+        Dispose(true); 
+        GC.SuppressFinalize(this); 
     }
-    ~Win32Window() { Console.WriteLine("Win32Window Finalizer!"); Dispose(false); }
+    
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_isDisposed)
+        {
+            return;
+        }
+
+        if (disposing) 
+        { 
+            Console.WriteLine("Disposing Win32Window (managed)..."); 
+            Cleanup(); 
+        }
+
+        Console.WriteLine("Disposing Win32Window (unmanaged)...");
+
+        if (_hwnd != IntPtr.Zero) 
+        { 
+            Console.WriteLine($"Destroying window {_hwnd} during Dispose..."); 
+            NativeMethods.DestroyWindow(_hwnd); 
+            _hwnd = IntPtr.Zero; 
+        }
+        else 
+        { 
+            if (_gcHandle.IsAllocated) 
+            { 
+                Console.WriteLine("Freeing dangling GCHandle...");
+                _gcHandle.Free(); 
+            } 
+        }
+
+        _isDisposed = true; 
+
+        Console.WriteLine("Win32Window disposed.");
+    }
+
+    ~Win32Window() 
+    { 
+        Console.WriteLine("Win32Window Finalizer!"); 
+        Dispose(false); 
+    }
 }
 
-// Ensure MouseButton enum exists
-public enum MouseButton { Left, Right, Middle, XButton1, XButton2 }
+public enum MouseButton 
+{ 
+    Left, 
+    Right, 
+    Middle, 
+    XButton1, 
+    XButton2 
+}

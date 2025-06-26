@@ -64,32 +64,28 @@ public static partial class UI
         }
     }
 
-    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float reservedBottomSpace = 0f)
+    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left)
     {
         if (!IsContextValid() || definition == null) return;
 
         var input = CurrentInputState;
         var renderTarget = CurrentRenderTarget!;
         var windowWidth = renderTarget.Size.Width;
-        var availableHeight = Math.Max(0, renderTarget.Size.Height - reservedBottomSpace);
+        var windowHeight = renderTarget.Size.Height;
 
         // --- Input and Resizing Logic ---
         if (!definition.Disabled)
         {
             float handleWidth = definition.ResizeHandleWidth;
             float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-
             handleWidth = Math.Min(handleWidth, currentWidth);
-
             float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
-            Rect handleRect = new Rect(handleX, 0, handleWidth, availableHeight);
+            Rect handleRect = new Rect(handleX, 0, handleWidth, windowHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-
             if (isHoveringHandle) SetPotentialInputTarget(id);
             if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(id);
             if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
-
             if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
@@ -101,8 +97,7 @@ public static partial class UI
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
         currentWidth = Math.Max(0, currentWidth);
         float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-        Rect panelRect = new Rect(finalPanelX, 0, currentWidth, availableHeight);
-
+        Rect panelRect = new Rect(finalPanelX, 0, currentWidth, windowHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
             DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
@@ -110,15 +105,13 @@ public static partial class UI
 
         // --- Container & Clipping Logic ---
         Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, definition.Padding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, availableHeight - (definition.Padding.Y * 2)));
-
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, windowHeight - (definition.Padding.Y * 2)));
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
             clipPushed = true;
         }
-
         var vboxState = new VBoxContainerState(id + "_vbox", contentStartPosition, definition.Gap);
         var panelState = new ResizablePanelState(id, vboxState, clipPushed);
         containerStack.Push(panelState);
@@ -155,18 +148,13 @@ public static partial class UI
         {
             float panelY = windowHeight - currentHeight;
             float handleHeight = definition.ResizeHandleWidth;
-
             handleHeight = Math.Min(handleHeight, currentHeight);
-
-            // Handle is at the top of the panel
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-
             if (isHoveringHandle) SetPotentialInputTarget(id);
             if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(id);
             if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
-
             if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
             {
                 currentHeight = Math.Clamp(windowHeight - input.MousePosition.Y, definition.MinHeight, definition.MaxHeight);
@@ -178,7 +166,6 @@ public static partial class UI
         currentHeight = Math.Max(0, currentHeight);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
-
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
             DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
@@ -187,14 +174,12 @@ public static partial class UI
         // --- Container & Clipping Logic ---
         Vector2 contentStartPosition = new Vector2(reservedLeftSpace + definition.Padding.X, finalPanelY + definition.Padding.Y);
         Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, availableWidth - (definition.Padding.X * 2)), Math.Max(0, currentHeight - (definition.Padding.Y * 2)));
-
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
             clipPushed = true;
         }
-
         var hboxState = new HBoxContainerState(id + "_hbox", contentStartPosition, definition.Gap);
         var panelState = new ResizableHPanelState(id, hboxState, clipPushed);
         containerStack.Push(panelState);
