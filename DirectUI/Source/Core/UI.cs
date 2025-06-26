@@ -11,6 +11,20 @@ using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
 
+internal class TreeViewState
+{
+    internal string Id { get; }
+    internal TreeStyle Style { get; }
+    internal Stack<bool> IndentLineState { get; } = new();
+
+    internal TreeViewState(string id, TreeStyle style)
+    {
+        Id = id;
+        Style = style;
+    }
+}
+
+
 public enum HSliderDirection { LeftToRight, RightToLeft }
 public enum VSliderDirection { TopToBottom, BottomToTop }
 
@@ -23,6 +37,7 @@ public static partial class UI
     private static readonly Dictionary<string, object> uiElements = new();
     private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
     private static readonly Stack<object> containerStack = new();
+    private static readonly Stack<TreeViewState> treeStateStack = new();
 
     // Input State
     private static bool captureAttemptedThisFrame = false;
@@ -47,6 +62,7 @@ public static partial class UI
         currentDWriteFactory = context.DWriteFactory;
         currentInputState = input;
         containerStack.Clear();
+        treeStateStack.Clear();
 
         dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId is not null;
 
@@ -67,9 +83,30 @@ public static partial class UI
             Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {containerStack.Count} containers left open at EndFrame.");
             containerStack.Clear();
         }
+        if (treeStateStack.Count > 0)
+        {
+            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {treeStateStack.Count} trees left open at EndFrame.");
+            treeStateStack.Clear();
+        }
         currentRenderTarget = null;
         currentDWriteFactory = null;
     }
+
+    internal static void BeginTree(string id, TreeStyle style)
+    {
+        treeStateStack.Push(new TreeViewState(id, style));
+    }
+
+    internal static void EndTree()
+    {
+        if (treeStateStack.Count == 0)
+        {
+            Console.WriteLine("Error: EndTree called without a matching BeginTree.");
+            return;
+        }
+        treeStateStack.Pop();
+    }
+
 
     // --- Input Capture & Targeting ---
 
@@ -158,5 +195,6 @@ public static partial class UI
         Console.WriteLine("UI Resource Cleanup: Disposing cached brushes..."); int count = brushCache.Count;
         foreach (var pair in brushCache) { pair.Value?.Dispose(); }
         brushCache.Clear(); Console.WriteLine($"UI Resource Cleanup finished. Disposed {count} brushes."); containerStack.Clear();
+        treeStateStack.Clear();
     }
 }

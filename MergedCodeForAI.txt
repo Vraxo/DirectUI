@@ -941,6 +941,7 @@ using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using static System.Net.Mime.MediaTypeNames;
 using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
@@ -1003,7 +1004,7 @@ public static partial class UI
         }
     }
 
-    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left)
+    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
 
@@ -1011,6 +1012,7 @@ public static partial class UI
         var renderTarget = CurrentRenderTarget!;
         var windowWidth = renderTarget.Size.Width;
         var windowHeight = renderTarget.Size.Height;
+        var availableHeight = windowHeight - topOffset;
 
         // --- Input and Resizing Logic ---
         if (!definition.Disabled)
@@ -1019,7 +1021,7 @@ public static partial class UI
             float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
             handleWidth = Math.Min(handleWidth, currentWidth);
             float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
-            Rect handleRect = new Rect(handleX, 0, handleWidth, windowHeight);
+            Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (isHoveringHandle) SetPotentialInputTarget(id);
@@ -1036,15 +1038,15 @@ public static partial class UI
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
         currentWidth = Math.Max(0, currentWidth);
         float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-        Rect panelRect = new Rect(finalPanelX, 0, currentWidth, windowHeight);
+        Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
             DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
         }
 
         // --- Container & Clipping Logic ---
-        Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, definition.Padding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, windowHeight - (definition.Padding.Y * 2)));
+        Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, topOffset + definition.Padding.Y);
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, availableHeight - (definition.Padding.Y * 2)));
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
@@ -1072,7 +1074,7 @@ public static partial class UI
         containerStack.Pop();
     }
 
-    public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace)
+    public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
 
@@ -1081,10 +1083,15 @@ public static partial class UI
         var windowWidth = renderTarget.Size.Width;
         var windowHeight = renderTarget.Size.Height;
         var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
+        var maxAllowedHeight = windowHeight - topOffset;
+        var effectiveMaxHeight = Math.Min(definition.MaxHeight, maxAllowedHeight);
+
 
         // --- Input and Resizing Logic ---
         if (!definition.Disabled)
         {
+            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
+
             float panelY = windowHeight - currentHeight;
             float handleHeight = definition.ResizeHandleWidth;
             handleHeight = Math.Min(handleHeight, currentHeight);
@@ -1096,13 +1103,14 @@ public static partial class UI
             if (ActivelyPressedElementId == id && !input.IsLeftMouseDown) ClearActivePress(id);
             if (ActivelyPressedElementId == id && input.IsLeftMouseDown)
             {
-                currentHeight = Math.Clamp(windowHeight - input.MousePosition.Y, definition.MinHeight, definition.MaxHeight);
+                float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
+                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);
             }
         }
 
         // --- Drawing ---
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentHeight = Math.Max(0, currentHeight);
+        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
@@ -1934,8 +1942,10 @@ public static class DefaultTheme
         public static readonly Color4 FillLighter = new Color4(58 / 255f, 58 / 255f, 58 / 255f, 1.0f);  // #3A3A3A
         public static readonly Color4 Border = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f);      // #151515 (Matches window background)
 
-        public static readonly Color4 Hover = new Color4(0 / 255f, 122 / 255f, 204 / 255f, 1.0f);     // A nice blue #007ACC
-        public static readonly Color4 HoverBorder = new Color4(0 / 255f, 150 / 255f, 255 / 255f, 1.0f); // Lighter blue
+        // --- CHANGE HERE ---
+        // Changed from blue to a light gray for a more authentic UE5 feel.
+        public static readonly Color4 Hover = new Color4(160 / 255f, 160 / 255f, 160 / 255f, 1.0f);   // #A0A0A0
+        // --- END CHANGE ---
 
         public static readonly Color4 Accent = new Color4(255 / 255f, 171 / 255f, 0 / 255f, 1.0f);     // Orange #FFAB00
         public static readonly Color4 AccentBorder = new Color4(255 / 255f, 187 / 255f, 51 / 255f, 1.0f); // Lighter Orange
@@ -1973,14 +1983,14 @@ public static class DefaultTheme
     // --- ACTIVE THEME: UE5 ---
     public static readonly Color4 NormalFill = Ue5ThemeColors.Fill;
     public static readonly Color4 NormalBorder = Ue5ThemeColors.Border;
-    public static readonly Color4 HoverFill = Ue5ThemeColors.FillLighter; // Subtle gray change for hover fill
-    public static readonly Color4 HoverBorder = Ue5ThemeColors.Hover;     // Blue border on hover
-    public static readonly Color4 Accent = Ue5ThemeColors.Accent;         // Orange accent for pressed
+    public static readonly Color4 HoverFill = Ue5ThemeColors.FillLighter;    // Subtle gray change for hover fill
+    public static readonly Color4 HoverBorder = Ue5ThemeColors.Hover;        // Light gray border on hover
+    public static readonly Color4 Accent = Ue5ThemeColors.Accent;            // Orange accent for pressed
     public static readonly Color4 AccentBorder = Ue5ThemeColors.AccentBorder;
     public static readonly Color4 DisabledFill = Ue5ThemeColors.DisabledFill;
     public static readonly Color4 DisabledBorder = Ue5ThemeColors.DisabledBorder;
     public static readonly Color4 DisabledText = Ue5ThemeColors.DisabledText;
-    public static readonly Color4 FocusBorder = Ue5ThemeColors.Hover;       // Use blue for focus
+    public static readonly Color4 FocusBorder = Ue5ThemeColors.Hover;        // Use gray for focus
     public static readonly Color4 Text = Ue5ThemeColors.Text;
 
     /*
@@ -2090,8 +2100,12 @@ public class Button
             return false;
         }
 
-        bool wasClickedThisFrame = false;
+        // --- Sizing (MUST be done before hit-testing) ---
+        // This is now independent of hover/press state and ensures correct bounds.
+        PerformAutoWidth(dwriteFactory);
 
+        // --- Input Logic & State Update ---
+        bool wasClickedThisFrame = false;
         isPressed = false; // Reset visual pressed state for the frame
 
         if (Disabled)
@@ -2104,7 +2118,7 @@ public class Button
         }
         else // Element is Enabled
         {
-            Rect bounds = GlobalBounds;
+            Rect bounds = GlobalBounds; // NOW uses correct size from AutoWidth
 
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
 
@@ -2144,14 +2158,12 @@ public class Button
 
         } // End Enabled block
 
-        // --- Update Style & Size ---
-        UpdateStyle(); // Update based on IsHovering, isPressed, Disabled
-        PerformAutoWidth(dwriteFactory); // Adjust size if needed
+        // --- Final Style Update & Drawing ---
+        UpdateStyle(); // Update style based on the now-calculated states
 
-        // --- Drawing ---
         try
         {
-            Rect currentBounds = GlobalBounds; // Recalculate in case AutoWidth changed it
+            Rect currentBounds = GlobalBounds; // Bounds are now final for this frame
 
             if (currentBounds.Width > 0 && currentBounds.Height > 0)
             {
@@ -2189,9 +2201,9 @@ public class Button
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
     }
 
-    internal Vector2 MeasureText(IDWriteFactory dwriteFactory)
+    internal Vector2 MeasureText(IDWriteFactory dwriteFactory, ButtonStyle styleToUse)
     {
-        if (string.IsNullOrEmpty(Text) || Themes?.Current?.FontName is null || dwriteFactory is null)
+        if (string.IsNullOrEmpty(Text) || styleToUse is null || dwriteFactory is null)
         {
             return Vector2.Zero;
         }
@@ -2200,15 +2212,13 @@ public class Button
 
         try
         {
-            ButtonStyle style = Themes.Current; // Assume Themes and Current are not null due to check above/initialization
-
             textFormat = dwriteFactory.CreateTextFormat(
-                style.FontName,
+                styleToUse.FontName,
                 null, // font collection
-                style.FontWeight,
-                style.FontStyle,
-                style.FontStretch,
-                style.FontSize,
+                styleToUse.FontWeight,
+                styleToUse.FontStyle,
+                styleToUse.FontStretch,
+                styleToUse.FontSize,
                 "en-us" // locale
             );
 
@@ -2245,12 +2255,14 @@ public class Button
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
     {
-        if (!AutoWidth || dwriteFactory is null)
+        if (!AutoWidth || dwriteFactory is null || Themes is null)
         {
             return;
         }
 
-        Vector2 textSize = MeasureText(dwriteFactory);
+        // Always measure using the Normal theme to ensure consistent size across states.
+        // This relies on the font properties being set consistently across the style pack.
+        Vector2 textSize = MeasureText(dwriteFactory, Themes.Normal);
         float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
 
         // Use a small epsilon to avoid floating point jitter
@@ -2887,6 +2899,55 @@ namespace DirectUI
             // Must call BeginFrame before any UI calls
             UI.BeginFrame(context, input);
 
+            float menuBarHeight = 30f;
+
+            // --- Menu Bar ---
+            var rt = context.RenderTarget;
+            var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
+            var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
+
+            if (menuBarBackgroundBrush != null)
+            {
+                rt.FillRectangle(new Rect(0, 0, rt.Size.Width, menuBarHeight), menuBarBackgroundBrush);
+            }
+            if (menuBarBorderBrush != null)
+            {
+                rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
+            }
+
+            var menuButtonTheme = new ButtonStylePack
+            {
+                Roundness = 0f,
+                BorderLength = 0,
+                FontName = "Segoe UI",
+                FontSize = 14
+            };
+            menuButtonTheme.Normal.FillColor = Colors.Transparent;
+            menuButtonTheme.Normal.FontColor = new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f);
+            menuButtonTheme.Hover.FillColor = new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f);
+            menuButtonTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+            var menuButtonDef = new ButtonDefinition
+            {
+                Theme = menuButtonTheme,
+                AutoWidth = true,
+                TextMargin = new Vector2(10, 0),
+                Size = new Vector2(0, menuBarHeight),
+                TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
+            };
+
+            UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
+            menuButtonDef.Text = "File";
+            if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
+            menuButtonDef.Text = "Edit";
+            if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
+            menuButtonDef.Text = "View";
+            if (UI.Button("view_button", menuButtonDef)) { Console.WriteLine("View clicked"); }
+            menuButtonDef.Text = "Help";
+            if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
+            UI.EndHBoxContainer();
+
+
             // --- Define some styles ---
             var buttonTheme = new ButtonStylePack
             {
@@ -2923,7 +2984,7 @@ namespace DirectUI
 
 
             // --- Left Panel ---
-            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left);
+            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
             if (UI.Button("my_button", new ButtonDefinition { Text = "Click Me!", Theme = buttonTheme }))
             {
                 Console.WriteLine("Button was clicked!");
@@ -2936,7 +2997,7 @@ namespace DirectUI
             UI.EndResizableVPanel();
 
             // --- Right Panel ---
-            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right);
+            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
             if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
             {
                 Console.WriteLine("Right panel button 1 clicked!");
@@ -2948,7 +3009,7 @@ namespace DirectUI
             UI.EndResizableVPanel();
 
             // --- Bottom Panel ---
-            UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth);
+            UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
             if (UI.Button("bottom_button", new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
             {
                 Console.WriteLine("Bottom button clicked!");

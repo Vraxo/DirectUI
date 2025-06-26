@@ -11,12 +11,29 @@ namespace DirectUI
         private float rightPanelWidth = 250f;
         private float bottomPanelHeight = 150f;
 
+        private readonly TreeNode<string> _fileRoot;
+        private readonly TreeStyle _treeStyle = new();
+
+
         // Constructor to match the call in Program.cs
         public MyDirectUIApp(string title, int width, int height)
             : base(title, width, height)
         {
             // Set a dark background color that matches the new theme
             backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
+
+            // --- Initialize Tree Data ---
+            _fileRoot = new TreeNode<string>("Root", "C:/", true);
+            var docs = _fileRoot.AddChild("Documents", "C:/Docs", true);
+            docs.AddChild("Work", "C:/Docs/Work");
+            var proj = docs.AddChild("Projects", "C:/Docs/Projects", true);
+            proj.AddChild("DirectUI", "C:/Docs/Projects/DirectUI");
+            proj.AddChild("Old Stuff", "C:/Docs/Projects/Old");
+            docs.AddChild("Personal", "C:/Docs/Personal");
+
+            var downloads = _fileRoot.AddChild("Downloads", "C:/Downloads");
+            downloads.AddChild("Installer.exe", "C:/Downloads/Installer.exe");
+            downloads.AddChild("archive.zip", "C:/Downloads/archive.zip");
         }
 
         protected override void DrawUIContent(DrawingContext context, InputState input)
@@ -110,15 +127,13 @@ namespace DirectUI
 
             // --- Left Panel ---
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
-            if (UI.Button("my_button", new ButtonDefinition { Text = "Click Me!", Theme = buttonTheme }))
+
+            UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+            if (clickedNode is not null)
             {
-                Console.WriteLine("Button was clicked!");
+                Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
             }
-            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
-            if (UI.Button("another_button", new ButtonDefinition { Text = $"Slider: {sliderValue:F2}", Theme = buttonTheme, AutoWidth = true }))
-            {
-                Console.WriteLine("Second button clicked!");
-            }
+
             UI.EndResizableVPanel();
 
             // --- Right Panel ---
@@ -131,6 +146,8 @@ namespace DirectUI
             {
                 Console.WriteLine("Right panel button 2 clicked!");
             }
+            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+
             UI.EndResizableVPanel();
 
             // --- Bottom Panel ---
