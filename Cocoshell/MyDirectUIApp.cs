@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using Vortice.Mathematics;
 
 namespace DirectUI
 {
@@ -14,7 +15,8 @@ namespace DirectUI
         public MyDirectUIApp(string title, int width, int height)
             : base(title, width, height)
         {
-            // Initialization logic for the app can go here
+            // Set a dark background color that matches the new theme
+            backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
         }
 
         protected override void DrawUIContent(DrawingContext context, InputState input)
@@ -26,17 +28,16 @@ namespace DirectUI
             var buttonTheme = new ButtonStylePack
             {
                 Roundness = 0.2f,
-                BorderLength = 2,
+                BorderLength = 1, // Thinner border
                 FontName = "Segoe UI",
                 FontSize = 16,
             };
 
+            // This style now inherits its colors from the DefaultTheme
             var panelStyle = new BoxStyle
             {
-                FillColor = new(0.15f, 0.15f, 0.2f, 1.0f),
-                BorderColor = DefaultTheme.NormalBorder,
                 BorderLength = 1,
-                Roundness = 0f // No roundness
+                Roundness = 0f
             };
 
             var vPanelDef = new ResizablePanelDefinition
