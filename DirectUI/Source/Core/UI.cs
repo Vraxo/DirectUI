@@ -60,6 +60,38 @@ public static partial class UI
         public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
     }
 
+    // --- Text Layout Caching Key ---
+    private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
+    {
+        public readonly string Text;
+        public readonly FontKey FontKey;
+        public readonly Vector2 MaxSize;
+        public readonly HAlignment HAlign;
+        public readonly VAlignment VAlign;
+
+        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+        {
+            Text = text;
+            FontKey = new FontKey(style);
+            MaxSize = maxSize;
+            HAlign = alignment.Horizontal;
+            VAlign = alignment.Vertical;
+        }
+
+        public bool Equals(TextLayoutCacheKey other)
+        {
+            return Text == other.Text &&
+                   MaxSize.Equals(other.MaxSize) &&
+                   HAlign == other.HAlign &&
+                   VAlign == other.VAlign &&
+                   FontKey.Equals(other.FontKey);
+        }
+
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
 
     // --- State fields ---
     private static ID2D1HwndRenderTarget? currentRenderTarget;
@@ -68,6 +100,8 @@ public static partial class UI
     private static readonly Dictionary<string, object> uiElements = new();
     private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
     private static readonly Dictionary<FontKey, IDWriteTextFormat> textFormatCache = new();
+    private static readonly Dictionary<(string, FontKey), Vector2> textSizeCache = new();
+    private static readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> textLayoutCache = new();
     private static readonly Stack<object> containerStack = new();
     private static readonly Stack<TreeViewState> treeStateStack = new();
 
@@ -262,6 +296,14 @@ public static partial class UI
             return Vector2.Zero;
         }
 
+        var fontKey = new FontKey(style);
+        var cacheKey = (text, fontKey);
+        if (textSizeCache.TryGetValue(cacheKey, out var cachedSize))
+        {
+            return cachedSize;
+        }
+
+
         IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
         if (textFormat is null)
         {
@@ -269,6 +311,7 @@ public static partial class UI
             return Vector2.Zero;
         }
 
+        // This layout is temporary for measurement and must be disposed.
         using var textLayout = dwriteFactory.CreateTextLayout(
             text,
             textFormat,
@@ -277,14 +320,16 @@ public static partial class UI
         );
 
         TextMetrics textMetrics = textLayout.Metrics;
-        return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+        textSizeCache[cacheKey] = measuredSize; // Add to cache
+        return measuredSize;
     }
 
 
     // --- Resource Cleanup ---
     public static void CleanupResources()
     {
-        Console.WriteLine("UI Resource Cleanup: Disposing cached brushes and text formats...");
+        Console.WriteLine("UI Resource Cleanup: Disposing cached resources...");
         int brushCount = brushCache.Count;
         foreach (var pair in brushCache) { pair.Value?.Dispose(); }
         brushCache.Clear();
@@ -293,7 +338,14 @@ public static partial class UI
         foreach (var pair in textFormatCache) { pair.Value?.Dispose(); }
         textFormatCache.Clear();
 
-        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes and {formatCount} text formats.");
+        int layoutCount = textLayoutCache.Count;
+        foreach (var pair in textLayoutCache) { pair.Value?.Dispose(); }
+        textLayoutCache.Clear();
+
+        int sizeCacheCount = textSizeCache.Count;
+        textSizeCache.Clear();
+
+        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes, {formatCount} text formats, and {layoutCount} text layouts. Cleared {sizeCacheCount} size cache entries.");
         containerStack.Clear();
         treeStateStack.Clear();
     }

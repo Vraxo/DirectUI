@@ -85,24 +85,34 @@ public static partial class UI
         IDWriteTextFormat? textFormat = GetOrCreateTextFormat(currentStyle);
         if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
         {
-            // Lightweight layout object is created and disposed here.
-            using var textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
+            // --- OPTIMIZATION: Use Text Layout Cache ---
+            var layoutKey = new TextLayoutCacheKey(text, currentStyle, new Vector2(finalBounds.Width, finalBounds.Height), textAlignment);
 
-            textLayout.TextAlignment = textAlignment.Horizontal switch
+            if (!textLayoutCache.TryGetValue(layoutKey, out var textLayout))
             {
-                HAlignment.Left => TextAlignment.Leading,
-                HAlignment.Center => TextAlignment.Center,
-                HAlignment.Right => TextAlignment.Trailing,
-                _ => TextAlignment.Leading
-            };
-            textLayout.ParagraphAlignment = textAlignment.Vertical switch
-            {
-                VAlignment.Top => ParagraphAlignment.Near,
-                VAlignment.Center => ParagraphAlignment.Center,
-                VAlignment.Bottom => ParagraphAlignment.Far,
-                _ => ParagraphAlignment.Near
-            };
+                // Not in cache: Create, configure, and cache the layout.
+                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
 
+                textLayout.TextAlignment = textAlignment.Horizontal switch
+                {
+                    HAlignment.Left => TextAlignment.Leading,
+                    HAlignment.Center => TextAlignment.Center,
+                    HAlignment.Right => TextAlignment.Trailing,
+                    _ => TextAlignment.Leading
+                };
+                textLayout.ParagraphAlignment = textAlignment.Vertical switch
+                {
+                    VAlignment.Top => ParagraphAlignment.Near,
+                    VAlignment.Center => ParagraphAlignment.Center,
+                    VAlignment.Bottom => ParagraphAlignment.Far,
+                    _ => ParagraphAlignment.Near
+                };
+
+                // Add to cache. This object will now be disposed by UI.CleanupResources.
+                textLayoutCache[layoutKey] = textLayout;
+            }
+
+            // Do not dispose the layout here as it is cached.
             var drawOrigin = new Vector2(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y);
             renderTarget.DrawTextLayout(drawOrigin, textLayout, textBrush);
         }
