@@ -20,6 +20,7 @@ using SizeI = Vortice.Mathematics.SizeI;
 using Rect = Vortice.Mathematics.Rect;
 
 using DirectUI;
+using DirectUI.Diagnostics;
 using Vortice.DCommon;
 
 namespace DirectUI;
@@ -37,22 +38,14 @@ public abstract class Direct2DAppWindow : Win32Window
     protected bool isLeftMouseButtonDown = false;
     protected bool wasLeftMouseClickedThisFrame = false;
 
-    // --- FPS Counter Fields ---
-    private Stopwatch fpsTimer = new();
-    private long lastFpsUpdateTimeTicks = 0;
-    private int frameCountSinceUpdate = 0;
-    private float currentFps = 0.0f;
-    private const long FpsUpdateIntervalTicks = TimeSpan.TicksPerSecond / 2;
-    private ID2D1SolidColorBrush? fpsTextBrush;
-    private IDWriteTextFormat? fpsTextFormat;
-    private readonly Color4 fpsTextColor = DefaultTheme.Text;
-    private readonly string fpsFontName = "Consolas";
-    private readonly float fpsFontSize = 14.0f;
-    // --- End FPS Counter Fields ---
+    // --- FPS Counter ---
+    private readonly FpsCounter _fpsCounter;
 
     public Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
         : base(title, width, height)
-    { }
+    {
+        _fpsCounter = new FpsCounter();
+    }
 
     protected override bool Initialize()
     {
@@ -68,28 +61,11 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnPaint()
     {
-        // --- FPS Timer Update ---
-        if (!fpsTimer.IsRunning)
+        // Update FPS counter and invalidate if the text changed
+        if (_fpsCounter.Update())
         {
-            fpsTimer.Start();
-            lastFpsUpdateTimeTicks = fpsTimer.ElapsedTicks;
-            frameCountSinceUpdate = 0;
-        }
-
-        frameCountSinceUpdate++;
-        long elapsedTicks = fpsTimer.ElapsedTicks;
-        long timeSinceLastUpdate = elapsedTicks - lastFpsUpdateTimeTicks;
-
-        if (timeSinceLastUpdate >= FpsUpdateIntervalTicks)
-        {
-            float secondsElapsed = (float)timeSinceLastUpdate / TimeSpan.TicksPerSecond;
-            currentFps = (secondsElapsed > 0.001f) ? (frameCountSinceUpdate / secondsElapsed) : 0.0f;
-            frameCountSinceUpdate = 0;
-            lastFpsUpdateTimeTicks = elapsedTicks;
             Invalidate();
         }
-        // --- End FPS Timer Update ---
-
 
         if (!graphicsInitialized || renderTarget is null || dwriteFactory is null)
         {
@@ -126,13 +102,7 @@ public abstract class Direct2DAppWindow : Win32Window
             DrawUIContent(drawingContext, inputState);
 
             // --- Draw FPS Counter ---
-            if (fpsTextBrush is not null && fpsTextFormat is not null)
-            {
-                string fpsText = $"FPS: {currentFps:F1}";
-                Rect fpsLayoutRect = new Rect(5f, 5f, 150f, 30f);
-                renderTarget.DrawText(fpsText, fpsTextFormat, fpsLayoutRect, fpsTextBrush);
-            }
-            // --- End Draw FPS Counter ---
+            _fpsCounter.Draw(renderTarget);
 
 
             Result endDrawResult = renderTarget.EndDraw();
@@ -179,23 +149,12 @@ public abstract class Direct2DAppWindow : Win32Window
             try
             {
                 var newPixelSize = new SizeI(width, height);
-                fpsTextBrush?.Dispose();
-                fpsTextBrush = null;
 
+                // Resize the render target first.
                 renderTarget.Resize(newPixelSize);
 
-                try
-                {
-                    if (renderTarget is not null)
-                    {
-                        fpsTextBrush = renderTarget.CreateSolidColorBrush(fpsTextColor);
-                        Console.WriteLine("Recreated FPS brush after resize.");
-                    }
-                }
-                catch (Exception brushEx)
-                {
-                    Console.WriteLine($"Warning: Failed to recreate FPS brush after resize: {brushEx.Message}");
-                }
+                // Then notify components that rely on it.
+                _fpsCounter.HandleResize(renderTarget);
 
                 Console.WriteLine($"Successfully resized render target.");
             }
@@ -299,30 +258,8 @@ public abstract class Direct2DAppWindow : Win32Window
 
             renderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
 
-            // --- Initialize FPS Resources ---
-            try
-            {
-                fpsTextFormat?.Dispose();
-                fpsTextFormat = dwriteFactory.CreateTextFormat(fpsFontName, null, FontWeight.Normal, FontStyle.Normal, FontStretch.Normal, fpsFontSize, "en-us");
-                fpsTextFormat.TextAlignment = DW.TextAlignment.Leading;
-                fpsTextFormat.ParagraphAlignment = ParagraphAlignment.Near;
-
-                fpsTextBrush?.Dispose();
-                fpsTextBrush = renderTarget.CreateSolidColorBrush(fpsTextColor);
-                Console.WriteLine("Created FPS drawing resources.");
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Warning: Failed to create FPS drawing resources: {ex.Message}");
-                fpsTextFormat?.Dispose(); fpsTextFormat = null;
-                fpsTextBrush?.Dispose(); fpsTextBrush = null;
-            }
-            // Reset and Start timer
-            frameCountSinceUpdate = 0;
-            currentFps = 0;
-            lastFpsUpdateTimeTicks = 0;
-            fpsTimer.Restart();
-            // --- End Initialize FPS Resources ---
+            // --- Initialize FPS Counter ---
+            _fpsCounter.Initialize(renderTarget, dwriteFactory);
 
 
             Console.WriteLine($"Vortice Graphics initialized successfully for HWND {Handle}.");
@@ -346,10 +283,7 @@ public abstract class Direct2DAppWindow : Win32Window
         bool resourcesExisted = d2dFactory is not null || renderTarget is not null || dwriteFactory is not null;
         if (resourcesExisted) Console.WriteLine("Cleaning up Vortice Graphics resources...");
 
-        fpsTimer.Stop();
-
-        fpsTextBrush?.Dispose(); fpsTextBrush = null;
-        fpsTextFormat?.Dispose(); fpsTextFormat = null;
+        _fpsCounter.Cleanup();
 
         UI.CleanupResources();
 
