@@ -147,48 +147,44 @@ public static partial class UI
             }
         }
 
-        // --- Layout the node row using a temporary HBox ---
+        // --- Manually lay out the node row ---
         float indentSize = treeState.IndentLineState.Count * style.Indent;
         string currentId = $"{parentId}_{index}_{node.Text.GetHashCode()}";
-        BeginHBoxContainer(currentId + "_row", startLayoutPos + new Vector2(indentSize, 0), 5);
+        var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
+        float currentX = nodeRowStartPos.X;
+        float gap = 5;
 
         // --- Toggle Button ---
+        float toggleWidth = style.RowHeight - 4;
         if (node.Children.Count > 0)
         {
-            var toggleDef = new ButtonDefinition
-            {
-                Text = node.IsExpanded ? "-" : "+",
-                Theme = style.ToggleStyle,
-                Size = new Vector2(style.RowHeight - 4, style.RowHeight),
-                TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
-            };
-            if (Button(currentId + "_toggle", toggleDef))
+            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
+            if (StatelessButton(currentId + "_toggle", bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
             {
                 node.IsExpanded = !node.IsExpanded;
             }
         }
-        else
-        {
-            AdvanceLayout(new Vector2(style.RowHeight - 4, 0)); // Spacer to align labels
-        }
+        currentX += toggleWidth;
 
         // --- Label Button ---
-        var labelDef = new ButtonDefinition
-        {
-            Text = node.Text,
-            Theme = style.NodeLabelStyle,
-            AutoWidth = true,
-            Size = new Vector2(0, style.RowHeight),
-            TextAlignment = new Alignment(HAlignment.Left, VAlignment.Center),
-            TextMargin = new Vector2(4, 0),
-            LeftClickActionMode = DirectUI.Button.ActionMode.Press
-        };
-        if (Button(currentId + "_label", labelDef))
+        currentX += gap; // Add gap before the label
+        var labelStyle = style.NodeLabelStyle;
+        var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
+        float labelMargin = 4;
+        var labelSize = MeasureText(CurrentDWriteFactory!, node.Text, labelStyle.Normal);
+        float labelWidth = labelSize.X + labelMargin * 2;
+        var labelOffset = new Vector2(labelMargin, 0);
+
+        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
+        if (StatelessButton(currentId + "_label", labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
         {
             clickedNode = node;
         }
+        currentX += labelWidth;
 
-        EndHBoxContainer(); // This will advance the parent container's layout cursor vertically
+        // --- Advance parent layout ---
+        float totalWidth = (currentX - nodeRowStartPos.X);
+        AdvanceLayout(new Vector2(totalWidth, style.RowHeight));
 
         // --- Recurse if expanded ---
         if (node.IsExpanded && node.Children.Count > 0)

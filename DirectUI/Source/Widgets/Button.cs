@@ -158,45 +158,6 @@ public class Button
         Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
     }
 
-    internal Vector2 MeasureText(IDWriteFactory dwriteFactory, ButtonStyle styleToUse)
-    {
-        if (string.IsNullOrEmpty(Text) || styleToUse is null)
-        {
-            return Vector2.Zero;
-        }
-
-        IDWriteTextFormat? textFormat = UI.GetOrCreateTextFormat(styleToUse);
-        if (textFormat is null)
-        {
-            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
-            return Vector2.Zero;
-        }
-
-        IDWriteTextLayout? textLayout = null;
-        try
-        {
-            textLayout = dwriteFactory.CreateTextLayout(
-                Text,
-                textFormat,
-                float.MaxValue, // Max width
-                float.MaxValue  // Max height
-            );
-
-            TextMetrics textMetrics = textLayout.Metrics;
-
-            return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error measuring text for button: {ex.Message}");
-            return Vector2.Zero;
-        }
-        finally
-        {
-            textLayout?.Dispose();
-        }
-    }
-
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
     {
         if (!AutoWidth || dwriteFactory is null || Themes is null)
@@ -205,8 +166,7 @@ public class Button
         }
 
         // Always measure using the Normal theme to ensure consistent size across states.
-        // This relies on the font properties being set consistently across the style pack.
-        Vector2 textSize = MeasureText(dwriteFactory, Themes.Normal);
+        Vector2 textSize = UI.MeasureText(dwriteFactory, Text, Themes.Normal);
         float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
 
         // Use a small epsilon to avoid floating point jitter

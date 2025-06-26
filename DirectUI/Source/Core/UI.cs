@@ -1,11 +1,8 @@
-﻿using SharpGen.Runtime;
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+﻿using System.Numerics;
+using SharpGen.Runtime;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
 
@@ -253,6 +250,31 @@ public static partial class UI
             Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
             return null;
         }
+    }
+
+    public static Vector2 MeasureText(IDWriteFactory dwriteFactory, string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || style is null)
+        {
+            return Vector2.Zero;
+        }
+
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
+        if (textFormat is null)
+        {
+            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
+            return Vector2.Zero;
+        }
+
+        using var textLayout = dwriteFactory.CreateTextLayout(
+            text,
+            textFormat,
+            float.MaxValue, // Max width
+            float.MaxValue  // Max height
+        );
+
+        TextMetrics textMetrics = textLayout.Metrics;
+        return new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
     }
 
 
