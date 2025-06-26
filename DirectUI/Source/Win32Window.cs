@@ -112,9 +112,15 @@ public abstract class Win32Window : IDisposable
         {
             case NativeMethods.WM_PAINT: OnPaint(); return IntPtr.Zero;
             case NativeMethods.WM_SIZE: Width = NativeMethods.LoWord(lParam); Height = NativeMethods.HiWord(lParam); OnSize(Width, Height); return IntPtr.Zero;
-            case NativeMethods.WM_MOUSEMOVE: OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero; // Ensure exists
-            case NativeMethods.WM_LBUTTONDOWN: OnMouseDown(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero; // Ensure exists
-            case NativeMethods.WM_LBUTTONUP: OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero; // Ensure exists
+            case NativeMethods.WM_MOUSEMOVE: OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero;
+            case NativeMethods.WM_LBUTTONDOWN:
+                NativeMethods.SetCapture(hWnd);
+                OnMouseDown(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+            case NativeMethods.WM_LBUTTONUP:
+                NativeMethods.ReleaseCapture();
+                OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
             case NativeMethods.WM_KEYDOWN: OnKeyDown((int)wParam); return IntPtr.Zero;
             case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
             case NativeMethods.WM_DESTROY: Console.WriteLine($"WM_DESTROY for {hWnd}."); OnDestroy(); NativeMethods.PostQuitMessage(0); return IntPtr.Zero;

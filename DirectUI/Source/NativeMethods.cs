@@ -143,6 +143,13 @@ internal static class NativeMethods
     [DllImport("user32.dll", EntryPoint = "GetWindowLongW", SetLastError = true)]
     private static extern IntPtr GetWindowLong32(IntPtr hWnd, int nIndex);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    public static extern IntPtr SetCapture(IntPtr hWnd);
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool ReleaseCapture();
+
+
     public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
     {
         if (IntPtr.Size == 8) return SetWindowLongPtr64(hWnd, nIndex, dwNewLong);

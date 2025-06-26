@@ -55,10 +55,9 @@ public static partial class UI
         potentialInputTargetId = null;
         nonSliderElementClaimedPress = false;
 
-        if (!input.IsLeftMouseDown)
-        {
-            activelyPressedElementId = null;
-        }
+        // The active element is now cleared by the element itself upon release,
+        // or by a new element capturing input. This prevents the state from being
+        // cleared before the release event can be processed.
     }
 
     public static void EndFrame()
