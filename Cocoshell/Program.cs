@@ -1,4 +1,5 @@
 ﻿using DirectUI;
+using System;
 
 namespace Cocoshell;
 
@@ -15,9 +16,11 @@ public class Program
             try
             {
                 // Create the main window, which registers itself with the Application manager.
+                // The static constructor in Application will ensure resources are ready.
                 if (appWindow.Create())
                 {
                     // Run the central message loop that processes all windows.
+                    // This will also handle cleanup when the loop exits.
                     Application.Run();
                 }
             }

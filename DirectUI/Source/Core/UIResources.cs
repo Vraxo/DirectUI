@@ -11,6 +11,7 @@ namespace DirectUI;
 /// <summary>
 /// Manages the creation, caching, and cleanup of shareable graphics resources
 /// like brushes and text formats to avoid recreating them every frame.
+/// This is now an instance class, with one instance per AppHost/window.
 /// </summary>
 public class UIResources
 {

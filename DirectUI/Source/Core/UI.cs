@@ -17,8 +17,8 @@ public static partial class UI
         IsRendering = true;
 
         Context = context;
+        Resources = context.Resources; // Set the active resources for this frame
         State ??= new UIPersistentState();
-        Resources ??= new UIResources();
 
         State.ResetFrameState(context.InputState);
 
@@ -41,18 +41,14 @@ public static partial class UI
 
         // It's important that IsRendering is set to false AFTER the context is cleared.
         Context = null!;
+        Resources = null!;
         IsRendering = false;
-    }
-
-    public static void CleanupResources()
-    {
-        Resources?.CleanupResources();
     }
 
     // --- Helper Methods ---
     private static bool IsContextValid()
     {
-        if (Context?.RenderTarget is null || Context?.DWriteFactory is null)
+        if (Context?.RenderTarget is null || Context?.DWriteFactory is null || Resources is null)
         {
             Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid.");
             return false;

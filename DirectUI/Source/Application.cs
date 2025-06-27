@@ -12,6 +12,15 @@ public static class Application
     private static bool s_isRunning = false;
 
     /// <summary>
+    /// A static constructor is guaranteed to run once before the class is used.
+    /// This is the perfect place to initialize application-wide resources.
+    /// </summary>
+    static Application()
+    {
+        SharedGraphicsResources.Initialize();
+    }
+
+    /// <summary>
     /// Registers a window with the application manager. Called by Win32Window's constructor.
     /// </summary>
     public static void RegisterWindow(Win32Window window)
@@ -63,6 +72,9 @@ public static class Application
                 }
             }
         }
+
+        // Clean up resources after the main loop has finished.
+        SharedGraphicsResources.Cleanup();
     }
 
     /// <summary>

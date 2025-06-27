@@ -16,6 +16,7 @@ public class AppHost
     private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
+    private readonly UIResources _uiResources;
 
     private GraphicsDevice? _graphicsDevice;
     private IntPtr _hwnd;
@@ -30,6 +31,7 @@ public class AppHost
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
+        _uiResources = new UIResources();
     }
 
     public bool Initialize(IntPtr hwnd, SizeI clientSize)
@@ -52,7 +54,7 @@ public class AppHost
     public void Cleanup()
     {
         _fpsCounter.Cleanup();
-        UI.CleanupResources();
+        _uiResources.CleanupResources();
         _graphicsDevice?.Cleanup();
     }
 
@@ -108,7 +110,7 @@ public class AppHost
                 _isLeftMouseButtonDown
             );
 
-            var uiContext = new UIContext(rt, dwrite, inputState);
+            var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);

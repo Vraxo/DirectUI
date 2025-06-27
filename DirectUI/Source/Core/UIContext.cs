@@ -10,16 +10,18 @@ public class UIContext
     public ID2D1HwndRenderTarget RenderTarget { get; }
     public IDWriteFactory DWriteFactory { get; }
     public InputState InputState { get; }
+    public UIResources Resources { get; }
 
     // Per-frame layout state
     internal readonly Stack<object> containerStack = new();
     internal readonly Stack<TreeViewState> treeStateStack = new();
 
-    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState)
+    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources)
     {
         RenderTarget = renderTarget;
         DWriteFactory = dwriteFactory;
         InputState = inputState;
+        Resources = resources;
     }
 
     // --- Layout Helpers ---

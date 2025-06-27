@@ -8,15 +8,14 @@ using Vortice.Mathematics;
 using Vortice.DCommon;
 using D2D = Vortice.Direct2D1;
 using DW = Vortice.DirectWrite;
-using D2DFactoryType = Vortice.Direct2D1.FactoryType;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
 
 public class GraphicsDevice : IDisposable
 {
-    public ID2D1Factory1? D2DFactory { get; private set; }
-    public IDWriteFactory? DWriteFactory { get; private set; }
+    public ID2D1Factory1? D2DFactory => SharedGraphicsResources.D2DFactory;
+    public IDWriteFactory? DWriteFactory => SharedGraphicsResources.DWriteFactory;
     public ID2D1HwndRenderTarget? RenderTarget { get; private set; }
     public bool IsInitialized { get; private set; } = false;
 
@@ -30,20 +29,17 @@ public class GraphicsDevice : IDisposable
         Console.WriteLine($"Attempting Graphics Initialization for HWND {hwnd} with size {size}...");
         try
         {
-            Cleanup(); // Clean up any previous (potentially invalid) resources
+            // Clean up any previous (potentially invalid) instance resources
+            CleanupRenderTarget();
 
-            Result factoryResult = D2D1.D2D1CreateFactory(D2DFactoryType.SingleThreaded, out ID2D1Factory1? d2dFactory);
-            factoryResult.CheckError();
-            D2DFactory = d2dFactory ?? throw new InvalidOperationException("D2D Factory creation failed silently.");
-
-            Result dwriteResult = DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out IDWriteFactory? dwriteFactory);
-            dwriteResult.CheckError();
-            DWriteFactory = dwriteFactory ?? throw new InvalidOperationException("DWrite Factory creation failed silently.");
+            if (D2DFactory is null || DWriteFactory is null)
+            {
+                throw new InvalidOperationException("Shared graphics factories are not initialized. Application.Run() must be called first.");
+            }
 
             if (size.Width <= 0 || size.Height <= 0)
             {
                 Console.WriteLine($"Invalid client rect size ({size}). Aborting graphics initialization.");
-                Cleanup();
                 return false;
             }
 
@@ -139,18 +135,21 @@ public class GraphicsDevice : IDisposable
         Cleanup();
     }
 
+    private void CleanupRenderTarget()
+    {
+        RenderTarget?.Dispose();
+        RenderTarget = null;
+    }
+
     public void Cleanup()
     {
-        bool resourcesExisted = D2DFactory is not null || RenderTarget is not null || DWriteFactory is not null;
-        if (resourcesExisted) Console.WriteLine("Cleaning up GraphicsDevice resources...");
+        bool resourcesExisted = RenderTarget is not null;
+        if (resourcesExisted) Console.WriteLine("Cleaning up GraphicsDevice instance resources...");
 
-        RenderTarget?.Dispose(); RenderTarget = null;
-        DWriteFactory?.Dispose(); DWriteFactory = null;
-        D2DFactory?.Dispose(); D2DFactory = null;
-
+        CleanupRenderTarget();
         IsInitialized = false;
 
-        if (resourcesExisted) Console.WriteLine("Finished cleaning GraphicsDevice resources.");
+        if (resourcesExisted) Console.WriteLine("Finished cleaning GraphicsDevice instance resources.");
     }
 
     public void Dispose()
