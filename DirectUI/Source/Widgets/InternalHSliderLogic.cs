@@ -20,8 +20,8 @@ internal class InternalHSliderLogic : InternalSliderLogic
     {
         float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
+        var state = UI.State;
 
-        // 1. Calculate Hover States & Set Potential Target
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -33,21 +33,19 @@ internal class InternalHSliderLogic : InternalSliderLogic
 
         if (isSliderHovered)
         {
-            UI.SetPotentialInputTarget(GlobalIntId);
+            state.SetPotentialInputTarget(GlobalIntId);
         }
 
-        // 2. Handle Mouse Release
-        if (UI.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
         {
-            UI.ClearActivePress(GlobalIntId);
+            state.ClearActivePress(GlobalIntId);
         }
 
-        // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && UI.PotentialInputTargetId == GlobalIntId && !UI.dragInProgressFromPreviousFrame)
+            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                UI.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetButtonPotentialCaptorForFrame(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -57,10 +55,9 @@ internal class InternalHSliderLogic : InternalSliderLogic
             }
         }
 
-        // 4. Handle Mouse Held/Drag
-        if (UI.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
         {
-            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            if (!pendingTrackClickValueJump)
             {
                 float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
                 newValue = ConvertPositionToValue(clampedX);
@@ -72,7 +69,6 @@ internal class InternalHSliderLogic : InternalSliderLogic
         return newValue;
     }
 
-    // --- Other methods unchanged ---
     protected override float ConvertPositionToValue(float position)
     {
         if (trackMaxBound <= trackMinBound) return MinValue;
@@ -110,7 +106,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         if (Direction == HSliderDirection.RightToLeft) { clipRect = new Rect(trackPosition.X + Size.X - foregroundWidth, trackPosition.Y, foregroundWidth, Size.Y); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
-        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
     }
 }

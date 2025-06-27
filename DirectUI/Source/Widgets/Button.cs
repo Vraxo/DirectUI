@@ -48,9 +48,13 @@ public class Button
 
     internal bool Update(string id)
     {
-        ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
-        IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
-        InputState input = UI.CurrentInputState;
+        var context = UI.Context;
+        var state = UI.State;
+        var resources = UI.Resources;
+
+        var renderTarget = context.RenderTarget;
+        var dwriteFactory = context.DWriteFactory;
+        var input = context.InputState;
         var intId = id.GetHashCode();
 
         if (renderTarget is null || dwriteFactory is null)
@@ -58,71 +62,56 @@ public class Button
             return false;
         }
 
-        // --- Sizing (MUST be done before hit-testing) ---
-        // This is now independent of hover/press state and ensures correct bounds.
         PerformAutoWidth(dwriteFactory);
 
-        // --- Input Logic & State Update ---
         bool wasClickedThisFrame = false;
-        isPressed = false; // Reset visual pressed state for the frame
+        isPressed = false;
 
         if (Disabled)
         {
             IsHovering = false;
-            if (UI.ActivelyPressedElementId == intId)
+            if (state.ActivelyPressedElementId == intId)
             {
-                UI.ClearActivePress(intId);
+                state.ClearActivePress(intId);
             }
         }
-        else // Element is Enabled
+        else
         {
-            Rect bounds = GlobalBounds; // NOW uses correct size from AutoWidth
-
+            Rect bounds = GlobalBounds;
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
 
             if (IsHovering)
             {
-                UI.SetPotentialInputTarget(intId);
+                state.SetPotentialInputTarget(intId);
             }
 
-            // Determine relevant actions based on behavior
             bool primaryActionHeld = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.IsLeftMouseDown;
             bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
-            // Add Right button logic here if Behavior.Right/Both is implemented fully
 
-            // Handle Release Action
-            if (!primaryActionHeld && UI.ActivelyPressedElementId == intId)
+            if (!primaryActionHeld && state.ActivelyPressedElementId == intId)
             {
                 if (IsHovering && LeftClickActionMode is ActionMode.Release)
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(intId); // Clear press regardless of hover on release
+                state.ClearActivePress(intId);
             }
 
-            // Handle Press Attempt (potential capture)
             if (primaryActionPressedThisFrame)
             {
-                // Can only capture press if hovered, it's the potential target, and no drag was already in progress from a previous frame
-                if (IsHovering && UI.PotentialInputTargetId == intId && !UI.dragInProgressFromPreviousFrame)
+                if (IsHovering && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
                 {
-                    // Attempt to capture input - this overwrites previous captors for the frame
-                    UI.SetButtonPotentialCaptorForFrame(intId);
+                    state.SetButtonPotentialCaptorForFrame(intId);
                 }
             }
+            isPressed = (state.ActivelyPressedElementId == intId);
+        }
 
-            // Determine visual pressed state for this frame (is it the element currently held down?)
-            isPressed = (UI.ActivelyPressedElementId == intId);
-
-        } // End Enabled block
-
-        // --- Final Style Update & Drawing ---
-        UpdateStyle(); // Update style based on the now-calculated states
+        UpdateStyle();
 
         try
         {
-            Rect currentBounds = GlobalBounds; // Bounds are now final for this frame
-
+            Rect currentBounds = GlobalBounds;
             if (currentBounds.Width > 0 && currentBounds.Height > 0)
             {
                 DrawBackground(renderTarget);
@@ -131,22 +120,17 @@ public class Button
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
-            // Retained log message for recoverable graphics issue.
             Console.WriteLine($"Render target needs recreation during Button draw: {ex.Message}");
-            UI.CleanupResources(); // Clear brushes which are now invalid
-            return false; // Cannot continue drawing
+            resources.CleanupResources();
+            return false;
         }
         catch (Exception ex)
         {
-            // Retained log message for unexpected error.
             Console.WriteLine($"Error drawing button {id}: {ex}");
-            return false; // Indicate error
+            return false;
         }
 
-
-        // --- Final Click Determination (for Press mode) ---
-        // Click happens now if mode is Press AND this button was the final input captor for the frame.
-        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == intId)
+        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && state.InputCaptorId == intId)
         {
             wasClickedThisFrame = true;
         }
@@ -166,19 +150,12 @@ public class Button
             return;
         }
 
-        // Always measure using the Normal theme to ensure consistent size across states.
-        Vector2 textSize = UI.MeasureText(dwriteFactory, Text, Themes.Normal);
-        float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
+        Vector2 textSize = UI.Resources.MeasureText(dwriteFactory, Text, Themes.Normal);
+        float desiredWidth = textSize.X + TextMargin.X * 2;
 
-        // Use a small epsilon to avoid floating point jitter
         if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f)
         {
             Size = new Vector2(desiredWidth, Size.Y);
-        }
-        else if (desiredWidth <= 0 && Size.X != 0)
-        {
-            // Optional: Handle case where text becomes empty - maybe reset to a MinWidth?
-            // For now, do nothing, keeping potentially previous non-zero width.
         }
     }
 
@@ -186,14 +163,9 @@ public class Button
     {
         Rect bounds = GlobalBounds;
         ButtonStyle? style = Themes?.Current;
+        if (style is null || bounds.Width <= 0 || bounds.Height <= 0) return;
 
-        // Early exit if nothing to draw
-        if (style is null || bounds.Width <= 0 || bounds.Height <= 0)
-        {
-            return;
-        }
-
-        UI.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
     }
 
     private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
@@ -202,10 +174,10 @@ public class Button
         ButtonStyle? style = Themes?.Current;
         if (style is null) return;
 
-        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
+        ID2D1SolidColorBrush textBrush = UI.Resources.GetOrCreateBrush(renderTarget, style.FontColor);
         if (textBrush is null) return;
 
-        IDWriteTextFormat? textFormat = UI.GetOrCreateTextFormat(style);
+        IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
         if (textFormat is null) return;
 
         IDWriteTextLayout? textLayout = null;
@@ -214,15 +186,7 @@ public class Button
             Rect bounds = GlobalBounds;
             if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
-            // Create a layout with the button's bounds as constraints.
-            textLayout = dwriteFactory.CreateTextLayout(
-                Text,
-                textFormat,
-                bounds.Width,
-                bounds.Height
-            );
-
-            // Apply Alignment to the layout object itself.
+            textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
             textLayout.TextAlignment = TextAlignment.Horizontal switch
             {
                 HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
@@ -238,15 +202,8 @@ public class Button
                 _ => ParagraphAlignment.Near
             };
 
-            // The origin point for drawing the layout.
             var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
-
-            renderTarget.DrawTextLayout(
-                textOrigin,
-                textLayout,
-                textBrush,
-                DrawTextOptions.None // Clipping is handled by the layout's dimensions.
-            );
+            renderTarget.DrawTextLayout(textOrigin, textLayout, textBrush, DrawTextOptions.None);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {

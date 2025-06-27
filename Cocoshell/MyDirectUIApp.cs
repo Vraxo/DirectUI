@@ -56,18 +56,18 @@ public class MyDirectUIApp : Direct2DAppWindow
     }
 
     // The actual drawing logic is now in a dedicated method.
-    private void DrawUI(DrawingContext context, InputState input)
+    private void DrawUI(UIContext context)
     {
-        // Must call BeginFrame before any UI calls
-        UI.BeginFrame(context, input);
+        // Note: UI.BeginFrame and UI.EndFrame are now called by the AppHost.
+        // We just need to define the UI content for the frame.
 
         float menuBarHeight = 30f;
 
         // --- Menu Bar ---
         {
             var rt = context.RenderTarget;
-            var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-            var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
+            var menuBarBackgroundBrush = UI.Resources.GetOrCreateBrush(rt, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
+            var menuBarBorderBrush = UI.Resources.GetOrCreateBrush(rt, DefaultTheme.NormalBorder);
 
             if (menuBarBackgroundBrush != null)
             {
@@ -151,7 +151,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
             // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-            UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
+            UI.BeginVBoxContainer("tree_vbox", UI.Context.GetCurrentLayoutPosition(), 0);
             UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
             if (clickedNode is not null)
             {
@@ -190,9 +190,5 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             UI.EndResizableHPanel();
         }
-
-        // --- End of UI ---
-        // Must call EndFrame after all UI calls
-        UI.EndFrame();
     }
 }

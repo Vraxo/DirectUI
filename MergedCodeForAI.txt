@@ -12,58 +12,105 @@ public struct Alignment(HAlignment horizontal, VAlignment vertical)
 }
 </file>
 
-<file path="Direct2DAppWindow.cs">
-// Direct2DAppWindow.cs
+<file path="AppHost.cs">
+// AppHost.cs
 using System;
 using System.Numerics;
-using Vortice.Mathematics;
 using DirectUI.Diagnostics;
+using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
 
-public abstract class Direct2DAppWindow : Win32Window
+/// <summary>
+/// Manages the application's rendering lifecycle, graphics device, and input state aggregation.
+/// This class acts as the "engine" that is hosted by a window.
+/// </summary>
+public class AppHost
 {
-    private GraphicsDevice? _graphicsDevice;
-
-    protected Color4 backgroundColor = new(0.1f, 0.1f, 0.15f, 1.0f);
-
-    protected Vector2 currentMousePos = new(-1, -1);
-    protected bool isLeftMouseButtonDown = false;
-    protected bool wasLeftMouseClickedThisFrame = false;
-
+    private readonly Action<DrawingContext, InputState> _drawCallback;
+    private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
 
-    public Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
-        : base(title, width, height)
+    private GraphicsDevice? _graphicsDevice;
+    private IntPtr _hwnd;
+
+    // Input state
+    private Vector2 _currentMousePos = new(-1, -1);
+    private bool _isLeftMouseButtonDown = false;
+    private bool _wasLeftMouseClickedThisFrame = false;
+
+    public AppHost(Action<DrawingContext, InputState> drawCallback, Color4 backgroundColor)
     {
+        _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
+        _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
     }
 
-    protected override bool Initialize()
+    public bool Initialize(IntPtr hwnd, SizeI clientSize)
     {
-        Console.WriteLine("Direct2DAppWindow initializing...");
-        return InitializeGraphics();
+        _hwnd = hwnd;
+        if (_graphicsDevice?.IsInitialized ?? false) return true;
+        if (_hwnd == IntPtr.Zero) return false;
+
+        _graphicsDevice ??= new GraphicsDevice();
+
+        if (_graphicsDevice.Initialize(_hwnd, clientSize))
+        {
+            _fpsCounter.Initialize(_graphicsDevice.RenderTarget!, _graphicsDevice.DWriteFactory!);
+            return true;
+        }
+
+        return false;
     }
 
-    protected override void Cleanup()
+    public void Cleanup()
     {
-        Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
-        CleanupGraphics();
+        _fpsCounter.Cleanup();
+        UI.CleanupResources();
+        _graphicsDevice?.Cleanup();
     }
 
-    protected override void OnPaint()
+    public void Resize(SizeI newSize)
+    {
+        if (_graphicsDevice?.IsInitialized ?? false)
+        {
+            _graphicsDevice.Resize(newSize);
+
+            if (_graphicsDevice.IsInitialized)
+            {
+                _fpsCounter.HandleResize(_graphicsDevice.RenderTarget!);
+            }
+        }
+        else if (_hwnd != IntPtr.Zero)
+        {
+            Initialize(_hwnd, GetClientRectSizeForHost());
+        }
+    }
+
+    public void UpdateFpsAndInvalidate()
     {
         if (_fpsCounter.Update())
         {
             Invalidate();
         }
+    }
 
+    private void Invalidate()
+    {
+        if (_hwnd != IntPtr.Zero)
+        {
+            NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false);
+        }
+    }
+
+    public void Render()
+    {
         if (!(_graphicsDevice?.IsInitialized ?? false))
         {
-            if (!InitializeGraphics())
+            if (!Initialize(_hwnd, GetClientRectSizeForHost()))
             {
-                wasLeftMouseClickedThisFrame = false;
+                _wasLeftMouseClickedThisFrame = false;
                 return;
             }
         }
@@ -75,76 +122,135 @@ public abstract class Direct2DAppWindow : Win32Window
 
         try
         {
-            rt.Clear(backgroundColor);
+            rt.Clear(_backgroundColor);
 
             var inputState = new InputState(
-                currentMousePos,
-                wasLeftMouseClickedThisFrame,
-                isLeftMouseButtonDown
+                _currentMousePos,
+                _wasLeftMouseClickedThisFrame,
+                _isLeftMouseButtonDown
             );
 
             var drawingContext = new DrawingContext(rt, dwrite);
 
-            DrawUIContent(drawingContext, inputState);
+            _drawCallback(drawingContext, inputState);
 
             _fpsCounter.Draw(rt);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            CleanupGraphics();
+            _graphicsDevice.Cleanup();
         }
         finally
         {
             _graphicsDevice.EndDraw();
-            wasLeftMouseClickedThisFrame = false;
+            _wasLeftMouseClickedThisFrame = false;
         }
     }
 
-    protected virtual void DrawUIContent(DrawingContext context, InputState input)
+    private SizeI GetClientRectSizeForHost()
     {
-        // Base implementation does nothing.
+        if (_hwnd != IntPtr.Zero && NativeMethods.GetClientRect(_hwnd, out NativeMethods.RECT r))
+        {
+            int width = Math.Max(1, r.right - r.left);
+            int height = Math.Max(1, r.bottom - r.top);
+            return new SizeI(width, height);
+        }
+        // Fallback for when the handle is not yet valid during initialization.
+        // This size isn't critical as resize will be called immediately after.
+        return new SizeI(1, 1);
+    }
+
+    public void SetMousePosition(int x, int y)
+    {
+        _currentMousePos = new Vector2(x, y);
+    }
+
+    public void SetMouseDown(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = true;
+            _wasLeftMouseClickedThisFrame = true;
+        }
+    }
+
+    public void SetMouseUp(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = false;
+        }
+    }
+}
+</file>
+
+<file path="Direct2DAppWindow.cs">
+// Direct2DAppWindow.cs
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+
+namespace DirectUI;
+
+public abstract class Direct2DAppWindow : Win32Window
+{
+    private AppHost? _appHost;
+
+    protected Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
+        : base(title, width, height)
+    {
+    }
+
+    /// <summary>
+    /// Factory method for the derived class to create its specific AppHost.
+    /// The AppHost contains the rendering logic and graphics resources.
+    /// </summary>
+    protected abstract AppHost CreateAppHost();
+
+    protected override bool Initialize()
+    {
+        Console.WriteLine("Direct2DAppWindow initializing...");
+        _appHost = CreateAppHost();
+        return _appHost.Initialize(Handle, GetClientRectSize());
+    }
+
+    protected override void Cleanup()
+    {
+        Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
+        _appHost?.Cleanup();
+        _appHost = null;
+    }
+
+    protected override void OnPaint()
+    {
+        _appHost?.UpdateFpsAndInvalidate();
+        _appHost?.Render();
     }
 
     protected override void OnSize(int width, int height)
     {
-        if (_graphicsDevice?.IsInitialized ?? false)
-        {
-            var newPixelSize = new SizeI(width, height);
-
-            _graphicsDevice.Resize(newPixelSize);
-
-            if (_graphicsDevice.IsInitialized)
-            {
-                _fpsCounter.HandleResize(_graphicsDevice.RenderTarget!);
-            }
-        }
-        else if (Handle != nint.Zero)
-        {
-            InitializeGraphics();
-        }
+        _appHost?.Resize(new SizeI(width, height));
     }
 
-    protected override void OnMouseMove(int x, int y) { currentMousePos = new Vector2(x, y); Invalidate(); }
+    protected override void OnMouseMove(int x, int y)
+    {
+        _appHost?.SetMousePosition(x, y);
+        Invalidate();
+    }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        currentMousePos = new Vector2(x, y);
-        if (button == MouseButton.Left)
-        {
-            isLeftMouseButtonDown = true;
-            wasLeftMouseClickedThisFrame = true;
-        }
+        _appHost?.SetMousePosition(x, y); // Update position on click
+        _appHost?.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        currentMousePos = new Vector2(x, y);
-        if (button == MouseButton.Left)
-        {
-            isLeftMouseButtonDown = false;
-        }
+        _appHost?.SetMousePosition(x, y); // Update position on release
+        _appHost?.SetMouseUp(button);
         Invalidate();
     }
 
@@ -158,30 +264,6 @@ public abstract class Direct2DAppWindow : Win32Window
     }
 
     protected override bool OnClose() { return true; }
-
-    protected virtual bool InitializeGraphics()
-    {
-        if (_graphicsDevice?.IsInitialized ?? false) return true;
-        if (Handle == nint.Zero) return false;
-
-        _graphicsDevice ??= new GraphicsDevice();
-
-        if (_graphicsDevice.Initialize(Handle, GetClientRectSize()))
-        {
-            _fpsCounter.Initialize(_graphicsDevice.RenderTarget!, _graphicsDevice.DWriteFactory!);
-            return true;
-        }
-
-        return false;
-    }
-
-    protected virtual void CleanupGraphics()
-    {
-        _fpsCounter.Cleanup();
-        UI.CleanupResources();
-
-        _graphicsDevice?.Cleanup();
-    }
 
     protected SizeI GetClientRectSize()
     {
@@ -203,18 +285,15 @@ public abstract class Direct2DAppWindow : Win32Window
 </file>
 
 <file path="DrawingContext.cs">
-// DrawingContext.cs
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 
 namespace DirectUI;
 
-// Holds rendering resources needed for UI drawing
 public readonly struct DrawingContext
 {
     public readonly ID2D1HwndRenderTarget RenderTarget;
     public readonly IDWriteFactory DWriteFactory;
-    // Could potentially add D2DFactory later if needed
 
     public DrawingContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory)
     {
@@ -3367,6 +3446,7 @@ namespace DirectUI;
 
 public class MyDirectUIApp : Direct2DAppWindow
 {
+    // Application state remains here, where it belongs.
     private float sliderValue = 0.5f;
     private float leftPanelWidth = 250f;
     private float rightPanelWidth = 250f;
@@ -3375,18 +3455,12 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
 
-
-    // Constructor to match the call in Program.cs
     public MyDirectUIApp(string title, int width, int height)
         : base(title, width, height)
     {
-        // Set a dark background color that matches the new theme
-        backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-
-        // --- Initialize Tree Data from YAML ---
+        // Data initialization remains here.
         try
         {
-            // The user requested this specific, absolute path.
             string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
             if (File.Exists(scenePath))
             {
@@ -3405,16 +3479,23 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
+    // The factory method implementation creates the AppHost, passing the drawing logic.
+    protected override AppHost CreateAppHost()
+    {
+        var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
+        return new AppHost(DrawUI, backgroundColor);
+    }
+
     private TreeNode<string> CreateDefaultTree()
     {
-        // Fallback tree if YAML parsing fails
         var root = new TreeNode<string>("Error", "Could not load scene", true);
         root.AddChild("Please check file path and format.", "");
         root.AddChild(@"Path: D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml", "");
         return root;
     }
 
-    protected override void DrawUIContent(DrawingContext context, InputState input)
+    // The actual drawing logic is now in a dedicated method.
+    private void DrawUI(DrawingContext context, InputState input)
     {
         // Must call BeginFrame before any UI calls
         UI.BeginFrame(context, input);
@@ -3422,53 +3503,55 @@ public class MyDirectUIApp : Direct2DAppWindow
         float menuBarHeight = 30f;
 
         // --- Menu Bar ---
-        var rt = context.RenderTarget;
-        var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-        var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
-
-        if (menuBarBackgroundBrush != null)
         {
-            rt.FillRectangle(new Rect(0, 0, rt.Size.Width, menuBarHeight), menuBarBackgroundBrush);
+            var rt = context.RenderTarget;
+            var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
+            var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
+
+            if (menuBarBackgroundBrush != null)
+            {
+                rt.FillRectangle(new Rect(0, 0, rt.Size.Width, menuBarHeight), menuBarBackgroundBrush);
+            }
+            if (menuBarBorderBrush != null)
+            {
+                rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
+            }
+
+            var menuButtonTheme = new ButtonStylePack
+            {
+                Roundness = 0f,
+                BorderLength = 0,
+                FontName = "Segoe UI",
+                FontSize = 14
+            };
+            menuButtonTheme.Normal.FillColor = Colors.Transparent;
+            menuButtonTheme.Normal.FontColor = new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f);
+            menuButtonTheme.Hover.FillColor = new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f);
+            menuButtonTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+            var menuButtonDef = new ButtonDefinition
+            {
+                Theme = menuButtonTheme,
+                AutoWidth = true,
+                TextMargin = new Vector2(10, 0),
+                Size = new Vector2(0, menuBarHeight),
+                TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
+            };
+
+            UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
+            menuButtonDef.Text = "File";
+            if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
+            menuButtonDef.Text = "Edit";
+            if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
+            menuButtonDef.Text = "View";
+            if (UI.Button("view_button", menuButtonDef)) { Console.WriteLine("View clicked"); }
+            menuButtonDef.Text = "Help";
+            if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
+            UI.EndHBoxContainer();
         }
-        if (menuBarBorderBrush != null)
-        {
-            rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
-        }
-
-        var menuButtonTheme = new ButtonStylePack
-        {
-            Roundness = 0f,
-            BorderLength = 0,
-            FontName = "Segoe UI",
-            FontSize = 14
-        };
-        menuButtonTheme.Normal.FillColor = Colors.Transparent;
-        menuButtonTheme.Normal.FontColor = new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f);
-        menuButtonTheme.Hover.FillColor = new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f);
-        menuButtonTheme.Pressed.FillColor = DefaultTheme.Accent;
-
-        var menuButtonDef = new ButtonDefinition
-        {
-            Theme = menuButtonTheme,
-            AutoWidth = true,
-            TextMargin = new Vector2(10, 0),
-            Size = new Vector2(0, menuBarHeight),
-            TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
-        };
-
-        UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
-        menuButtonDef.Text = "File";
-        if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
-        menuButtonDef.Text = "Edit";
-        if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
-        menuButtonDef.Text = "View";
-        if (UI.Button("view_button", menuButtonDef)) { Console.WriteLine("View clicked"); }
-        menuButtonDef.Text = "Help";
-        if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
-        UI.EndHBoxContainer();
 
 
-        // --- Define some styles ---
+        // --- Define shared styles ---
         var buttonTheme = new ButtonStylePack
         {
             Roundness = 0.2f,
@@ -3477,7 +3560,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             FontSize = 16,
         };
 
-        // This style now inherits its colors from the DefaultTheme
         var panelStyle = new BoxStyle
         {
             BorderLength = 1,
@@ -3504,40 +3586,49 @@ public class MyDirectUIApp : Direct2DAppWindow
 
 
         // --- Left Panel ---
-        UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
-
-        // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-        UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
-        UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
-        if (clickedNode is not null)
         {
-            Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
-        }
-        UI.EndVBoxContainer();
+            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
-        UI.EndResizableVPanel();
+            // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
+            UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
+            UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+            if (clickedNode is not null)
+            {
+                Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
+            }
+            UI.EndVBoxContainer();
+
+            UI.EndResizableVPanel();
+        }
 
         // --- Right Panel ---
-        UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
-        if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
         {
-            Console.WriteLine("Right panel button 1 clicked!");
-        }
-        if (UI.Button("right_button_2", new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
-        {
-            Console.WriteLine("Right panel button 2 clicked!");
-        }
-        sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
 
-        UI.EndResizableVPanel();
+            if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
+            {
+                Console.WriteLine("Right panel button 1 clicked!");
+            }
+            if (UI.Button("right_button_2", new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
+            {
+                Console.WriteLine("Right panel button 2 clicked!");
+            }
+            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+
+            UI.EndResizableVPanel();
+        }
 
         // --- Bottom Panel ---
-        UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
-        if (UI.Button("bottom_button", new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
         {
-            Console.WriteLine("Bottom button clicked!");
+            UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
+
+            if (UI.Button("bottom_button", new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
+            {
+                Console.WriteLine("Bottom button clicked!");
+            }
+
+            UI.EndResizableHPanel();
         }
-        UI.EndResizableHPanel();
 
         // --- End of UI ---
         // Must call EndFrame after all UI calls

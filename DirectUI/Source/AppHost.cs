@@ -13,7 +13,7 @@ namespace DirectUI;
 /// </summary>
 public class AppHost
 {
-    private readonly Action<DrawingContext, InputState> _drawCallback;
+    private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
 
@@ -25,7 +25,7 @@ public class AppHost
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
 
-    public AppHost(Action<DrawingContext, InputState> drawCallback, Color4 backgroundColor)
+    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
@@ -115,9 +115,12 @@ public class AppHost
                 _isLeftMouseButtonDown
             );
 
-            var drawingContext = new DrawingContext(rt, dwrite);
+            var uiContext = new UIContext(rt, dwrite, inputState);
+            UI.BeginFrame(uiContext);
 
-            _drawCallback(drawingContext, inputState);
+            _drawCallback(uiContext);
+
+            UI.EndFrame();
 
             _fpsCounter.Draw(rt);
         }

@@ -45,8 +45,11 @@ internal abstract class InternalSliderLogic
 
 
     // --- Common Logic ---
-    internal float UpdateAndDraw(string id, InputState input, DrawingContext context, float currentValue)
+    internal float UpdateAndDraw(string id, float currentValue)
     {
+        var context = UI.Context;
+        var state = UI.State;
+
         GlobalId = id;
         GlobalIntId = id.GetHashCode();
         trackPosition = Position - Origin;
@@ -60,17 +63,14 @@ internal abstract class InternalSliderLogic
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
-            if (UI.ActivelyPressedElementId == GlobalIntId) UI.ClearActivePress(GlobalIntId);
+            if (state.ActivelyPressedElementId == GlobalIntId) state.ClearActivePress(GlobalIntId);
         }
         else
         {
-            // HandleInput sets potential target, calls SetPotentialCaptorForFrame,
-            // sets pendingTrackClickValueJump, and returns value updated by DRAG.
-            newValue = HandleInput(input, currentValue);
+            newValue = HandleInput(context.InputState, currentValue);
         }
 
-        // Deferred Track Click Value Jump Check
-        if (pendingTrackClickValueJump && UI.InputCaptorId == GlobalIntId && !UI.nonSliderElementClaimedPress)
+        if (pendingTrackClickValueJump && state.InputCaptorId == GlobalIntId && !state.NonSliderElementClaimedPress)
         {
             newValue = ConvertPositionToValue(trackClickPosition);
             newValue = ApplyStep(newValue);
@@ -78,8 +78,6 @@ internal abstract class InternalSliderLogic
         }
         pendingTrackClickValueJump = false;
 
-
-        // Update visual style based on final state
         UpdateGrabberThemeStyle();
 
         if (context.RenderTarget is null)
@@ -88,7 +86,6 @@ internal abstract class InternalSliderLogic
             return newValue;
         }
 
-        // --- Drawing ---
         try
         {
             DrawBackground(context.RenderTarget);
@@ -131,7 +128,7 @@ internal abstract class InternalSliderLogic
 
     protected void UpdateGrabberThemeStyle()
     {
-        isGrabberPressed = UI.ActivelyPressedElementId == GlobalIntId;
+        isGrabberPressed = UI.State.ActivelyPressedElementId == GlobalIntId;
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
@@ -139,12 +136,12 @@ internal abstract class InternalSliderLogic
     // --- Drawing Methods ---
     protected void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
     }
 
     protected void DrawGrabber(ID2D1RenderTarget renderTarget, float currentValue)
     {
         Vector2 grabberPos = CalculateGrabberPosition(currentValue);
-        UI.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
     }
 }

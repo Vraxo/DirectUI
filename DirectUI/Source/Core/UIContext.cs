@@ -1,19 +1,56 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
 
 namespace DirectUI;
 
-public static partial class UI
+public class UIContext
 {
-    // --- Layout Helpers ---
-    internal static Vector2 ApplyLayout(Vector2 defaultPosition) { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition; }
-    internal static void AdvanceLayout(Vector2 elementSize) { if (IsInLayoutContainer()) { AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y))); } }
-    internal static bool IsInLayoutContainer() => containerStack.Count > 0;
-    internal static Vector2 GetCurrentLayoutPositionInternal()
+    // Per-frame resources
+    public ID2D1HwndRenderTarget RenderTarget { get; }
+    public IDWriteFactory DWriteFactory { get; }
+    public InputState InputState { get; }
+
+    // Per-frame layout state
+    internal readonly Stack<object> containerStack = new();
+    internal readonly Stack<TreeViewState> treeStateStack = new();
+
+    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState)
     {
-        if (containerStack.Count == 0) return Vector2.Zero;
-        object currentContainerState = containerStack.Peek();
-        return currentContainerState switch
+        RenderTarget = renderTarget;
+        DWriteFactory = dwriteFactory;
+        InputState = inputState;
+    }
+
+    // --- Layout Helpers ---
+    internal Vector2 ApplyLayout(Vector2 defaultPosition)
+    {
+        return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition;
+    }
+
+    internal void AdvanceLayout(Vector2 elementSize)
+    {
+        if (IsInLayoutContainer())
+        {
+            AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y)));
+        }
+    }
+
+    public bool IsInLayoutContainer() => containerStack.Count > 0;
+
+    public Vector2 GetCurrentLayoutPosition()
+    {
+        return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : Vector2.Zero;
+    }
+
+    private Vector2 GetCurrentLayoutPositionInternal()
+    {
+        if (containerStack.Count == 0)
+        {
+            return Vector2.Zero;
+        }
+
+        return containerStack.Peek() switch
         {
             HBoxContainerState hbox => hbox.CurrentPosition,
             VBoxContainerState vbox => vbox.CurrentPosition,
@@ -23,8 +60,8 @@ public static partial class UI
             _ => Vector2.Zero,
         };
     }
-    public static Vector2 GetCurrentLayoutPosition() { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : Vector2.Zero; }
-    internal static void AdvanceLayoutCursor(Vector2 elementSize)
+
+    internal void AdvanceLayoutCursor(Vector2 elementSize)
     {
         if (containerStack.Count == 0) return;
         object currentContainerState = containerStack.Peek();
@@ -33,38 +70,26 @@ public static partial class UI
             case HBoxContainerState hbox:
                 {
                     if (elementSize.Y > hbox.MaxElementHeight) hbox.MaxElementHeight = elementSize.Y;
-
-                    // Add the width of the element just drawn to the total
                     hbox.AccumulatedWidth += elementSize.X;
-                    // Add the gap to the total width if this wasn't the first element
                     if (hbox.ElementCount > 0)
                     {
                         hbox.AccumulatedWidth += hbox.Gap;
                     }
-
-                    // Advance the cursor for the next element's position
                     float advanceX = elementSize.X + hbox.Gap;
                     hbox.CurrentPosition = new Vector2(hbox.CurrentPosition.X + advanceX, hbox.CurrentPosition.Y);
-
                     hbox.ElementCount++;
                     break;
                 }
             case VBoxContainerState vbox:
                 {
                     if (elementSize.X > vbox.MaxElementWidth) vbox.MaxElementWidth = elementSize.X;
-
-                    // Add the height of the element just drawn to the total
                     vbox.AccumulatedHeight += elementSize.Y;
-                    // Add the gap to the total height if this wasn't the first element
                     if (vbox.ElementCount > 0)
                     {
                         vbox.AccumulatedHeight += vbox.Gap;
                     }
-
-                    // Advance the cursor for the next element's position
                     float advanceY = elementSize.Y + vbox.Gap;
                     vbox.CurrentPosition = new Vector2(vbox.CurrentPosition.X, vbox.CurrentPosition.Y + advanceY);
-
                     vbox.ElementCount++;
                     break;
                 }
@@ -75,11 +100,8 @@ public static partial class UI
                 }
             case ResizablePanelState panel:
                 {
-                    // This is just a wrapper, so we pass the call down to its inner VBox.
-                    // We need to get a mutable reference to the inner VBox to do this.
                     var innerVBox = panel.InnerVBox;
                     if (elementSize.X > innerVBox.MaxElementWidth) innerVBox.MaxElementWidth = elementSize.X;
-
                     innerVBox.AccumulatedHeight += elementSize.Y;
                     if (innerVBox.ElementCount > 0)
                     {
@@ -92,10 +114,8 @@ public static partial class UI
                 }
             case ResizableHPanelState hpanel:
                 {
-                    // This is just a wrapper, so we pass the call down to its inner HBox.
                     var innerHBox = hpanel.InnerHBox;
                     if (elementSize.Y > innerHBox.MaxElementHeight) innerHBox.MaxElementHeight = elementSize.Y;
-
                     innerHBox.AccumulatedWidth += elementSize.X;
                     if (innerHBox.ElementCount > 0)
                     {
