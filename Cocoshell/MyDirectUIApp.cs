@@ -271,10 +271,8 @@ public class MyDirectUIApp : Direct2DAppWindow
         var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
         // --- Draw Tab Bar ---
-        UI.BeginHBoxContainer("project_tabs", new Vector2(0, 0), 0);
-        if (UI.TabButton("tab_general", "General", _projectWindowActiveTab == 0)) { _projectWindowActiveTab = 0; }
-        if (UI.TabButton("tab_input", "Input Map", _projectWindowActiveTab == 1)) { _projectWindowActiveTab = 1; }
-        UI.EndHBoxContainer();
+        var tabLabels = new[] { "General", "Input Map" };
+        UI.TabBar("project_tabs", tabLabels, ref _projectWindowActiveTab);
 
         // --- Draw Content Panel and Content ---
         var panelStyle = new BoxStyle

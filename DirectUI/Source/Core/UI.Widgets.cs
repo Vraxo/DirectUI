@@ -35,35 +35,14 @@ public static partial class UI
         return clicked;
     }
 
-    public static bool TabButton(string id, string text, bool isActive, TabStylePack? theme = null, bool autoWidth = true, bool disabled = false)
+    private static bool TabButtonPrimitive(string id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
     {
         if (!IsContextValid()) return false;
 
         var intId = id.GetHashCode();
-        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
-
         var position = Context.GetCurrentLayoutPosition();
-        var textMargin = new Vector2(15, 5);
+        Rect bounds = new(position.X, position.Y, size.X, size.Y);
 
-        // A consistent tab bar height is assumed for now.
-        float tabBarHeight = 30f;
-        Vector2 tabSize;
-
-        if (autoWidth)
-        {
-            // All tabs should have same size based on normal state for layout consistency
-            var styleForMeasuring = tabTheme.Normal;
-            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, styleForMeasuring);
-            tabSize = new Vector2(measuredSize.X + textMargin.X * 2, tabBarHeight);
-        }
-        else
-        {
-            // This would require size information from the container, not supported yet for HBox.
-            // For now, we rely on autoWidth.
-            tabSize = new Vector2(100, tabBarHeight);
-        }
-
-        Rect bounds = new(position.X, position.Y, tabSize.X, tabSize.Y);
         InputState input = Context.InputState;
         bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         bool wasClicked = false;
@@ -75,15 +54,13 @@ public static partial class UI
             wasClicked = true;
         }
 
-        tabTheme.UpdateCurrentStyle(isHovering, isActive, disabled);
+        theme.UpdateCurrentStyle(isHovering, isActive, disabled);
 
-        // Drawing
         var rt = Context.RenderTarget;
-        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), tabTheme.Current);
+        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
 
-        // Draw Text
-        var textBrush = Resources.GetOrCreateBrush(rt, tabTheme.Current.FontColor);
-        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, tabTheme.Current);
+        var textBrush = Resources.GetOrCreateBrush(rt, theme.Current.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, theme.Current);
         if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
         {
             textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
@@ -91,8 +68,48 @@ public static partial class UI
             rt.DrawText(text, textFormat, bounds, textBrush);
         }
 
-        Context.AdvanceLayout(tabSize);
+        Context.AdvanceLayout(size);
         return wasClicked;
+    }
+
+    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    {
+        if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
+
+        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
+        var textMargin = new Vector2(15, 5);
+        float tabHeight = 30f;
+        float maxWidth = 0;
+
+        var styleForMeasuring = tabTheme.Normal;
+        foreach (var label in tabLabels)
+        {
+            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
+            if (measuredSize.X > maxWidth)
+            {
+                maxWidth = measuredSize.X;
+            }
+        }
+        float uniformTabWidth = maxWidth + textMargin.X * 2;
+        var tabSize = new Vector2(uniformTabWidth, tabHeight);
+
+        BeginHBoxContainer(id + "_hbox", Context.GetCurrentLayoutPosition(), 0);
+        for (int i = 0; i < tabLabels.Length; i++)
+        {
+            bool wasClicked = TabButtonPrimitive(
+                id + "_" + i,
+                tabLabels[i],
+                tabSize,
+                i == activeIndex,
+                tabTheme,
+                false
+            );
+            if (wasClicked)
+            {
+                activeIndex = i;
+            }
+        }
+        EndHBoxContainer();
     }
 
     public static float HSlider(string id, float currentValue, SliderDefinition definition)
