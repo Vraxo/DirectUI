@@ -72,10 +72,18 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnKeyDown(Keys key)
     {
+        _appHost?.AddKeyPressed(key);
+
         if (key == Keys.Escape)
         {
             Close();
         }
+        Invalidate();
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        _appHost?.AddKeyReleased(key);
         Invalidate();
     }
 

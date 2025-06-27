@@ -56,11 +56,17 @@ public sealed class TabStylePack
         Current = Normal;
     }
 
-    public void UpdateCurrentStyle(bool isHovering, bool isActive, bool isDisabled)
+    public void UpdateCurrentStyle(bool isHovering, bool isActive, bool isDisabled, bool isFocused)
     {
-        if (isDisabled) Current = Disabled;
+        if (isDisabled)
+        {
+            Current = Disabled;
+        }
         else if (isActive) Current = isHovering ? ActiveHover : Active;
         else if (isHovering) Current = Hover;
-        else Current = Normal;
+        else
+        {
+            Current = Normal;
+        }
     }
 }

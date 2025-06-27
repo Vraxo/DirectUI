@@ -55,7 +55,7 @@ public static partial class UI
             wasClicked = true;
         }
 
-        theme.UpdateCurrentStyle(isHovering, isActive, disabled);
+        theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
 
         var rt = Context.RenderTarget;
         Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
@@ -257,17 +257,15 @@ public static partial class UI
         // --- Input Processing ---
         if (isFocused && !definition.Disabled)
         {
-            textChanged = ProcessLineEditInput(ref text, state, definition, input);
+            textChanged = ProcessLineEditInput(id, ref text, state, definition, input);
         }
 
         // --- Drawing ---
         theme.UpdateCurrentStyle(isHovering, false, definition.Disabled, isFocused);
         Resources.DrawBoxStyleHelper(Context.RenderTarget, position, definition.Size, theme.Current);
 
-        // Clip text rendering to the bounds of the control
         Context.RenderTarget.PushAxisAlignedClip(bounds, D2D.AntialiasMode.PerPrimitive);
 
-        // Draw Placeholder or Text
         string textToDraw = text;
         if (string.IsNullOrEmpty(text) && !isFocused)
         {
@@ -279,10 +277,9 @@ public static partial class UI
             DrawLineEditText(textToDraw, state, definition, theme.Current, position);
         }
 
-        // Draw Caret
         if (isFocused && state.IsBlinkOn)
         {
-            DrawLineEditCaret(text, state, definition, theme.Current, position);
+            DrawLineEditCaret(textToDraw, state, definition, theme.Current, position);
         }
 
         Context.RenderTarget.PopAxisAlignedClip();
@@ -291,28 +288,22 @@ public static partial class UI
         return textChanged;
     }
 
-    private static bool ProcessLineEditInput(ref string text, LineEditState state, LineEditDefinition def, InputState input)
+    private static bool ProcessLineEditInput(string id, ref string text, LineEditState state, LineEditDefinition def, InputState input)
     {
         bool textChanged = false;
 
-        // Update blink timer
-        state.BlinkTimer += 0.016f; // Approximating delta time
+        state.BlinkTimer += 0.016f; // Rough approximation of delta time
         if (state.BlinkTimer > 0.5f)
         {
             state.BlinkTimer = 0;
             state.IsBlinkOn = !state.IsBlinkOn;
         }
 
-        if (state.NeedsUndoStatePush)
-        {
-            PushUndoState(state, text);
-            state.NeedsUndoStatePush = false;
-        }
+        bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);
 
-        // Character input
         if (input.TypedCharacters.Any())
         {
-            if (!state.NeedsUndoStatePush) PushUndoState(state, text);
+            PushUndoState(state, text);
             foreach (char c in input.TypedCharacters)
             {
                 if (text.Length < def.MaxLength)
@@ -322,20 +313,74 @@ public static partial class UI
                     textChanged = true;
                 }
             }
-            if (textChanged) UpdateLineEditView(text, state, def.Size, def.TextMargin);
         }
 
-        // TODO: Implement key repeat logic for backspace, delete, arrows
-
-        // Keydown logic
-        // This is a simplified version. Full implementation would use WM_KEYDOWN and check for repeat counts.
-        foreach (var key in input.TypedCharacters.Select(c => (Keys)c).Distinct()) // This is flawed, need real key events
+        foreach (var key in input.PressedKeys)
         {
-            // For now, we don't have distinct key down events, so we can't do this part properly.
-            // This is a placeholder for where the logic would go.
+            bool hasChanged = true;
+            PushUndoState(state, text); // Push on first key press
+            switch (key)
+            {
+                case Keys.Backspace:
+                    if (state.CaretPosition > 0)
+                    {
+                        int removeCount = 1;
+                        if (isCtrlHeld) removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
+                        text = text.Remove(state.CaretPosition - removeCount, removeCount);
+                        state.CaretPosition -= removeCount;
+                    }
+                    break;
+                case Keys.Delete:
+                    if (state.CaretPosition < text.Length)
+                    {
+                        int removeCount = 1;
+                        if (isCtrlHeld) removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
+                        text = text.Remove(state.CaretPosition, removeCount);
+                    }
+                    break;
+                case Keys.LeftArrow:
+                    state.CaretPosition = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
+                    break;
+                case Keys.RightArrow:
+                    state.CaretPosition = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
+                    break;
+                case Keys.Home: state.CaretPosition = 0; break;
+                case Keys.End: state.CaretPosition = text.Length; break;
+                case Keys.Z when isCtrlHeld: Undo(state, ref text); break;
+                case Keys.Y when isCtrlHeld: Redo(state, ref text); break;
+                default: hasChanged = false; break;
+            }
+            if (hasChanged) textChanged = true;
+        }
+
+        state.CaretPosition = Math.Clamp(state.CaretPosition, 0, text.Length);
+
+        if (textChanged)
+        {
+            UpdateLineEditView(text, state, def.Size, def.TextMargin);
+            state.IsBlinkOn = true;
+            state.BlinkTimer = 0;
         }
 
         return textChanged;
+    }
+
+    private static int FindPreviousWordStart(string text, int currentPos)
+    {
+        if (currentPos == 0) return 0;
+        int pos = currentPos - 1;
+        while (pos > 0 && char.IsWhiteSpace(text[pos])) pos--;
+        while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) pos--;
+        return pos;
+    }
+
+    private static int FindNextWordEnd(string text, int currentPos)
+    {
+        if (currentPos >= text.Length) return text.Length;
+        int pos = currentPos;
+        while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
+        while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
+        return pos;
     }
 
     private static void DrawLineEditText(string textToDraw, LineEditState state, LineEditDefinition def, ButtonStyle style, Vector2 position)
@@ -355,6 +400,10 @@ public static partial class UI
         {
             visibleText = textToDraw.Substring(state.TextStartIndex);
         }
+        else if (state.TextStartIndex >= textToDraw.Length)
+        {
+            visibleText = "";
+        }
 
         Rect layoutRect = new Rect(
             position.X + def.TextMargin.X,
@@ -368,6 +417,8 @@ public static partial class UI
 
     private static void DrawLineEditCaret(string text, LineEditState state, LineEditDefinition def, ButtonStyle style, Vector2 position)
     {
+        if (state.CaretPosition < state.TextStartIndex) return;
+
         string textBeforeCaret = text.Substring(state.TextStartIndex, state.CaretPosition - state.TextStartIndex);
         float caretXOffset = MeasureTextWidth(textBeforeCaret, style);
 
@@ -397,35 +448,55 @@ public static partial class UI
 
     private static void UpdateLineEditView(string text, LineEditState state, Vector2 size, Vector2 margin)
     {
-        // Simplified view update logic
         float availableWidth = size.X - margin.X * 2;
         var style = new ButtonStyle(); // A default style for measurement
 
         string textBeforeCaret = text.Substring(0, state.CaretPosition);
         float caretPixelX = MeasureTextWidth(textBeforeCaret, style);
 
-        float textPixelStart = state.TextStartIndex > 0 ? -MeasureTextWidth(text.Substring(0, state.TextStartIndex), style) : 0;
+        string textInView = text.Substring(state.TextStartIndex);
+        float viewStartX = MeasureTextWidth(text.Substring(0, state.TextStartIndex), style);
 
-        if (caretPixelX + textPixelStart > availableWidth)
+        float caretPosInView = caretPixelX - viewStartX;
+
+        if (caretPosInView > availableWidth)
         {
-            state.TextStartIndex++; // simplified scroll right
+            state.TextStartIndex = state.CaretPosition - (int)(availableWidth / MeasureTextWidth(" ", style));
         }
-        else if (caretPixelX + textPixelStart < 0)
+        else if (caretPosInView < 0)
         {
-            state.TextStartIndex--; // simplified scroll left
+            state.TextStartIndex = state.CaretPosition;
         }
-        state.TextStartIndex = Math.Max(0, state.TextStartIndex);
+
+        state.TextStartIndex = Math.Clamp(state.TextStartIndex, 0, text.Length);
     }
 
     private static void PushUndoState(LineEditState state, string text)
     {
-        if (state.UndoStack.Count >= LineEditState.HistoryLimit)
-        {
-            // Simplified: just don't add more. A better implementation would remove the oldest.
-            return;
-        }
+        if (state.UndoStack.Count > 0 && state.UndoStack.Peek().Text == text) return;
+        if (state.UndoStack.Count >= LineEditState.HistoryLimit) state.UndoStack.Pop();
         state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
         state.RedoStack.Clear();
+    }
+
+    private static void Undo(LineEditState state, ref string text)
+    {
+        if (state.UndoStack.Count == 0) return;
+        state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
+        var lastState = state.UndoStack.Pop();
+        text = lastState.Text;
+        state.CaretPosition = lastState.CaretPosition;
+        state.TextStartIndex = lastState.TextStartIndex;
+    }
+
+    private static void Redo(LineEditState state, ref string text)
+    {
+        if (state.RedoStack.Count == 0) return;
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
+        var nextState = state.RedoStack.Pop();
+        text = nextState.Text;
+        state.CaretPosition = nextState.CaretPosition;
+        state.TextStartIndex = nextState.TextStartIndex;
     }
     #endregion
 

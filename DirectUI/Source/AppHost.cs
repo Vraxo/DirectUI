@@ -27,6 +27,10 @@ public class AppHost
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
     private readonly Queue<char> _typedCharsThisFrame = new();
+    private readonly List<Keys> _pressedKeysThisFrame = new();
+    private readonly List<Keys> _releasedKeysThisFrame = new();
+    private readonly HashSet<Keys> _heldKeys = new();
+
 
     public bool ShowFpsCounter { get; set; } = true;
 
@@ -92,6 +96,8 @@ public class AppHost
             {
                 _wasLeftMouseClickedThisFrame = false;
                 _typedCharsThisFrame.Clear(); // Clear queue on failed render
+                _pressedKeysThisFrame.Clear();
+                _releasedKeysThisFrame.Clear();
                 return;
             }
         }
@@ -111,9 +117,14 @@ public class AppHost
                 _currentMousePos,
                 _wasLeftMouseClickedThisFrame,
                 _isLeftMouseButtonDown,
-                _typedCharsThisFrame.ToList()
+                _typedCharsThisFrame.ToList(),
+                _pressedKeysThisFrame,
+                _releasedKeysThisFrame,
+                _heldKeys
             );
-            _typedCharsThisFrame.Clear(); // Clear after consuming
+            _typedCharsThisFrame.Clear();
+            _pressedKeysThisFrame.Clear();
+            _releasedKeysThisFrame.Clear();
 
             var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
@@ -176,10 +187,27 @@ public class AppHost
 
     public void AddCharacterInput(char c)
     {
-        // Filter out control characters except for tab and newline, which might be useful.
         if (!char.IsControl(c) || c == '\t' || c == '\n')
         {
             _typedCharsThisFrame.Enqueue(c);
+        }
+    }
+
+    public void AddKeyPressed(Keys key)
+    {
+        if (!_heldKeys.Contains(key))
+        {
+            _pressedKeysThisFrame.Add(key);
+            _heldKeys.Add(key);
+        }
+    }
+
+    public void AddKeyReleased(Keys key)
+    {
+        if (_heldKeys.Contains(key))
+        {
+            _releasedKeysThisFrame.Add(key);
+            _heldKeys.Remove(key);
         }
     }
 }

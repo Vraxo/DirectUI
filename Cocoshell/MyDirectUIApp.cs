@@ -33,6 +33,7 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly ButtonStylePack _editorButtonStyle;
     private readonly ButtonStylePack _removeButtonStyle;
     private readonly ButtonStylePack _utilityButtonStyle;
+    private readonly LineEditDefinition _lineEditDef;
     // --- END NEW STATE ---
 
 
@@ -92,6 +93,24 @@ public class MyDirectUIApp : Direct2DAppWindow
         _utilityButtonStyle.Disabled.FillColor = DefaultTheme.DisabledFill;
         _utilityButtonStyle.Disabled.FontColor = DefaultTheme.DisabledText;
 
+        // --- NEW: Define a style for the LineEdit ---
+        var lineEditTheme = new ButtonStylePack { FontSize = 12, Roundness = 0.2f };
+        lineEditTheme.Normal.FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f);
+        lineEditTheme.Normal.BorderColor = new Color4(0.1f, 0.1f, 0.1f, 1.0f);
+        lineEditTheme.Hover.FillColor = new Color4(0.22f, 0.22f, 0.27f, 1.0f);
+        lineEditTheme.Focused.FillColor = new Color4(0.22f, 0.22f, 0.27f, 1.0f);
+        lineEditTheme.Focused.BorderColor = DefaultTheme.Accent;
+        _lineEditDef = new LineEditDefinition
+        {
+            Size = new Vector2(120, 24),
+            Theme = lineEditTheme
+        };
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        _appHost?.AddKeyReleased(key);
+        Invalidate();
     }
 
     // FrameUpdate override is no longer needed for window management.
@@ -99,6 +118,8 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     protected override void OnKeyDown(Keys key)
     {
+        _appHost?.AddKeyPressed(key);
+
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -365,9 +386,10 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             // --- Actions and Bindings ---
             UI.BeginVBoxContainer("actions_list_vbox", UI.Context.GetCurrentLayoutPosition(), 8);
-            for (int i = actionNames.Count - 1; i >= 0; i--)
+            for (int i = 0; i < actionNames.Count; i++)
             {
                 string actionName = actionNames[i];
+                if (!_inputMap.ContainsKey(actionName)) continue; // Item was removed
                 var bindings = _inputMap[actionName];
 
                 // Action Header
@@ -377,6 +399,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 {
                     _inputMap.Remove(actionName);
                     _inputMapDirty = true;
+                    break;
                 }
                 UI.EndHBoxContainer();
 
@@ -384,7 +407,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 0);
                 UI.Button($"indent_spacer_for_{actionName}", new ButtonDefinition { Size = new Vector2(20, 0), Disabled = true, Theme = _labelStyle });
                 UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
-                for (int j = bindings.Count - 1; j >= 0; j--)
+                for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
                     UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.GetCurrentLayoutPosition(), 5);
@@ -393,11 +416,19 @@ public class MyDirectUIApp : Direct2DAppWindow
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
                         _inputMapDirty = true;
                     }
-                    UI.Button($"binding_key_{actionName}_{j}", new ButtonDefinition { Text = binding.KeyOrButton, Theme = _editorButtonStyle, Size = new Vector2(120, 24), Disabled = true });
+
+                    string tempKeyOrButton = binding.KeyOrButton;
+                    if (UI.LineEdit($"binding_key_{actionName}_{j}", ref tempKeyOrButton, _lineEditDef))
+                    {
+                        binding.KeyOrButton = tempKeyOrButton;
+                        _inputMapDirty = true;
+                    }
+
                     if (UI.Button($"remove_binding_{actionName}_{j}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(24, 24) }))
                     {
                         bindings.RemoveAt(j);
                         _inputMapDirty = true;
+                        break;
                     }
                     UI.EndHBoxContainer();
                 }
@@ -412,7 +443,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.EndVBoxContainer();
 
             // --- Utility Buttons ---
-            // CORRECTED: AutoWidth and TextMargin moved from style pack to button definitions
             UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.GetCurrentLayoutPosition(), 10);
             if (UI.Button("add_action", new ButtonDefinition { Text = "Add New Action", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
             {

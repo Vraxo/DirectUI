@@ -37,6 +37,8 @@ internal static class NativeMethods
     public const int WM_SIZE = 0x0005;
     public const int WM_CLOSE = 0x0010;
     public const int WM_KEYDOWN = 0x0100;
+    public const int WM_KEYUP = 0x0101;
+    public const int WM_SYSKEYUP = 0x0105;
     public const int WM_LBUTTONDOWN = 0x0201;
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
