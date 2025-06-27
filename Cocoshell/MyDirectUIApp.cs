@@ -64,53 +64,55 @@ public class MyDirectUIApp : Direct2DAppWindow
         float menuBarHeight = 30f;
 
         // --- Menu Bar ---
-        var rt = context.RenderTarget;
-        var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-        var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
-
-        if (menuBarBackgroundBrush != null)
         {
-            rt.FillRectangle(new Rect(0, 0, rt.Size.Width, menuBarHeight), menuBarBackgroundBrush);
+            var rt = context.RenderTarget;
+            var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
+            var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
+
+            if (menuBarBackgroundBrush != null)
+            {
+                rt.FillRectangle(new Rect(0, 0, rt.Size.Width, menuBarHeight), menuBarBackgroundBrush);
+            }
+            if (menuBarBorderBrush != null)
+            {
+                rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
+            }
+
+            var menuButtonTheme = new ButtonStylePack
+            {
+                Roundness = 0f,
+                BorderLength = 0,
+                FontName = "Segoe UI",
+                FontSize = 14
+            };
+            menuButtonTheme.Normal.FillColor = Colors.Transparent;
+            menuButtonTheme.Normal.FontColor = new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f);
+            menuButtonTheme.Hover.FillColor = new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f);
+            menuButtonTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+            var menuButtonDef = new ButtonDefinition
+            {
+                Theme = menuButtonTheme,
+                AutoWidth = true,
+                TextMargin = new Vector2(10, 0),
+                Size = new Vector2(0, menuBarHeight),
+                TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
+            };
+
+            UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
+            menuButtonDef.Text = "File";
+            if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
+            menuButtonDef.Text = "Edit";
+            if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
+            menuButtonDef.Text = "View";
+            if (UI.Button("view_button", menuButtonDef)) { Console.WriteLine("View clicked"); }
+            menuButtonDef.Text = "Help";
+            if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
+            UI.EndHBoxContainer();
         }
-        if (menuBarBorderBrush != null)
-        {
-            rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
-        }
-
-        var menuButtonTheme = new ButtonStylePack
-        {
-            Roundness = 0f,
-            BorderLength = 0,
-            FontName = "Segoe UI",
-            FontSize = 14
-        };
-        menuButtonTheme.Normal.FillColor = Colors.Transparent;
-        menuButtonTheme.Normal.FontColor = new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f);
-        menuButtonTheme.Hover.FillColor = new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f);
-        menuButtonTheme.Pressed.FillColor = DefaultTheme.Accent;
-
-        var menuButtonDef = new ButtonDefinition
-        {
-            Theme = menuButtonTheme,
-            AutoWidth = true,
-            TextMargin = new Vector2(10, 0),
-            Size = new Vector2(0, menuBarHeight),
-            TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
-        };
-
-        UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
-        menuButtonDef.Text = "File";
-        if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
-        menuButtonDef.Text = "Edit";
-        if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
-        menuButtonDef.Text = "View";
-        if (UI.Button("view_button", menuButtonDef)) { Console.WriteLine("View clicked"); }
-        menuButtonDef.Text = "Help";
-        if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
-        UI.EndHBoxContainer();
 
 
-        // --- Define some styles ---
+        // --- Define shared styles ---
         var buttonTheme = new ButtonStylePack
         {
             Roundness = 0.2f,
@@ -119,7 +121,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             FontSize = 16,
         };
 
-        // This style now inherits its colors from the DefaultTheme
         var panelStyle = new BoxStyle
         {
             BorderLength = 1,
@@ -146,40 +147,49 @@ public class MyDirectUIApp : Direct2DAppWindow
 
 
         // --- Left Panel ---
-        UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
-
-        // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-        UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
-        UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
-        if (clickedNode is not null)
         {
-            Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
-        }
-        UI.EndVBoxContainer();
+            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
-        UI.EndResizableVPanel();
+            // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
+            UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
+            UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+            if (clickedNode is not null)
+            {
+                Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
+            }
+            UI.EndVBoxContainer();
+
+            UI.EndResizableVPanel();
+        }
 
         // --- Right Panel ---
-        UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
-        if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
         {
-            Console.WriteLine("Right panel button 1 clicked!");
-        }
-        if (UI.Button("right_button_2", new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
-        {
-            Console.WriteLine("Right panel button 2 clicked!");
-        }
-        sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
 
-        UI.EndResizableVPanel();
+            if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
+            {
+                Console.WriteLine("Right panel button 1 clicked!");
+            }
+            if (UI.Button("right_button_2", new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
+            {
+                Console.WriteLine("Right panel button 2 clicked!");
+            }
+            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+
+            UI.EndResizableVPanel();
+        }
 
         // --- Bottom Panel ---
-        UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
-        if (UI.Button("bottom_button", new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
         {
-            Console.WriteLine("Bottom button clicked!");
+            UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
+
+            if (UI.Button("bottom_button", new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
+            {
+                Console.WriteLine("Bottom button clicked!");
+            }
+
+            UI.EndResizableHPanel();
         }
-        UI.EndResizableHPanel();
 
         // --- End of UI ---
         // Must call EndFrame after all UI calls
