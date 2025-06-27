@@ -37,8 +37,13 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnPaint()
     {
-        _appHost?.UpdateFpsAndInvalidate();
         _appHost?.Render();
+    }
+
+    public override void FrameUpdate()
+    {
+        _appHost?.UpdateFpsState();
+        Invalidate(); // Always invalidate to trigger a paint message for a continuous render loop.
     }
 
     protected override void OnSize(int width, int height)

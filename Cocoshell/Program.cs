@@ -14,14 +14,19 @@ public class Program
         {
             try
             {
-                appWindow.Run(); // Creates window, enters message loop
+                // Create the main window, which registers itself with the Application manager.
+                if (appWindow.Create())
+                {
+                    // Run the central message loop that processes all windows.
+                    Application.Run();
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Unhandled exception in Run: {ex}");
                 // Log exception, show message box, etc.
             }
-        } // appWindow.Dispose() is called here
+        } // appWindow.Dispose() is called here, which triggers its window closure
 
         Console.WriteLine("Application finished.");
         // Console.ReadKey(); // Optional: Keep console open after exit

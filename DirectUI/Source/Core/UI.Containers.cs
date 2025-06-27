@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Core/UI.Containers.cs
+using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
@@ -128,9 +129,13 @@ public static partial class UI
         var maxAllowedHeight = windowHeight - topOffset;
         var effectiveMaxHeight = Math.Min(definition.MaxHeight, maxAllowedHeight);
 
+        // Fix: Ensure the max value for clamping is not less than the min value.
+        // This prevents a crash when the window is resized to a very small height.
+        float clampMax = Math.Max(definition.MinHeight, effectiveMaxHeight);
+
         if (!definition.Disabled)
         {
-            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
+            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, clampMax);
             float panelY = windowHeight - currentHeight;
             float handleHeight = Math.Min(definition.ResizeHandleWidth, currentHeight);
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
@@ -142,12 +147,12 @@ public static partial class UI
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
-                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);
+                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, clampMax);
             }
         }
 
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
+        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, clampMax);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)

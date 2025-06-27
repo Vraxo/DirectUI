@@ -73,24 +73,17 @@ public class AppHost
         }
     }
 
-    public void UpdateFpsAndInvalidate()
+    public void UpdateFpsState()
     {
-        if (_fpsCounter.Update())
-        {
-            Invalidate();
-        }
-    }
-
-    private void Invalidate()
-    {
-        if (_hwnd != IntPtr.Zero)
-        {
-            NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false);
-        }
+        _fpsCounter.Update();
     }
 
     public void Render()
     {
+        // Prevent re-entrant rendering calls, which can happen if a new window
+        // is created and painted synchronously inside another window's render loop.
+        if (UI.IsRendering) return;
+
         if (!(_graphicsDevice?.IsInitialized ?? false))
         {
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))

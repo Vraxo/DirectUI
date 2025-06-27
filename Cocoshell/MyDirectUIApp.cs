@@ -1,4 +1,5 @@
-﻿using System;
+﻿// MyDirectUIApp.cs
+using System;
 using System.IO;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -12,6 +13,11 @@ public class MyDirectUIApp : Direct2DAppWindow
     private float leftPanelWidth = 250f;
     private float rightPanelWidth = 250f;
     private float bottomPanelHeight = 150f;
+
+    // Window management state
+    private ModalWindow? _projectWindow;
+    private bool _isProjectWindowOpen = false;
+    private bool _openProjectWindowRequested = false;
 
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
@@ -40,6 +46,58 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
+    // Override FrameUpdate to handle window management outside of rendering
+    public override void FrameUpdate()
+    {
+        // Window management must always run to detect modal window state changes.
+        ManageWindows();
+
+        // However, the rest of the frame update (including invalidating for a repaint)
+        // should only happen if the window is active (i.e., not disabled by a modal).
+        if (!_isProjectWindowOpen)
+        {
+            base.FrameUpdate();
+        }
+    }
+
+    private void ManageWindows()
+    {
+        // Check if a modal needs to be opened
+        if (_openProjectWindowRequested && !_isProjectWindowOpen)
+        {
+            _openProjectWindowRequested = false; // Consume the request
+            _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
+            if (_projectWindow.CreateAsModal())
+            {
+                _isProjectWindowOpen = true;
+            }
+            else
+            {
+                Console.WriteLine("Failed to create modal window.");
+                _projectWindow?.Dispose();
+                _projectWindow = null;
+                _isProjectWindowOpen = false;
+            }
+        }
+
+        // Check if the modal window was closed by the user (e.g., via ESC or close button)
+        if (_isProjectWindowOpen && (_projectWindow == null || _projectWindow.Handle == IntPtr.Zero))
+        {
+            _projectWindow?.Dispose(); // Ensure cleanup
+            _projectWindow = null;
+            _isProjectWindowOpen = false;
+        }
+
+        // Check if we need to close the window programmatically
+        // (e.g., from a "Close" button inside the modal's UI, which sets _isProjectWindowOpen to false)
+        if (!_isProjectWindowOpen && _projectWindow != null && _projectWindow.Handle != IntPtr.Zero)
+        {
+            _projectWindow.Close();
+            // The check above will handle cleanup in the next frame after the window is destroyed.
+        }
+    }
+
+
     // The factory method implementation creates the AppHost, passing the drawing logic.
     protected override AppHost CreateAppHost()
     {
@@ -55,7 +113,7 @@ public class MyDirectUIApp : Direct2DAppWindow
         return root;
     }
 
-    // The actual drawing logic is now in a dedicated method.
+    // The actual drawing logic for the main window.
     private void DrawUI(UIContext context)
     {
         // Note: UI.BeginFrame and UI.EndFrame are now called by the AppHost.
@@ -102,6 +160,16 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
             menuButtonDef.Text = "File";
             if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
+
+            menuButtonDef.Text = "Project";
+            if (UI.Button("project_button", menuButtonDef))
+            {
+                if (!_isProjectWindowOpen)
+                {
+                    _openProjectWindowRequested = true;
+                }
+            }
+
             menuButtonDef.Text = "Edit";
             if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
             menuButtonDef.Text = "View";
@@ -110,7 +178,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
             UI.EndHBoxContainer();
         }
-
 
         // --- Define shared styles ---
         var buttonTheme = new ButtonStylePack
@@ -190,5 +257,23 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             UI.EndResizableHPanel();
         }
+    }
+
+    // Drawing logic for the modal window.
+    private void DrawProjectWindowUI(UIContext context)
+    {
+        UI.BeginVBoxContainer("modal_vbox", new Vector2(10, 10), 10);
+
+        if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+        {
+            Console.WriteLine("Modal button clicked!");
+        }
+
+        if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+        {
+            _isProjectWindowOpen = false; // Signal to close the window
+        }
+
+        UI.EndVBoxContainer();
     }
 }

@@ -28,7 +28,7 @@ namespace DirectUI;
 /// </summary>
 public class AppHost
 {
-    private readonly Action<DrawingContext, InputState> _drawCallback;
+    private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
 
@@ -40,7 +40,7 @@ public class AppHost
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
 
-    public AppHost(Action<DrawingContext, InputState> drawCallback, Color4 backgroundColor)
+    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
@@ -88,24 +88,17 @@ public class AppHost
         }
     }
 
-    public void UpdateFpsAndInvalidate()
+    public void UpdateFpsState()
     {
-        if (_fpsCounter.Update())
-        {
-            Invalidate();
-        }
-    }
-
-    private void Invalidate()
-    {
-        if (_hwnd != IntPtr.Zero)
-        {
-            NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false);
-        }
+        _fpsCounter.Update();
     }
 
     public void Render()
     {
+        // Prevent re-entrant rendering calls, which can happen if a new window
+        // is created and painted synchronously inside another window's render loop.
+        if (UI.IsRendering) return;
+
         if (!(_graphicsDevice?.IsInitialized ?? false))
         {
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))
@@ -130,9 +123,12 @@ public class AppHost
                 _isLeftMouseButtonDown
             );
 
-            var drawingContext = new DrawingContext(rt, dwrite);
+            var uiContext = new UIContext(rt, dwrite, inputState);
+            UI.BeginFrame(uiContext);
 
-            _drawCallback(drawingContext, inputState);
+            _drawCallback(uiContext);
+
+            UI.EndFrame();
 
             _fpsCounter.Draw(rt);
         }
@@ -185,6 +181,107 @@ public class AppHost
 }
 </file>
 
+<file path="Application.cs">
+using System;
+using System.Collections.Generic;
+
+namespace DirectUI;
+
+/// <summary>
+/// Manages the application's global message loop and window collection.
+/// </summary>
+public static class Application
+{
+    private static readonly List<Win32Window> s_windows = new();
+    private static bool s_isRunning = false;
+
+    /// <summary>
+    /// Registers a window with the application manager. Called by Win32Window's constructor.
+    /// </summary>
+    public static void RegisterWindow(Win32Window window)
+    {
+        if (!s_windows.Contains(window))
+        {
+            s_windows.Add(window);
+        }
+    }
+
+    /// <summary>
+    /// Unregisters a window. Called when a window is destroyed.
+    /// </summary>
+    public static void UnregisterWindow(Win32Window window)
+    {
+        s_windows.Remove(window);
+        // If the last window is closed, exit the application.
+        if (s_windows.Count == 0)
+        {
+            Exit();
+        }
+    }
+
+    /// <summary>
+    /// Starts and runs the main application message loop.
+    /// </summary>
+    public static void Run()
+    {
+        if (s_windows.Count == 0)
+        {
+            Console.WriteLine("Application.Run() called with no windows registered.");
+            return;
+        }
+
+        s_isRunning = true;
+        while (s_isRunning)
+        {
+            ProcessMessages();
+
+            if (!s_isRunning) break;
+
+            // Create a copy for safe iteration, as windows can be closed (and removed) during the loop.
+            var windowsToUpdate = new List<Win32Window>(s_windows);
+            foreach (var window in windowsToUpdate)
+            {
+                if (window.Handle != IntPtr.Zero)
+                {
+                    window.FrameUpdate();
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Processes all pending window messages in the queue.
+    /// </summary>
+    private static void ProcessMessages()
+    {
+        while (NativeMethods.PeekMessage(out var msg, IntPtr.Zero, 0, 0, NativeMethods.PM_REMOVE))
+        {
+            if (msg.message == NativeMethods.WM_QUIT)
+            {
+                s_isRunning = false;
+                break;
+            }
+
+            NativeMethods.TranslateMessage(ref msg);
+            NativeMethods.DispatchMessage(ref msg);
+        }
+    }
+
+    /// <summary>
+    /// Signals the application to exit its message loop.
+    /// </summary>
+    public static void Exit()
+    {
+        if (s_isRunning)
+        {
+            s_isRunning = false;
+            // Post a quit message to ensure the loop breaks out of GetMessage if it's blocking.
+            NativeMethods.PostQuitMessage(0);
+        }
+    }
+}
+</file>
+
 <file path="Direct2DAppWindow.cs">
 // Direct2DAppWindow.cs
 using System;
@@ -225,8 +322,13 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnPaint()
     {
-        _appHost?.UpdateFpsAndInvalidate();
         _appHost?.Render();
+    }
+
+    public override void FrameUpdate()
+    {
+        _appHost?.UpdateFpsState();
+        Invalidate(); // Always invalidate to trigger a paint message for a continuous render loop.
     }
 
     protected override void OnSize(int width, int height)
@@ -497,6 +599,72 @@ public readonly struct InputState
 }
 </file>
 
+<file path="ModalWindow.cs">
+using System;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+/// <summary>
+/// A specialized window that operates modally over an owner window.
+/// </summary>
+public class ModalWindow : Direct2DAppWindow
+{
+    private readonly Win32Window _owner;
+    private readonly Action<UIContext> _drawCallback;
+
+    public ModalWindow(Win32Window owner, string title, int width, int height, Action<UIContext> drawCallback)
+        : base(title, width, height)
+    {
+        _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+        _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
+    }
+
+    /// <summary>
+    /// Overrides AppHost creation to inject the specific drawing logic for this modal window.
+    /// </summary>
+    protected override AppHost CreateAppHost()
+    {
+        // A slightly different background for modals
+        var backgroundColor = new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f);
+        return new AppHost(_drawCallback, backgroundColor);
+    }
+
+    /// <summary>
+    /// Creates the window with modal-specific styles and disables its owner.
+    /// </summary>
+    public bool CreateAsModal()
+    {
+        if (Handle != IntPtr.Zero) return true;
+
+        uint style = NativeMethods.WS_POPUP | NativeMethods.WS_CAPTION | NativeMethods.WS_SYSMENU | NativeMethods.WS_VISIBLE | NativeMethods.WS_THICKFRAME;
+
+        if (!base.Create(_owner.Handle, style))
+        {
+            return false;
+        }
+
+        if (_owner.Handle != IntPtr.Zero)
+        {
+            NativeMethods.EnableWindow(_owner.Handle, false);
+        }
+        return true;
+    }
+
+    /// <summary>
+    /// Re-enables the owner window when this modal window is destroyed.
+    /// </summary>
+    protected override void OnDestroy()
+    {
+        if (_owner.Handle != IntPtr.Zero)
+        {
+            NativeMethods.EnableWindow(_owner.Handle, true);
+        }
+        base.OnDestroy();
+    }
+}
+</file>
+
 <file path="NativeMethods.cs">
 using System;
 using System.Runtime.InteropServices;
@@ -519,8 +687,15 @@ internal static class NativeMethods
     public const uint CS_VREDRAW = 0x0001;
     public const uint CS_OWNDC = 0x0020;
 
-    public const uint WS_OVERLAPPEDWINDOW = 0xCF0000;
+    public const uint WS_OVERLAPPED = 0x00000000;
+    public const uint WS_CAPTION = 0x00C00000;
+    public const uint WS_SYSMENU = 0x00080000;
+    public const uint WS_THICKFRAME = 0x00040000;
+    public const uint WS_MINIMIZEBOX = 0x00020000;
+    public const uint WS_MAXIMIZEBOX = 0x00010000;
+    public const uint WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
     public const uint WS_VISIBLE = 0x10000000;
+    public const uint WS_POPUP = 0x80000000;
 
     public const int WM_NCCREATE = 0x0081;
     public const int WM_CREATE = 0x0001;
@@ -539,6 +714,8 @@ internal static class NativeMethods
     public const int SW_SHOWNORMAL = 1;
     public const int VK_ESCAPE = 0x1B;
     public const int GWLP_USERDATA = -21;
+
+    public const uint PM_REMOVE = 0x0001;
 
     // --- Structures ---
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
@@ -621,6 +798,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
     [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+    [DllImport("user32.dll")]
     public static extern bool TranslateMessage([In] ref MSG lpMsg);
     [DllImport("user32.dll")]
     public static extern IntPtr DispatchMessage([In] ref MSG lpmsg);
@@ -648,6 +828,9 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool ReleaseCapture();
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
 
 
     public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
@@ -677,16 +860,6 @@ namespace DirectUI;
 
 public abstract class Win32Window : IDisposable
 {
-    // --- Ensure this class is identical to the previous version ---
-    // Including:
-    // Fields: _windowClassName, _windowTitle, _initialWidth, _initialHeight, _hwnd, _hInstance, _wndProcDelegate, _isDisposed, RegisteredClassNames, _gcHandle
-    // Properties: Handle, Width, Height
-    // Constructor: Win32Window(...)
-    // Methods: Run(), TryCreateWindow(), WindowProcedure(static), HandleMessage(virtual), Close(), Invalidate()
-    // Virtual Methods: Initialize(), OnPaint(), OnSize(), OnMouseDown(), OnMouseUp(), OnMouseMove(), OnKeyDown(), OnClose(), OnDestroy(), Cleanup()
-    // IDisposable: Dispose(), Dispose(bool), Finalizer ~Win32Window()
-
-    // --- Class Members (example subset) ---
     private readonly string _windowClassName;
     private readonly string _windowTitle;
     private readonly int _initialWidth;
@@ -699,10 +872,10 @@ public abstract class Win32Window : IDisposable
     private GCHandle _gcHandle;
 
     public IntPtr Handle => _hwnd;
-    public int Width { get; protected set; } // Changed to protected set
-    public int Height { get; protected set; } // Changed to protected set
+    public int Width { get; protected set; }
+    public int Height { get; protected set; }
+    protected IntPtr OwnerHandle { get; private set; } = IntPtr.Zero;
 
-    // --- Constructor ---
     protected Win32Window(string title, int width, int height, string className = null)
     {
         _windowTitle = title ?? "Win32 Window";
@@ -711,33 +884,46 @@ public abstract class Win32Window : IDisposable
         Width = _initialWidth;
         Height = _initialHeight;
         _windowClassName = className ?? ("Win32Window_" + Guid.NewGuid().ToString("N"));
-        _wndProcDelegate = WindowProcedure; // Pin delegate
+        _wndProcDelegate = WindowProcedure;
     }
 
-    // --- Methods (Ensure Run, TryCreateWindow, WindowProcedure, HandleMessage are as before) ---
-    public void Run()
-    { /* ... as before ... */
-        if (_hwnd != IntPtr.Zero) throw new InvalidOperationException("Window already created.");
-        if (!TryCreateWindow()) { Console.WriteLine("Window creation failed."); Dispose(); return; }
-        if (!Initialize()) { Console.WriteLine("Derived init failed."); Dispose(); return; }
+    public bool Create(IntPtr owner = default, uint? style = null)
+    {
+        OwnerHandle = owner;
+        if (_hwnd != IntPtr.Zero) return true;
+
+        if (!TryCreateWindow(owner, style))
+        {
+            Console.WriteLine("Window creation failed.");
+            Dispose();
+            return false;
+        }
+
+        if (!Initialize())
+        {
+            Console.WriteLine("Derived init failed.");
+            Dispose();
+            return false;
+        }
+
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNORMAL);
         NativeMethods.UpdateWindow(_hwnd);
-        NativeMethods.MSG msg;
-        while (NativeMethods.GetMessage(out msg, IntPtr.Zero, 0, 0))
-        { NativeMethods.TranslateMessage(ref msg); NativeMethods.DispatchMessage(ref msg); }
-        Console.WriteLine("Exiting message loop.");
+        return true;
     }
 
-    private bool TryCreateWindow()
-    { /* ... as before ... */
+    private bool TryCreateWindow(IntPtr owner, uint? style)
+    {
         _hInstance = NativeMethods.GetModuleHandle(null);
         if (_hInstance == IntPtr.Zero) _hInstance = Process.GetCurrentProcess().Handle;
+
+        Application.RegisterWindow(this);
+
         lock (RegisteredClassNames)
         {
             if (!RegisteredClassNames.Contains(_windowClassName))
             {
                 var wndClass = new NativeMethods.WNDCLASSEX
-                { /* ... fill struct ... */
+                {
                     cbSize = Marshal.SizeOf(typeof(NativeMethods.WNDCLASSEX)),
                     style = NativeMethods.CS_HREDRAW | NativeMethods.CS_VREDRAW,
                     lpfnWndProc = _wndProcDelegate,
@@ -751,14 +937,18 @@ public abstract class Win32Window : IDisposable
             }
         }
         _gcHandle = GCHandle.Alloc(this);
-        _hwnd = NativeMethods.CreateWindowEx(0, _windowClassName, _windowTitle, NativeMethods.WS_OVERLAPPEDWINDOW | NativeMethods.WS_VISIBLE,
-            NativeMethods.CW_USEDEFAULT, NativeMethods.CW_USEDEFAULT, _initialWidth, _initialHeight, IntPtr.Zero, IntPtr.Zero, _hInstance, GCHandle.ToIntPtr(_gcHandle));
+
+        uint windowStyle = style ?? (NativeMethods.WS_OVERLAPPEDWINDOW | NativeMethods.WS_VISIBLE);
+
+        _hwnd = NativeMethods.CreateWindowEx(0, _windowClassName, _windowTitle, windowStyle,
+            NativeMethods.CW_USEDEFAULT, NativeMethods.CW_USEDEFAULT, _initialWidth, _initialHeight, owner, IntPtr.Zero, _hInstance, GCHandle.ToIntPtr(_gcHandle));
+
         if (_hwnd == IntPtr.Zero) { Console.WriteLine($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}"); if (_gcHandle.IsAllocated) _gcHandle.Free(); return false; }
         Console.WriteLine($"Window created: {_hwnd}"); return true;
     }
 
     private static IntPtr WindowProcedure(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
-    { /* ... as before ... */
+    {
         Win32Window window = null;
         if (msg == NativeMethods.WM_NCCREATE)
         {
@@ -777,7 +967,7 @@ public abstract class Win32Window : IDisposable
     }
 
     protected virtual IntPtr HandleMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
-    { /* ... as before ... */
+    {
         switch (msg)
         {
             case NativeMethods.WM_PAINT: OnPaint(); return IntPtr.Zero;
@@ -793,8 +983,28 @@ public abstract class Win32Window : IDisposable
                 return IntPtr.Zero;
             case NativeMethods.WM_KEYDOWN: OnKeyDown((int)wParam); return IntPtr.Zero;
             case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
-            case NativeMethods.WM_DESTROY: Console.WriteLine($"WM_DESTROY for {hWnd}."); OnDestroy(); NativeMethods.PostQuitMessage(0); return IntPtr.Zero;
-            case NativeMethods.WM_NCDESTROY: Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}."); IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA); if (ptr != IntPtr.Zero) { var handle = GCHandle.FromIntPtr(ptr); if (handle.IsAllocated) handle.Free(); NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero); } if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr) { _gcHandle = default; } _hwnd = IntPtr.Zero; return IntPtr.Zero;
+            case NativeMethods.WM_DESTROY:
+                Console.WriteLine($"WM_DESTROY for {hWnd}.");
+                Application.UnregisterWindow(this);
+                OnDestroy();
+                // If this is the main window, Application will exit.
+                if (OwnerHandle == IntPtr.Zero)
+                {
+                    Application.Exit();
+                }
+                return IntPtr.Zero;
+            case NativeMethods.WM_NCDESTROY:
+                Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
+                IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
+                if (ptr != IntPtr.Zero)
+                {
+                    var handle = GCHandle.FromIntPtr(ptr);
+                    if (handle.IsAllocated) handle.Free();
+                    NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero);
+                }
+                if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr) { _gcHandle = default; }
+                _hwnd = IntPtr.Zero;
+                return IntPtr.Zero;
             default: return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
         }
     }
@@ -802,74 +1012,71 @@ public abstract class Win32Window : IDisposable
     public void Close() { if (_hwnd != IntPtr.Zero) NativeMethods.DestroyWindow(_hwnd); }
     public void Invalidate() { if (_hwnd != IntPtr.Zero) NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false); }
 
-    // --- Virtual Methods (Ensure all needed methods are declared) ---
+    public virtual void FrameUpdate() { }
+
     protected virtual bool Initialize() { return true; }
-    protected virtual void OnPaint() { }
+    protected abstract void OnPaint();
     protected virtual void OnSize(int width, int height) { }
     protected virtual void OnMouseDown(MouseButton button, int x, int y) { }
-    protected virtual void OnMouseUp(MouseButton button, int x, int y) { }     // Ensure exists
-    protected virtual void OnMouseMove(int x, int y) { }     // Ensure exists
+    protected virtual void OnMouseUp(MouseButton button, int x, int y) { }
+    protected virtual void OnMouseMove(int x, int y) { }
     protected virtual void OnKeyDown(int keyCode) { }
     protected virtual bool OnClose() { return true; }
     protected virtual void OnDestroy() { }
     protected virtual void Cleanup() { }
 
-    // --- IDisposable (Ensure implementation is as before) ---
     public void Dispose()
     {
-        Dispose(true); 
-        GC.SuppressFinalize(this); 
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
-    
+
     protected virtual void Dispose(bool disposing)
     {
-        if (_isDisposed)
-        {
-            return;
-        }
+        if (_isDisposed) return;
 
-        if (disposing) 
-        { 
-            Console.WriteLine("Disposing Win32Window (managed)..."); 
-            Cleanup(); 
+        if (disposing)
+        {
+            Console.WriteLine("Disposing Win32Window (managed)...");
+            Cleanup();
         }
 
         Console.WriteLine("Disposing Win32Window (unmanaged)...");
 
-        if (_hwnd != IntPtr.Zero) 
-        { 
-            Console.WriteLine($"Destroying window {_hwnd} during Dispose..."); 
-            NativeMethods.DestroyWindow(_hwnd); 
-            _hwnd = IntPtr.Zero; 
+        if (_hwnd != IntPtr.Zero)
+        {
+            Console.WriteLine($"Destroying window {_hwnd} during Dispose...");
+            NativeMethods.DestroyWindow(_hwnd);
+            _hwnd = IntPtr.Zero;
         }
-        else 
-        { 
-            if (_gcHandle.IsAllocated) 
-            { 
+        else
+        {
+            if (_gcHandle.IsAllocated)
+            {
                 Console.WriteLine("Freeing dangling GCHandle...");
-                _gcHandle.Free(); 
-            } 
+                _gcHandle.Free();
+            }
         }
 
-        _isDisposed = true; 
+        _isDisposed = true;
 
         Console.WriteLine("Win32Window disposed.");
     }
 
-    ~Win32Window() 
-    { 
-        Console.WriteLine("Win32Window Finalizer!"); 
-        Dispose(false); 
+    ~Win32Window()
+    {
+        Console.WriteLine("Win32Window Finalizer!");
+        Dispose(false);
     }
 }
 
-public enum MouseButton 
-{ 
-    Left, 
-    Right, 
-    Middle, 
-    XButton1, 
-    XButton2 
+public enum MouseButton
+{
+    Left,
+    Right,
+    Middle,
+    XButton1,
+    XButton2
 }
 </file>
 
@@ -1032,6 +1239,23 @@ internal class ResizablePanelState
 }
 </file>
 
+<file path="Containers\TreeViewState.cs">
+namespace DirectUI;
+
+internal class TreeViewState
+{
+    internal string Id { get; }
+    internal TreeStyle Style { get; }
+    internal Stack<bool> IndentLineState { get; } = new();
+
+    internal TreeViewState(string id, TreeStyle style)
+    {
+        Id = id;
+        Style = style;
+    }
+}
+</file>
+
 <file path="Containers\VBoxContainerState.cs">
 using System.Numerics;
 
@@ -1062,63 +1286,54 @@ using System;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
-using static System.Net.Mime.MediaTypeNames;
 using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
 
 public static partial class UI
 {
-    // --- Containers ---
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        var containerState = new HBoxContainerState(id, position, gap);
-        containerStack.Push(containerState);
+        Context.containerStack.Push(new HBoxContainerState(id, position, gap));
     }
+
     public static void EndHBoxContainer()
     {
-        if (containerStack.Count == 0 || containerStack.Peek() is not HBoxContainerState state)
+        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not HBoxContainerState state)
         { Console.WriteLine("Error: EndHBoxContainer called without a matching BeginHBoxContainer."); return; }
-        containerStack.Pop();
-        if (IsInLayoutContainer())
-        { AdvanceLayoutCursor(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
+        Context.containerStack.Pop();
+        if (Context.IsInLayoutContainer())
+        { Context.AdvanceLayoutCursor(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
     }
+
     public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        var containerState = new VBoxContainerState(id, position, gap);
-        containerStack.Push(containerState);
+        Context.containerStack.Push(new VBoxContainerState(id, position, gap));
     }
+
     public static void EndVBoxContainer()
     {
-        if (containerStack.Count == 0 || containerStack.Peek() is not VBoxContainerState state)
+        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not VBoxContainerState state)
         { Console.WriteLine("Error: EndVBoxContainer called without a matching BeginVBoxContainer."); return; }
-        containerStack.Pop();
-        if (IsInLayoutContainer())
-        { AdvanceLayoutCursor(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
+        Context.containerStack.Pop();
+        if (Context.IsInLayoutContainer())
+        { Context.AdvanceLayoutCursor(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
     }
+
     public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        var containerState = new GridContainerState(id, position, availableSize, numColumns, gap);
-        containerStack.Push(containerState);
+        Context.containerStack.Push(new GridContainerState(id, position, availableSize, numColumns, gap));
     }
+
     public static void EndGridContainer()
     {
-        if (containerStack.Count == 0 || containerStack.Peek() is not GridContainerState state)
+        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not GridContainerState state)
         { Console.WriteLine("Error: EndGridContainer called without a matching BeginGridContainer."); return; }
-        containerStack.Pop();
-        if (IsInLayoutContainer())
+        Context.containerStack.Pop();
+        if (Context.IsInLayoutContainer())
         {
-            if (state.RowHeights.Count > 0 && state.CurrentCellIndex > 0)
-            {
-                int lastPopulatedRowIndex = (state.CurrentCellIndex - 1) / state.NumColumns;
-                if (lastPopulatedRowIndex < state.RowHeights.Count)
-                { state.RowHeights[lastPopulatedRowIndex] = state.CurrentRowMaxHeight; }
-                else { Console.WriteLine($"Warning: Grid '{state.Id}' - Row index mismatch during EndGridContainer."); }
-                state.AccumulatedHeight = 0f; bool firstRowAdded = false;
-                for (int i = 0; i < state.RowHeights.Count; i++) { if (state.RowHeights[i] > 0) { if (firstRowAdded) { state.AccumulatedHeight += state.Gap.Y; } state.AccumulatedHeight += state.RowHeights[i]; firstRowAdded = true; } }
-            }
             Vector2 containerSize = state.GetTotalOccupiedSize();
-            AdvanceLayoutCursor(containerSize);
+            Context.AdvanceLayoutCursor(containerSize);
         }
     }
 
@@ -1127,43 +1342,39 @@ public static partial class UI
         if (!IsContextValid() || definition == null) return;
         var intId = id.GetHashCode();
 
-        var input = CurrentInputState;
-        var renderTarget = CurrentRenderTarget!;
+        var input = Context.InputState;
+        var renderTarget = Context.RenderTarget;
         var windowWidth = renderTarget.Size.Width;
         var windowHeight = renderTarget.Size.Height;
         var availableHeight = windowHeight - topOffset;
 
-        // --- Input and Resizing Logic ---
         if (!definition.Disabled)
         {
-            float handleWidth = definition.ResizeHandleWidth;
+            float handleWidth = Math.Min(definition.ResizeHandleWidth, currentWidth);
             float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-            handleWidth = Math.Min(handleWidth, currentWidth);
             float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
             Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) SetPotentialInputTarget(intId);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == intId && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(intId);
-            if (ActivelyPressedElementId == intId && !input.IsLeftMouseDown) ClearActivePress(intId);
-            if (ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            if (isHoveringHandle) State.SetPotentialInputTarget(intId);
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame) State.SetPotentialCaptorForFrame(intId);
+            if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+            if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
                 else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
             }
         }
 
-        // --- Drawing ---
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
         currentWidth = Math.Max(0, currentWidth);
         float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
         Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
+            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
         }
 
-        // --- Container & Clipping Logic ---
         Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, topOffset + definition.Padding.Y);
         Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, availableHeight - (definition.Padding.Y * 2)));
         bool clipPushed = false;
@@ -1174,23 +1385,18 @@ public static partial class UI
         }
         var vboxState = new VBoxContainerState(id + "_vbox", contentStartPosition, definition.Gap);
         var panelState = new ResizablePanelState(id, vboxState, clipPushed);
-        containerStack.Push(panelState);
+        Context.containerStack.Push(panelState);
     }
 
     public static void EndResizableVPanel()
     {
-        if (containerStack.Count == 0 || containerStack.Peek() is not ResizablePanelState state)
+        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not ResizablePanelState state)
+        { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
+        if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
-            Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel.");
-            return;
+            Context.RenderTarget.PopAxisAlignedClip();
         }
-
-        if (state.ClipRectWasPushed && CurrentRenderTarget is not null)
-        {
-            CurrentRenderTarget.PopAxisAlignedClip();
-        }
-
-        containerStack.Pop();
+        Context.containerStack.Pop();
     }
 
     public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
@@ -1198,47 +1404,41 @@ public static partial class UI
         if (!IsContextValid() || definition == null) return;
         var intId = id.GetHashCode();
 
-        var input = CurrentInputState;
-        var renderTarget = CurrentRenderTarget!;
+        var input = Context.InputState;
+        var renderTarget = Context.RenderTarget;
         var windowWidth = renderTarget.Size.Width;
         var windowHeight = renderTarget.Size.Height;
         var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
         var maxAllowedHeight = windowHeight - topOffset;
         var effectiveMaxHeight = Math.Min(definition.MaxHeight, maxAllowedHeight);
 
-
-        // --- Input and Resizing Logic ---
         if (!definition.Disabled)
         {
             currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
-
             float panelY = windowHeight - currentHeight;
-            float handleHeight = definition.ResizeHandleWidth;
-            handleHeight = Math.Min(handleHeight, currentHeight);
+            float handleHeight = Math.Min(definition.ResizeHandleWidth, currentHeight);
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) SetPotentialInputTarget(intId);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && PotentialInputTargetId == intId && !dragInProgressFromPreviousFrame) SetPotentialCaptorForFrame(intId);
-            if (ActivelyPressedElementId == intId && !input.IsLeftMouseDown) ClearActivePress(intId);
-            if (ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            if (isHoveringHandle) State.SetPotentialInputTarget(intId);
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame) State.SetPotentialCaptorForFrame(intId);
+            if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+            if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
                 currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);
             }
         }
 
-        // --- Drawing ---
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
         currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
+            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
         }
 
-        // --- Container & Clipping Logic ---
         Vector2 contentStartPosition = new Vector2(reservedLeftSpace + definition.Padding.X, finalPanelY + definition.Padding.Y);
         Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, availableWidth - (definition.Padding.X * 2)), Math.Max(0, currentHeight - (definition.Padding.Y * 2)));
         bool clipPushed = false;
@@ -1249,29 +1449,184 @@ public static partial class UI
         }
         var hboxState = new HBoxContainerState(id + "_hbox", contentStartPosition, definition.Gap);
         var panelState = new ResizableHPanelState(id, hboxState, clipPushed);
-        containerStack.Push(panelState);
+        Context.containerStack.Push(panelState);
     }
 
     public static void EndResizableHPanel()
     {
-        if (containerStack.Count == 0 || containerStack.Peek() is not ResizableHPanelState state)
+        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not ResizableHPanelState state)
+        { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
+        if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
-            Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel.");
-            return;
+            Context.RenderTarget.PopAxisAlignedClip();
         }
-
-        if (state.ClipRectWasPushed && CurrentRenderTarget is not null)
-        {
-            CurrentRenderTarget.PopAxisAlignedClip();
-        }
-
-        containerStack.Pop();
+        Context.containerStack.Pop();
     }
 }
 </file>
 
 <file path="Core\UI.cs">
-using SharpGen.Runtime;
+using System;
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    // --- Core Components ---
+    public static UIContext Context { get; private set; } = null!;
+    public static UIPersistentState State { get; private set; } = null!;
+    public static UIResources Resources { get; private set; } = null!;
+    public static bool IsRendering { get; private set; } = false;
+
+    // --- Frame Management ---
+    public static void BeginFrame(UIContext context)
+    {
+        IsRendering = true;
+
+        Context = context;
+        State ??= new UIPersistentState();
+        Resources ??= new UIResources();
+
+        State.ResetFrameState(context.InputState);
+
+        Context.containerStack.Clear();
+        Context.treeStateStack.Clear();
+    }
+
+    public static void EndFrame()
+    {
+        if (Context.containerStack.Count > 0)
+        {
+            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.containerStack.Count} containers left open at EndFrame.");
+            Context.containerStack.Clear();
+        }
+        if (Context.treeStateStack.Count > 0)
+        {
+            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {Context.treeStateStack.Count} trees left open at EndFrame.");
+            Context.treeStateStack.Clear();
+        }
+
+        // It's important that IsRendering is set to false AFTER the context is cleared.
+        Context = null!;
+        IsRendering = false;
+    }
+
+    public static void CleanupResources()
+    {
+        Resources?.CleanupResources();
+    }
+
+    // --- Helper Methods ---
+    private static bool IsContextValid()
+    {
+        if (Context?.RenderTarget is null || Context?.DWriteFactory is null)
+        {
+            Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid.");
+            return false;
+        }
+        return true;
+    }
+
+    private static void ApplyButtonDefinition(Button instance, ButtonDefinition definition)
+    {
+        instance.Size = definition.Size; instance.Text = definition.Text; instance.Themes = definition.Theme ?? instance.Themes ?? new ButtonStylePack();
+        instance.Origin = definition.Origin ?? Vector2.Zero; instance.TextAlignment = definition.TextAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
+        instance.TextOffset = definition.TextOffset ?? Vector2.Zero; instance.AutoWidth = definition.AutoWidth; instance.TextMargin = definition.TextMargin ?? new Vector2(10, 5);
+        instance.Behavior = definition.Behavior; instance.LeftClickActionMode = definition.LeftClickActionMode; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
+    }
+
+    private static void ApplySliderDefinition(InternalSliderLogic instance, SliderDefinition definition)
+    {
+        instance.Size = definition.Size; instance.MinValue = definition.MinValue; instance.MaxValue = definition.MaxValue; instance.Step = definition.Step;
+        instance.Theme = definition.Theme ?? instance.Theme ?? new SliderStyle(); instance.GrabberTheme = definition.GrabberTheme ?? instance.GrabberTheme ?? new ButtonStylePack();
+        instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
+    }
+}
+</file>
+
+<file path="Core\UI.StatelessWidgets.cs">
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    internal static bool StatelessButton(int id, Rect bounds, string text, ButtonStylePack stylePack, Alignment textAlignment, DirectUI.Button.ActionMode clickActionMode, bool autoWidth = false, Vector2? textMargin = null, Vector2 textOffset = default)
+    {
+        InputState input = Context.InputState;
+        var renderTarget = Context.RenderTarget;
+        var dwriteFactory = Context.DWriteFactory;
+
+        Vector2 finalSize = new(bounds.Width, bounds.Height);
+        if (autoWidth)
+        {
+            Vector2 measuredSize = Resources.MeasureText(dwriteFactory, text, stylePack.Normal);
+            Vector2 margin = textMargin ?? new Vector2(10, 5);
+            finalSize.X = measuredSize.X + margin.X * 2;
+        }
+        Rect finalBounds = new(bounds.X, bounds.Y, finalSize.X, finalSize.Y);
+
+        bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool isPressed = State.ActivelyPressedElementId == id;
+        bool wasClickedThisFrame = false;
+
+        if (isHovering) State.SetPotentialInputTarget(id);
+
+        if (!input.IsLeftMouseDown && isPressed)
+        {
+            if (isHovering && clickActionMode == DirectUI.Button.ActionMode.Release) wasClickedThisFrame = true;
+            State.ClearActivePress(id);
+            isPressed = false;
+        }
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == id && !State.DragInProgressFromPreviousFrame)
+        {
+            State.SetButtonPotentialCaptorForFrame(id);
+            isPressed = true;
+        }
+
+        if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && State.InputCaptorId == id) wasClickedThisFrame = true;
+
+        stylePack.UpdateCurrentStyle(isHovering, isPressed, false);
+        ButtonStyle currentStyle = stylePack.Current;
+        Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
+
+        var textBrush = Resources.GetOrCreateBrush(renderTarget, currentStyle.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
+        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        {
+            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, new(finalBounds.Width, finalBounds.Height), textAlignment);
+            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            {
+                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
+                textLayout.TextAlignment = textAlignment.Horizontal switch
+                {
+                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                    _ => Vortice.DirectWrite.TextAlignment.Leading
+                };
+                textLayout.ParagraphAlignment = textAlignment.Vertical switch
+                {
+                    VAlignment.Top => ParagraphAlignment.Near,
+                    VAlignment.Center => ParagraphAlignment.Center,
+                    VAlignment.Bottom => ParagraphAlignment.Far,
+                    _ => ParagraphAlignment.Near
+                };
+                Resources.textLayoutCache[layoutKey] = textLayout;
+            }
+            renderTarget.DrawTextLayout(new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush);
+        }
+        return wasClickedThisFrame;
+    }
+}
+</file>
+
+<file path="Core\UI.Widgets.cs">
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -1282,475 +1637,205 @@ using D2D = Vortice.Direct2D1;
 
 namespace DirectUI;
 
-internal class TreeViewState
-{
-    internal string Id { get; }
-    internal TreeStyle Style { get; }
-    internal Stack<bool> IndentLineState { get; } = new();
-
-    internal TreeViewState(string id, TreeStyle style)
-    {
-        Id = id;
-        Style = style;
-    }
-}
-
-
-public enum HSliderDirection { LeftToRight, RightToLeft }
-public enum VSliderDirection { TopToBottom, BottomToTop }
-
 public static partial class UI
 {
-    // --- Font Caching Key ---
-    private readonly struct FontKey : IEquatable<FontKey>
+    public static bool Button(string id, ButtonDefinition definition)
     {
-        public readonly string FontName;
-        public readonly float FontSize;
-        public readonly FontWeight FontWeight;
-        public readonly FontStyle FontStyle;
-        public readonly FontStretch FontStretch;
+        if (!IsContextValid() || definition is null) return false;
+        Button buttonInstance = State.GetOrCreateElement<Button>(id);
+        buttonInstance.Position = Context.ApplyLayout(definition.Position);
+        ApplyButtonDefinition(buttonInstance, definition);
 
-        public FontKey(ButtonStyle style)
+        bool pushedClip = false;
+        if (Context.IsInLayoutContainer() && Context.containerStack.Peek() is GridContainerState grid)
         {
-            FontName = style.FontName;
-            FontSize = style.FontSize;
-            FontWeight = style.FontWeight;
-            FontStyle = style.FontStyle;
-            FontStretch = style.FontStretch;
+            float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
+            float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
+            Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
+            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
+            { Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
         }
 
-        public bool Equals(FontKey other)
+        bool clicked = buttonInstance.Update(id);
+        if (pushedClip && Context.RenderTarget is not null)
+        { Context.RenderTarget.PopAxisAlignedClip(); }
+
+        Context.AdvanceLayout(buttonInstance.Size);
+        return clicked;
+    }
+
+    public static float HSlider(string id, float currentValue, SliderDefinition definition)
+    {
+        if (!IsContextValid() || definition is null) return currentValue;
+        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
+        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        ApplySliderDefinition(sliderInstance, definition);
+        sliderInstance.Direction = definition.HorizontalDirection;
+
+        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
+        Context.AdvanceLayout(sliderInstance.Size);
+        return newValue;
+    }
+
+    public static float VSlider(string id, float currentValue, SliderDefinition definition)
+    {
+        if (!IsContextValid() || definition is null) return currentValue;
+        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
+        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        ApplySliderDefinition(sliderInstance, definition);
+        sliderInstance.Direction = definition.VerticalDirection;
+
+        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
+        Context.AdvanceLayout(sliderInstance.Size);
+        return newValue;
+    }
+
+    public static void Tree<T>(string id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
+    {
+        if (!IsContextValid() || root is null) { clickedNode = null; return; }
+
+        clickedNode = null;
+        var treeStyle = style ?? State.GetOrCreateElement<TreeStyle>(id + "_style");
+
+        var treeState = new TreeViewState(id, treeStyle);
+        Context.treeStateStack.Push(treeState);
+        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
+        Context.treeStateStack.Pop();
+    }
+
+    private static void ProcessTreeNodeRecursive<T>(int parentIdHash, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
+    {
+        if (Context.treeStateStack.Count == 0) return;
+        var treeState = Context.treeStateStack.Peek();
+        var style = treeState.Style;
+        var renderTarget = Context.RenderTarget;
+
+        var startLayoutPos = Context.GetCurrentLayoutPosition();
+        var brush = Resources.GetOrCreateBrush(renderTarget, style.LineColor);
+        if (brush is not null)
         {
-            return FontName == other.FontName &&
-                   FontSize.Equals(other.FontSize) &&
-                   FontWeight == other.FontWeight &&
-                   FontStyle == other.FontStyle &&
-                   FontStretch == other.FontStretch;
-        }
-
-        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
-
-        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
-    }
-
-    // --- Text Layout Caching Key ---
-    private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
-    {
-        public readonly string Text;
-        public readonly FontKey FontKey;
-        public readonly Vector2 MaxSize;
-        public readonly HAlignment HAlign;
-        public readonly VAlignment VAlign;
-
-        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
-        {
-            Text = text;
-            FontKey = new FontKey(style);
-            MaxSize = maxSize;
-            HAlign = alignment.Horizontal;
-            VAlign = alignment.Vertical;
-        }
-
-        public bool Equals(TextLayoutCacheKey other)
-        {
-            return Text == other.Text &&
-                   MaxSize.Equals(other.MaxSize) &&
-                   HAlign == other.HAlign &&
-                   VAlign == other.VAlign &&
-                   FontKey.Equals(other.FontKey);
-        }
-
-        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
-
-        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
-    }
-
-
-    // --- State fields ---
-    private static ID2D1HwndRenderTarget? currentRenderTarget;
-    private static IDWriteFactory? currentDWriteFactory;
-    private static InputState currentInputState;
-    private static readonly Dictionary<string, object> uiElements = new();
-    private static readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
-    private static readonly Dictionary<FontKey, IDWriteTextFormat> textFormatCache = new();
-    private static readonly Dictionary<(string, FontKey), Vector2> textSizeCache = new();
-    private static readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> textLayoutCache = new();
-    private static readonly Stack<object> containerStack = new();
-    private static readonly Stack<TreeViewState> treeStateStack = new();
-
-    // Input State
-    private static bool captureAttemptedThisFrame = false;
-    private static int inputCaptorId = 0;
-    private static int potentialInputTargetId = 0;
-    private static int activelyPressedElementId = 0;
-    internal static bool dragInProgressFromPreviousFrame = false;
-    internal static bool nonSliderElementClaimedPress = false;
-
-    // --- Public/Internal Properties ---
-    public static ID2D1HwndRenderTarget? CurrentRenderTarget => currentRenderTarget;
-    public static IDWriteFactory? CurrentDWriteFactory => currentDWriteFactory;
-    public static InputState CurrentInputState => currentInputState;
-    public static int ActivelyPressedElementId => activelyPressedElementId;
-    public static int InputCaptorId => inputCaptorId;
-    internal static int PotentialInputTargetId => potentialInputTargetId;
-
-    // --- Frame Management ---
-    public static void BeginFrame(DrawingContext context, InputState input)
-    {
-        currentRenderTarget = context.RenderTarget;
-        currentDWriteFactory = context.DWriteFactory;
-        currentInputState = input;
-        containerStack.Clear();
-        treeStateStack.Clear();
-
-        dragInProgressFromPreviousFrame = input.IsLeftMouseDown && activelyPressedElementId != 0;
-
-        captureAttemptedThisFrame = false;
-        inputCaptorId = 0;
-        potentialInputTargetId = 0;
-        nonSliderElementClaimedPress = false;
-
-        // The active element is now cleared by the element itself upon release,
-        // or by a new element capturing input. This prevents the state from being
-        // cleared before the release event can be processed.
-    }
-
-    public static void EndFrame()
-    {
-        if (containerStack.Count > 0)
-        {
-            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {containerStack.Count} containers left open at EndFrame.");
-            containerStack.Clear();
-        }
-        if (treeStateStack.Count > 0)
-        {
-            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {treeStateStack.Count} trees left open at EndFrame.");
-            treeStateStack.Clear();
-        }
-        currentRenderTarget = null;
-        currentDWriteFactory = null;
-    }
-
-    internal static void BeginTree(string id, TreeStyle style)
-    {
-        treeStateStack.Push(new TreeViewState(id, style));
-    }
-
-    internal static void EndTree()
-    {
-        if (treeStateStack.Count == 0)
-        {
-            Console.WriteLine("Error: EndTree called without a matching BeginTree.");
-            return;
-        }
-        treeStateStack.Pop();
-    }
-
-
-    // --- Input Capture & Targeting ---
-
-    public static bool IsElementActive()
-    {
-        return activelyPressedElementId is not 0;
-    }
-
-    internal static void SetPotentialInputTarget(int id)
-    {
-        potentialInputTargetId = id;
-    }
-
-    internal static void SetPotentialCaptorForFrame(int id)
-    {
-        captureAttemptedThisFrame = true;
-        inputCaptorId = id;
-        activelyPressedElementId = id;
-    }
-
-    internal static void SetButtonPotentialCaptorForFrame(int id)
-    {
-        captureAttemptedThisFrame = true;
-        inputCaptorId = id;
-        activelyPressedElementId = id;
-        nonSliderElementClaimedPress = true;
-    }
-
-    internal static void ClearActivePress(int id)
-    {
-        if (activelyPressedElementId == id)
-        {
-            activelyPressedElementId = 0;
-        }
-    }
-
-    // --- Helper Methods ---
-    private static bool IsContextValid()
-    {
-        if (CurrentRenderTarget is null || CurrentDWriteFactory is null) { Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid."); return false; }
-        return true;
-    }
-    private static DrawingContext GetCurrentDrawingContext()
-    {
-        if (!IsContextValid()) { throw new InvalidOperationException("Attempted to get DrawingContext when UI context is invalid."); }
-        return new DrawingContext(CurrentRenderTarget!, CurrentDWriteFactory!);
-    }
-    private static T GetOrCreateElement<T>(string id) where T : new()
-    {
-        if (uiElements.TryGetValue(id, out object? element) && element is T existingElement) { return existingElement; }
-        else { T newElement = new(); uiElements[id] = newElement; return newElement; }
-    }
-    private static void ApplyButtonDefinition(Button instance, ButtonDefinition definition)
-    {
-        instance.Size = definition.Size; instance.Text = definition.Text; instance.Themes = definition.Theme ?? instance.Themes ?? new ButtonStylePack();
-        instance.Origin = definition.Origin ?? Vector2.Zero; instance.TextAlignment = definition.TextAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
-        instance.TextOffset = definition.TextOffset ?? Vector2.Zero; instance.AutoWidth = definition.AutoWidth; instance.TextMargin = definition.TextMargin ?? new Vector2(10, 5);
-        instance.Behavior = definition.Behavior; instance.LeftClickActionMode = definition.LeftClickActionMode; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
-    }
-    private static void ApplySliderDefinition(InternalSliderLogic instance, SliderDefinition definition)
-    {
-        instance.Size = definition.Size; instance.MinValue = definition.MinValue; instance.MaxValue = definition.MaxValue; instance.Step = definition.Step;
-        instance.Theme = definition.Theme ?? instance.Theme ?? new SliderStyle(); instance.GrabberTheme = definition.GrabberTheme ?? instance.GrabberTheme ?? new ButtonStylePack();
-        instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
-    }
-
-    // --- Brush and Font Cache ---
-    public static ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
-    {
-        if (CurrentRenderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
-        if (brushCache.TryGetValue(color, out ID2D1SolidColorBrush? brush) && brush is not null) { return brush; }
-        else if (brush is null && brushCache.ContainsKey(color)) { brushCache.Remove(color); }
-        try
-        {
-            brush = CurrentRenderTarget.CreateSolidColorBrush(color);
-            if (brush is not null) { brushCache[color] = brush; return brush; }
-            else { Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}"); return null!; }
-        }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code) { Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed."); return null!; }
-        catch (Exception ex) { Console.WriteLine($"Error creating brush for color {color}: {ex.Message}"); return null!; }
-    }
-
-    public static IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
-    {
-        if (CurrentDWriteFactory is null) return null;
-
-        var key = new FontKey(style);
-        if (textFormatCache.TryGetValue(key, out var format))
-        {
-            return format;
-        }
-
-        try
-        {
-            var newFormat = CurrentDWriteFactory.CreateTextFormat(
-                style.FontName,
-                null,
-                style.FontWeight,
-                style.FontStyle,
-                style.FontStretch,
-                style.FontSize,
-                "en-us"
-            );
-            if (newFormat is not null)
+            int i = 0;
+            foreach (var shouldDrawLine in treeState.IndentLineState)
             {
-                textFormatCache[key] = newFormat;
+                if (shouldDrawLine)
+                {
+                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
+                    renderTarget.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), brush, 1.0f);
+                }
+                i++;
             }
-            return newFormat;
+            if (treeState.IndentLineState.Count > 0)
+            {
+                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
+                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
+                renderTarget.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), brush, 1.0f);
+            }
         }
-        catch (Exception ex)
+
+        float indentSize = treeState.IndentLineState.Count * style.Indent;
+        var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
+        float currentX = nodeRowStartPos.X;
+        float gap = 5;
+
+        int nodeHash = node.GetHashCode();
+        int toggleId = HashCode.Combine(parentIdHash, index, nodeHash, 0);
+        int labelId = HashCode.Combine(parentIdHash, index, nodeHash, 1);
+
+        float toggleWidth = style.RowHeight - 4;
+        if (node.Children.Count > 0)
         {
-            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
-            return null;
+            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
+            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            {
+                node.IsExpanded = !node.IsExpanded;
+            }
         }
-    }
+        currentX += toggleWidth;
 
-    public static Vector2 MeasureText(IDWriteFactory dwriteFactory, string text, ButtonStyle style)
-    {
-        if (string.IsNullOrEmpty(text) || style is null)
+        currentX += gap;
+        var labelStyle = style.NodeLabelStyle;
+        var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
+        float labelMargin = 4;
+        var labelSize = Resources.MeasureText(Context.DWriteFactory, node.Text, labelStyle.Normal);
+        float labelWidth = labelSize.X + labelMargin * 2;
+        var labelOffset = new Vector2(labelMargin, 0);
+        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
+        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
         {
-            return Vector2.Zero;
+            clickedNode = node;
         }
+        currentX += labelWidth;
 
-        var fontKey = new FontKey(style);
-        var cacheKey = (text, fontKey);
-        if (textSizeCache.TryGetValue(cacheKey, out var cachedSize))
+        Context.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
+
+        if (node.IsExpanded && node.Children.Count > 0)
         {
-            return cachedSize;
+            for (int childIdx = 0; childIdx < node.Children.Count; childIdx++)
+            {
+                bool isLastChild = childIdx == node.Children.Count - 1;
+                treeState.IndentLineState.Push(!isLastChild);
+                ProcessTreeNodeRecursive(toggleId, childIdx, node.Children[childIdx], ref clickedNode);
+                treeState.IndentLineState.Pop();
+            }
         }
-
-
-        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
-        if (textFormat is null)
-        {
-            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
-            return Vector2.Zero;
-        }
-
-        // This layout is temporary for measurement and must be disposed.
-        using var textLayout = dwriteFactory.CreateTextLayout(
-            text,
-            textFormat,
-            float.MaxValue, // Max width
-            float.MaxValue  // Max height
-        );
-
-        TextMetrics textMetrics = textLayout.Metrics;
-        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
-        textSizeCache[cacheKey] = measuredSize; // Add to cache
-        return measuredSize;
-    }
-
-
-    // --- Resource Cleanup ---
-    public static void CleanupResources()
-    {
-        Console.WriteLine("UI Resource Cleanup: Disposing cached resources...");
-        int brushCount = brushCache.Count;
-        foreach (var pair in brushCache) { pair.Value?.Dispose(); }
-        brushCache.Clear();
-
-        int formatCount = textFormatCache.Count;
-        foreach (var pair in textFormatCache) { pair.Value?.Dispose(); }
-        textFormatCache.Clear();
-
-        int layoutCount = textLayoutCache.Count;
-        foreach (var pair in textLayoutCache) { pair.Value?.Dispose(); }
-        textLayoutCache.Clear();
-
-        int sizeCacheCount = textSizeCache.Count;
-        textSizeCache.Clear();
-
-        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes, {formatCount} text formats, and {layoutCount} text layouts. Cleared {sizeCacheCount} size cache entries.");
-        containerStack.Clear();
-        treeStateStack.Clear();
     }
 }
 </file>
 
-<file path="Core\UI.Drawing.cs">
-using System;
+<file path="Core\UIContext.cs">
 using System.Numerics;
 using Vortice.Direct2D1;
-using Vortice.Mathematics;
+using Vortice.DirectWrite;
 
 namespace DirectUI;
 
-public static partial class UI
+public class UIContext
 {
-    // --- SHARED DRAWING HELPERS ---
-    internal static void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
+    // Per-frame resources
+    public ID2D1HwndRenderTarget RenderTarget { get; }
+    public IDWriteFactory DWriteFactory { get; }
+    public InputState InputState { get; }
+
+    // Per-frame layout state
+    internal readonly Stack<object> containerStack = new();
+    internal readonly Stack<TreeViewState> treeStateStack = new();
+
+    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState)
     {
-        if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0) return;
+        RenderTarget = renderTarget;
+        DWriteFactory = dwriteFactory;
+        InputState = inputState;
+    }
 
-        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor);
-        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
+    // --- Layout Helpers ---
+    internal Vector2 ApplyLayout(Vector2 defaultPosition)
+    {
+        return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition;
+    }
 
-        float borderTop = Math.Max(0f, style.BorderLengthTop);
-        float borderRight = Math.Max(0f, style.BorderLengthRight);
-        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
-        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
-
-        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
-
-        if (!hasVisibleFill && !hasVisibleBorder) return;
-
-        // --- Rounded Rectangle Rendering (Layered Approach) ---
-        if (style.Roundness > 0.0f)
+    internal void AdvanceLayout(Vector2 elementSize)
+    {
+        if (IsInLayoutContainer())
         {
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
-            float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
-            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
-
-            if (float.IsFinite(radius) && radius >= 0)
-            {
-                // 1. Draw Border Area (Outer Rounded Rectangle)
-                if (hasVisibleBorder)
-                {
-                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                    RoundedRectangle outerRoundedRect = new(outerRectF, radius, radius);
-                    renderTarget.FillRoundedRectangle(outerRoundedRect, borderBrush);
-                }
-
-                // 2. Draw Fill Area (Inner Rounded Rectangle on top)
-                if (hasVisibleFill)
-                {
-                    float fillX = pos.X + borderLeft;
-                    float fillY = pos.Y + borderTop;
-                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-
-                    if (fillWidth > 0 && fillHeight > 0)
-                    {
-                        // Adjust inner radius - clamp at zero. Use average border thickness for approximation.
-                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
-                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
-                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
-                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
-
-                        System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
-                        RoundedRectangle fillRoundedRect = new(fillRectF, innerRadiusX, innerRadiusY);
-                        renderTarget.FillRoundedRectangle(fillRoundedRect, fillBrush);
-                    }
-                    // If fill consumes the whole area (e.g., no border), draw it directly using outer bounds/radius
-                    else if (!hasVisibleBorder && fillBrush is not null)
-                    {
-                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                        RoundedRectangle outerRoundedRect = new(outerRectF, radius, radius);
-                        renderTarget.FillRoundedRectangle(outerRoundedRect, fillBrush);
-                    }
-                }
-                return; // Handled rounded case
-            }
-            // Fall through to sharp rendering if radius calculation failed
-        }
-
-        // --- Non-Rounded Rectangle Rendering (Layered Approach) ---
-
-        // 1. Draw Border Area (Outer Rectangles)
-        if (hasVisibleBorder && borderBrush is not null)
-        {
-            // Fill the entire background with border color first
-            renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), borderBrush);
-        }
-
-        // 2. Draw Fill Area (Inner Rectangle on top)
-        if (hasVisibleFill)
-        {
-            float fillX = pos.X + borderLeft;
-            float fillY = pos.Y + borderTop;
-            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-
-            if (fillWidth > 0 && fillHeight > 0)
-            {
-                renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
-            }
-            // If fill consumes the whole area (e.g., no border), draw it directly
-            else if (!hasVisibleBorder && fillBrush is not null)
-            {
-                renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush);
-            }
+            AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y)));
         }
     }
-}
-</file>
 
-<file path="Core\UI.Layout.cs">
-using System;
-using System.Numerics;
+    public bool IsInLayoutContainer() => containerStack.Count > 0;
 
-namespace DirectUI;
-
-public static partial class UI
-{
-    // --- Layout Helpers ---
-    internal static Vector2 ApplyLayout(Vector2 defaultPosition) { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition; }
-    internal static void AdvanceLayout(Vector2 elementSize) { if (IsInLayoutContainer()) { AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y))); } }
-    internal static bool IsInLayoutContainer() => containerStack.Count > 0;
-    internal static Vector2 GetCurrentLayoutPositionInternal()
+    public Vector2 GetCurrentLayoutPosition()
     {
-        if (containerStack.Count == 0) return Vector2.Zero;
-        object currentContainerState = containerStack.Peek();
-        return currentContainerState switch
+        return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : Vector2.Zero;
+    }
+
+    private Vector2 GetCurrentLayoutPositionInternal()
+    {
+        if (containerStack.Count == 0)
+        {
+            return Vector2.Zero;
+        }
+
+        return containerStack.Peek() switch
         {
             HBoxContainerState hbox => hbox.CurrentPosition,
             VBoxContainerState vbox => vbox.CurrentPosition,
@@ -1760,8 +1845,8 @@ public static partial class UI
             _ => Vector2.Zero,
         };
     }
-    public static Vector2 GetCurrentLayoutPosition() { return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : Vector2.Zero; }
-    internal static void AdvanceLayoutCursor(Vector2 elementSize)
+
+    internal void AdvanceLayoutCursor(Vector2 elementSize)
     {
         if (containerStack.Count == 0) return;
         object currentContainerState = containerStack.Peek();
@@ -1770,38 +1855,26 @@ public static partial class UI
             case HBoxContainerState hbox:
                 {
                     if (elementSize.Y > hbox.MaxElementHeight) hbox.MaxElementHeight = elementSize.Y;
-
-                    // Add the width of the element just drawn to the total
                     hbox.AccumulatedWidth += elementSize.X;
-                    // Add the gap to the total width if this wasn't the first element
                     if (hbox.ElementCount > 0)
                     {
                         hbox.AccumulatedWidth += hbox.Gap;
                     }
-
-                    // Advance the cursor for the next element's position
                     float advanceX = elementSize.X + hbox.Gap;
                     hbox.CurrentPosition = new Vector2(hbox.CurrentPosition.X + advanceX, hbox.CurrentPosition.Y);
-
                     hbox.ElementCount++;
                     break;
                 }
             case VBoxContainerState vbox:
                 {
                     if (elementSize.X > vbox.MaxElementWidth) vbox.MaxElementWidth = elementSize.X;
-
-                    // Add the height of the element just drawn to the total
                     vbox.AccumulatedHeight += elementSize.Y;
-                    // Add the gap to the total height if this wasn't the first element
                     if (vbox.ElementCount > 0)
                     {
                         vbox.AccumulatedHeight += vbox.Gap;
                     }
-
-                    // Advance the cursor for the next element's position
                     float advanceY = elementSize.Y + vbox.Gap;
                     vbox.CurrentPosition = new Vector2(vbox.CurrentPosition.X, vbox.CurrentPosition.Y + advanceY);
-
                     vbox.ElementCount++;
                     break;
                 }
@@ -1812,11 +1885,8 @@ public static partial class UI
                 }
             case ResizablePanelState panel:
                 {
-                    // This is just a wrapper, so we pass the call down to its inner VBox.
-                    // We need to get a mutable reference to the inner VBox to do this.
                     var innerVBox = panel.InnerVBox;
                     if (elementSize.X > innerVBox.MaxElementWidth) innerVBox.MaxElementWidth = elementSize.X;
-
                     innerVBox.AccumulatedHeight += elementSize.Y;
                     if (innerVBox.ElementCount > 0)
                     {
@@ -1829,10 +1899,8 @@ public static partial class UI
                 }
             case ResizableHPanelState hpanel:
                 {
-                    // This is just a wrapper, so we pass the call down to its inner HBox.
                     var innerHBox = hpanel.InnerHBox;
                     if (elementSize.Y > innerHBox.MaxElementHeight) innerHBox.MaxElementHeight = elementSize.Y;
-
                     innerHBox.AccumulatedWidth += elementSize.X;
                     if (innerHBox.ElementCount > 0)
                     {
@@ -1853,7 +1921,97 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.StatelessWidgets.cs">
+<file path="Core\UIPersistentState.cs">
+using System;
+using System.Collections.Generic;
+
+namespace DirectUI;
+
+/// <summary>
+/// Manages state that persists across frames, such as UI element instances
+/// and input capture state (e.g., which element is currently being pressed).
+/// </summary>
+public class UIPersistentState
+{
+    // --- Persistent Element State ---
+    private readonly Dictionary<string, object> uiElements = new();
+
+    public T GetOrCreateElement<T>(string id) where T : new()
+    {
+        if (uiElements.TryGetValue(id, out object? element) && element is T existingElement)
+        {
+            return existingElement;
+        }
+
+        T newElement = new();
+        uiElements[id] = newElement;
+        return newElement;
+    }
+
+
+    // --- Input State (persists across frames until interaction ends) ---
+    public int ActivelyPressedElementId { get; private set; } = 0;
+    public bool DragInProgressFromPreviousFrame { get; private set; } = false;
+
+    // --- Input State (reset each frame) ---
+    public int PotentialInputTargetId { get; private set; } = 0;
+    public int InputCaptorId { get; private set; } = 0;
+    private bool captureAttemptedThisFrame = false;
+    public bool NonSliderElementClaimedPress { get; private set; } = false;
+
+
+    /// <summary>
+    /// Resets the per-frame state variables. Called once at the beginning of each frame.
+    /// </summary>
+    public void ResetFrameState(InputState input)
+    {
+        DragInProgressFromPreviousFrame = input.IsLeftMouseDown && ActivelyPressedElementId != 0;
+        PotentialInputTargetId = 0;
+        InputCaptorId = 0;
+        captureAttemptedThisFrame = false;
+        NonSliderElementClaimedPress = false;
+    }
+
+    // --- Input Capture & Targeting ---
+    public bool IsElementActive()
+    {
+        return ActivelyPressedElementId != 0;
+    }
+
+    public void SetPotentialInputTarget(int id)
+    {
+        PotentialInputTargetId = id;
+    }
+
+    public void SetPotentialCaptorForFrame(int id)
+    {
+        captureAttemptedThisFrame = true;
+        InputCaptorId = id;
+        ActivelyPressedElementId = id;
+    }
+
+    public void SetButtonPotentialCaptorForFrame(int id)
+    {
+        captureAttemptedThisFrame = true;
+        InputCaptorId = id;
+        ActivelyPressedElementId = id;
+        NonSliderElementClaimedPress = true;
+    }
+
+    public void ClearActivePress(int id)
+    {
+        if (ActivelyPressedElementId == id)
+        {
+            ActivelyPressedElementId = 0;
+        }
+    }
+}
+</file>
+
+<file path="Core\UIResources.cs">
+using SharpGen.Runtime;
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
@@ -1861,313 +2019,215 @@ using Vortice.Mathematics;
 
 namespace DirectUI;
 
-public static partial class UI
+/// <summary>
+/// Manages the creation, caching, and cleanup of shareable graphics resources
+/// like brushes and text formats to avoid recreating them every frame.
+/// </summary>
+public class UIResources
 {
-    internal static bool StatelessButton(
-        int id,
-        Rect bounds,
-        string text,
-        ButtonStylePack stylePack,
-        Alignment textAlignment,
-        DirectUI.Button.ActionMode clickActionMode,
-        bool autoWidth = false,
-        Vector2? textMargin = null,
-        Vector2 textOffset = default)
+    // --- Font Caching Key ---
+    internal readonly struct FontKey : IEquatable<FontKey>
     {
-        InputState input = CurrentInputState;
-        ID2D1HwndRenderTarget renderTarget = CurrentRenderTarget!;
-        IDWriteFactory dwriteFactory = CurrentDWriteFactory!;
+        public readonly string FontName;
+        public readonly float FontSize;
+        public readonly FontWeight FontWeight;
+        public readonly FontStyle FontStyle;
+        public readonly FontStretch FontStretch;
 
-        Vector2 finalSize = new(bounds.Width, bounds.Height);
-
-        if (autoWidth)
+        public FontKey(ButtonStyle style)
         {
-            Vector2 measuredSize = MeasureText(dwriteFactory, text, stylePack.Normal);
-            Vector2 margin = textMargin ?? new Vector2(10, 5);
-            finalSize.X = measuredSize.X + margin.X * 2;
+            FontName = style.FontName;
+            FontSize = style.FontSize;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontStretch = style.FontStretch;
         }
 
-        Rect finalBounds = new(bounds.X, bounds.Y, finalSize.X, finalSize.Y);
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
 
-        bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool isPressed = ActivelyPressedElementId == id;
-        bool wasClickedThisFrame = false;
+    // --- Text Layout Caching Key ---
+    internal readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
+    {
+        public readonly string Text;
+        public readonly FontKey FontKey;
+        public readonly Vector2 MaxSize;
+        public readonly HAlignment HAlign;
+        public readonly VAlignment VAlign;
 
-        if (isHovering)
+        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
         {
-            SetPotentialInputTarget(id);
+            Text = text;
+            FontKey = new FontKey(style);
+            MaxSize = maxSize;
+            HAlign = alignment.Horizontal;
+            VAlign = alignment.Vertical;
         }
 
-        if (!input.IsLeftMouseDown && isPressed)
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
+    // --- Caches ---
+    private readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
+    private readonly Dictionary<FontKey, IDWriteTextFormat> textFormatCache = new();
+    private readonly Dictionary<(string, FontKey), Vector2> textSizeCache = new();
+    internal readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> textLayoutCache = new();
+
+    // --- Brush and Font Cache ---
+    public ID2D1SolidColorBrush GetOrCreateBrush(ID2D1RenderTarget renderTarget, Color4 color)
+    {
+        if (renderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
+        if (brushCache.TryGetValue(color, out ID2D1SolidColorBrush? brush) && brush is not null) { return brush; }
+        else if (brush is null && brushCache.ContainsKey(color)) { brushCache.Remove(color); }
+        try
         {
-            if (isHovering && clickActionMode == DirectUI.Button.ActionMode.Release)
+            brush = renderTarget.CreateSolidColorBrush(color);
+            if (brush is not null) { brushCache[color] = brush; return brush; }
+            else { Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}"); return null!; }
+        }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code) { Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed."); return null!; }
+        catch (Exception ex) { Console.WriteLine($"Error creating brush for color {color}: {ex.Message}"); return null!; }
+    }
+
+    public IDWriteTextFormat? GetOrCreateTextFormat(IDWriteFactory dwriteFactory, ButtonStyle style)
+    {
+        if (dwriteFactory is null) return null;
+
+        var key = new FontKey(style);
+        if (textFormatCache.TryGetValue(key, out var format))
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
+            if (newFormat is not null) { textFormatCache[key] = newFormat; }
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public Vector2 MeasureText(IDWriteFactory dwriteFactory, string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
+
+        var fontKey = new FontKey(style);
+        var cacheKey = (text, fontKey);
+        if (textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
+
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(dwriteFactory, style);
+        if (textFormat is null) { Console.WriteLine("Warning: Failed to create/get TextFormat for measurement."); return Vector2.Zero; }
+
+        using var textLayout = dwriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+        TextMetrics textMetrics = textLayout.Metrics;
+        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+        textSizeCache[cacheKey] = measuredSize;
+        return measuredSize;
+    }
+
+    public void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
+    {
+        if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0) return;
+
+        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(renderTarget, style.FillColor);
+        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(renderTarget, style.BorderColor);
+
+        float borderTop = Math.Max(0f, style.BorderLengthTop);
+        float borderRight = Math.Max(0f, style.BorderLengthRight);
+        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
+        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
+
+        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
+
+        if (!hasVisibleFill && !hasVisibleBorder) return;
+
+        if (style.Roundness > 0.0f)
+        {
+            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+            float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
+            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+
+            if (float.IsFinite(radius) && radius >= 0)
             {
-                wasClickedThisFrame = true;
-            }
-
-            ClearActivePress(id);
-            isPressed = false;
-        }
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && PotentialInputTargetId == id && !dragInProgressFromPreviousFrame)
-        {
-            SetButtonPotentialCaptorForFrame(id);
-            isPressed = true;
-        }
-
-        if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && InputCaptorId == id)
-        {
-            wasClickedThisFrame = true;
-        }
-
-        stylePack.UpdateCurrentStyle(isHovering, isPressed, false);
-        ButtonStyle currentStyle = stylePack.Current;
-
-        DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
-
-        ID2D1SolidColorBrush textBrush = GetOrCreateBrush(currentStyle.FontColor);
-        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(currentStyle);
-        
-        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
-        {
-            TextLayoutCacheKey layoutKey = new(text, currentStyle, new(finalBounds.Width, finalBounds.Height), textAlignment);
-
-            if (!textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-            {
-                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
-
-                textLayout.TextAlignment = textAlignment.Horizontal switch
+                if (hasVisibleBorder)
                 {
-                    HAlignment.Left => TextAlignment.Leading,
-                    HAlignment.Center => TextAlignment.Center,
-                    HAlignment.Right => TextAlignment.Trailing,
-                    _ => TextAlignment.Leading
-                };
-                textLayout.ParagraphAlignment = textAlignment.Vertical switch
-                {
-                    VAlignment.Top => ParagraphAlignment.Near,
-                    VAlignment.Center => ParagraphAlignment.Center,
-                    VAlignment.Bottom => ParagraphAlignment.Far,
-                    _ => ParagraphAlignment.Near
-                };
-
-                textLayoutCache[layoutKey] = textLayout;
-            }
-
-            Vector2 drawOrigin = new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y);
-            renderTarget.DrawTextLayout(drawOrigin, textLayout, textBrush);
-        }
-
-        return wasClickedThisFrame;
-    }
-}
-</file>
-
-<file path="Core\UI.Widgets.cs">
-using System;
-using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
-
-namespace DirectUI;
-
-public static partial class UI
-{
-    // --- Widgets ---
-    public static bool Button(string id, ButtonDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return false;
-        Button buttonInstance = GetOrCreateElement<Button>(id);
-        Vector2 elementPosition = ApplyLayout(definition.Position);
-        buttonInstance.Position = elementPosition;
-        ApplyButtonDefinition(buttonInstance, definition);
-
-        bool pushedClip = false;
-        Rect cellClipRect = Rect.Empty;
-        if (IsInLayoutContainer())
-        {
-            if (containerStack.Peek() is GridContainerState grid)
-            {
-                float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
-                float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
-                cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-                if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
-                { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
-            }
-        }
-
-        bool clicked = buttonInstance.Update(id);
-        if (pushedClip && CurrentRenderTarget is not null)
-        { CurrentRenderTarget.PopAxisAlignedClip(); }
-
-        AdvanceLayout(buttonInstance.Size);
-        return clicked;
-    }
-
-    public static float HSlider(string id, float currentValue, SliderDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return currentValue;
-        InternalHSliderLogic sliderInstance = GetOrCreateElement<InternalHSliderLogic>(id);
-        Vector2 elementPosition = ApplyLayout(definition.Position);
-        sliderInstance.Position = elementPosition;
-        ApplySliderDefinition(sliderInstance, definition);
-        sliderInstance.Direction = definition.HorizontalDirection;
-
-        bool pushedClip = false;
-        Rect cellClipRect = Rect.Empty;
-        if (IsInLayoutContainer())
-        {
-            if (containerStack.Peek() is GridContainerState grid)
-            {
-                float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
-                float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
-                cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-                if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
-                { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
-            }
-        }
-
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
-        if (pushedClip && CurrentRenderTarget is not null)
-        { CurrentRenderTarget.PopAxisAlignedClip(); }
-
-        AdvanceLayout(sliderInstance.Size);
-        return newValue;
-    }
-
-    public static float VSlider(string id, float currentValue, SliderDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return currentValue;
-        InternalVSliderLogic sliderInstance = GetOrCreateElement<InternalVSliderLogic>(id);
-        Vector2 elementPosition = ApplyLayout(definition.Position);
-        sliderInstance.Position = elementPosition;
-        ApplySliderDefinition(sliderInstance, definition);
-        sliderInstance.Direction = definition.VerticalDirection;
-
-        bool pushedClip = false;
-        Rect cellClipRect = Rect.Empty;
-        if (IsInLayoutContainer())
-        {
-            if (containerStack.Peek() is GridContainerState grid)
-            {
-                float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
-                float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
-                cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-                if (CurrentRenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
-                { CurrentRenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
-            }
-        }
-
-        float newValue = sliderInstance.UpdateAndDraw(id, CurrentInputState, GetCurrentDrawingContext(), currentValue);
-        if (pushedClip && CurrentRenderTarget is not null)
-        { CurrentRenderTarget.PopAxisAlignedClip(); }
-
-        AdvanceLayout(sliderInstance.Size);
-
-        return newValue;
-    }
-
-    public static void Tree<T>(string id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
-    {
-        if (!IsContextValid() || root is null) { clickedNode = null; return; }
-
-        clickedNode = null;
-        var treeStyle = style ?? GetOrCreateElement<TreeStyle>(id + "_style");
-
-        BeginTree(id, treeStyle);
-        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
-        EndTree();
-    }
-
-    private static void ProcessTreeNodeRecursive<T>(int parentIdHash, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
-    {
-        if (treeStateStack.Count == 0) return;
-        var treeState = treeStateStack.Peek();
-        var style = treeState.Style;
-        var renderTarget = CurrentRenderTarget!;
-
-        // --- Get current position and draw hierarchy lines ---
-        var startLayoutPos = GetCurrentLayoutPositionInternal();
-        var brush = GetOrCreateBrush(style.LineColor);
-        if (brush is not null)
-        {
-            // Draw vertical lines for prior indent levels
-            int i = 0;
-            foreach (var shouldDrawLine in treeState.IndentLineState)
-            {
-                if (shouldDrawLine)
-                {
-                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
-                    renderTarget.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), brush, 1.0f);
+                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                    renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), borderBrush);
                 }
-                i++;
-            }
-
-            // Draw horizontal line for the current node itself
-            if (treeState.IndentLineState.Count > 0)
-            {
-                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
-                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
-                renderTarget.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), brush, 1.0f);
+                if (hasVisibleFill)
+                {
+                    float fillX = pos.X + borderLeft;
+                    float fillY = pos.Y + borderTop;
+                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+                    if (fillWidth > 0 && fillHeight > 0)
+                    {
+                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
+                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
+                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
+                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
+                        System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
+                        renderTarget.FillRoundedRectangle(new RoundedRectangle(fillRectF, innerRadiusX, innerRadiusY), fillBrush);
+                    }
+                    else if (!hasVisibleBorder && fillBrush is not null)
+                    {
+                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                        renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), fillBrush);
+                    }
+                }
+                return;
             }
         }
-
-        // --- Manually lay out the node row ---
-        float indentSize = treeState.IndentLineState.Count * style.Indent;
-        var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
-        float currentX = nodeRowStartPos.X;
-        float gap = 5;
-
-        // --- ID Generation (Allocation-free) ---
-        int nodeHash = node.GetHashCode();
-        int toggleId = HashCode.Combine(parentIdHash, index, nodeHash, 0);
-        int labelId = HashCode.Combine(parentIdHash, index, nodeHash, 1);
-
-
-        // --- Toggle Button ---
-        float toggleWidth = style.RowHeight - 4;
-        if (node.Children.Count > 0)
+        if (hasVisibleBorder && borderBrush is not null)
         {
-            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), borderBrush);
+        }
+        if (hasVisibleFill)
+        {
+            float fillX = pos.X + borderLeft;
+            float fillY = pos.Y + borderTop;
+            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+            if (fillWidth > 0 && fillHeight > 0)
             {
-                node.IsExpanded = !node.IsExpanded;
+                renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+            }
+            else if (!hasVisibleBorder && fillBrush is not null)
+            {
+                renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush);
             }
         }
-        currentX += toggleWidth;
+    }
 
-        // --- Label Button ---
-        currentX += gap; // Add gap before the label
-        var labelStyle = style.NodeLabelStyle;
-        var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
-        float labelMargin = 4;
-        var labelSize = MeasureText(CurrentDWriteFactory!, node.Text, labelStyle.Normal);
-        float labelWidth = labelSize.X + labelMargin * 2;
-        var labelOffset = new Vector2(labelMargin, 0);
+    public void CleanupResources()
+    {
+        Console.WriteLine("UI Resource Cleanup: Disposing cached resources...");
+        int brushCount = brushCache.Count;
+        foreach (var pair in brushCache) { pair.Value?.Dispose(); }
+        brushCache.Clear();
 
-        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
-        {
-            clickedNode = node;
-        }
-        currentX += labelWidth;
+        int formatCount = textFormatCache.Count;
+        foreach (var pair in textFormatCache) { pair.Value?.Dispose(); }
+        textFormatCache.Clear();
 
-        // --- Advance parent layout ---
-        float totalWidth = (currentX - nodeRowStartPos.X);
-        AdvanceLayout(new Vector2(totalWidth, style.RowHeight));
+        int layoutCount = textLayoutCache.Count;
+        foreach (var pair in textLayoutCache) { pair.Value?.Dispose(); }
+        textLayoutCache.Clear();
 
-        // --- Recurse if expanded ---
-        if (node.IsExpanded && node.Children.Count > 0)
-        {
-            for (int childIdx = 0; childIdx < node.Children.Count; childIdx++)
-            {
-                bool isLastChild = childIdx == node.Children.Count - 1;
-                treeState.IndentLineState.Push(!isLastChild); // Don't draw vertical line past the last child
-                ProcessTreeNodeRecursive(toggleId, childIdx, node.Children[childIdx], ref clickedNode); // Pass parent's unique int ID
-                treeState.IndentLineState.Pop();
-            }
-        }
+        int sizeCacheCount = textSizeCache.Count;
+        textSizeCache.Clear();
+
+        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes, {formatCount} text formats, and {layoutCount} text layouts. Cleared {sizeCacheCount} size cache entries.");
     }
 }
 </file>
@@ -2697,9 +2757,13 @@ public class Button
 
     internal bool Update(string id)
     {
-        ID2D1HwndRenderTarget? renderTarget = UI.CurrentRenderTarget;
-        IDWriteFactory? dwriteFactory = UI.CurrentDWriteFactory;
-        InputState input = UI.CurrentInputState;
+        var context = UI.Context;
+        var state = UI.State;
+        var resources = UI.Resources;
+
+        var renderTarget = context.RenderTarget;
+        var dwriteFactory = context.DWriteFactory;
+        var input = context.InputState;
         var intId = id.GetHashCode();
 
         if (renderTarget is null || dwriteFactory is null)
@@ -2707,71 +2771,56 @@ public class Button
             return false;
         }
 
-        // --- Sizing (MUST be done before hit-testing) ---
-        // This is now independent of hover/press state and ensures correct bounds.
         PerformAutoWidth(dwriteFactory);
 
-        // --- Input Logic & State Update ---
         bool wasClickedThisFrame = false;
-        isPressed = false; // Reset visual pressed state for the frame
+        isPressed = false;
 
         if (Disabled)
         {
             IsHovering = false;
-            if (UI.ActivelyPressedElementId == intId)
+            if (state.ActivelyPressedElementId == intId)
             {
-                UI.ClearActivePress(intId);
+                state.ClearActivePress(intId);
             }
         }
-        else // Element is Enabled
+        else
         {
-            Rect bounds = GlobalBounds; // NOW uses correct size from AutoWidth
-
+            Rect bounds = GlobalBounds;
             IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
 
             if (IsHovering)
             {
-                UI.SetPotentialInputTarget(intId);
+                state.SetPotentialInputTarget(intId);
             }
 
-            // Determine relevant actions based on behavior
             bool primaryActionHeld = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.IsLeftMouseDown;
             bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
-            // Add Right button logic here if Behavior.Right/Both is implemented fully
 
-            // Handle Release Action
-            if (!primaryActionHeld && UI.ActivelyPressedElementId == intId)
+            if (!primaryActionHeld && state.ActivelyPressedElementId == intId)
             {
                 if (IsHovering && LeftClickActionMode is ActionMode.Release)
                 {
                     wasClickedThisFrame = true;
                 }
-                UI.ClearActivePress(intId); // Clear press regardless of hover on release
+                state.ClearActivePress(intId);
             }
 
-            // Handle Press Attempt (potential capture)
             if (primaryActionPressedThisFrame)
             {
-                // Can only capture press if hovered, it's the potential target, and no drag was already in progress from a previous frame
-                if (IsHovering && UI.PotentialInputTargetId == intId && !UI.dragInProgressFromPreviousFrame)
+                if (IsHovering && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
                 {
-                    // Attempt to capture input - this overwrites previous captors for the frame
-                    UI.SetButtonPotentialCaptorForFrame(intId);
+                    state.SetButtonPotentialCaptorForFrame(intId);
                 }
             }
+            isPressed = (state.ActivelyPressedElementId == intId);
+        }
 
-            // Determine visual pressed state for this frame (is it the element currently held down?)
-            isPressed = (UI.ActivelyPressedElementId == intId);
-
-        } // End Enabled block
-
-        // --- Final Style Update & Drawing ---
-        UpdateStyle(); // Update style based on the now-calculated states
+        UpdateStyle();
 
         try
         {
-            Rect currentBounds = GlobalBounds; // Bounds are now final for this frame
-
+            Rect currentBounds = GlobalBounds;
             if (currentBounds.Width > 0 && currentBounds.Height > 0)
             {
                 DrawBackground(renderTarget);
@@ -2780,22 +2829,17 @@ public class Button
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
-            // Retained log message for recoverable graphics issue.
             Console.WriteLine($"Render target needs recreation during Button draw: {ex.Message}");
-            UI.CleanupResources(); // Clear brushes which are now invalid
-            return false; // Cannot continue drawing
+            resources.CleanupResources();
+            return false;
         }
         catch (Exception ex)
         {
-            // Retained log message for unexpected error.
             Console.WriteLine($"Error drawing button {id}: {ex}");
-            return false; // Indicate error
+            return false;
         }
 
-
-        // --- Final Click Determination (for Press mode) ---
-        // Click happens now if mode is Press AND this button was the final input captor for the frame.
-        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && UI.InputCaptorId == intId)
+        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && state.InputCaptorId == intId)
         {
             wasClickedThisFrame = true;
         }
@@ -2815,19 +2859,12 @@ public class Button
             return;
         }
 
-        // Always measure using the Normal theme to ensure consistent size across states.
-        Vector2 textSize = UI.MeasureText(dwriteFactory, Text, Themes.Normal);
-        float desiredWidth = textSize.X + TextMargin.X * 2; // Add horizontal margins
+        Vector2 textSize = UI.Resources.MeasureText(dwriteFactory, Text, Themes.Normal);
+        float desiredWidth = textSize.X + TextMargin.X * 2;
 
-        // Use a small epsilon to avoid floating point jitter
         if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f)
         {
             Size = new Vector2(desiredWidth, Size.Y);
-        }
-        else if (desiredWidth <= 0 && Size.X != 0)
-        {
-            // Optional: Handle case where text becomes empty - maybe reset to a MinWidth?
-            // For now, do nothing, keeping potentially previous non-zero width.
         }
     }
 
@@ -2835,14 +2872,9 @@ public class Button
     {
         Rect bounds = GlobalBounds;
         ButtonStyle? style = Themes?.Current;
+        if (style is null || bounds.Width <= 0 || bounds.Height <= 0) return;
 
-        // Early exit if nothing to draw
-        if (style is null || bounds.Width <= 0 || bounds.Height <= 0)
-        {
-            return;
-        }
-
-        UI.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
     }
 
     private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
@@ -2851,10 +2883,10 @@ public class Button
         ButtonStyle? style = Themes?.Current;
         if (style is null) return;
 
-        ID2D1SolidColorBrush textBrush = UI.GetOrCreateBrush(style.FontColor);
+        ID2D1SolidColorBrush textBrush = UI.Resources.GetOrCreateBrush(renderTarget, style.FontColor);
         if (textBrush is null) return;
 
-        IDWriteTextFormat? textFormat = UI.GetOrCreateTextFormat(style);
+        IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
         if (textFormat is null) return;
 
         IDWriteTextLayout? textLayout = null;
@@ -2863,15 +2895,7 @@ public class Button
             Rect bounds = GlobalBounds;
             if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
-            // Create a layout with the button's bounds as constraints.
-            textLayout = dwriteFactory.CreateTextLayout(
-                Text,
-                textFormat,
-                bounds.Width,
-                bounds.Height
-            );
-
-            // Apply Alignment to the layout object itself.
+            textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
             textLayout.TextAlignment = TextAlignment.Horizontal switch
             {
                 HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
@@ -2887,15 +2911,8 @@ public class Button
                 _ => ParagraphAlignment.Near
             };
 
-            // The origin point for drawing the layout.
             var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
-
-            renderTarget.DrawTextLayout(
-                textOrigin,
-                textLayout,
-                textBrush,
-                DrawTextOptions.None // Clipping is handled by the layout's dimensions.
-            );
+            renderTarget.DrawTextLayout(textOrigin, textLayout, textBrush, DrawTextOptions.None);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
@@ -2961,8 +2978,8 @@ internal class InternalHSliderLogic : InternalSliderLogic
     {
         float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
+        var state = UI.State;
 
-        // 1. Calculate Hover States & Set Potential Target
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -2974,21 +2991,19 @@ internal class InternalHSliderLogic : InternalSliderLogic
 
         if (isSliderHovered)
         {
-            UI.SetPotentialInputTarget(GlobalIntId);
+            state.SetPotentialInputTarget(GlobalIntId);
         }
 
-        // 2. Handle Mouse Release
-        if (UI.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
         {
-            UI.ClearActivePress(GlobalIntId);
+            state.ClearActivePress(GlobalIntId);
         }
 
-        // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && UI.PotentialInputTargetId == GlobalIntId && !UI.dragInProgressFromPreviousFrame)
+            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                UI.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetButtonPotentialCaptorForFrame(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -2998,10 +3013,9 @@ internal class InternalHSliderLogic : InternalSliderLogic
             }
         }
 
-        // 4. Handle Mouse Held/Drag
-        if (UI.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
         {
-            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            if (!pendingTrackClickValueJump)
             {
                 float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
                 newValue = ConvertPositionToValue(clampedX);
@@ -3013,7 +3027,6 @@ internal class InternalHSliderLogic : InternalSliderLogic
         return newValue;
     }
 
-    // --- Other methods unchanged ---
     protected override float ConvertPositionToValue(float position)
     {
         if (trackMaxBound <= trackMinBound) return MinValue;
@@ -3051,7 +3064,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         if (Direction == HSliderDirection.RightToLeft) { clipRect = new Rect(trackPosition.X + Size.X - foregroundWidth, trackPosition.Y, foregroundWidth, Size.Y); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
-        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
     }
 }
@@ -3105,8 +3118,11 @@ internal abstract class InternalSliderLogic
 
 
     // --- Common Logic ---
-    internal float UpdateAndDraw(string id, InputState input, DrawingContext context, float currentValue)
+    internal float UpdateAndDraw(string id, float currentValue)
     {
+        var context = UI.Context;
+        var state = UI.State;
+
         GlobalId = id;
         GlobalIntId = id.GetHashCode();
         trackPosition = Position - Origin;
@@ -3120,17 +3136,14 @@ internal abstract class InternalSliderLogic
             isGrabberHovered = false;
             isGrabberPressed = false;
             isTrackHovered = false;
-            if (UI.ActivelyPressedElementId == GlobalIntId) UI.ClearActivePress(GlobalIntId);
+            if (state.ActivelyPressedElementId == GlobalIntId) state.ClearActivePress(GlobalIntId);
         }
         else
         {
-            // HandleInput sets potential target, calls SetPotentialCaptorForFrame,
-            // sets pendingTrackClickValueJump, and returns value updated by DRAG.
-            newValue = HandleInput(input, currentValue);
+            newValue = HandleInput(context.InputState, currentValue);
         }
 
-        // Deferred Track Click Value Jump Check
-        if (pendingTrackClickValueJump && UI.InputCaptorId == GlobalIntId && !UI.nonSliderElementClaimedPress)
+        if (pendingTrackClickValueJump && state.InputCaptorId == GlobalIntId && !state.NonSliderElementClaimedPress)
         {
             newValue = ConvertPositionToValue(trackClickPosition);
             newValue = ApplyStep(newValue);
@@ -3138,8 +3151,6 @@ internal abstract class InternalSliderLogic
         }
         pendingTrackClickValueJump = false;
 
-
-        // Update visual style based on final state
         UpdateGrabberThemeStyle();
 
         if (context.RenderTarget is null)
@@ -3148,7 +3159,6 @@ internal abstract class InternalSliderLogic
             return newValue;
         }
 
-        // --- Drawing ---
         try
         {
             DrawBackground(context.RenderTarget);
@@ -3191,7 +3201,7 @@ internal abstract class InternalSliderLogic
 
     protected void UpdateGrabberThemeStyle()
     {
-        isGrabberPressed = UI.ActivelyPressedElementId == GlobalIntId;
+        isGrabberPressed = UI.State.ActivelyPressedElementId == GlobalIntId;
         GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
     }
 
@@ -3199,13 +3209,13 @@ internal abstract class InternalSliderLogic
     // --- Drawing Methods ---
     protected void DrawBackground(ID2D1RenderTarget renderTarget)
     {
-        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
     }
 
     protected void DrawGrabber(ID2D1RenderTarget renderTarget, float currentValue)
     {
         Vector2 grabberPos = CalculateGrabberPosition(currentValue);
-        UI.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
     }
 }
 </file>
@@ -3233,8 +3243,8 @@ internal class InternalVSliderLogic : InternalSliderLogic
     {
         float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
+        var state = UI.State;
 
-        // 1. Calculate Hover States & Set Potential Target
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -3246,21 +3256,19 @@ internal class InternalVSliderLogic : InternalSliderLogic
 
         if (isSliderHovered)
         {
-            UI.SetPotentialInputTarget(GlobalIntId);
+            state.SetPotentialInputTarget(GlobalIntId);
         }
 
-        // 2. Handle Mouse Release
-        if (UI.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
         {
-            UI.ClearActivePress(GlobalIntId);
+            state.ClearActivePress(GlobalIntId);
         }
 
-        // 3. Handle Mouse Press Attempt
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && UI.PotentialInputTargetId == GlobalIntId && !UI.dragInProgressFromPreviousFrame)
+            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                UI.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetButtonPotentialCaptorForFrame(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -3270,10 +3278,9 @@ internal class InternalVSliderLogic : InternalSliderLogic
             }
         }
 
-        // 4. Handle Mouse Held/Drag
-        if (UI.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
         {
-            if (!pendingTrackClickValueJump) // Only drag if not initiated by a deferred track click this frame
+            if (!pendingTrackClickValueJump)
             {
                 float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
                 newValue = ConvertPositionToValue(clampedY);
@@ -3285,7 +3292,6 @@ internal class InternalVSliderLogic : InternalSliderLogic
         return newValue;
     }
 
-    // --- Other methods unchanged ---
     protected override float ConvertPositionToValue(float position)
     {
         if (trackMaxBound <= trackMinBound) return MinValue;
@@ -3323,7 +3329,7 @@ internal class InternalVSliderLogic : InternalSliderLogic
         if (Direction == VSliderDirection.BottomToTop) { clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight); }
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
-        UI.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
+        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
     }
 }
@@ -3397,6 +3403,13 @@ public class SliderDefinition
 }
 </file>
 
+<file path="Widgets\SliderDirection.cs">
+namespace DirectUI;
+
+public enum HSliderDirection { LeftToRight, RightToLeft }
+public enum VSliderDirection { TopToBottom, BottomToTop }
+</file>
+
 <file path="Widgets\TreeNode.cs">
 using System.Collections.Generic;
 
@@ -3452,6 +3465,11 @@ public class MyDirectUIApp : Direct2DAppWindow
     private float rightPanelWidth = 250f;
     private float bottomPanelHeight = 150f;
 
+    // Window management state
+    private ModalWindow? _projectWindow;
+    private bool _isProjectWindowOpen = false;
+    private bool _openProjectWindowRequested = false;
+
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
 
@@ -3479,6 +3497,54 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
+    // Override FrameUpdate to handle window management outside of rendering
+    public override void FrameUpdate()
+    {
+        // Handle window creation/destruction logic here, which is safer than in the render loop.
+        ManageWindows();
+
+        // Call base implementation to handle FPS updates and invalidation for this window.
+        base.FrameUpdate();
+    }
+
+    private void ManageWindows()
+    {
+        // Check if a modal needs to be opened
+        if (_openProjectWindowRequested && !_isProjectWindowOpen)
+        {
+            _openProjectWindowRequested = false; // Consume the request
+            _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
+            if (_projectWindow.CreateAsModal())
+            {
+                _isProjectWindowOpen = true;
+            }
+            else
+            {
+                Console.WriteLine("Failed to create modal window.");
+                _projectWindow?.Dispose();
+                _projectWindow = null;
+                _isProjectWindowOpen = false;
+            }
+        }
+
+        // Check if the modal window was closed by the user (e.g., via ESC or close button)
+        if (_isProjectWindowOpen && (_projectWindow == null || _projectWindow.Handle == IntPtr.Zero))
+        {
+            _projectWindow?.Dispose(); // Ensure cleanup
+            _projectWindow = null;
+            _isProjectWindowOpen = false;
+        }
+
+        // Check if we need to close the window programmatically
+        // (e.g., from a "Close" button inside the modal's UI, which sets _isProjectWindowOpen to false)
+        if (!_isProjectWindowOpen && _projectWindow != null && _projectWindow.Handle != IntPtr.Zero)
+        {
+            _projectWindow.Close();
+            // The check above will handle cleanup in the next frame after the window is destroyed.
+        }
+    }
+
+
     // The factory method implementation creates the AppHost, passing the drawing logic.
     protected override AppHost CreateAppHost()
     {
@@ -3494,19 +3560,19 @@ public class MyDirectUIApp : Direct2DAppWindow
         return root;
     }
 
-    // The actual drawing logic is now in a dedicated method.
-    private void DrawUI(DrawingContext context, InputState input)
+    // The actual drawing logic for the main window.
+    private void DrawUI(UIContext context)
     {
-        // Must call BeginFrame before any UI calls
-        UI.BeginFrame(context, input);
+        // Note: UI.BeginFrame and UI.EndFrame are now called by the AppHost.
+        // We just need to define the UI content for the frame.
 
         float menuBarHeight = 30f;
 
         // --- Menu Bar ---
         {
             var rt = context.RenderTarget;
-            var menuBarBackgroundBrush = UI.GetOrCreateBrush(new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-            var menuBarBorderBrush = UI.GetOrCreateBrush(DefaultTheme.NormalBorder);
+            var menuBarBackgroundBrush = UI.Resources.GetOrCreateBrush(rt, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
+            var menuBarBorderBrush = UI.Resources.GetOrCreateBrush(rt, DefaultTheme.NormalBorder);
 
             if (menuBarBackgroundBrush != null)
             {
@@ -3541,6 +3607,16 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
             menuButtonDef.Text = "File";
             if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
+
+            menuButtonDef.Text = "Project";
+            if (UI.Button("project_button", menuButtonDef))
+            {
+                if (!_isProjectWindowOpen)
+                {
+                    _openProjectWindowRequested = true;
+                }
+            }
+
             menuButtonDef.Text = "Edit";
             if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
             menuButtonDef.Text = "View";
@@ -3549,7 +3625,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
             UI.EndHBoxContainer();
         }
-
 
         // --- Define shared styles ---
         var buttonTheme = new ButtonStylePack
@@ -3590,7 +3665,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
             // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-            UI.BeginVBoxContainer("tree_vbox", UI.GetCurrentLayoutPosition(), 0);
+            UI.BeginVBoxContainer("tree_vbox", UI.Context.GetCurrentLayoutPosition(), 0);
             UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
             if (clickedNode is not null)
             {
@@ -3629,10 +3704,24 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             UI.EndResizableHPanel();
         }
+    }
 
-        // --- End of UI ---
-        // Must call EndFrame after all UI calls
-        UI.EndFrame();
+    // Drawing logic for the modal window.
+    private void DrawProjectWindowUI(UIContext context)
+    {
+        UI.BeginVBoxContainer("modal_vbox", new Vector2(10, 10), 10);
+
+        if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+        {
+            Console.WriteLine("Modal button clicked!");
+        }
+
+        if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+        {
+            _isProjectWindowOpen = false; // Signal to close the window
+        }
+
+        UI.EndVBoxContainer();
     }
 }
 </file>
@@ -3654,14 +3743,19 @@ public class Program
         {
             try
             {
-                appWindow.Run(); // Creates window, enters message loop
+                // Create the main window, which registers itself with the Application manager.
+                if (appWindow.Create())
+                {
+                    // Run the central message loop that processes all windows.
+                    Application.Run();
+                }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Unhandled exception in Run: {ex}");
                 // Log exception, show message box, etc.
             }
-        } // appWindow.Dispose() is called here
+        } // appWindow.Dispose() is called here, which triggers its window closure
 
         Console.WriteLine("Application finished.");
         // Console.ReadKey(); // Optional: Keep console open after exit

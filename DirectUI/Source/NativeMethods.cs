@@ -19,8 +19,15 @@ internal static class NativeMethods
     public const uint CS_VREDRAW = 0x0001;
     public const uint CS_OWNDC = 0x0020;
 
-    public const uint WS_OVERLAPPEDWINDOW = 0xCF0000;
+    public const uint WS_OVERLAPPED = 0x00000000;
+    public const uint WS_CAPTION = 0x00C00000;
+    public const uint WS_SYSMENU = 0x00080000;
+    public const uint WS_THICKFRAME = 0x00040000;
+    public const uint WS_MINIMIZEBOX = 0x00020000;
+    public const uint WS_MAXIMIZEBOX = 0x00010000;
+    public const uint WS_OVERLAPPEDWINDOW = WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX;
     public const uint WS_VISIBLE = 0x10000000;
+    public const uint WS_POPUP = 0x80000000;
 
     public const int WM_NCCREATE = 0x0081;
     public const int WM_CREATE = 0x0001;
@@ -39,6 +46,8 @@ internal static class NativeMethods
     public const int SW_SHOWNORMAL = 1;
     public const int VK_ESCAPE = 0x1B;
     public const int GWLP_USERDATA = -21;
+
+    public const uint PM_REMOVE = 0x0001;
 
     // --- Structures ---
     [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
@@ -121,6 +130,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
     [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool PeekMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax, uint wRemoveMsg);
+    [DllImport("user32.dll")]
     public static extern bool TranslateMessage([In] ref MSG lpMsg);
     [DllImport("user32.dll")]
     public static extern IntPtr DispatchMessage([In] ref MSG lpmsg);
@@ -148,6 +160,9 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool ReleaseCapture();
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    public static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
 
 
     public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)
