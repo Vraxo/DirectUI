@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Application.cs
+using System;
 using System.Collections.Generic;
 
 namespace DirectUI;
@@ -55,10 +56,13 @@ public static class Application
 
             // Create a copy for safe iteration, as windows can be closed (and removed) during the loop.
             var windowsToUpdate = new List<Win32Window>(s_windows);
+            // Console.WriteLine($"Application.Run: Updating {windowsToUpdate.Count} window(s)."); // DEBUG: Uncomment for verbose logging
+
             foreach (var window in windowsToUpdate)
             {
                 if (window.Handle != IntPtr.Zero)
                 {
+                    // Console.WriteLine($"Application.Run: Calling FrameUpdate for window handle {window.Handle}"); // DEBUG: Uncomment for verbose logging
                     window.FrameUpdate();
                 }
             }

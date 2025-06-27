@@ -1,4 +1,5 @@
-﻿using System;
+﻿// ModalWindow.cs
+using System;
 using Vortice.Mathematics;
 
 namespace DirectUI;

@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Diagnostics/FpsCounter.cs
+using System;
 using System.Diagnostics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
@@ -94,6 +95,16 @@ public class FpsCounter
         _frameCountSinceUpdate++;
         long elapsedTicks = _timer.ElapsedTicks;
         long timeSinceLastUpdate = elapsedTicks - _lastUpdateTimeTicks;
+
+        // If an unusually long time (e.g., > 2s) has passed since the last update,
+        // assume the app was paused (e.g., by a modal window or debugging).
+        // Reset the counter to prevent a misleadingly low FPS calculation on the first frame back.
+        if (timeSinceLastUpdate > TimeSpan.TicksPerSecond * 2)
+        {
+            _lastUpdateTimeTicks = elapsedTicks;
+            _frameCountSinceUpdate = 0;
+            return false; // Don't calculate FPS this frame, wait for the next sampling interval.
+        }
 
         if (timeSinceLastUpdate >= FpsUpdateIntervalTicks)
         {
