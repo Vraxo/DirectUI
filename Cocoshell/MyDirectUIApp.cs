@@ -7,6 +7,7 @@ namespace DirectUI;
 
 public class MyDirectUIApp : Direct2DAppWindow
 {
+    // Application state remains here, where it belongs.
     private float sliderValue = 0.5f;
     private float leftPanelWidth = 250f;
     private float rightPanelWidth = 250f;
@@ -15,18 +16,12 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
 
-
-    // Constructor to match the call in Program.cs
     public MyDirectUIApp(string title, int width, int height)
         : base(title, width, height)
     {
-        // Set a dark background color that matches the new theme
-        backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-
-        // --- Initialize Tree Data from YAML ---
+        // Data initialization remains here.
         try
         {
-            // The user requested this specific, absolute path.
             string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
             if (File.Exists(scenePath))
             {
@@ -45,16 +40,23 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
+    // The factory method implementation creates the AppHost, passing the drawing logic.
+    protected override AppHost CreateAppHost()
+    {
+        var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
+        return new AppHost(DrawUI, backgroundColor);
+    }
+
     private TreeNode<string> CreateDefaultTree()
     {
-        // Fallback tree if YAML parsing fails
         var root = new TreeNode<string>("Error", "Could not load scene", true);
         root.AddChild("Please check file path and format.", "");
         root.AddChild(@"Path: D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml", "");
         return root;
     }
 
-    protected override void DrawUIContent(DrawingContext context, InputState input)
+    // The actual drawing logic is now in a dedicated method.
+    private void DrawUI(DrawingContext context, InputState input)
     {
         // Must call BeginFrame before any UI calls
         UI.BeginFrame(context, input);
