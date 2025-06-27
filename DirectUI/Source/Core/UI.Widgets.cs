@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Linq;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -227,4 +228,205 @@ public static partial class UI
             }
         }
     }
+
+    #region LineEdit
+    public static bool LineEdit(string id, ref string text, LineEditDefinition definition)
+    {
+        if (!IsContextValid() || definition == null) return false;
+
+        var intId = id.GetHashCode();
+        var state = State.GetOrCreateElement<LineEditState>(id);
+        var theme = definition.Theme ?? State.GetOrCreateElement<ButtonStylePack>(id + "_theme");
+        var input = Context.InputState;
+
+        var position = Context.ApplyLayout(definition.Position);
+        Rect bounds = new(position.X, position.Y, definition.Size.X, definition.Size.Y);
+
+        bool isFocused = State.FocusedElementId == intId;
+        bool textChanged = false;
+
+        // --- Focus Management ---
+        bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        if (input.WasLeftMousePressedThisFrame && isHovering && !definition.Disabled)
+        {
+            State.SetFocus(intId);
+            State.SetPotentialCaptorForFrame(intId); // Claim the press
+            isFocused = true;
+        }
+
+        // --- Input Processing ---
+        if (isFocused && !definition.Disabled)
+        {
+            textChanged = ProcessLineEditInput(ref text, state, definition, input);
+        }
+
+        // --- Drawing ---
+        theme.UpdateCurrentStyle(isHovering, false, definition.Disabled, isFocused);
+        Resources.DrawBoxStyleHelper(Context.RenderTarget, position, definition.Size, theme.Current);
+
+        // Clip text rendering to the bounds of the control
+        Context.RenderTarget.PushAxisAlignedClip(bounds, D2D.AntialiasMode.PerPrimitive);
+
+        // Draw Placeholder or Text
+        string textToDraw = text;
+        if (string.IsNullOrEmpty(text) && !isFocused)
+        {
+            DrawLineEditText(definition.PlaceholderText, state, definition, theme.Disabled, position);
+        }
+        else
+        {
+            if (definition.IsPassword) textToDraw = new string(definition.PasswordChar, text.Length);
+            DrawLineEditText(textToDraw, state, definition, theme.Current, position);
+        }
+
+        // Draw Caret
+        if (isFocused && state.IsBlinkOn)
+        {
+            DrawLineEditCaret(text, state, definition, theme.Current, position);
+        }
+
+        Context.RenderTarget.PopAxisAlignedClip();
+
+        Context.AdvanceLayout(definition.Size);
+        return textChanged;
+    }
+
+    private static bool ProcessLineEditInput(ref string text, LineEditState state, LineEditDefinition def, InputState input)
+    {
+        bool textChanged = false;
+
+        // Update blink timer
+        state.BlinkTimer += 0.016f; // Approximating delta time
+        if (state.BlinkTimer > 0.5f)
+        {
+            state.BlinkTimer = 0;
+            state.IsBlinkOn = !state.IsBlinkOn;
+        }
+
+        if (state.NeedsUndoStatePush)
+        {
+            PushUndoState(state, text);
+            state.NeedsUndoStatePush = false;
+        }
+
+        // Character input
+        if (input.TypedCharacters.Any())
+        {
+            if (!state.NeedsUndoStatePush) PushUndoState(state, text);
+            foreach (char c in input.TypedCharacters)
+            {
+                if (text.Length < def.MaxLength)
+                {
+                    text = text.Insert(state.CaretPosition, c.ToString());
+                    state.CaretPosition++;
+                    textChanged = true;
+                }
+            }
+            if (textChanged) UpdateLineEditView(text, state, def.Size, def.TextMargin);
+        }
+
+        // TODO: Implement key repeat logic for backspace, delete, arrows
+
+        // Keydown logic
+        // This is a simplified version. Full implementation would use WM_KEYDOWN and check for repeat counts.
+        foreach (var key in input.TypedCharacters.Select(c => (Keys)c).Distinct()) // This is flawed, need real key events
+        {
+            // For now, we don't have distinct key down events, so we can't do this part properly.
+            // This is a placeholder for where the logic would go.
+        }
+
+        return textChanged;
+    }
+
+    private static void DrawLineEditText(string textToDraw, LineEditState state, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    {
+        if (string.IsNullOrEmpty(textToDraw)) return;
+
+        var textBrush = Resources.GetOrCreateBrush(Context.RenderTarget, style.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, style);
+        if (textBrush is null || textFormat is null) return;
+
+        textFormat.WordWrapping = WordWrapping.NoWrap;
+        textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
+        textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+
+        string visibleText = textToDraw;
+        if (state.TextStartIndex > 0 && state.TextStartIndex < textToDraw.Length)
+        {
+            visibleText = textToDraw.Substring(state.TextStartIndex);
+        }
+
+        Rect layoutRect = new Rect(
+            position.X + def.TextMargin.X,
+            position.Y + def.TextMargin.Y,
+            Math.Max(0, def.Size.X - def.TextMargin.X * 2),
+            Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
+        );
+
+        Context.RenderTarget.DrawText(visibleText, textFormat, layoutRect, textBrush, DrawTextOptions.Clip);
+    }
+
+    private static void DrawLineEditCaret(string text, LineEditState state, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    {
+        string textBeforeCaret = text.Substring(state.TextStartIndex, state.CaretPosition - state.TextStartIndex);
+        float caretXOffset = MeasureTextWidth(textBeforeCaret, style);
+
+        Rect caretRect = new Rect(
+            position.X + def.TextMargin.X + caretXOffset,
+            position.Y + def.TextMargin.Y,
+            1, // Caret width
+            Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
+        );
+
+        var caretBrush = Resources.GetOrCreateBrush(Context.RenderTarget, style.FontColor);
+        if (caretBrush != null)
+        {
+            Context.RenderTarget.FillRectangle(caretRect, caretBrush);
+        }
+    }
+
+    private static float MeasureTextWidth(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, style);
+        if (textFormat is null) return 0;
+        textFormat.WordWrapping = WordWrapping.NoWrap;
+        using var textLayout = Context.DWriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+        return textLayout.Metrics.WidthIncludingTrailingWhitespace;
+    }
+
+    private static void UpdateLineEditView(string text, LineEditState state, Vector2 size, Vector2 margin)
+    {
+        // Simplified view update logic
+        float availableWidth = size.X - margin.X * 2;
+        var style = new ButtonStyle(); // A default style for measurement
+
+        string textBeforeCaret = text.Substring(0, state.CaretPosition);
+        float caretPixelX = MeasureTextWidth(textBeforeCaret, style);
+
+        float textPixelStart = state.TextStartIndex > 0 ? -MeasureTextWidth(text.Substring(0, state.TextStartIndex), style) : 0;
+
+        if (caretPixelX + textPixelStart > availableWidth)
+        {
+            state.TextStartIndex++; // simplified scroll right
+        }
+        else if (caretPixelX + textPixelStart < 0)
+        {
+            state.TextStartIndex--; // simplified scroll left
+        }
+        state.TextStartIndex = Math.Max(0, state.TextStartIndex);
+    }
+
+    private static void PushUndoState(LineEditState state, string text)
+    {
+        if (state.UndoStack.Count >= LineEditState.HistoryLimit)
+        {
+            // Simplified: just don't add more. A better implementation would remove the oldest.
+            return;
+        }
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
+        state.RedoStack.Clear();
+    }
+    #endregion
+
 }

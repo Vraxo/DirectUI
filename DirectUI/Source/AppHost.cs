@@ -1,5 +1,6 @@
 ﻿// AppHost.cs
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Diagnostics;
 using Vortice.Mathematics;
@@ -25,6 +26,7 @@ public class AppHost
     private Vector2 _currentMousePos = new(-1, -1);
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
+    private readonly Queue<char> _typedCharsThisFrame = new();
 
     public bool ShowFpsCounter { get; set; } = true;
 
@@ -89,6 +91,7 @@ public class AppHost
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))
             {
                 _wasLeftMouseClickedThisFrame = false;
+                _typedCharsThisFrame.Clear(); // Clear queue on failed render
                 return;
             }
         }
@@ -107,8 +110,10 @@ public class AppHost
             var inputState = new InputState(
                 _currentMousePos,
                 _wasLeftMouseClickedThisFrame,
-                _isLeftMouseButtonDown
+                _isLeftMouseButtonDown,
+                _typedCharsThisFrame.ToList()
             );
+            _typedCharsThisFrame.Clear(); // Clear after consuming
 
             var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
@@ -166,6 +171,15 @@ public class AppHost
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = false;
+        }
+    }
+
+    public void AddCharacterInput(char c)
+    {
+        // Filter out control characters except for tab and newline, which might be useful.
+        if (!char.IsControl(c) || c == '\t' || c == '\n')
+        {
+            _typedCharsThisFrame.Enqueue(c);
         }
     }
 }

@@ -24,6 +24,7 @@ public static partial class UI
 
         bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         bool isPressed = State.ActivelyPressedElementId == id;
+        bool isFocused = State.FocusedElementId == id;
         bool wasClickedThisFrame = false;
 
         if (isHovering) State.SetPotentialInputTarget(id);
@@ -38,12 +39,13 @@ public static partial class UI
         if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == id && !State.DragInProgressFromPreviousFrame)
         {
             State.SetButtonPotentialCaptorForFrame(id);
+            State.SetFocus(id);
             isPressed = true;
         }
 
         if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && State.InputCaptorId == id) wasClickedThisFrame = true;
 
-        stylePack.UpdateCurrentStyle(isHovering, isPressed, false);
+        stylePack.UpdateCurrentStyle(isHovering, isPressed, false, isFocused);
         ButtonStyle currentStyle = stylePack.Current;
         Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
 

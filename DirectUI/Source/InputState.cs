@@ -1,4 +1,5 @@
 ﻿// InputState.cs
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace DirectUI;
@@ -9,12 +10,13 @@ public readonly struct InputState
     public readonly Vector2 MousePosition;
     public readonly bool WasLeftMousePressedThisFrame; // True if the left button went down this frame
     public readonly bool IsLeftMouseDown; // True if the left button is currently held down
-    // Add fields for Right mouse button if ClickBehavior.Right/Both is used
+    public readonly IReadOnlyList<char> TypedCharacters; // Characters typed this frame
 
-    public InputState(Vector2 mousePosition, bool wasLeftMousePressedThisFrame, bool isLeftMouseDown)
+    public InputState(Vector2 mousePosition, bool wasLeftMousePressedThisFrame, bool isLeftMouseDown, IReadOnlyList<char> typedCharacters)
     {
         MousePosition = mousePosition;
         WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
         IsLeftMouseDown = isLeftMouseDown;
+        TypedCharacters = typedCharacters;
     }
 }

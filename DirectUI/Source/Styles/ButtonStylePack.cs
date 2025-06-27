@@ -1,6 +1,4 @@
-﻿// MODIFIED: Styles/ButtonStylePack.cs
-// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle. Added Obsolete attribute to BorderThickness.
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
 using Vortice.DirectWrite;
@@ -14,7 +12,7 @@ public sealed class ButtonStylePack
     public ButtonStyle Hover { get; set; } = new();
     public ButtonStyle Pressed { get; set; } = new();
     public ButtonStyle Disabled { get; set; } = new();
-    // public ButtonStyle Focused { get; set; } = new(); // Focus state not implemented yet
+    public ButtonStyle Focused { get; set; } = new();
 
     public ButtonStylePack()
     {
@@ -28,10 +26,14 @@ public sealed class ButtonStylePack
         Disabled.BorderColor = DefaultTheme.DisabledBorder;
         Disabled.FontColor = DefaultTheme.DisabledText;
 
+        Focused.FillColor = DefaultTheme.NormalFill;
+        Focused.BorderColor = DefaultTheme.FocusBorder;
+        Focused.BorderLength = 1;
+
         Current = Normal;
     }
 
-    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled /*, bool isFocused */)
+    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
     {
         if (isDisabled)
         {
@@ -45,17 +47,17 @@ public sealed class ButtonStylePack
         {
             Current = Hover;
         }
-        //else if (isFocused) // Future focus state
-        //{
-        //    Current = Focused;
-        //}
+        else if (isFocused)
+        {
+            Current = Focused;
+        }
         else
         {
             Current = Normal;
         }
     }
 
-    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled /*, Focused*/];
+    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled, Focused];
 
     public string FontName
     {

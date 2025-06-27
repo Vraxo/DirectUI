@@ -28,6 +28,12 @@ public static partial class UI
 
     public static void EndFrame()
     {
+        // If a click happened this frame but no UI element captured it, clear the focus.
+        if (Context.InputState.WasLeftMousePressedThisFrame && State.InputCaptorId == 0)
+        {
+            State.SetFocus(0);
+        }
+
         if (Context.containerStack.Count > 0)
         {
             Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.containerStack.Count} containers left open at EndFrame.");

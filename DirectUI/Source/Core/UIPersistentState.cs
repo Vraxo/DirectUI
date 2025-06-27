@@ -28,6 +28,7 @@ public class UIPersistentState
     // --- Input State (persists across frames until interaction ends) ---
     public int ActivelyPressedElementId { get; private set; } = 0;
     public bool DragInProgressFromPreviousFrame { get; private set; } = false;
+    public int FocusedElementId { get; private set; } = 0;
 
     // --- Input State (reset each frame) ---
     public int PotentialInputTargetId { get; private set; } = 0;
@@ -80,5 +81,11 @@ public class UIPersistentState
         {
             ActivelyPressedElementId = 0;
         }
+    }
+
+    // --- Focus Management ---
+    public void SetFocus(int id)
+    {
+        FocusedElementId = id;
     }
 }

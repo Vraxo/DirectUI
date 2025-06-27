@@ -41,6 +41,8 @@ internal static class NativeMethods
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
     public const int WM_QUIT = 0x0012;
+    public const int WM_CHAR = 0x0102;
+
 
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
     public const int SW_SHOWNORMAL = 1;

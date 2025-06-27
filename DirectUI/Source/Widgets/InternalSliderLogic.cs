@@ -24,6 +24,7 @@ internal abstract class InternalSliderLogic
     protected bool isGrabberPressed = false;
     protected bool isGrabberHovered = false;
     protected bool isTrackHovered = false;
+    protected bool isFocused = false;
     protected Vector2 trackPosition;
     protected float trackMinBound;
     protected float trackMaxBound;
@@ -52,6 +53,7 @@ internal abstract class InternalSliderLogic
 
         GlobalId = id;
         GlobalIntId = id.GetHashCode();
+        isFocused = state.FocusedElementId == GlobalIntId;
         trackPosition = Position - Origin;
         CalculateTrackBounds();
 
@@ -129,7 +131,8 @@ internal abstract class InternalSliderLogic
     protected void UpdateGrabberThemeStyle()
     {
         isGrabberPressed = UI.State.ActivelyPressedElementId == GlobalIntId;
-        GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
+        isFocused = UI.State.FocusedElementId == GlobalIntId;
+        GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled, isFocused);
     }
 
 

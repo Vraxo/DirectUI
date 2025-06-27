@@ -46,6 +46,7 @@ internal class InternalVSliderLogic : InternalSliderLogic
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
                 state.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {

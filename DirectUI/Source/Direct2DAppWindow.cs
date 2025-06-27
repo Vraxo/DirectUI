@@ -79,6 +79,12 @@ public abstract class Direct2DAppWindow : Win32Window
         Invalidate();
     }
 
+    protected override void OnChar(char c)
+    {
+        _appHost?.AddCharacterInput(c);
+        Invalidate();
+    }
+
     protected override bool OnClose() { return true; }
 
     protected SizeI GetClientRectSize()

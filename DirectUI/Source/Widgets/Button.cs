@@ -28,6 +28,7 @@ public class Button
     public object? UserData { get; set; } = null;
 
     public bool IsHovering { get; internal set; } = false;
+    public bool IsFocused { get; internal set; } = false;
 
     public Rect GlobalBounds
     {
@@ -61,6 +62,8 @@ public class Button
         {
             return false;
         }
+
+        IsFocused = state.FocusedElementId == intId;
 
         PerformAutoWidth(dwriteFactory);
 
@@ -102,6 +105,7 @@ public class Button
                 if (IsHovering && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
                 {
                     state.SetButtonPotentialCaptorForFrame(intId);
+                    state.SetFocus(intId);
                 }
             }
             isPressed = (state.ActivelyPressedElementId == intId);
@@ -140,7 +144,7 @@ public class Button
 
     internal void UpdateStyle()
     {
-        Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
+        Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled, IsFocused);
     }
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
