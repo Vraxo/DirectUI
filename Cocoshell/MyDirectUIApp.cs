@@ -17,7 +17,6 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Window management state
     private ModalWindow? _projectWindow;
     private bool _isProjectWindowOpen = false;
-    private bool _openProjectWindowRequested = false;
 
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
@@ -46,54 +45,28 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
-    // Override FrameUpdate to handle window management outside of rendering
-    public override void FrameUpdate()
-    {
-        // Window management must always run to detect modal window state changes.
-        ManageWindows();
-
-        // However, the rest of the frame update (including invalidating for a repaint)
-        // should only happen if the window is active (i.e., not disabled by a modal).
-        if (!_isProjectWindowOpen)
-        {
-            base.FrameUpdate();
-        }
-    }
+    // FrameUpdate override is no longer needed for window management.
+    // The base implementation will handle invalidation for the render loop.
 
     private void ManageWindows()
     {
-        // Check if a modal needs to be opened
-        if (_openProjectWindowRequested && !_isProjectWindowOpen)
+        // This logic is now called from DrawUI to ensure it runs in the correct context.
+
+        // Case 1: We have a window instance we are tracking.
+        if (_projectWindow != null)
         {
-            _openProjectWindowRequested = false; // Consume the request
-            _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
-            if (_projectWindow.CreateAsModal())
+            // If the OS window has been closed (by user or OS), clean up our state.
+            if (_projectWindow.Handle == IntPtr.Zero)
             {
-                _isProjectWindowOpen = true;
-            }
-            else
-            {
-                Console.WriteLine("Failed to create modal window.");
-                _projectWindow?.Dispose();
+                _projectWindow.Dispose(); // Ensure cleanup
                 _projectWindow = null;
                 _isProjectWindowOpen = false;
             }
-        }
-
-        // Check if the modal window was closed by the user (e.g., via ESC or close button)
-        if (_isProjectWindowOpen && (_projectWindow == null || _projectWindow.Handle == IntPtr.Zero))
-        {
-            _projectWindow?.Dispose(); // Ensure cleanup
-            _projectWindow = null;
-            _isProjectWindowOpen = false;
-        }
-
-        // Check if we need to close the window programmatically
-        // (e.g., from a "Close" button inside the modal's UI, which sets _isProjectWindowOpen to false)
-        if (!_isProjectWindowOpen && _projectWindow != null && _projectWindow.Handle != IntPtr.Zero)
-        {
-            _projectWindow.Close();
-            // The check above will handle cleanup in the next frame after the window is destroyed.
+            // Else, if our app logic wants to close it (e.g. from a button click)
+            else if (!_isProjectWindowOpen)
+            {
+                _projectWindow.Close(); // Asks the OS to close the window
+            }
         }
     }
 
@@ -116,6 +89,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     // The actual drawing logic for the main window.
     private void DrawUI(UIContext context)
     {
+        // Handle window state management at the beginning of the frame.
+        ManageWindows();
+
         // Note: UI.BeginFrame and UI.EndFrame are now called by the AppHost.
         // We just need to define the UI content for the frame.
 
@@ -164,9 +140,20 @@ public class MyDirectUIApp : Direct2DAppWindow
             menuButtonDef.Text = "Project";
             if (UI.Button("project_button", menuButtonDef))
             {
+                // Create the window immediately upon click if it's not already open.
                 if (!_isProjectWindowOpen)
                 {
-                    _openProjectWindowRequested = true;
+                    _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
+                    if (_projectWindow.CreateAsModal())
+                    {
+                        _isProjectWindowOpen = true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Failed to create modal window.");
+                        _projectWindow.Dispose();
+                        _projectWindow = null;
+                    }
                 }
             }
 
