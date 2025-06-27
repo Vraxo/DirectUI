@@ -32,6 +32,18 @@ public class AppHost
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _uiResources = new UIResources();
+
+        // Initialize the FpsCounter once during construction.
+        // The DWriteFactory is available from shared resources, which are initialized
+        // by the Application's static constructor before any AppHost is created.
+        if (SharedGraphicsResources.DWriteFactory != null)
+        {
+            _fpsCounter.Initialize(SharedGraphicsResources.DWriteFactory);
+        }
+        else
+        {
+            Console.WriteLine("CRITICAL: DWriteFactory was not available for FpsCounter initialization.");
+        }
     }
 
     public bool Initialize(IntPtr hwnd, SizeI clientSize)
@@ -42,13 +54,7 @@ public class AppHost
 
         _graphicsDevice ??= new GraphicsDevice();
 
-        if (_graphicsDevice.Initialize(_hwnd, clientSize))
-        {
-            _fpsCounter.Initialize(_graphicsDevice.RenderTarget!, _graphicsDevice.DWriteFactory!);
-            return true;
-        }
-
-        return false;
+        return _graphicsDevice.Initialize(_hwnd, clientSize);
     }
 
     public void Cleanup()
@@ -63,21 +69,11 @@ public class AppHost
         if (_graphicsDevice?.IsInitialized ?? false)
         {
             _graphicsDevice.Resize(newSize);
-
-            if (_graphicsDevice.IsInitialized)
-            {
-                _fpsCounter.HandleResize(_graphicsDevice.RenderTarget!);
-            }
         }
         else if (_hwnd != IntPtr.Zero)
         {
             Initialize(_hwnd, GetClientRectSizeForHost());
         }
-    }
-
-    public void UpdateFpsState()
-    {
-        _fpsCounter.Update();
     }
 
     public void Render()
@@ -94,6 +90,8 @@ public class AppHost
                 return;
             }
         }
+
+        _fpsCounter.Update(); // Update FPS counter once per render call.
 
         _graphicsDevice!.BeginDraw();
 
@@ -115,9 +113,9 @@ public class AppHost
 
             _drawCallback(uiContext);
 
-            UI.EndFrame();
-
             _fpsCounter.Draw(rt);
+
+            UI.EndFrame();
         }
         catch (Exception ex)
         {

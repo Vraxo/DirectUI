@@ -13,21 +13,20 @@ public class FpsCounter
     private readonly Color4 _textColor = DefaultTheme.Text;
     private readonly string _fontName = "Consolas";
     private readonly float _fontSize = 14.0f;
-    private const long FpsUpdateIntervalTicks = TimeSpan.TicksPerSecond / 2; // Update twice a second
+    private const int UpdatesPerSecond = 2; // Update twice a second
 
     // State
     private readonly Stopwatch _timer = new();
     private long _lastUpdateTimeTicks = 0;
     private int _frameCountSinceUpdate = 0;
     private float _currentFps = 0.0f;
+    private long _updateIntervalInStopwatchTicks;
 
-    // Direct2D Resources
-    private ID2D1SolidColorBrush? _textBrush;
+    // Direct2D Resources (Device-Independent only)
     private IDWriteTextFormat? _textFormat;
 
-    public void Initialize(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
+    public void Initialize(IDWriteFactory dwriteFactory)
     {
-        ArgumentNullException.ThrowIfNull(renderTarget);
         ArgumentNullException.ThrowIfNull(dwriteFactory);
 
         Cleanup(); // Ensure any old resources are released
@@ -38,9 +37,18 @@ public class FpsCounter
             _textFormat.TextAlignment = DW.TextAlignment.Leading;
             _textFormat.ParagraphAlignment = ParagraphAlignment.Near;
 
-            _textBrush = renderTarget.CreateSolidColorBrush(_textColor);
+            Console.WriteLine("Created FPS text format resource.");
 
-            Console.WriteLine("Created FPS drawing resources.");
+            // Calculate the update interval based on the Stopwatch's actual frequency.
+            if (Stopwatch.IsHighResolution)
+            {
+                _updateIntervalInStopwatchTicks = Stopwatch.Frequency / UpdatesPerSecond;
+            }
+            else
+            {
+                // Fallback for low-resolution timer
+                _updateIntervalInStopwatchTicks = TimeSpan.TicksPerSecond / UpdatesPerSecond;
+            }
 
             _frameCountSinceUpdate = 0;
             _currentFps = 0;
@@ -49,7 +57,7 @@ public class FpsCounter
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to create FPS counter drawing resources: {ex.Message}");
+            Console.WriteLine($"Warning: Failed to create FPS counter text format: {ex.Message}");
             Cleanup(); // Clean up partial resources on failure
         }
     }
@@ -57,65 +65,48 @@ public class FpsCounter
     public void Cleanup()
     {
         _timer.Stop();
-        _textBrush?.Dispose();
-        _textBrush = null;
         _textFormat?.Dispose();
         _textFormat = null;
     }
 
-    public void HandleResize(ID2D1RenderTarget renderTarget)
+    /// <summary>
+    /// Updates the frame count and recalculates the FPS value if the update interval has passed.
+    /// This should be called once per rendered frame.
+    /// </summary>
+    public void Update()
     {
-        // The text format is device-independent, but the brush is not.
-        _textBrush?.Dispose();
-        _textBrush = null;
-        try
-        {
-            if (renderTarget is not null)
-            {
-                _textBrush = renderTarget.CreateSolidColorBrush(_textColor);
-                Console.WriteLine("Recreated FPS brush after resize.");
-            }
-        }
-        catch (Exception brushEx)
-        {
-            Console.WriteLine($"Warning: Failed to recreate FPS brush after resize: {brushEx.Message}");
-        }
-    }
-
-    public bool Update()
-    {
-        if (!_timer.IsRunning)
-        {
-            _timer.Start();
-            _lastUpdateTimeTicks = _timer.ElapsedTicks;
-            _frameCountSinceUpdate = 0;
-        }
+        if (!_timer.IsRunning) _timer.Start();
 
         _frameCountSinceUpdate++;
         long elapsedTicks = _timer.ElapsedTicks;
         long timeSinceLastUpdate = elapsedTicks - _lastUpdateTimeTicks;
 
-        if (timeSinceLastUpdate >= FpsUpdateIntervalTicks)
+        if (timeSinceLastUpdate >= _updateIntervalInStopwatchTicks)
         {
-            float secondsElapsed = (float)timeSinceLastUpdate / TimeSpan.TicksPerSecond;
+            long frequency = Stopwatch.IsHighResolution ? Stopwatch.Frequency : TimeSpan.TicksPerSecond;
+            float secondsElapsed = (float)timeSinceLastUpdate / frequency;
+
             _currentFps = (secondsElapsed > 0.001f) ? (_frameCountSinceUpdate / secondsElapsed) : 0.0f;
             _frameCountSinceUpdate = 0;
             _lastUpdateTimeTicks = elapsedTicks;
-            return true; // Indicates the text has changed, so a redraw is needed.
         }
-
-        return false;
     }
 
     public void Draw(ID2D1RenderTarget renderTarget)
     {
-        if (_textBrush is null || _textFormat is null)
+        if (_textFormat is null || UI.Resources is null)
+        {
+            return;
+        }
+
+        var textBrush = UI.Resources.GetOrCreateBrush(renderTarget, _textColor);
+        if (textBrush is null)
         {
             return;
         }
 
         string fpsText = $"FPS: {_currentFps:F1}";
         var layoutRect = new Rect(5f, 5f, 150f, 30f);
-        renderTarget.DrawText(fpsText, _textFormat, layoutRect, _textBrush);
+        renderTarget.DrawText(fpsText, _textFormat, layoutRect, textBrush);
     }
 }

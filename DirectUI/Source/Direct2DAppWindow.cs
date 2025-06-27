@@ -42,7 +42,6 @@ public abstract class Direct2DAppWindow : Win32Window
 
     public override void FrameUpdate()
     {
-        _appHost?.UpdateFpsState();
         Invalidate(); // Always invalidate to trigger a paint message for a continuous render loop.
     }
 
