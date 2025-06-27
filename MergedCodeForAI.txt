@@ -41,6 +41,8 @@ public class AppHost
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
 
+    public bool ShowFpsCounter { get; set; } = true;
+
     public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
@@ -128,7 +130,10 @@ public class AppHost
 
             _drawCallback(uiContext);
 
-            _fpsCounter.Draw(rt);
+            if (ShowFpsCounter)
+            {
+                _fpsCounter.Draw(rt);
+            }
 
             UI.EndFrame();
         }
@@ -305,7 +310,7 @@ namespace DirectUI;
 
 public abstract class Direct2DAppWindow : Win32Window
 {
-    private AppHost? _appHost;
+    protected AppHost? _appHost;
 
     protected Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
         : base(title, width, height)
@@ -367,9 +372,9 @@ public abstract class Direct2DAppWindow : Win32Window
         Invalidate();
     }
 
-    protected override void OnKeyDown(int keyCode)
+    protected override void OnKeyDown(Keys key)
     {
-        if (keyCode == NativeMethods.VK_ESCAPE)
+        if (key == Keys.Escape)
         {
             Close();
         }
@@ -609,6 +614,53 @@ public readonly struct InputState
 }
 </file>
 
+<file path="Key.cs">
+namespace DirectUI;
+
+/// <summary>
+/// Defines keyboard keys for use in application-level input handling.
+/// The values correspond to Win32 Virtual-Key Codes.
+/// </summary>
+public enum Keys
+{
+    /// <summary>
+    /// The key is not recognized.
+    /// </summary>
+    Unknown = 0,
+
+    // Function Keys
+    /// <summary>The F1 key.</summary>
+    F1 = 0x70,
+    /// <summary>The F2 key.</summary>
+    F2 = 0x71,
+    /// <summary>The F3 key.</summary>
+    F3 = 0x72,
+    /// <summary>The F4 key.</summary>
+    F4 = 0x73,
+    /// <summary>The F5 key.</summary>
+    F5 = 0x74,
+    /// <summary>The F6 key.</summary>
+    F6 = 0x75,
+    /// <summary>The F7 key.</summary>
+    F7 = 0x76,
+    /// <summary>The F8 key.</summary>
+    F8 = 0x77,
+    /// <summary>The F9 key.</summary>
+    F9 = 0x78,
+    /// <summary>The F10 key.</summary>
+    F10 = 0x79,
+    /// <summary>The F11 key.</summary>
+    F11 = 0x7A,
+    /// <summary>The F12 key.</summary>
+    F12 = 0x7B,
+
+    // Other Keys
+    /// <summary>The ESC key.</summary>
+    Escape = 0x1B,
+    // Add more keys like Enter, Arrows, etc. if needed in the future.
+}
+</file>
+
 <file path="ModalWindow.cs">
 using System;
 using Vortice.Mathematics;
@@ -722,7 +774,6 @@ internal static class NativeMethods
 
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
     public const int SW_SHOWNORMAL = 1;
-    public const int VK_ESCAPE = 0x1B;
     public const int GWLP_USERDATA = -21;
 
     public const uint PM_REMOVE = 0x0001;
@@ -1058,7 +1109,7 @@ public abstract class Win32Window : IDisposable
                 NativeMethods.ReleaseCapture();
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
-            case NativeMethods.WM_KEYDOWN: OnKeyDown((int)wParam); return IntPtr.Zero;
+            case NativeMethods.WM_KEYDOWN: OnKeyDown((Keys)wParam); return IntPtr.Zero;
             case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
             case NativeMethods.WM_DESTROY:
                 Console.WriteLine($"WM_DESTROY for {hWnd}.");
@@ -1097,7 +1148,7 @@ public abstract class Win32Window : IDisposable
     protected virtual void OnMouseDown(MouseButton button, int x, int y) { }
     protected virtual void OnMouseUp(MouseButton button, int x, int y) { }
     protected virtual void OnMouseMove(int x, int y) { }
-    protected virtual void OnKeyDown(int keyCode) { }
+    protected virtual void OnKeyDown(Keys key) { }
     protected virtual bool OnClose() { return true; }
     protected virtual void OnDestroy() { }
     protected virtual void Cleanup() { }
@@ -1740,6 +1791,83 @@ public static partial class UI
 
         Context.AdvanceLayout(buttonInstance.Size);
         return clicked;
+    }
+
+    private static bool TabButtonPrimitive(string id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
+    {
+        if (!IsContextValid()) return false;
+
+        var intId = id.GetHashCode();
+        var position = Context.GetCurrentLayoutPosition();
+        Rect bounds = new(position.X, position.Y, size.X, size.Y);
+
+        InputState input = Context.InputState;
+        bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool wasClicked = false;
+
+        if (isHovering) State.SetPotentialInputTarget(intId);
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == intId)
+        {
+            wasClicked = true;
+        }
+
+        theme.UpdateCurrentStyle(isHovering, isActive, disabled);
+
+        var rt = Context.RenderTarget;
+        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
+
+        var textBrush = Resources.GetOrCreateBrush(rt, theme.Current.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, theme.Current);
+        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        {
+            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
+            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+            rt.DrawText(text, textFormat, bounds, textBrush);
+        }
+
+        Context.AdvanceLayout(size);
+        return wasClicked;
+    }
+
+    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    {
+        if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
+
+        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
+        var textMargin = new Vector2(15, 5);
+        float tabHeight = 30f;
+        float maxWidth = 0;
+
+        var styleForMeasuring = tabTheme.Normal;
+        foreach (var label in tabLabels)
+        {
+            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
+            if (measuredSize.X > maxWidth)
+            {
+                maxWidth = measuredSize.X;
+            }
+        }
+        float uniformTabWidth = maxWidth + textMargin.X * 2;
+        var tabSize = new Vector2(uniformTabWidth, tabHeight);
+
+        BeginHBoxContainer(id + "_hbox", Context.GetCurrentLayoutPosition(), 0);
+        for (int i = 0; i < tabLabels.Length; i++)
+        {
+            bool wasClicked = TabButtonPrimitive(
+                id + "_" + i,
+                tabLabels[i],
+                tabSize,
+                i == activeIndex,
+                tabTheme,
+                false
+            );
+            if (wasClicked)
+            {
+                activeIndex = i;
+            }
+        }
+        EndHBoxContainer();
     }
 
     public static float HSlider(string id, float currentValue, SliderDefinition definition)
@@ -2730,6 +2858,84 @@ public class SliderStyle
 }
 </file>
 
+<file path="Styles\TabStyle.cs">
+namespace DirectUI;
+
+public class TabStyle : ButtonStyle
+{
+    // For now, this is a marker class. It can hold tab-specific style properties later.
+}
+</file>
+
+<file path="Styles\TabStylePack.cs">
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public sealed class TabStylePack
+{
+    public TabStyle Current { get; private set; }
+    public TabStyle Normal { get; set; } = new();
+    public TabStyle Hover { get; set; } = new();
+    public TabStyle Active { get; set; } = new();
+    public TabStyle ActiveHover { get; set; } = new();
+    public TabStyle Disabled { get; set; } = new();
+
+    public TabStylePack()
+    {
+        var panelBg = new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f);
+        var hoverBorder = DefaultTheme.HoverBorder;
+        var accentBorder = DefaultTheme.AccentBorder;
+
+        string fontName = "Segoe UI";
+        float fontSize = 14f;
+
+        // Inactive tab
+        Normal.FillColor = DefaultTheme.NormalFill;
+        Normal.BorderColor = DefaultTheme.NormalBorder;
+        Normal.BorderLength = 1f;
+        Normal.Roundness = 0f;
+        Normal.FontName = fontName; Normal.FontSize = fontSize;
+
+        // Inactive tab, hovered
+        Hover.FillColor = DefaultTheme.HoverFill;
+        Hover.BorderColor = hoverBorder;
+        Hover.BorderLength = 1f;
+        Hover.Roundness = 0f;
+        Hover.FontName = fontName; Hover.FontSize = fontSize;
+
+        // Active tab
+        Active.FillColor = panelBg;
+        Active.BorderColor = hoverBorder;
+        Active.BorderLengthTop = 1f; Active.BorderLengthLeft = 1f; Active.BorderLengthRight = 1f; Active.BorderLengthBottom = 0f;
+        Active.Roundness = 0f;
+        Active.FontName = fontName; Active.FontSize = fontSize;
+
+        // Active tab, hovered
+        ActiveHover.FillColor = panelBg;
+        ActiveHover.BorderColor = accentBorder;
+        ActiveHover.BorderLengthTop = 1f; ActiveHover.BorderLengthLeft = 1f; ActiveHover.BorderLengthRight = 1f; ActiveHover.BorderLengthBottom = 0f;
+        ActiveHover.Roundness = 0f;
+        ActiveHover.FontName = fontName; ActiveHover.FontSize = fontSize;
+
+        Disabled.FillColor = DefaultTheme.DisabledFill;
+        Disabled.BorderColor = DefaultTheme.DisabledBorder;
+        Disabled.FontColor = DefaultTheme.DisabledText;
+        Disabled.FontName = fontName; Disabled.FontSize = fontSize;
+
+        Current = Normal;
+    }
+
+    public void UpdateCurrentStyle(bool isHovering, bool isActive, bool isDisabled)
+    {
+        if (isDisabled) Current = Disabled;
+        else if (isActive) Current = isHovering ? ActiveHover : Active;
+        else if (isHovering) Current = Hover;
+        else Current = Normal;
+    }
+}
+</file>
+
 <file path="Styles\TreeStyle.cs">
 using DirectUI;
 using Vortice.Mathematics;
@@ -3541,6 +3747,7 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Window management state
     private ModalWindow? _projectWindow;
     private bool _isProjectWindowOpen = false;
+    private int _projectWindowActiveTab = 0;
 
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
@@ -3571,6 +3778,20 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     // FrameUpdate override is no longer needed for window management.
     // The base implementation will handle invalidation for the render loop.
+
+    protected override void OnKeyDown(Keys key)
+    {
+        if (key == Keys.F3)
+        {
+            if (_appHost != null)
+            {
+                _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
+            }
+        }
+
+        // Call the base implementation to handle default behavior (like ESC to close).
+        base.OnKeyDown(key);
+    }
 
     private void ManageWindows()
     {
@@ -3773,19 +3994,63 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Drawing logic for the modal window.
     private void DrawProjectWindowUI(UIContext context)
     {
-        UI.BeginVBoxContainer("modal_vbox", new Vector2(10, 10), 10);
+        var rt = context.RenderTarget;
+        float windowWidth = rt.Size.Width;
+        float windowHeight = rt.Size.Height;
+        float tabBarHeight = 30f;
+        var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
-        if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+        // --- Draw Tab Bar ---
+        var tabLabels = new[] { "General", "Input Map" };
+        UI.TabBar("project_tabs", tabLabels, ref _projectWindowActiveTab);
+
+        // --- Draw Content Panel and Content ---
+        var panelStyle = new BoxStyle
         {
-            Console.WriteLine("Modal button clicked!");
+            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
+            BorderColor = DefaultTheme.HoverBorder,
+            BorderLengthTop = 1f,
+            Roundness = 0f
+        };
+        UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), panelStyle);
+
+        // Set up a padded area for the content inside the panel
+        var contentPadding = new Vector2(10, 10);
+        var paddedContentRect = new Rect(
+            contentArea.X + contentPadding.X, contentArea.Y + contentPadding.Y,
+            Math.Max(0, contentArea.Width - contentPadding.X * 2),
+            Math.Max(0, contentArea.Height - contentPadding.Y * 2)
+        );
+
+        // Push clip and begin VBox for content
+        rt.PushAxisAlignedClip(paddedContentRect, Vortice.Direct2D1.AntialiasMode.Aliased);
+        UI.BeginVBoxContainer("tab_content_vbox", new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
+
+        if (_projectWindowActiveTab == 0) // General Tab
+        {
+            if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+            {
+                Console.WriteLine("Modal button clicked!");
+            }
+            if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+            {
+                _isProjectWindowOpen = false;
+            }
         }
-
-        if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+        else if (_projectWindowActiveTab == 1) // Input Map Tab
         {
-            _isProjectWindowOpen = false; // Signal to close the window
+            if (UI.Button("input_map_button", new ButtonDefinition { Text = "Configure Input..." }))
+            {
+                Console.WriteLine("Configure Input clicked!");
+            }
+            if (UI.Button("input_map_close", new ButtonDefinition { Text = "Close Me" }))
+            {
+                _isProjectWindowOpen = false;
+            }
         }
 
         UI.EndVBoxContainer();
+        rt.PopAxisAlignedClip();
     }
 }
 </file>

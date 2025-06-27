@@ -1,7 +1,10 @@
 ﻿// MyDirectUIApp.cs
 using System;
 using System.IO;
+using System.Linq;
 using System.Numerics;
+using System.Collections.Generic;
+using Cocoshell.Input;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -18,6 +21,20 @@ public class MyDirectUIApp : Direct2DAppWindow
     private ModalWindow? _projectWindow;
     private bool _isProjectWindowOpen = false;
     private int _projectWindowActiveTab = 0;
+
+    // --- NEW STATE for Input Map Editor ---
+    private Dictionary<string, List<InputBinding>>? _inputMap;
+    private readonly string _inputMapPath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cherris\Res\Cherris\InputMap.yaml";
+    private bool _inputMapDirty = false;
+    private int _newActionCounter = 1;
+
+    // Styles for the editor UI
+    private readonly ButtonStylePack _labelStyle;
+    private readonly ButtonStylePack _editorButtonStyle;
+    private readonly ButtonStylePack _removeButtonStyle;
+    private readonly ButtonStylePack _utilityButtonStyle;
+    // --- END NEW STATE ---
+
 
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
@@ -44,6 +61,37 @@ public class MyDirectUIApp : Direct2DAppWindow
             Console.WriteLine($"Error parsing scene file. Loading default tree. Error: {ex.Message}");
             _fileRoot = CreateDefaultTree();
         }
+
+        // --- NEW: Load input map ---
+        _inputMap = InputMapManager.Load(_inputMapPath);
+
+        // --- NEW: Initialize styles for editor ---
+        _labelStyle = new ButtonStylePack { BorderLength = 0, Roundness = 0 };
+        _labelStyle.Normal.FillColor = Colors.Transparent;
+        _labelStyle.Disabled.FillColor = Colors.Transparent; // Important for disabled button as label
+        _labelStyle.Disabled.FontColor = DefaultTheme.Text;
+
+        _editorButtonStyle = new ButtonStylePack { FontSize = 12, Roundness = 0.2f };
+        _editorButtonStyle.Normal.FillColor = new Color4(0.25f, 0.25f, 0.3f, 1.0f);
+        _editorButtonStyle.Hover.FillColor = new Color4(0.35f, 0.35f, 0.4f, 1.0f);
+        _editorButtonStyle.Pressed.FillColor = DefaultTheme.Accent;
+        _editorButtonStyle.Disabled.FillColor = DefaultTheme.DisabledFill;
+        _editorButtonStyle.Disabled.FontColor = DefaultTheme.DisabledText;
+
+
+        _removeButtonStyle = new ButtonStylePack { FontSize = 12, Roundness = 0.5f, FontName = "Segoe UI Symbol" };
+        _removeButtonStyle.Normal.FillColor = new Color4(0.5f, 0.2f, 0.2f, 1f);
+        _removeButtonStyle.Hover.FillColor = new Color4(0.7f, 0.3f, 0.3f, 1f);
+        _removeButtonStyle.Pressed.FillColor = new Color4(0.9f, 0.4f, 0.4f, 1f);
+
+        // CORRECTED: AutoWidth and TextMargin are part of ButtonDefinition, not ButtonStylePack
+        _utilityButtonStyle = new ButtonStylePack { FontSize = 14, Roundness = 0.2f };
+        _utilityButtonStyle.Normal.FillColor = DefaultTheme.NormalFill;
+        _utilityButtonStyle.Hover.FillColor = DefaultTheme.HoverFill;
+        _utilityButtonStyle.Pressed.FillColor = DefaultTheme.Accent;
+        _utilityButtonStyle.Disabled.FillColor = DefaultTheme.DisabledFill;
+        _utilityButtonStyle.Disabled.FontColor = DefaultTheme.DisabledText;
+
     }
 
     // FrameUpdate override is no longer needed for window management.
@@ -76,6 +124,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 _projectWindow.Dispose(); // Ensure cleanup
                 _projectWindow = null;
                 _isProjectWindowOpen = false;
+                _inputMapDirty = false; // Discard changes on close
             }
             // Else, if our app logic wants to close it (e.g. from a button click)
             else if (!_isProjectWindowOpen)
@@ -158,7 +207,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 // Create the window immediately upon click if it's not already open.
                 if (!_isProjectWindowOpen)
                 {
-                    _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
+                    _projectWindow = new ModalWindow(this, "Project Settings", 600, 400, DrawProjectWindowUI);
                     if (_projectWindow.CreateAsModal())
                     {
                         _isProjectWindowOpen = true;
@@ -284,7 +333,6 @@ public class MyDirectUIApp : Direct2DAppWindow
         };
         UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), panelStyle);
 
-        // Set up a padded area for the content inside the panel
         var contentPadding = new Vector2(10, 10);
         var paddedContentRect = new Rect(
             contentArea.X + contentPadding.X, contentArea.Y + contentPadding.Y,
@@ -292,12 +340,11 @@ public class MyDirectUIApp : Direct2DAppWindow
             Math.Max(0, contentArea.Height - contentPadding.Y * 2)
         );
 
-        // Push clip and begin VBox for content
         rt.PushAxisAlignedClip(paddedContentRect, Vortice.Direct2D1.AntialiasMode.Aliased);
-        UI.BeginVBoxContainer("tab_content_vbox", new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
 
         if (_projectWindowActiveTab == 0) // General Tab
         {
+            UI.BeginVBoxContainer("tab_content_vbox_general", new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
             if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
             {
                 Console.WriteLine("Modal button clicked!");
@@ -306,20 +353,90 @@ public class MyDirectUIApp : Direct2DAppWindow
             {
                 _isProjectWindowOpen = false;
             }
+            UI.EndVBoxContainer();
         }
-        else if (_projectWindowActiveTab == 1) // Input Map Tab
+        else if (_projectWindowActiveTab == 1 && _inputMap != null) // Input Map Tab
         {
-            if (UI.Button("input_map_button", new ButtonDefinition { Text = "Configure Input..." }))
+            // Main VBox for the entire editor content
+            UI.BeginVBoxContainer("input_editor_main_vbox", new Vector2(paddedContentRect.X, paddedContentRect.Y), 15);
+
+            // Using ToList() to create a copy, allowing modification of the dictionary while iterating.
+            var actionNames = _inputMap.Keys.ToList();
+
+            // --- Actions and Bindings ---
+            UI.BeginVBoxContainer("actions_list_vbox", UI.Context.GetCurrentLayoutPosition(), 8);
+            for (int i = actionNames.Count - 1; i >= 0; i--)
             {
-                Console.WriteLine("Configure Input clicked!");
+                string actionName = actionNames[i];
+                var bindings = _inputMap[actionName];
+
+                // Action Header
+                UI.BeginHBoxContainer($"action_header_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
+                UI.Button($"action_label_{actionName}", new ButtonDefinition { Text = actionName, Disabled = true, Theme = _labelStyle, AutoWidth = true });
+                if (UI.Button($"remove_action_{actionName}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(20, 20) }))
+                {
+                    _inputMap.Remove(actionName);
+                    _inputMapDirty = true;
+                }
+                UI.EndHBoxContainer();
+
+                // Bindings List (indented)
+                UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 0);
+                UI.Button($"indent_spacer_for_{actionName}", new ButtonDefinition { Size = new Vector2(20, 0), Disabled = true, Theme = _labelStyle });
+                UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
+                for (int j = bindings.Count - 1; j >= 0; j--)
+                {
+                    var binding = bindings[j];
+                    UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.GetCurrentLayoutPosition(), 5);
+                    if (UI.Button($"binding_type_{actionName}_{j}", new ButtonDefinition { Text = binding.Type.ToString(), Theme = _editorButtonStyle, Size = new Vector2(100, 24) }))
+                    {
+                        binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
+                        _inputMapDirty = true;
+                    }
+                    UI.Button($"binding_key_{actionName}_{j}", new ButtonDefinition { Text = binding.KeyOrButton, Theme = _editorButtonStyle, Size = new Vector2(120, 24), Disabled = true });
+                    if (UI.Button($"remove_binding_{actionName}_{j}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(24, 24) }))
+                    {
+                        bindings.RemoveAt(j);
+                        _inputMapDirty = true;
+                    }
+                    UI.EndHBoxContainer();
+                }
+                if (UI.Button($"add_binding_to_{actionName}", new ButtonDefinition { Text = "Add Binding", Theme = _editorButtonStyle, Size = new Vector2(100, 24) }))
+                {
+                    bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
+                    _inputMapDirty = true;
+                }
+                UI.EndVBoxContainer();
+                UI.EndHBoxContainer();
             }
-            if (UI.Button("input_map_close", new ButtonDefinition { Text = "Close Me" }))
+            UI.EndVBoxContainer();
+
+            // --- Utility Buttons ---
+            // CORRECTED: AutoWidth and TextMargin moved from style pack to button definitions
+            UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.GetCurrentLayoutPosition(), 10);
+            if (UI.Button("add_action", new ButtonDefinition { Text = "Add New Action", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
             {
-                _isProjectWindowOpen = false;
+                string newActionName;
+                do { newActionName = $"NewAction_{_newActionCounter++}"; } while (_inputMap.ContainsKey(newActionName));
+                _inputMap[newActionName] = new List<InputBinding>();
+                _inputMapDirty = true;
             }
+            var applyDef = new ButtonDefinition { Text = "Apply Changes", Theme = _utilityButtonStyle, Disabled = !_inputMapDirty, AutoWidth = true, TextMargin = new Vector2(10, 5) };
+            if (UI.Button("apply_changes", applyDef))
+            {
+                InputMapManager.Save(_inputMapPath, _inputMap);
+                _inputMapDirty = false;
+            }
+            if (UI.Button("revert_changes", new ButtonDefinition { Text = "Revert", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
+            {
+                _inputMap = InputMapManager.Load(_inputMapPath);
+                _inputMapDirty = false;
+            }
+            UI.EndHBoxContainer();
+
+            UI.EndVBoxContainer();
         }
 
-        UI.EndVBoxContainer();
         rt.PopAxisAlignedClip();
     }
 }
