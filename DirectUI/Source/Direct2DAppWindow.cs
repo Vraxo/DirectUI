@@ -8,7 +8,7 @@ namespace DirectUI;
 
 public abstract class Direct2DAppWindow : Win32Window
 {
-    private AppHost? _appHost;
+    protected AppHost? _appHost;
 
     protected Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
         : base(title, width, height)
@@ -70,9 +70,9 @@ public abstract class Direct2DAppWindow : Win32Window
         Invalidate();
     }
 
-    protected override void OnKeyDown(int keyCode)
+    protected override void OnKeyDown(Keys key)
     {
-        if (keyCode == NativeMethods.VK_ESCAPE)
+        if (key == Keys.Escape)
         {
             Close();
         }

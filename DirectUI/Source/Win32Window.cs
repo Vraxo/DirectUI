@@ -128,7 +128,7 @@ public abstract class Win32Window : IDisposable
                 NativeMethods.ReleaseCapture();
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
-            case NativeMethods.WM_KEYDOWN: OnKeyDown((int)wParam); return IntPtr.Zero;
+            case NativeMethods.WM_KEYDOWN: OnKeyDown((Keys)wParam); return IntPtr.Zero;
             case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
             case NativeMethods.WM_DESTROY:
                 Console.WriteLine($"WM_DESTROY for {hWnd}.");
@@ -167,7 +167,7 @@ public abstract class Win32Window : IDisposable
     protected virtual void OnMouseDown(MouseButton button, int x, int y) { }
     protected virtual void OnMouseUp(MouseButton button, int x, int y) { }
     protected virtual void OnMouseMove(int x, int y) { }
-    protected virtual void OnKeyDown(int keyCode) { }
+    protected virtual void OnKeyDown(Keys key) { }
     protected virtual bool OnClose() { return true; }
     protected virtual void OnDestroy() { }
     protected virtual void Cleanup() { }

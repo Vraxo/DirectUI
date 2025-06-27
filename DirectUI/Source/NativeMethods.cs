@@ -44,7 +44,6 @@ internal static class NativeMethods
 
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
     public const int SW_SHOWNORMAL = 1;
-    public const int VK_ESCAPE = 0x1B;
     public const int GWLP_USERDATA = -21;
 
     public const uint PM_REMOVE = 0x0001;

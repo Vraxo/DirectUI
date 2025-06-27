@@ -26,6 +26,8 @@ public class AppHost
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
 
+    public bool ShowFpsCounter { get; set; } = true;
+
     public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
@@ -113,7 +115,10 @@ public class AppHost
 
             _drawCallback(uiContext);
 
-            _fpsCounter.Draw(rt);
+            if (ShowFpsCounter)
+            {
+                _fpsCounter.Draw(rt);
+            }
 
             UI.EndFrame();
         }

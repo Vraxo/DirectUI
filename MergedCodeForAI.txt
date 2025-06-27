@@ -31,6 +31,7 @@ public class AppHost
     private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
+    private readonly UIResources _uiResources;
 
     private GraphicsDevice? _graphicsDevice;
     private IntPtr _hwnd;
@@ -45,6 +46,19 @@ public class AppHost
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
+        _uiResources = new UIResources();
+
+        // Initialize the FpsCounter once during construction.
+        // The DWriteFactory is available from shared resources, which are initialized
+        // by the Application's static constructor before any AppHost is created.
+        if (SharedGraphicsResources.DWriteFactory != null)
+        {
+            _fpsCounter.Initialize(SharedGraphicsResources.DWriteFactory);
+        }
+        else
+        {
+            Console.WriteLine("CRITICAL: DWriteFactory was not available for FpsCounter initialization.");
+        }
     }
 
     public bool Initialize(IntPtr hwnd, SizeI clientSize)
@@ -55,19 +69,13 @@ public class AppHost
 
         _graphicsDevice ??= new GraphicsDevice();
 
-        if (_graphicsDevice.Initialize(_hwnd, clientSize))
-        {
-            _fpsCounter.Initialize(_graphicsDevice.RenderTarget!, _graphicsDevice.DWriteFactory!);
-            return true;
-        }
-
-        return false;
+        return _graphicsDevice.Initialize(_hwnd, clientSize);
     }
 
     public void Cleanup()
     {
         _fpsCounter.Cleanup();
-        UI.CleanupResources();
+        _uiResources.CleanupResources();
         _graphicsDevice?.Cleanup();
     }
 
@@ -76,21 +84,11 @@ public class AppHost
         if (_graphicsDevice?.IsInitialized ?? false)
         {
             _graphicsDevice.Resize(newSize);
-
-            if (_graphicsDevice.IsInitialized)
-            {
-                _fpsCounter.HandleResize(_graphicsDevice.RenderTarget!);
-            }
         }
         else if (_hwnd != IntPtr.Zero)
         {
             Initialize(_hwnd, GetClientRectSizeForHost());
         }
-    }
-
-    public void UpdateFpsState()
-    {
-        _fpsCounter.Update();
     }
 
     public void Render()
@@ -108,6 +106,8 @@ public class AppHost
             }
         }
 
+        _fpsCounter.Update(); // Update FPS counter once per render call.
+
         _graphicsDevice!.BeginDraw();
 
         var rt = _graphicsDevice.RenderTarget!;
@@ -123,14 +123,14 @@ public class AppHost
                 _isLeftMouseButtonDown
             );
 
-            var uiContext = new UIContext(rt, dwrite, inputState);
+            var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);
 
-            UI.EndFrame();
-
             _fpsCounter.Draw(rt);
+
+            UI.EndFrame();
         }
         catch (Exception ex)
         {
@@ -196,6 +196,15 @@ public static class Application
     private static bool s_isRunning = false;
 
     /// <summary>
+    /// A static constructor is guaranteed to run once before the class is used.
+    /// This is the perfect place to initialize application-wide resources.
+    /// </summary>
+    static Application()
+    {
+        SharedGraphicsResources.Initialize();
+    }
+
+    /// <summary>
     /// Registers a window with the application manager. Called by Win32Window's constructor.
     /// </summary>
     public static void RegisterWindow(Win32Window window)
@@ -247,6 +256,9 @@ public static class Application
                 }
             }
         }
+
+        // Clean up resources after the main loop has finished.
+        SharedGraphicsResources.Cleanup();
     }
 
     /// <summary>
@@ -327,7 +339,6 @@ public abstract class Direct2DAppWindow : Win32Window
 
     public override void FrameUpdate()
     {
-        _appHost?.UpdateFpsState();
         Invalidate(); // Always invalidate to trigger a paint message for a continuous render loop.
     }
 
@@ -416,15 +427,14 @@ using Vortice.Mathematics;
 using Vortice.DCommon;
 using D2D = Vortice.Direct2D1;
 using DW = Vortice.DirectWrite;
-using D2DFactoryType = Vortice.Direct2D1.FactoryType;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
 
 public class GraphicsDevice : IDisposable
 {
-    public ID2D1Factory1? D2DFactory { get; private set; }
-    public IDWriteFactory? DWriteFactory { get; private set; }
+    public ID2D1Factory1? D2DFactory => SharedGraphicsResources.D2DFactory;
+    public IDWriteFactory? DWriteFactory => SharedGraphicsResources.DWriteFactory;
     public ID2D1HwndRenderTarget? RenderTarget { get; private set; }
     public bool IsInitialized { get; private set; } = false;
 
@@ -438,20 +448,17 @@ public class GraphicsDevice : IDisposable
         Console.WriteLine($"Attempting Graphics Initialization for HWND {hwnd} with size {size}...");
         try
         {
-            Cleanup(); // Clean up any previous (potentially invalid) resources
+            // Clean up any previous (potentially invalid) instance resources
+            CleanupRenderTarget();
 
-            Result factoryResult = D2D1.D2D1CreateFactory(D2DFactoryType.SingleThreaded, out ID2D1Factory1? d2dFactory);
-            factoryResult.CheckError();
-            D2DFactory = d2dFactory ?? throw new InvalidOperationException("D2D Factory creation failed silently.");
-
-            Result dwriteResult = DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out IDWriteFactory? dwriteFactory);
-            dwriteResult.CheckError();
-            DWriteFactory = dwriteFactory ?? throw new InvalidOperationException("DWrite Factory creation failed silently.");
+            if (D2DFactory is null || DWriteFactory is null)
+            {
+                throw new InvalidOperationException("Shared graphics factories are not initialized. Application.Run() must be called first.");
+            }
 
             if (size.Width <= 0 || size.Height <= 0)
             {
                 Console.WriteLine($"Invalid client rect size ({size}). Aborting graphics initialization.");
-                Cleanup();
                 return false;
             }
 
@@ -547,18 +554,21 @@ public class GraphicsDevice : IDisposable
         Cleanup();
     }
 
+    private void CleanupRenderTarget()
+    {
+        RenderTarget?.Dispose();
+        RenderTarget = null;
+    }
+
     public void Cleanup()
     {
-        bool resourcesExisted = D2DFactory is not null || RenderTarget is not null || DWriteFactory is not null;
-        if (resourcesExisted) Console.WriteLine("Cleaning up GraphicsDevice resources...");
+        bool resourcesExisted = RenderTarget is not null;
+        if (resourcesExisted) Console.WriteLine("Cleaning up GraphicsDevice instance resources...");
 
-        RenderTarget?.Dispose(); RenderTarget = null;
-        DWriteFactory?.Dispose(); DWriteFactory = null;
-        D2DFactory?.Dispose(); D2DFactory = null;
-
+        CleanupRenderTarget();
         IsInitialized = false;
 
-        if (resourcesExisted) Console.WriteLine("Finished cleaning GraphicsDevice resources.");
+        if (resourcesExisted) Console.WriteLine("Finished cleaning GraphicsDevice instance resources.");
     }
 
     public void Dispose()
@@ -847,6 +857,73 @@ internal static class NativeMethods
     // --- Helpers ---
     public static short LoWord(IntPtr val) => unchecked((short)(long)val);
     public static short HiWord(IntPtr val) => unchecked((short)((long)val >> 16));
+}
+</file>
+
+<file path="SharedGraphicsResources.cs">
+// SharedGraphicsResources.cs
+using System;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using SharpGen.Runtime;
+using D2D = Vortice.Direct2D1;
+using DW = Vortice.DirectWrite;
+
+namespace DirectUI;
+
+/// <summary>
+/// Manages graphics resources that are shared across the entire application,
+/// such as the main Direct2D and DirectWrite factories.
+/// </summary>
+internal static class SharedGraphicsResources
+{
+    public static ID2D1Factory1? D2DFactory { get; private set; }
+    public static IDWriteFactory? DWriteFactory { get; private set; }
+
+    private static bool s_isInitialized = false;
+
+    /// <summary>
+    /// Initializes the shared factories. Should be called once at application startup.
+    /// </summary>
+    public static void Initialize()
+    {
+        if (s_isInitialized) return;
+
+        try
+        {
+            Result factoryResult = D2D1.D2D1CreateFactory(D2D.FactoryType.SingleThreaded, out ID2D1Factory1? d2dFactory);
+            factoryResult.CheckError();
+            D2DFactory = d2dFactory ?? throw new InvalidOperationException("Shared D2D Factory creation failed silently.");
+
+            Result dwriteResult = DW.DWrite.DWriteCreateFactory(DW.FactoryType.Shared, out IDWriteFactory? dwriteFactory);
+            dwriteResult.CheckError();
+            DWriteFactory = dwriteFactory ?? throw new InvalidOperationException("Shared DWrite Factory creation failed silently.");
+
+            Console.WriteLine("Shared Graphics Factories Initialized.");
+            s_isInitialized = true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"FATAL: Could not initialize shared graphics resources: {ex.Message}");
+            Cleanup();
+            throw;
+        }
+    }
+
+    /// <summary>
+    /// Disposes of the shared factories. Should be called once when the application is closing.
+    /// </summary>
+    public static void Cleanup()
+    {
+        if (!s_isInitialized) return;
+        Console.WriteLine("Cleaning up shared graphics factories...");
+        DWriteFactory?.Dispose();
+        DWriteFactory = null;
+        D2DFactory?.Dispose();
+        D2DFactory = null;
+        s_isInitialized = false;
+        Console.WriteLine("Shared graphics factories cleaned up.");
+    }
 }
 </file>
 
@@ -1282,6 +1359,7 @@ internal class VBoxContainerState
 </file>
 
 <file path="Core\UI.Containers.cs">
+// Core/UI.Containers.cs
 using System;
 using System.Numerics;
 using Vortice.Direct2D1;
@@ -1412,9 +1490,13 @@ public static partial class UI
         var maxAllowedHeight = windowHeight - topOffset;
         var effectiveMaxHeight = Math.Min(definition.MaxHeight, maxAllowedHeight);
 
+        // Fix: Ensure the max value for clamping is not less than the min value.
+        // This prevents a crash when the window is resized to a very small height.
+        float clampMax = Math.Max(definition.MinHeight, effectiveMaxHeight);
+
         if (!definition.Disabled)
         {
-            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
+            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, clampMax);
             float panelY = windowHeight - currentHeight;
             float handleHeight = Math.Min(definition.ResizeHandleWidth, currentHeight);
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
@@ -1426,12 +1508,12 @@ public static partial class UI
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
-                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, effectiveMaxHeight);
+                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, clampMax);
             }
         }
 
         var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, effectiveMaxHeight);
+        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, clampMax);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
@@ -1485,8 +1567,8 @@ public static partial class UI
         IsRendering = true;
 
         Context = context;
+        Resources = context.Resources; // Set the active resources for this frame
         State ??= new UIPersistentState();
-        Resources ??= new UIResources();
 
         State.ResetFrameState(context.InputState);
 
@@ -1509,18 +1591,14 @@ public static partial class UI
 
         // It's important that IsRendering is set to false AFTER the context is cleared.
         Context = null!;
+        Resources = null!;
         IsRendering = false;
-    }
-
-    public static void CleanupResources()
-    {
-        Resources?.CleanupResources();
     }
 
     // --- Helper Methods ---
     private static bool IsContextValid()
     {
-        if (Context?.RenderTarget is null || Context?.DWriteFactory is null)
+        if (Context?.RenderTarget is null || Context?.DWriteFactory is null || Resources is null)
         {
             Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid.");
             return false;
@@ -1795,16 +1873,18 @@ public class UIContext
     public ID2D1HwndRenderTarget RenderTarget { get; }
     public IDWriteFactory DWriteFactory { get; }
     public InputState InputState { get; }
+    public UIResources Resources { get; }
 
     // Per-frame layout state
     internal readonly Stack<object> containerStack = new();
     internal readonly Stack<TreeViewState> treeStateStack = new();
 
-    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState)
+    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources)
     {
         RenderTarget = renderTarget;
         DWriteFactory = dwriteFactory;
         InputState = inputState;
+        Resources = resources;
     }
 
     // --- Layout Helpers ---
@@ -2022,6 +2102,7 @@ namespace DirectUI;
 /// <summary>
 /// Manages the creation, caching, and cleanup of shareable graphics resources
 /// like brushes and text formats to avoid recreating them every frame.
+/// This is now an instance class, with one instance per AppHost/window.
 /// </summary>
 public class UIResources
 {
@@ -2248,21 +2329,20 @@ public class FpsCounter
     private readonly Color4 _textColor = DefaultTheme.Text;
     private readonly string _fontName = "Consolas";
     private readonly float _fontSize = 14.0f;
-    private const long FpsUpdateIntervalTicks = TimeSpan.TicksPerSecond / 2; // Update twice a second
+    private const int UpdatesPerSecond = 2; // Update twice a second
 
     // State
     private readonly Stopwatch _timer = new();
     private long _lastUpdateTimeTicks = 0;
     private int _frameCountSinceUpdate = 0;
     private float _currentFps = 0.0f;
+    private long _updateIntervalInStopwatchTicks;
 
-    // Direct2D Resources
-    private ID2D1SolidColorBrush? _textBrush;
+    // Direct2D Resources (Device-Independent only)
     private IDWriteTextFormat? _textFormat;
 
-    public void Initialize(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
+    public void Initialize(IDWriteFactory dwriteFactory)
     {
-        ArgumentNullException.ThrowIfNull(renderTarget);
         ArgumentNullException.ThrowIfNull(dwriteFactory);
 
         Cleanup(); // Ensure any old resources are released
@@ -2273,9 +2353,18 @@ public class FpsCounter
             _textFormat.TextAlignment = DW.TextAlignment.Leading;
             _textFormat.ParagraphAlignment = ParagraphAlignment.Near;
 
-            _textBrush = renderTarget.CreateSolidColorBrush(_textColor);
+            Console.WriteLine("Created FPS text format resource.");
 
-            Console.WriteLine("Created FPS drawing resources.");
+            // Calculate the update interval based on the Stopwatch's actual frequency.
+            if (Stopwatch.IsHighResolution)
+            {
+                _updateIntervalInStopwatchTicks = Stopwatch.Frequency / UpdatesPerSecond;
+            }
+            else
+            {
+                // Fallback for low-resolution timer
+                _updateIntervalInStopwatchTicks = TimeSpan.TicksPerSecond / UpdatesPerSecond;
+            }
 
             _frameCountSinceUpdate = 0;
             _currentFps = 0;
@@ -2284,7 +2373,7 @@ public class FpsCounter
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to create FPS counter drawing resources: {ex.Message}");
+            Console.WriteLine($"Warning: Failed to create FPS counter text format: {ex.Message}");
             Cleanup(); // Clean up partial resources on failure
         }
     }
@@ -2292,66 +2381,49 @@ public class FpsCounter
     public void Cleanup()
     {
         _timer.Stop();
-        _textBrush?.Dispose();
-        _textBrush = null;
         _textFormat?.Dispose();
         _textFormat = null;
     }
 
-    public void HandleResize(ID2D1RenderTarget renderTarget)
+    /// <summary>
+    /// Updates the frame count and recalculates the FPS value if the update interval has passed.
+    /// This should be called once per rendered frame.
+    /// </summary>
+    public void Update()
     {
-        // The text format is device-independent, but the brush is not.
-        _textBrush?.Dispose();
-        _textBrush = null;
-        try
-        {
-            if (renderTarget is not null)
-            {
-                _textBrush = renderTarget.CreateSolidColorBrush(_textColor);
-                Console.WriteLine("Recreated FPS brush after resize.");
-            }
-        }
-        catch (Exception brushEx)
-        {
-            Console.WriteLine($"Warning: Failed to recreate FPS brush after resize: {brushEx.Message}");
-        }
-    }
-
-    public bool Update()
-    {
-        if (!_timer.IsRunning)
-        {
-            _timer.Start();
-            _lastUpdateTimeTicks = _timer.ElapsedTicks;
-            _frameCountSinceUpdate = 0;
-        }
+        if (!_timer.IsRunning) _timer.Start();
 
         _frameCountSinceUpdate++;
         long elapsedTicks = _timer.ElapsedTicks;
         long timeSinceLastUpdate = elapsedTicks - _lastUpdateTimeTicks;
 
-        if (timeSinceLastUpdate >= FpsUpdateIntervalTicks)
+        if (timeSinceLastUpdate >= _updateIntervalInStopwatchTicks)
         {
-            float secondsElapsed = (float)timeSinceLastUpdate / TimeSpan.TicksPerSecond;
+            long frequency = Stopwatch.IsHighResolution ? Stopwatch.Frequency : TimeSpan.TicksPerSecond;
+            float secondsElapsed = (float)timeSinceLastUpdate / frequency;
+
             _currentFps = (secondsElapsed > 0.001f) ? (_frameCountSinceUpdate / secondsElapsed) : 0.0f;
             _frameCountSinceUpdate = 0;
             _lastUpdateTimeTicks = elapsedTicks;
-            return true; // Indicates the text has changed, so a redraw is needed.
         }
-
-        return false;
     }
 
     public void Draw(ID2D1RenderTarget renderTarget)
     {
-        if (_textBrush is null || _textFormat is null)
+        if (_textFormat is null || UI.Resources is null)
+        {
+            return;
+        }
+
+        var textBrush = UI.Resources.GetOrCreateBrush(renderTarget, _textColor);
+        if (textBrush is null)
         {
             return;
         }
 
         string fpsText = $"FPS: {_currentFps:F1}";
         var layoutRect = new Rect(5f, 5f, 150f, 30f);
-        renderTarget.DrawText(fpsText, _textFormat, layoutRect, _textBrush);
+        renderTarget.DrawText(fpsText, _textFormat, layoutRect, textBrush);
     }
 }
 </file>
@@ -3450,6 +3522,7 @@ public class TreeNode<T>
 </file>
 
 <file path="MyDirectUIApp.cs">
+// MyDirectUIApp.cs
 using System;
 using System.IO;
 using System.Numerics;
@@ -3468,7 +3541,6 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Window management state
     private ModalWindow? _projectWindow;
     private bool _isProjectWindowOpen = false;
-    private bool _openProjectWindowRequested = false;
 
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
@@ -3497,50 +3569,28 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
-    // Override FrameUpdate to handle window management outside of rendering
-    public override void FrameUpdate()
-    {
-        // Handle window creation/destruction logic here, which is safer than in the render loop.
-        ManageWindows();
-
-        // Call base implementation to handle FPS updates and invalidation for this window.
-        base.FrameUpdate();
-    }
+    // FrameUpdate override is no longer needed for window management.
+    // The base implementation will handle invalidation for the render loop.
 
     private void ManageWindows()
     {
-        // Check if a modal needs to be opened
-        if (_openProjectWindowRequested && !_isProjectWindowOpen)
+        // This logic is now called from DrawUI to ensure it runs in the correct context.
+
+        // Case 1: We have a window instance we are tracking.
+        if (_projectWindow != null)
         {
-            _openProjectWindowRequested = false; // Consume the request
-            _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
-            if (_projectWindow.CreateAsModal())
+            // If the OS window has been closed (by user or OS), clean up our state.
+            if (_projectWindow.Handle == IntPtr.Zero)
             {
-                _isProjectWindowOpen = true;
-            }
-            else
-            {
-                Console.WriteLine("Failed to create modal window.");
-                _projectWindow?.Dispose();
+                _projectWindow.Dispose(); // Ensure cleanup
                 _projectWindow = null;
                 _isProjectWindowOpen = false;
             }
-        }
-
-        // Check if the modal window was closed by the user (e.g., via ESC or close button)
-        if (_isProjectWindowOpen && (_projectWindow == null || _projectWindow.Handle == IntPtr.Zero))
-        {
-            _projectWindow?.Dispose(); // Ensure cleanup
-            _projectWindow = null;
-            _isProjectWindowOpen = false;
-        }
-
-        // Check if we need to close the window programmatically
-        // (e.g., from a "Close" button inside the modal's UI, which sets _isProjectWindowOpen to false)
-        if (!_isProjectWindowOpen && _projectWindow != null && _projectWindow.Handle != IntPtr.Zero)
-        {
-            _projectWindow.Close();
-            // The check above will handle cleanup in the next frame after the window is destroyed.
+            // Else, if our app logic wants to close it (e.g. from a button click)
+            else if (!_isProjectWindowOpen)
+            {
+                _projectWindow.Close(); // Asks the OS to close the window
+            }
         }
     }
 
@@ -3563,6 +3613,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     // The actual drawing logic for the main window.
     private void DrawUI(UIContext context)
     {
+        // Handle window state management at the beginning of the frame.
+        ManageWindows();
+
         // Note: UI.BeginFrame and UI.EndFrame are now called by the AppHost.
         // We just need to define the UI content for the frame.
 
@@ -3611,9 +3664,20 @@ public class MyDirectUIApp : Direct2DAppWindow
             menuButtonDef.Text = "Project";
             if (UI.Button("project_button", menuButtonDef))
             {
+                // Create the window immediately upon click if it's not already open.
                 if (!_isProjectWindowOpen)
                 {
-                    _openProjectWindowRequested = true;
+                    _projectWindow = new ModalWindow(this, "Project Settings", 400, 300, DrawProjectWindowUI);
+                    if (_projectWindow.CreateAsModal())
+                    {
+                        _isProjectWindowOpen = true;
+                    }
+                    else
+                    {
+                        Console.WriteLine("Failed to create modal window.");
+                        _projectWindow.Dispose();
+                        _projectWindow = null;
+                    }
                 }
             }
 
@@ -3728,6 +3792,7 @@ public class MyDirectUIApp : Direct2DAppWindow
 
 <file path="Program.cs">
 using DirectUI;
+using System;
 
 namespace Cocoshell;
 
@@ -3744,9 +3809,11 @@ public class Program
             try
             {
                 // Create the main window, which registers itself with the Application manager.
+                // The static constructor in Application will ensure resources are ready.
                 if (appWindow.Create())
                 {
                     // Run the central message loop that processes all windows.
+                    // This will also handle cleanup when the loop exits.
                     Application.Run();
                 }
             }

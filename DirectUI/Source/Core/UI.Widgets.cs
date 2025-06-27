@@ -35,6 +35,66 @@ public static partial class UI
         return clicked;
     }
 
+    public static bool TabButton(string id, string text, bool isActive, TabStylePack? theme = null, bool autoWidth = true, bool disabled = false)
+    {
+        if (!IsContextValid()) return false;
+
+        var intId = id.GetHashCode();
+        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
+
+        var position = Context.GetCurrentLayoutPosition();
+        var textMargin = new Vector2(15, 5);
+
+        // A consistent tab bar height is assumed for now.
+        float tabBarHeight = 30f;
+        Vector2 tabSize;
+
+        if (autoWidth)
+        {
+            // All tabs should have same size based on normal state for layout consistency
+            var styleForMeasuring = tabTheme.Normal;
+            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, styleForMeasuring);
+            tabSize = new Vector2(measuredSize.X + textMargin.X * 2, tabBarHeight);
+        }
+        else
+        {
+            // This would require size information from the container, not supported yet for HBox.
+            // For now, we rely on autoWidth.
+            tabSize = new Vector2(100, tabBarHeight);
+        }
+
+        Rect bounds = new(position.X, position.Y, tabSize.X, tabSize.Y);
+        InputState input = Context.InputState;
+        bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool wasClicked = false;
+
+        if (isHovering) State.SetPotentialInputTarget(intId);
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == intId)
+        {
+            wasClicked = true;
+        }
+
+        tabTheme.UpdateCurrentStyle(isHovering, isActive, disabled);
+
+        // Drawing
+        var rt = Context.RenderTarget;
+        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), tabTheme.Current);
+
+        // Draw Text
+        var textBrush = Resources.GetOrCreateBrush(rt, tabTheme.Current.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, tabTheme.Current);
+        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        {
+            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
+            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+            rt.DrawText(text, textFormat, bounds, textBrush);
+        }
+
+        Context.AdvanceLayout(tabSize);
+        return wasClicked;
+    }
+
     public static float HSlider(string id, float currentValue, SliderDefinition definition)
     {
         if (!IsContextValid() || definition is null) return currentValue;

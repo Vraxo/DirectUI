@@ -17,6 +17,7 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Window management state
     private ModalWindow? _projectWindow;
     private bool _isProjectWindowOpen = false;
+    private int _projectWindowActiveTab = 0;
 
     private readonly TreeNode<string> _fileRoot;
     private readonly TreeStyle _treeStyle = new();
@@ -47,6 +48,20 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     // FrameUpdate override is no longer needed for window management.
     // The base implementation will handle invalidation for the render loop.
+
+    protected override void OnKeyDown(Keys key)
+    {
+        if (key == Keys.F3)
+        {
+            if (_appHost != null)
+            {
+                _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
+            }
+        }
+
+        // Call the base implementation to handle default behavior (like ESC to close).
+        base.OnKeyDown(key);
+    }
 
     private void ManageWindows()
     {
@@ -249,18 +264,64 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Drawing logic for the modal window.
     private void DrawProjectWindowUI(UIContext context)
     {
-        UI.BeginVBoxContainer("modal_vbox", new Vector2(10, 10), 10);
+        var rt = context.RenderTarget;
+        float windowWidth = rt.Size.Width;
+        float windowHeight = rt.Size.Height;
+        float tabBarHeight = 30f;
+        var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
-        if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+        // --- Draw Tab Bar ---
+        UI.BeginHBoxContainer("project_tabs", new Vector2(0, 0), 0);
+        if (UI.TabButton("tab_general", "General", _projectWindowActiveTab == 0)) { _projectWindowActiveTab = 0; }
+        if (UI.TabButton("tab_input", "Input Map", _projectWindowActiveTab == 1)) { _projectWindowActiveTab = 1; }
+        UI.EndHBoxContainer();
+
+        // --- Draw Content Panel and Content ---
+        var panelStyle = new BoxStyle
         {
-            Console.WriteLine("Modal button clicked!");
+            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
+            BorderColor = DefaultTheme.HoverBorder,
+            BorderLengthTop = 1f,
+            Roundness = 0f
+        };
+        UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), panelStyle);
+
+        // Set up a padded area for the content inside the panel
+        var contentPadding = new Vector2(10, 10);
+        var paddedContentRect = new Rect(
+            contentArea.X + contentPadding.X, contentArea.Y + contentPadding.Y,
+            Math.Max(0, contentArea.Width - contentPadding.X * 2),
+            Math.Max(0, contentArea.Height - contentPadding.Y * 2)
+        );
+
+        // Push clip and begin VBox for content
+        rt.PushAxisAlignedClip(paddedContentRect, Vortice.Direct2D1.AntialiasMode.Aliased);
+        UI.BeginVBoxContainer("tab_content_vbox", new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
+
+        if (_projectWindowActiveTab == 0) // General Tab
+        {
+            if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+            {
+                Console.WriteLine("Modal button clicked!");
+            }
+            if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+            {
+                _isProjectWindowOpen = false;
+            }
         }
-
-        if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+        else if (_projectWindowActiveTab == 1) // Input Map Tab
         {
-            _isProjectWindowOpen = false; // Signal to close the window
+            if (UI.Button("input_map_button", new ButtonDefinition { Text = "Configure Input..." }))
+            {
+                Console.WriteLine("Configure Input clicked!");
+            }
+            if (UI.Button("input_map_close", new ButtonDefinition { Text = "Close Me" }))
+            {
+                _isProjectWindowOpen = false;
+            }
         }
 
         UI.EndVBoxContainer();
+        rt.PopAxisAlignedClip();
     }
 }
