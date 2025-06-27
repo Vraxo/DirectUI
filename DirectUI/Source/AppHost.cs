@@ -80,14 +80,6 @@ public class AppHost
 
     public void Render()
     {
-        // Don't try to render if the host window is disabled (e.g., by a modal).
-        // This is the key fix to prevent the crash.
-        if (_hwnd != IntPtr.Zero && !NativeMethods.IsWindowEnabled(_hwnd))
-        {
-            _wasLeftMouseClickedThisFrame = false;
-            return;
-        }
-
         // Prevent re-entrant rendering calls, which can happen if a new window
         // is created and painted synchronously inside another window's render loop.
         if (UI.IsRendering) return;

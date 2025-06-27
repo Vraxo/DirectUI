@@ -1,5 +1,4 @@
-﻿// NativeMethods.cs
-using System;
+﻿using System;
 using System.Runtime.InteropServices;
 
 // No changes needed here if it was correct from the previous step.
@@ -42,7 +41,6 @@ internal static class NativeMethods
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
     public const int WM_QUIT = 0x0012;
-    public const int WM_APP = 0x8000;
 
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
     public const int SW_SHOWNORMAL = 1;
@@ -130,8 +128,6 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern void PostQuitMessage(int nExitCode);
     [DllImport("user32.dll")]
-    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam);
-    [DllImport("user32.dll")]
     public static extern bool GetMessage(out MSG lpMsg, IntPtr hWnd, uint wMsgFilterMin, uint wMsgFilterMax);
     [DllImport("user32.dll")]
     [return: MarshalAs(UnmanagedType.Bool)]
@@ -167,9 +163,6 @@ internal static class NativeMethods
     [DllImport("user32.dll", SetLastError = true)]
     [return: MarshalAs(UnmanagedType.Bool)]
     public static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    public static extern bool IsWindowEnabled(IntPtr hWnd);
 
 
     public static IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong)

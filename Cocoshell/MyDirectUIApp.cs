@@ -49,16 +49,20 @@ public class MyDirectUIApp : Direct2DAppWindow
     // Override FrameUpdate to handle window management outside of rendering
     public override void FrameUpdate()
     {
+        // Window management must always run to detect modal window state changes.
         ManageWindows();
 
-        // Always call the base FrameUpdate. The AppHost.Render method is now responsible
-        // for checking if the window is enabled before attempting to draw.
-        base.FrameUpdate();
+        // However, the rest of the frame update (including invalidating for a repaint)
+        // should only happen if the window is active (i.e., not disabled by a modal).
+        if (!_isProjectWindowOpen)
+        {
+            base.FrameUpdate();
+        }
     }
 
     private void ManageWindows()
     {
-        // Handle modal window creation
+        // Check if a modal needs to be opened
         if (_openProjectWindowRequested && !_isProjectWindowOpen)
         {
             _openProjectWindowRequested = false; // Consume the request
@@ -76,12 +80,20 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
         }
 
-        // Handle modal window cleanup
+        // Check if the modal window was closed by the user (e.g., via ESC or close button)
         if (_isProjectWindowOpen && (_projectWindow == null || _projectWindow.Handle == IntPtr.Zero))
         {
             _projectWindow?.Dispose(); // Ensure cleanup
             _projectWindow = null;
             _isProjectWindowOpen = false;
+        }
+
+        // Check if we need to close the window programmatically
+        // (e.g., from a "Close" button inside the modal's UI, which sets _isProjectWindowOpen to false)
+        if (!_isProjectWindowOpen && _projectWindow != null && _projectWindow.Handle != IntPtr.Zero)
+        {
+            _projectWindow.Close();
+            // The check above will handle cleanup in the next frame after the window is destroyed.
         }
     }
 
@@ -260,7 +272,6 @@ public class MyDirectUIApp : Direct2DAppWindow
         if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
         {
             _isProjectWindowOpen = false; // Signal to close the window
-            _projectWindow?.Close();
         }
 
         UI.EndVBoxContainer();
