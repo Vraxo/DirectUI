@@ -1,7 +1,5 @@
-﻿using System;
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Runtime.InteropServices;
-using System.Collections.Generic;
 
 namespace DirectUI;
 
@@ -34,12 +32,16 @@ public abstract class Win32Window : IDisposable
         _wndProcDelegate = WindowProcedure;
     }
 
-    public bool Create(IntPtr owner = default, uint? style = null)
+    public bool Create(IntPtr owner = default, uint? style = null, int? x = null, int? y = null)
     {
         OwnerHandle = owner;
-        if (_hwnd != IntPtr.Zero) return true;
+        
+        if (_hwnd != IntPtr.Zero)
+        {
+            return true;
+        }
 
-        if (!TryCreateWindow(owner, style))
+        if (!TryCreateWindow(owner, style, x, y))
         {
             Console.WriteLine("Window creation failed.");
             Dispose();
@@ -55,13 +57,18 @@ public abstract class Win32Window : IDisposable
 
         NativeMethods.ShowWindow(_hwnd, NativeMethods.SW_SHOWNORMAL);
         NativeMethods.UpdateWindow(_hwnd);
+
         return true;
     }
 
-    private bool TryCreateWindow(IntPtr owner, uint? style)
+    private bool TryCreateWindow(IntPtr owner, uint? style, int? x, int? y)
     {
         _hInstance = NativeMethods.GetModuleHandle(null);
-        if (_hInstance == IntPtr.Zero) _hInstance = Process.GetCurrentProcess().Handle;
+        
+        if (_hInstance == IntPtr.Zero)
+        {
+            _hInstance = Process.GetCurrentProcess().Handle;
+        }
 
         Application.RegisterWindow(this);
 
@@ -69,7 +76,7 @@ public abstract class Win32Window : IDisposable
         {
             if (!RegisteredClassNames.Contains(_windowClassName))
             {
-                var wndClass = new NativeMethods.WNDCLASSEX
+                NativeMethods.WNDCLASSEX wndClass = new()
                 {
                     cbSize = Marshal.SizeOf(typeof(NativeMethods.WNDCLASSEX)),
                     style = NativeMethods.CS_HREDRAW | NativeMethods.CS_VREDRAW,
@@ -79,37 +86,90 @@ public abstract class Win32Window : IDisposable
                     hIcon = NativeMethods.LoadIcon(IntPtr.Zero, (IntPtr)32512),
                     hCursor = NativeMethods.LoadCursor(IntPtr.Zero, 32512),
                 };
-                if (NativeMethods.RegisterClassEx(ref wndClass) == 0) { Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}"); return false; }
-                RegisteredClassNames.Add(_windowClassName); Console.WriteLine($"Class '{_windowClassName}' registered.");
+
+                if (NativeMethods.RegisterClassEx(ref wndClass) == 0) 
+                { 
+                    Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}"); 
+                    return false; 
+                }
+
+                RegisteredClassNames.Add(_windowClassName); 
+                Console.WriteLine($"Class '{_windowClassName}' registered.");
             }
         }
+
         _gcHandle = GCHandle.Alloc(this);
 
         uint windowStyle = style ?? (NativeMethods.WS_OVERLAPPEDWINDOW | NativeMethods.WS_VISIBLE);
 
-        _hwnd = NativeMethods.CreateWindowEx(0, _windowClassName, _windowTitle, windowStyle,
-            NativeMethods.CW_USEDEFAULT, NativeMethods.CW_USEDEFAULT, _initialWidth, _initialHeight, owner, IntPtr.Zero, _hInstance, GCHandle.ToIntPtr(_gcHandle));
+        int finalX = x ?? NativeMethods.CW_USEDEFAULT;
+        int finalY = y ?? NativeMethods.CW_USEDEFAULT;
 
-        if (_hwnd == IntPtr.Zero) { Console.WriteLine($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}"); if (_gcHandle.IsAllocated) _gcHandle.Free(); return false; }
+        _hwnd = NativeMethods.CreateWindowEx(
+            0,
+            _windowClassName,
+            _windowTitle,
+            windowStyle,
+            finalX,
+            finalY,
+            _initialWidth,
+            _initialHeight,
+            owner,
+            IntPtr.Zero,
+            _hInstance,
+            GCHandle.ToIntPtr(_gcHandle));
+
+        if (_hwnd == IntPtr.Zero) 
+        {
+            Console.WriteLine($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
+
+            if (_gcHandle.IsAllocated)
+            {
+                _gcHandle.Free();
+            }
+
+            return false; 
+        }
+
         Console.WriteLine($"Window created: {_hwnd}"); return true;
     }
 
     private static IntPtr WindowProcedure(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        Win32Window window = null;
+        Win32Window? window = null;
+
         if (msg == NativeMethods.WM_NCCREATE)
         {
             var cs = Marshal.PtrToStructure<NativeMethods.CREATESTRUCT>(lParam);
             var handle = GCHandle.FromIntPtr(cs.lpCreateParams); window = handle.Target as Win32Window;
+
             NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, GCHandle.ToIntPtr(handle));
             Console.WriteLine($"WM_NCCREATE: Associated instance with HWND {hWnd}");
         }
         else
         {
             IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
-            if (ptr != IntPtr.Zero) { var handle = GCHandle.FromIntPtr(ptr); window = handle.Target as Win32Window; }
+
+            if (ptr != IntPtr.Zero)
+            {
+                var handle = GCHandle.FromIntPtr(ptr); window = handle.Target as Win32Window;
+            }
         }
-        if (window != null) { try { return window.HandleMessage(hWnd, msg, wParam, lParam); } catch (Exception ex) { Console.WriteLine($"Error handling msg {msg}: {ex}"); } }
+
+        if (window is null)
+        {
+            return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+        }
+
+        try
+        {
+            return window.HandleMessage(hWnd, msg, wParam, lParam);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error handling msg {msg}: {ex}");
+        }
+
         return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
@@ -117,64 +177,186 @@ public abstract class Win32Window : IDisposable
     {
         switch (msg)
         {
-            case NativeMethods.WM_PAINT: OnPaint(); return IntPtr.Zero;
-            case NativeMethods.WM_SIZE: Width = NativeMethods.LoWord(lParam); Height = NativeMethods.HiWord(lParam); OnSize(Width, Height); return IntPtr.Zero;
-            case NativeMethods.WM_MOUSEMOVE: OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam)); return IntPtr.Zero;
+            case NativeMethods.WM_PAINT: 
+                OnPaint(); 
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_SIZE: 
+                Width = NativeMethods.LoWord(lParam); 
+                Height = NativeMethods.HiWord(lParam); 
+                OnSize(Width, Height); 
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_MOUSEMOVE:
+                OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
             case NativeMethods.WM_LBUTTONDOWN:
                 NativeMethods.SetCapture(hWnd);
                 OnMouseDown(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
+
             case NativeMethods.WM_LBUTTONUP:
                 NativeMethods.ReleaseCapture();
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
-            case NativeMethods.WM_KEYDOWN: OnKeyDown((Keys)wParam); return IntPtr.Zero;
-            case NativeMethods.WM_KEYUP: OnKeyUp((Keys)wParam); return IntPtr.Zero;
-            case NativeMethods.WM_CHAR: OnChar((char)wParam); return IntPtr.Zero;
-            case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
+
+            case NativeMethods.WM_KEYDOWN:
+                OnKeyDown((Keys)wParam);
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_KEYUP:
+                OnKeyUp((Keys)wParam);
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_CHAR:
+                OnChar((char)wParam);
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_CLOSE:
+                if (OnClose()) 
+                {
+                    NativeMethods.DestroyWindow(hWnd); 
+                } 
+                
+                return IntPtr.Zero;
+
             case NativeMethods.WM_DESTROY:
                 Console.WriteLine($"WM_DESTROY for {hWnd}.");
                 Application.UnregisterWindow(this);
                 OnDestroy();
-                // If this is the main window, Application will exit.
+
                 if (OwnerHandle == IntPtr.Zero)
                 {
                     Application.Exit();
                 }
+
                 return IntPtr.Zero;
+
             case NativeMethods.WM_NCDESTROY:
                 Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
+                
                 IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
+                
                 if (ptr != IntPtr.Zero)
                 {
                     var handle = GCHandle.FromIntPtr(ptr);
-                    if (handle.IsAllocated) handle.Free();
+                    
+                    if (handle.IsAllocated)
+                    {
+                        handle.Free();
+                    }
+
                     NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero);
                 }
-                if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr) { _gcHandle = default; }
+
+                if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
+                {
+                    _gcHandle = default;
+                
+                }
+
                 _hwnd = IntPtr.Zero;
+
                 return IntPtr.Zero;
-            default: return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
+
+            default: 
+                return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
         }
     }
 
-    public void Close() { if (_hwnd != IntPtr.Zero) NativeMethods.DestroyWindow(_hwnd); }
-    public void Invalidate() { if (_hwnd != IntPtr.Zero) NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false); }
+    public void Close()
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            return;
+        }
 
-    public virtual void FrameUpdate() { }
+        NativeMethods.DestroyWindow(_hwnd);
+    }
 
-    protected virtual bool Initialize() { return true; }
+    public void Invalidate()
+    {
+        if (_hwnd == IntPtr.Zero)
+        {
+            return;
+        }
+
+        NativeMethods.InvalidateRect(_hwnd, IntPtr.Zero, false);
+    }
+
+    public virtual void FrameUpdate()
+    {
+    
+    }
+
+    internal bool GetWindowRect(out NativeMethods.RECT rect)
+    {
+        if (Handle == IntPtr.Zero)
+        {
+            rect = default;
+            return false;
+        }
+
+        return NativeMethods.GetWindowRect(Handle, out rect);
+    }
+
+    protected virtual bool Initialize() 
+    { 
+        return true; 
+    }
+    
     protected abstract void OnPaint();
-    protected virtual void OnSize(int width, int height) { }
-    protected virtual void OnMouseDown(MouseButton button, int x, int y) { }
-    protected virtual void OnMouseUp(MouseButton button, int x, int y) { }
-    protected virtual void OnMouseMove(int x, int y) { }
-    protected virtual void OnKeyDown(Keys key) { }
-    protected virtual void OnKeyUp(Keys key) { }
-    protected virtual void OnChar(char c) { }
-    protected virtual bool OnClose() { return true; }
-    protected virtual void OnDestroy() { }
-    protected virtual void Cleanup() { }
+    
+    protected virtual void OnSize(int width, int height) 
+    {
+
+    }
+    
+    protected virtual void OnMouseDown(MouseButton button, int x, int y) 
+    { 
+
+    }
+    
+    protected virtual void OnMouseUp(MouseButton button, int x, int y) 
+    {
+    
+    }
+    
+    protected virtual void OnMouseMove(int x, int y)
+    {
+    
+    }
+    
+    protected virtual void OnKeyDown(Keys key)
+    {
+
+    }
+    
+    protected virtual void OnKeyUp(Keys key)
+    {
+
+    }
+    
+    protected virtual void OnChar(char c)
+    {
+
+    }
+    
+    protected virtual bool OnClose()
+    { 
+        return true;
+    }
+    
+    protected virtual void OnDestroy()
+    {
+
+    }
+    
+    protected virtual void Cleanup() 
+    {
+        
+    }
 
     public void Dispose()
     {
@@ -184,7 +366,10 @@ public abstract class Win32Window : IDisposable
 
     protected virtual void Dispose(bool disposing)
     {
-        if (_isDisposed) return;
+        if (_isDisposed)
+        {
+            return;
+        }
 
         if (disposing)
         {
@@ -219,13 +404,4 @@ public abstract class Win32Window : IDisposable
         Console.WriteLine("Win32Window Finalizer!");
         Dispose(false);
     }
-}
-
-public enum MouseButton
-{
-    Left,
-    Right,
-    Middle,
-    XButton1,
-    XButton2
 }

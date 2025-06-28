@@ -15,6 +15,7 @@ public struct Alignment(HAlignment horizontal, VAlignment vertical)
 <file path="AppHost.cs">
 // AppHost.cs
 using System;
+using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Diagnostics;
 using Vortice.Mathematics;
@@ -40,6 +41,11 @@ public class AppHost
     private Vector2 _currentMousePos = new(-1, -1);
     private bool _isLeftMouseButtonDown = false;
     private bool _wasLeftMouseClickedThisFrame = false;
+    private readonly Queue<char> _typedCharsThisFrame = new();
+    private readonly List<Keys> _pressedKeysThisFrame = new();
+    private readonly List<Keys> _releasedKeysThisFrame = new();
+    private readonly HashSet<Keys> _heldKeys = new();
+
 
     public bool ShowFpsCounter { get; set; } = true;
 
@@ -104,6 +110,9 @@ public class AppHost
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))
             {
                 _wasLeftMouseClickedThisFrame = false;
+                _typedCharsThisFrame.Clear(); // Clear queue on failed render
+                _pressedKeysThisFrame.Clear();
+                _releasedKeysThisFrame.Clear();
                 return;
             }
         }
@@ -122,8 +131,15 @@ public class AppHost
             var inputState = new InputState(
                 _currentMousePos,
                 _wasLeftMouseClickedThisFrame,
-                _isLeftMouseButtonDown
+                _isLeftMouseButtonDown,
+                _typedCharsThisFrame.ToList(),
+                _pressedKeysThisFrame,
+                _releasedKeysThisFrame,
+                _heldKeys
             );
+            _typedCharsThisFrame.Clear();
+            _pressedKeysThisFrame.Clear();
+            _releasedKeysThisFrame.Clear();
 
             var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
@@ -181,6 +197,32 @@ public class AppHost
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = false;
+        }
+    }
+
+    public void AddCharacterInput(char c)
+    {
+        if (!char.IsControl(c) || c == '\t' || c == '\n')
+        {
+            _typedCharsThisFrame.Enqueue(c);
+        }
+    }
+
+    public void AddKeyPressed(Keys key)
+    {
+        if (!_heldKeys.Contains(key))
+        {
+            _pressedKeysThisFrame.Add(key);
+            _heldKeys.Add(key);
+        }
+    }
+
+    public void AddKeyReleased(Keys key)
+    {
+        if (_heldKeys.Contains(key))
+        {
+            _releasedKeysThisFrame.Add(key);
+            _heldKeys.Remove(key);
         }
     }
 }
@@ -374,10 +416,24 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnKeyDown(Keys key)
     {
+        _appHost?.AddKeyPressed(key);
+
         if (key == Keys.Escape)
         {
             Close();
         }
+        Invalidate();
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        _appHost?.AddKeyReleased(key);
+        Invalidate();
+    }
+
+    protected override void OnChar(char c)
+    {
+        _appHost?.AddCharacterInput(c);
         Invalidate();
     }
 
@@ -593,6 +649,7 @@ public class GraphicsDevice : IDisposable
 
 <file path="InputState.cs">
 // InputState.cs
+using System.Collections.Generic;
 using System.Numerics;
 
 namespace DirectUI;
@@ -603,13 +660,27 @@ public readonly struct InputState
     public readonly Vector2 MousePosition;
     public readonly bool WasLeftMousePressedThisFrame; // True if the left button went down this frame
     public readonly bool IsLeftMouseDown; // True if the left button is currently held down
-    // Add fields for Right mouse button if ClickBehavior.Right/Both is used
+    public readonly IReadOnlyList<char> TypedCharacters; // Characters typed this frame
+    public readonly IReadOnlyList<Keys> PressedKeys; // Keys pressed down this frame
+    public readonly IReadOnlyList<Keys> ReleasedKeys; // Keys released this frame
+    public readonly IReadOnlyCollection<Keys> HeldKeys; // Keys currently held down
 
-    public InputState(Vector2 mousePosition, bool wasLeftMousePressedThisFrame, bool isLeftMouseDown)
+    public InputState(
+        Vector2 mousePosition,
+        bool wasLeftMousePressedThisFrame,
+        bool isLeftMouseDown,
+        IReadOnlyList<char> typedCharacters,
+        IReadOnlyList<Keys> pressedKeys,
+        IReadOnlyList<Keys> releasedKeys,
+        IReadOnlyCollection<Keys> heldKeys)
     {
         MousePosition = mousePosition;
         WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
         IsLeftMouseDown = isLeftMouseDown;
+        TypedCharacters = typedCharacters;
+        PressedKeys = pressedKeys;
+        ReleasedKeys = releasedKeys;
+        HeldKeys = heldKeys;
     }
 }
 </file>
@@ -627,6 +698,124 @@ public enum Keys
     /// The key is not recognized.
     /// </summary>
     Unknown = 0,
+
+    // Action Keys
+    /// <summary>The BACKSPACE key.</summary>
+    Backspace = 0x08,
+    /// <summary>The TAB key.</summary>
+    Tab = 0x09,
+    /// <summary>The ENTER key.</summary>
+    Enter = 0x0D,
+    /// <summary>The SHIFT key.</summary>
+    Shift = 0x10,
+    /// <summary>The CTRL key.</summary>
+    Control = 0x11,
+    /// <summary>The ALT key.</summary>
+    Alt = 0x12,
+    /// <summary>The PAUSE key.</summary>
+    Pause = 0x13,
+    /// <summary>The CAPS LOCK key.</summary>
+    CapsLock = 0x14,
+    /// <summary>The ESC key.</summary>
+    Escape = 0x1B,
+    /// <summary>The SPACEBAR key.</summary>
+    Space = 0x20,
+    /// <summary>The PAGE UP key.</summary>
+    PageUp = 0x21,
+    /// <summary>The PAGE DOWN key.</summary>
+    PageDown = 0x22,
+    /// <summary>The END key.</summary>
+    End = 0x23,
+    /// <summary>The HOME key.</summary>
+    Home = 0x24,
+    /// <summary>The LEFT ARROW key.</summary>
+    LeftArrow = 0x25,
+    /// <summary>The UP ARROW key.</summary>
+    UpArrow = 0x26,
+    /// <summary>The RIGHT ARROW key.</summary>
+    RightArrow = 0x27,
+    /// <summary>The DOWN ARROW key.</summary>
+    DownArrow = 0x28,
+    /// <summary>The INSERT key.</summary>
+    Insert = 0x2D,
+    /// <summary>The DELETE key.</summary>
+    Delete = 0x2E,
+
+    // Digit Keys
+    /// <summary>The 0 key.</summary>
+    D0 = 0x30,
+    /// <summary>The 1 key.</summary>
+    D1 = 0x31,
+    /// <summary>The 2 key.</summary>
+    D2 = 0x32,
+    /// <summary>The 3 key.</summary>
+    D3 = 0x33,
+    /// <summary>The 4 key.</summary>
+    D4 = 0x34,
+    /// <summary>The 5 key.</summary>
+    D5 = 0x35,
+    /// <summary>The 6 key.</summary>
+    D6 = 0x36,
+    /// <summary>The 7 key.</summary>
+    D7 = 0x37,
+    /// <summary>The 8 key.</summary>
+    D8 = 0x38,
+    /// <summary>The 9 key.</summary>
+    D9 = 0x39,
+
+    // Letter Keys
+    /// <summary>The A key.</summary>
+    A = 0x41,
+    /// <summary>The B key.</summary>
+    B = 0x42,
+    /// <summary>The C key.</summary>
+    C = 0x43,
+    /// <summary>The D key.</summary>
+    D = 0x44,
+    /// <summary>The E key.</summary>
+    E = 0x45,
+    /// <summary>The F key.</summary>
+    F = 0x46,
+    /// <summary>The G key.</summary>
+    G = 0x47,
+    /// <summary>The H key.</summary>
+    H = 0x48,
+    /// <summary>The I key.</summary>
+    I = 0x49,
+    /// <summary>The J key.</summary>
+    J = 0x4A,
+    /// <summary>The K key.</summary>
+    K = 0x4B,
+    /// <summary>The L key.</summary>
+    L = 0x4C,
+    /// <summary>The M key.</summary>
+    M = 0x4D,
+    /// <summary>The N key.</summary>
+    N = 0x4E,
+    /// <summary>The O key.</summary>
+    O = 0x4F,
+    /// <summary>The P key.</summary>
+    P = 0x50,
+    /// <summary>The Q key.</summary>
+    Q = 0x51,
+    /// <summary>The R key.</summary>
+    R = 0x52,
+    /// <summary>The S key.</summary>
+    S = 0x53,
+    /// <summary>The T key.</summary>
+    T = 0x54,
+    /// <summary>The U key.</summary>
+    U = 0x55,
+    /// <summary>The V key.</summary>
+    V = 0x56,
+    /// <summary>The W key.</summary>
+    W = 0x57,
+    /// <summary>The X key.</summary>
+    X = 0x58,
+    /// <summary>The Y key.</summary>
+    Y = 0x59,
+    /// <summary>The Z key.</summary>
+    Z = 0x5A,
 
     // Function Keys
     /// <summary>The F1 key.</summary>
@@ -653,11 +842,6 @@ public enum Keys
     F11 = 0x7A,
     /// <summary>The F12 key.</summary>
     F12 = 0x7B,
-
-    // Other Keys
-    /// <summary>The ESC key.</summary>
-    Escape = 0x1B,
-    // Add more keys like Enter, Arrows, etc. if needed in the future.
 }
 </file>
 
@@ -767,10 +951,14 @@ internal static class NativeMethods
     public const int WM_SIZE = 0x0005;
     public const int WM_CLOSE = 0x0010;
     public const int WM_KEYDOWN = 0x0100;
+    public const int WM_KEYUP = 0x0101;
+    public const int WM_SYSKEYUP = 0x0105;
     public const int WM_LBUTTONDOWN = 0x0201;
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
     public const int WM_QUIT = 0x0012;
+    public const int WM_CHAR = 0x0102;
+
 
     public const int CW_USEDEFAULT = unchecked((int)0x80000000);
     public const int SW_SHOWNORMAL = 1;
@@ -1110,6 +1298,8 @@ public abstract class Win32Window : IDisposable
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
             case NativeMethods.WM_KEYDOWN: OnKeyDown((Keys)wParam); return IntPtr.Zero;
+            case NativeMethods.WM_KEYUP: OnKeyUp((Keys)wParam); return IntPtr.Zero;
+            case NativeMethods.WM_CHAR: OnChar((char)wParam); return IntPtr.Zero;
             case NativeMethods.WM_CLOSE: if (OnClose()) { NativeMethods.DestroyWindow(hWnd); } return IntPtr.Zero;
             case NativeMethods.WM_DESTROY:
                 Console.WriteLine($"WM_DESTROY for {hWnd}.");
@@ -1149,6 +1339,8 @@ public abstract class Win32Window : IDisposable
     protected virtual void OnMouseUp(MouseButton button, int x, int y) { }
     protected virtual void OnMouseMove(int x, int y) { }
     protected virtual void OnKeyDown(Keys key) { }
+    protected virtual void OnKeyUp(Keys key) { }
+    protected virtual void OnChar(char c) { }
     protected virtual bool OnClose() { return true; }
     protected virtual void OnDestroy() { }
     protected virtual void Cleanup() { }
@@ -1629,6 +1821,12 @@ public static partial class UI
 
     public static void EndFrame()
     {
+        // If a click happened this frame but no UI element captured it, clear the focus.
+        if (Context.InputState.WasLeftMousePressedThisFrame && State.InputCaptorId == 0)
+        {
+            State.SetFocus(0);
+        }
+
         if (Context.containerStack.Count > 0)
         {
             Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.containerStack.Count} containers left open at EndFrame.");
@@ -1701,6 +1899,7 @@ public static partial class UI
 
         bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         bool isPressed = State.ActivelyPressedElementId == id;
+        bool isFocused = State.FocusedElementId == id;
         bool wasClickedThisFrame = false;
 
         if (isHovering) State.SetPotentialInputTarget(id);
@@ -1715,12 +1914,13 @@ public static partial class UI
         if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == id && !State.DragInProgressFromPreviousFrame)
         {
             State.SetButtonPotentialCaptorForFrame(id);
+            State.SetFocus(id);
             isPressed = true;
         }
 
         if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && State.InputCaptorId == id) wasClickedThisFrame = true;
 
-        stylePack.UpdateCurrentStyle(isHovering, isPressed, false);
+        stylePack.UpdateCurrentStyle(isHovering, isPressed, false, isFocused);
         ButtonStyle currentStyle = stylePack.Current;
         Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
 
@@ -1759,6 +1959,7 @@ public static partial class UI
 using System;
 using System.Collections.Generic;
 using System.Numerics;
+using System.Linq;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -1812,7 +2013,7 @@ public static partial class UI
             wasClicked = true;
         }
 
-        theme.UpdateCurrentStyle(isHovering, isActive, disabled);
+        theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
 
         var rt = Context.RenderTarget;
         Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
@@ -1985,6 +2186,278 @@ public static partial class UI
             }
         }
     }
+
+    #region LineEdit
+    public static bool LineEdit(string id, ref string text, LineEditDefinition definition)
+    {
+        if (!IsContextValid() || definition == null) return false;
+
+        var intId = id.GetHashCode();
+        var state = State.GetOrCreateElement<LineEditState>(id);
+        var theme = definition.Theme ?? State.GetOrCreateElement<ButtonStylePack>(id + "_theme");
+        var input = Context.InputState;
+
+        var position = Context.ApplyLayout(definition.Position);
+        Rect bounds = new(position.X, position.Y, definition.Size.X, definition.Size.Y);
+
+        bool isFocused = State.FocusedElementId == intId;
+        bool textChanged = false;
+
+        // --- Focus Management ---
+        bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        if (input.WasLeftMousePressedThisFrame && isHovering && !definition.Disabled)
+        {
+            State.SetFocus(intId);
+            State.SetPotentialCaptorForFrame(intId); // Claim the press
+            isFocused = true;
+        }
+
+        // --- Input Processing ---
+        if (isFocused && !definition.Disabled)
+        {
+            textChanged = ProcessLineEditInput(id, ref text, state, definition, input);
+        }
+
+        // --- Drawing ---
+        theme.UpdateCurrentStyle(isHovering, false, definition.Disabled, isFocused);
+        Resources.DrawBoxStyleHelper(Context.RenderTarget, position, definition.Size, theme.Current);
+
+        Context.RenderTarget.PushAxisAlignedClip(bounds, D2D.AntialiasMode.PerPrimitive);
+
+        string textToDraw = text;
+        if (string.IsNullOrEmpty(text) && !isFocused)
+        {
+            DrawLineEditText(definition.PlaceholderText, state, definition, theme.Disabled, position);
+        }
+        else
+        {
+            if (definition.IsPassword) textToDraw = new string(definition.PasswordChar, text.Length);
+            DrawLineEditText(textToDraw, state, definition, theme.Current, position);
+        }
+
+        if (isFocused && state.IsBlinkOn)
+        {
+            DrawLineEditCaret(textToDraw, state, definition, theme.Current, position);
+        }
+
+        Context.RenderTarget.PopAxisAlignedClip();
+
+        Context.AdvanceLayout(definition.Size);
+        return textChanged;
+    }
+
+    private static bool ProcessLineEditInput(string id, ref string text, LineEditState state, LineEditDefinition def, InputState input)
+    {
+        bool textChanged = false;
+
+        state.BlinkTimer += 0.016f; // Rough approximation of delta time
+        if (state.BlinkTimer > 0.5f)
+        {
+            state.BlinkTimer = 0;
+            state.IsBlinkOn = !state.IsBlinkOn;
+        }
+
+        bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);
+
+        if (input.TypedCharacters.Any())
+        {
+            PushUndoState(state, text);
+            foreach (char c in input.TypedCharacters)
+            {
+                if (text.Length < def.MaxLength)
+                {
+                    text = text.Insert(state.CaretPosition, c.ToString());
+                    state.CaretPosition++;
+                    textChanged = true;
+                }
+            }
+        }
+
+        foreach (var key in input.PressedKeys)
+        {
+            bool hasChanged = true;
+            PushUndoState(state, text); // Push on first key press
+            switch (key)
+            {
+                case Keys.Backspace:
+                    if (state.CaretPosition > 0)
+                    {
+                        int removeCount = 1;
+                        if (isCtrlHeld) removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
+                        text = text.Remove(state.CaretPosition - removeCount, removeCount);
+                        state.CaretPosition -= removeCount;
+                    }
+                    break;
+                case Keys.Delete:
+                    if (state.CaretPosition < text.Length)
+                    {
+                        int removeCount = 1;
+                        if (isCtrlHeld) removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
+                        text = text.Remove(state.CaretPosition, removeCount);
+                    }
+                    break;
+                case Keys.LeftArrow:
+                    state.CaretPosition = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
+                    break;
+                case Keys.RightArrow:
+                    state.CaretPosition = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
+                    break;
+                case Keys.Home: state.CaretPosition = 0; break;
+                case Keys.End: state.CaretPosition = text.Length; break;
+                case Keys.Z when isCtrlHeld: Undo(state, ref text); break;
+                case Keys.Y when isCtrlHeld: Redo(state, ref text); break;
+                default: hasChanged = false; break;
+            }
+            if (hasChanged) textChanged = true;
+        }
+
+        state.CaretPosition = Math.Clamp(state.CaretPosition, 0, text.Length);
+
+        if (textChanged)
+        {
+            UpdateLineEditView(text, state, def.Size, def.TextMargin);
+            state.IsBlinkOn = true;
+            state.BlinkTimer = 0;
+        }
+
+        return textChanged;
+    }
+
+    private static int FindPreviousWordStart(string text, int currentPos)
+    {
+        if (currentPos == 0) return 0;
+        int pos = currentPos - 1;
+        while (pos > 0 && char.IsWhiteSpace(text[pos])) pos--;
+        while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) pos--;
+        return pos;
+    }
+
+    private static int FindNextWordEnd(string text, int currentPos)
+    {
+        if (currentPos >= text.Length) return text.Length;
+        int pos = currentPos;
+        while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
+        while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
+        return pos;
+    }
+
+    private static void DrawLineEditText(string textToDraw, LineEditState state, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    {
+        if (string.IsNullOrEmpty(textToDraw)) return;
+
+        var textBrush = Resources.GetOrCreateBrush(Context.RenderTarget, style.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, style);
+        if (textBrush is null || textFormat is null) return;
+
+        textFormat.WordWrapping = WordWrapping.NoWrap;
+        textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
+        textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+
+        string visibleText = textToDraw;
+        if (state.TextStartIndex > 0 && state.TextStartIndex < textToDraw.Length)
+        {
+            visibleText = textToDraw.Substring(state.TextStartIndex);
+        }
+        else if (state.TextStartIndex >= textToDraw.Length)
+        {
+            visibleText = "";
+        }
+
+        Rect layoutRect = new Rect(
+            position.X + def.TextMargin.X,
+            position.Y + def.TextMargin.Y,
+            Math.Max(0, def.Size.X - def.TextMargin.X * 2),
+            Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
+        );
+
+        Context.RenderTarget.DrawText(visibleText, textFormat, layoutRect, textBrush, DrawTextOptions.Clip);
+    }
+
+    private static void DrawLineEditCaret(string text, LineEditState state, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    {
+        if (state.CaretPosition < state.TextStartIndex) return;
+
+        string textBeforeCaret = text.Substring(state.TextStartIndex, state.CaretPosition - state.TextStartIndex);
+        float caretXOffset = MeasureTextWidth(textBeforeCaret, style);
+
+        Rect caretRect = new Rect(
+            position.X + def.TextMargin.X + caretXOffset,
+            position.Y + def.TextMargin.Y,
+            1, // Caret width
+            Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
+        );
+
+        var caretBrush = Resources.GetOrCreateBrush(Context.RenderTarget, style.FontColor);
+        if (caretBrush != null)
+        {
+            Context.RenderTarget.FillRectangle(caretRect, caretBrush);
+        }
+    }
+
+    private static float MeasureTextWidth(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, style);
+        if (textFormat is null) return 0;
+        textFormat.WordWrapping = WordWrapping.NoWrap;
+        using var textLayout = Context.DWriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+        return textLayout.Metrics.WidthIncludingTrailingWhitespace;
+    }
+
+    private static void UpdateLineEditView(string text, LineEditState state, Vector2 size, Vector2 margin)
+    {
+        float availableWidth = size.X - margin.X * 2;
+        var style = new ButtonStyle(); // A default style for measurement
+
+        string textBeforeCaret = text.Substring(0, state.CaretPosition);
+        float caretPixelX = MeasureTextWidth(textBeforeCaret, style);
+
+        string textInView = text.Substring(state.TextStartIndex);
+        float viewStartX = MeasureTextWidth(text.Substring(0, state.TextStartIndex), style);
+
+        float caretPosInView = caretPixelX - viewStartX;
+
+        if (caretPosInView > availableWidth)
+        {
+            state.TextStartIndex = state.CaretPosition - (int)(availableWidth / MeasureTextWidth(" ", style));
+        }
+        else if (caretPosInView < 0)
+        {
+            state.TextStartIndex = state.CaretPosition;
+        }
+
+        state.TextStartIndex = Math.Clamp(state.TextStartIndex, 0, text.Length);
+    }
+
+    private static void PushUndoState(LineEditState state, string text)
+    {
+        if (state.UndoStack.Count > 0 && state.UndoStack.Peek().Text == text) return;
+        if (state.UndoStack.Count >= LineEditState.HistoryLimit) state.UndoStack.Pop();
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
+        state.RedoStack.Clear();
+    }
+
+    private static void Undo(LineEditState state, ref string text)
+    {
+        if (state.UndoStack.Count == 0) return;
+        state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
+        var lastState = state.UndoStack.Pop();
+        text = lastState.Text;
+        state.CaretPosition = lastState.CaretPosition;
+        state.TextStartIndex = lastState.TextStartIndex;
+    }
+
+    private static void Redo(LineEditState state, ref string text)
+    {
+        if (state.RedoStack.Count == 0) return;
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.TextStartIndex));
+        var nextState = state.RedoStack.Pop();
+        text = nextState.Text;
+        state.CaretPosition = nextState.CaretPosition;
+        state.TextStartIndex = nextState.TextStartIndex;
+    }
+    #endregion
+
 }
 </file>
 
@@ -2160,6 +2633,7 @@ public class UIPersistentState
     // --- Input State (persists across frames until interaction ends) ---
     public int ActivelyPressedElementId { get; private set; } = 0;
     public bool DragInProgressFromPreviousFrame { get; private set; } = false;
+    public int FocusedElementId { get; private set; } = 0;
 
     // --- Input State (reset each frame) ---
     public int PotentialInputTargetId { get; private set; } = 0;
@@ -2212,6 +2686,12 @@ public class UIPersistentState
         {
             ActivelyPressedElementId = 0;
         }
+    }
+
+    // --- Focus Management ---
+    public void SetFocus(int id)
+    {
+        FocusedElementId = id;
     }
 }
 </file>
@@ -2612,8 +3092,6 @@ public class ButtonStyle : BoxStyle
 </file>
 
 <file path="Styles\ButtonStylePack.cs">
-// MODIFIED: Styles/ButtonStylePack.cs
-// Summary: Updated BorderThickness convenience setter to use the new BorderLength setter in BoxStyle. Added Obsolete attribute to BorderThickness.
 using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
@@ -2628,7 +3106,7 @@ public sealed class ButtonStylePack
     public ButtonStyle Hover { get; set; } = new();
     public ButtonStyle Pressed { get; set; } = new();
     public ButtonStyle Disabled { get; set; } = new();
-    // public ButtonStyle Focused { get; set; } = new(); // Focus state not implemented yet
+    public ButtonStyle Focused { get; set; } = new();
 
     public ButtonStylePack()
     {
@@ -2642,10 +3120,14 @@ public sealed class ButtonStylePack
         Disabled.BorderColor = DefaultTheme.DisabledBorder;
         Disabled.FontColor = DefaultTheme.DisabledText;
 
+        Focused.FillColor = DefaultTheme.NormalFill;
+        Focused.BorderColor = DefaultTheme.FocusBorder;
+        Focused.BorderLength = 1;
+
         Current = Normal;
     }
 
-    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled /*, bool isFocused */)
+    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
     {
         if (isDisabled)
         {
@@ -2659,17 +3141,17 @@ public sealed class ButtonStylePack
         {
             Current = Hover;
         }
-        //else if (isFocused) // Future focus state
-        //{
-        //    Current = Focused;
-        //}
+        else if (isFocused)
+        {
+            Current = Focused;
+        }
         else
         {
             Current = Normal;
         }
     }
 
-    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled /*, Focused*/];
+    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled, Focused];
 
     public string FontName
     {
@@ -2926,12 +3408,18 @@ public sealed class TabStylePack
         Current = Normal;
     }
 
-    public void UpdateCurrentStyle(bool isHovering, bool isActive, bool isDisabled)
+    public void UpdateCurrentStyle(bool isHovering, bool isActive, bool isDisabled, bool isFocused)
     {
-        if (isDisabled) Current = Disabled;
+        if (isDisabled)
+        {
+            Current = Disabled;
+        }
         else if (isActive) Current = isHovering ? ActiveHover : Active;
         else if (isHovering) Current = Hover;
-        else Current = Normal;
+        else
+        {
+            Current = Normal;
+        }
     }
 }
 </file>
@@ -3015,6 +3503,7 @@ public class Button
     public object? UserData { get; set; } = null;
 
     public bool IsHovering { get; internal set; } = false;
+    public bool IsFocused { get; internal set; } = false;
 
     public Rect GlobalBounds
     {
@@ -3048,6 +3537,8 @@ public class Button
         {
             return false;
         }
+
+        IsFocused = state.FocusedElementId == intId;
 
         PerformAutoWidth(dwriteFactory);
 
@@ -3089,6 +3580,7 @@ public class Button
                 if (IsHovering && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
                 {
                     state.SetButtonPotentialCaptorForFrame(intId);
+                    state.SetFocus(intId);
                 }
             }
             isPressed = (state.ActivelyPressedElementId == intId);
@@ -3127,7 +3619,7 @@ public class Button
 
     internal void UpdateStyle()
     {
-        Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled);
+        Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled, IsFocused);
     }
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
@@ -3282,6 +3774,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
                 state.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -3375,6 +3868,7 @@ internal abstract class InternalSliderLogic
     protected bool isGrabberPressed = false;
     protected bool isGrabberHovered = false;
     protected bool isTrackHovered = false;
+    protected bool isFocused = false;
     protected Vector2 trackPosition;
     protected float trackMinBound;
     protected float trackMaxBound;
@@ -3403,6 +3897,7 @@ internal abstract class InternalSliderLogic
 
         GlobalId = id;
         GlobalIntId = id.GetHashCode();
+        isFocused = state.FocusedElementId == GlobalIntId;
         trackPosition = Position - Origin;
         CalculateTrackBounds();
 
@@ -3480,7 +3975,8 @@ internal abstract class InternalSliderLogic
     protected void UpdateGrabberThemeStyle()
     {
         isGrabberPressed = UI.State.ActivelyPressedElementId == GlobalIntId;
-        GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled);
+        isFocused = UI.State.FocusedElementId == GlobalIntId;
+        GrabberTheme.UpdateCurrentStyle(isGrabberHovered, isGrabberPressed, Disabled, isFocused);
     }
 
 
@@ -3547,6 +4043,7 @@ internal class InternalVSliderLogic : InternalSliderLogic
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
                 state.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
                 {
@@ -3610,6 +4107,59 @@ internal class InternalVSliderLogic : InternalSliderLogic
         UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
     }
+}
+</file>
+
+<file path="Widgets\LineEditDefinition.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public class LineEditDefinition
+{
+    public Vector2 Position { get; set; } = Vector2.Zero;
+    public Vector2 Size { get; set; } = new(150, 24);
+    public ButtonStylePack? Theme { get; set; } = null;
+    public string PlaceholderText { get; set; } = "";
+    public bool IsPassword { get; set; } = false;
+    public char PasswordChar { get; set; } = '*';
+    public int MaxLength { get; set; } = 1024;
+    public bool Disabled { get; set; } = false;
+    public Vector2 TextMargin { get; set; } = new(4, 2); // Padding inside the control
+}
+</file>
+
+<file path="Widgets\LineEditState.cs">
+// NEW: Widgets/LineEditState.cs
+using System.Collections.Generic;
+
+namespace DirectUI;
+
+// Record for undo/redo functionality
+internal record struct LineEditUndoRecord(string Text, int CaretPosition, int TextStartIndex);
+
+// State object for an immediate-mode LineEdit control
+internal class LineEditState
+{
+    // Caret and view state
+    internal int CaretPosition = 0;
+    internal int TextStartIndex = 0; // The starting character index for the visible text portion
+
+    // Blinking caret state
+    internal float BlinkTimer = 0.0f;
+    internal bool IsBlinkOn = true;
+
+    // Held-key state for repeat actions
+    internal float KeyRepeatTimer = 0.0f;
+    internal Keys RepeatingKey = Keys.Unknown;
+
+    // Undo/Redo state
+    internal readonly Stack<LineEditUndoRecord> UndoStack = new();
+    internal readonly Stack<LineEditUndoRecord> RedoStack = new();
+    internal const int HistoryLimit = 50;
+
+    // A flag to prevent pushing duplicate states to the undo stack
+    internal bool NeedsUndoStatePush = false;
 }
 </file>
 
@@ -3846,6 +4396,7 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly ButtonStylePack _editorButtonStyle;
     private readonly ButtonStylePack _removeButtonStyle;
     private readonly ButtonStylePack _utilityButtonStyle;
+    private readonly LineEditDefinition _lineEditDef;
     // --- END NEW STATE ---
 
 
@@ -3905,6 +4456,24 @@ public class MyDirectUIApp : Direct2DAppWindow
         _utilityButtonStyle.Disabled.FillColor = DefaultTheme.DisabledFill;
         _utilityButtonStyle.Disabled.FontColor = DefaultTheme.DisabledText;
 
+        // --- NEW: Define a style for the LineEdit ---
+        var lineEditTheme = new ButtonStylePack { FontSize = 12, Roundness = 0.2f };
+        lineEditTheme.Normal.FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f);
+        lineEditTheme.Normal.BorderColor = new Color4(0.1f, 0.1f, 0.1f, 1.0f);
+        lineEditTheme.Hover.FillColor = new Color4(0.22f, 0.22f, 0.27f, 1.0f);
+        lineEditTheme.Focused.FillColor = new Color4(0.22f, 0.22f, 0.27f, 1.0f);
+        lineEditTheme.Focused.BorderColor = DefaultTheme.Accent;
+        _lineEditDef = new LineEditDefinition
+        {
+            Size = new Vector2(120, 24),
+            Theme = lineEditTheme
+        };
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        _appHost?.AddKeyReleased(key);
+        Invalidate();
     }
 
     // FrameUpdate override is no longer needed for window management.
@@ -3912,6 +4481,8 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     protected override void OnKeyDown(Keys key)
     {
+        _appHost?.AddKeyPressed(key);
+
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -4178,9 +4749,10 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             // --- Actions and Bindings ---
             UI.BeginVBoxContainer("actions_list_vbox", UI.Context.GetCurrentLayoutPosition(), 8);
-            for (int i = actionNames.Count - 1; i >= 0; i--)
+            for (int i = 0; i < actionNames.Count; i++)
             {
                 string actionName = actionNames[i];
+                if (!_inputMap.ContainsKey(actionName)) continue; // Item was removed
                 var bindings = _inputMap[actionName];
 
                 // Action Header
@@ -4190,6 +4762,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 {
                     _inputMap.Remove(actionName);
                     _inputMapDirty = true;
+                    break;
                 }
                 UI.EndHBoxContainer();
 
@@ -4197,7 +4770,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 0);
                 UI.Button($"indent_spacer_for_{actionName}", new ButtonDefinition { Size = new Vector2(20, 0), Disabled = true, Theme = _labelStyle });
                 UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
-                for (int j = bindings.Count - 1; j >= 0; j--)
+                for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
                     UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.GetCurrentLayoutPosition(), 5);
@@ -4206,11 +4779,19 @@ public class MyDirectUIApp : Direct2DAppWindow
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
                         _inputMapDirty = true;
                     }
-                    UI.Button($"binding_key_{actionName}_{j}", new ButtonDefinition { Text = binding.KeyOrButton, Theme = _editorButtonStyle, Size = new Vector2(120, 24), Disabled = true });
+
+                    string tempKeyOrButton = binding.KeyOrButton;
+                    if (UI.LineEdit($"binding_key_{actionName}_{j}", ref tempKeyOrButton, _lineEditDef))
+                    {
+                        binding.KeyOrButton = tempKeyOrButton;
+                        _inputMapDirty = true;
+                    }
+
                     if (UI.Button($"remove_binding_{actionName}_{j}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(24, 24) }))
                     {
                         bindings.RemoveAt(j);
                         _inputMapDirty = true;
+                        break;
                     }
                     UI.EndHBoxContainer();
                 }
@@ -4225,7 +4806,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.EndVBoxContainer();
 
             // --- Utility Buttons ---
-            // CORRECTED: AutoWidth and TextMargin moved from style pack to button definitions
             UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.GetCurrentLayoutPosition(), 10);
             if (UI.Button("add_action", new ButtonDefinition { Text = "Add New Action", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
             {
