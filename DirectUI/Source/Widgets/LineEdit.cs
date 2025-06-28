@@ -64,19 +64,20 @@ internal class LineEdit
 
         context.RenderTarget.PushAxisAlignedClip(bounds, D2D.AntialiasMode.PerPrimitive);
 
-        string textToDraw = text;
+        string textToDraw;
         if (string.IsNullOrEmpty(text) && !isFocused)
         {
-            DrawText(definition.PlaceholderText, definition, theme.Disabled, position);
+            DrawPlaceholderText(definition.PlaceholderText, definition, theme.Disabled, position);
         }
         else
         {
-            if (definition.IsPassword) textToDraw = new string(definition.PasswordChar, text.Length);
-            DrawText(textToDraw, definition, theme.Current, position);
+            textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
+            DrawVisibleText(textToDraw, definition, theme.Current, position);
         }
 
         if (isFocused && _isBlinkOn)
         {
+            textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
             DrawCaret(textToDraw, definition, theme.Current, position);
         }
 
@@ -154,7 +155,7 @@ internal class LineEdit
 
         if (textChanged)
         {
-            UpdateView(text, def.Size, def.TextMargin);
+            UpdateView(text, def);
             _isBlinkOn = true;
             _blinkTimer = 0;
         }
@@ -180,30 +181,36 @@ internal class LineEdit
         return pos;
     }
 
-    private void DrawText(string textToDraw, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    private void DrawPlaceholderText(string placeholder, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    {
+        DrawTextLayout(placeholder, def, style, position, 0);
+    }
+
+    private void DrawVisibleText(string fullText, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    {
+        string visibleText = fullText;
+        if (_textStartIndex > 0 && _textStartIndex < fullText.Length)
+        {
+            visibleText = fullText.Substring(_textStartIndex);
+        }
+        else if (_textStartIndex >= fullText.Length)
+        {
+            visibleText = "";
+        }
+        DrawTextLayout(visibleText, def, style, position, _textStartIndex);
+    }
+
+    private void DrawTextLayout(string textToDraw, LineEditDefinition def, ButtonStyle style, Vector2 position, int startIndex)
     {
         if (string.IsNullOrEmpty(textToDraw)) return;
 
         var context = UI.Context;
         var resources = UI.Resources;
+        var rt = context.RenderTarget;
+        var dwrite = context.DWriteFactory;
 
-        var textBrush = resources.GetOrCreateBrush(context.RenderTarget, style.FontColor);
-        var textFormat = resources.GetOrCreateTextFormat(context.DWriteFactory, style);
-        if (textBrush is null || textFormat is null) return;
-
-        textFormat.WordWrapping = WordWrapping.NoWrap;
-        textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
-        textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-
-        string visibleText = textToDraw;
-        if (_textStartIndex > 0 && _textStartIndex < textToDraw.Length)
-        {
-            visibleText = textToDraw.Substring(_textStartIndex);
-        }
-        else if (_textStartIndex >= textToDraw.Length)
-        {
-            visibleText = "";
-        }
+        var textBrush = resources.GetOrCreateBrush(rt, style.FontColor);
+        if (textBrush == null) return;
 
         Rect layoutRect = new Rect(
             position.X + def.TextMargin.X,
@@ -212,8 +219,25 @@ internal class LineEdit
             Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
         );
 
-        context.RenderTarget.DrawText(visibleText, textFormat, layoutRect, textBrush, DrawTextOptions.Clip);
+        // This is a fixed alignment for all LineEdit text.
+        var alignment = new Alignment(HAlignment.Left, VAlignment.Center);
+        var layoutKey = new UIResources.TextLayoutCacheKey(textToDraw, style, new(layoutRect.Width, layoutRect.Height), alignment);
+
+        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        {
+            var textFormat = resources.GetOrCreateTextFormat(dwrite, style);
+            if (textFormat == null) return;
+            textFormat.WordWrapping = WordWrapping.NoWrap; // Crucial for LineEdit
+            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
+            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+
+            textLayout = dwrite.CreateTextLayout(textToDraw, textFormat, layoutRect.Width, layoutRect.Height);
+            resources.textLayoutCache[layoutKey] = textLayout;
+        }
+
+        rt.DrawTextLayout(new Vector2(layoutRect.X, layoutRect.Y), textLayout, textBrush, DrawTextOptions.Clip);
     }
+
 
     private void DrawCaret(string text, LineEditDefinition def, ButtonStyle style, Vector2 position)
     {
@@ -241,17 +265,31 @@ internal class LineEdit
     {
         if (string.IsNullOrEmpty(text)) return 0;
         var context = UI.Context;
-        var textFormat = UI.Resources.GetOrCreateTextFormat(context.DWriteFactory, style);
-        if (textFormat is null) return 0;
-        textFormat.WordWrapping = WordWrapping.NoWrap;
-        using var textLayout = context.DWriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+        var resources = UI.Resources;
+        var dwrite = context.DWriteFactory;
+
+        // Use a consistent key for measurement, assuming infinite width.
+        // The specific alignment doesn't matter for width measurement.
+        var alignment = new Alignment(HAlignment.Left, VAlignment.Top);
+        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(float.MaxValue, float.MaxValue), alignment);
+
+        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        {
+            var textFormat = resources.GetOrCreateTextFormat(dwrite, style);
+            if (textFormat == null) return 0;
+            textFormat.WordWrapping = WordWrapping.NoWrap;
+
+            textLayout = dwrite.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+            resources.textLayoutCache[layoutKey] = textLayout;
+        }
+
         return textLayout.Metrics.WidthIncludingTrailingWhitespace;
     }
 
-    private void UpdateView(string text, Vector2 size, Vector2 margin)
+    private void UpdateView(string text, LineEditDefinition def)
     {
-        float availableWidth = size.X - margin.X * 2;
-        var style = new ButtonStyle(); // A default style for measurement
+        float availableWidth = def.Size.X - def.TextMargin.X * 2;
+        var style = def.Theme?.Normal ?? new ButtonStyle(); // A default style for measurement
 
         string textBeforeCaret = text.Substring(0, _caretPosition);
         float caretPixelX = MeasureTextWidth(textBeforeCaret, style);
@@ -263,11 +301,23 @@ internal class LineEdit
 
         if (caretPosInView > availableWidth)
         {
-            _textStartIndex = _caretPosition - (int)(availableWidth / MeasureTextWidth(" ", style));
+            // Caret moved past the right edge, scroll right
+            _textStartIndex++;
+            while (MeasureTextWidth(text.Substring(_textStartIndex, _caretPosition - _textStartIndex), style) > availableWidth && _textStartIndex < _caretPosition)
+            {
+                _textStartIndex++;
+            }
         }
         else if (caretPosInView < 0)
         {
+            // Caret moved before the left edge, scroll left
             _textStartIndex = _caretPosition;
+        }
+
+        // Ensure the full visible text fits if possible
+        while (_textStartIndex > 0 && MeasureTextWidth(text.Substring(_textStartIndex), style) > availableWidth)
+        {
+            _textStartIndex++;
         }
 
         _textStartIndex = Math.Clamp(_textStartIndex, 0, text.Length);
