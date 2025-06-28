@@ -7,7 +7,7 @@ namespace DirectUI;
 
 public sealed class ButtonStylePack
 {
-    public ButtonStyle Current { get; private set; }
+    public ButtonStyle Current { get; internal set; }
     public ButtonStyle Normal { get; set; } = new();
     public ButtonStyle Hover { get; set; } = new();
     public ButtonStyle Pressed { get; set; } = new();

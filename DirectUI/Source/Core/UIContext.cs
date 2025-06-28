@@ -15,6 +15,8 @@ public class UIContext
     // Layout and state management
     public UILayoutManager Layout { get; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
+    internal readonly Stack<(StyleVar, object)> styleVarStack = new();
+    internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
 
     public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources)
     {

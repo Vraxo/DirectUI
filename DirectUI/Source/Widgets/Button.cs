@@ -143,7 +143,72 @@ public class Button
 
     internal void UpdateStyle()
     {
-        Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled, IsFocused);
+        if (Themes is null) return;
+
+        // Determine base style from interaction state
+        ButtonStyle baseStyle;
+        if (Disabled) baseStyle = Themes.Disabled;
+        else if (isPressed) baseStyle = Themes.Pressed;
+        else if (IsHovering) baseStyle = Themes.Hover;
+        else if (IsFocused) baseStyle = Themes.Focused;
+        else baseStyle = Themes.Normal;
+
+        // Create a temporary, modifiable copy for this frame
+        var currentStyle = new ButtonStyle
+        {
+            FillColor = baseStyle.FillColor,
+            BorderColor = baseStyle.BorderColor,
+            FontColor = baseStyle.FontColor,
+            BorderLengthTop = baseStyle.BorderLengthTop,
+            BorderLengthRight = baseStyle.BorderLengthRight,
+            BorderLengthBottom = baseStyle.BorderLengthBottom,
+            BorderLengthLeft = baseStyle.BorderLengthLeft,
+            Roundness = baseStyle.Roundness,
+            FontName = baseStyle.FontName,
+            FontSize = baseStyle.FontSize,
+            FontWeight = baseStyle.FontWeight,
+            FontStyle = baseStyle.FontStyle,
+            FontStretch = baseStyle.FontStretch
+        };
+
+        // Override with values from the style stack if they exist
+        if (Disabled)
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonDisabled, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderDisabled, currentStyle.BorderColor);
+            currentStyle.FontColor = UI.GetStyleColor(StyleColor.TextDisabled, currentStyle.FontColor);
+        }
+        else if (isPressed)
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonPressed, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderPressed, currentStyle.BorderColor);
+        }
+        else if (IsHovering)
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonHovered, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderHovered, currentStyle.BorderColor);
+        }
+        else if (IsFocused)
+        {
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderFocused, currentStyle.BorderColor);
+        }
+        else // Normal
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.Button, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.Border, currentStyle.BorderColor);
+        }
+
+        // Apply general text color override if not disabled
+        if (!Disabled)
+        {
+            currentStyle.FontColor = UI.GetStyleColor(StyleColor.Text, currentStyle.FontColor);
+        }
+
+        currentStyle.Roundness = UI.GetStyleVar(StyleVar.FrameRounding, currentStyle.Roundness);
+        currentStyle.BorderLength = UI.GetStyleVar(StyleVar.FrameBorderSize, currentStyle.BorderLength);
+
+        // Finally, assign the computed style to the pack's Current property
+        Themes.Current = currentStyle;
     }
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)

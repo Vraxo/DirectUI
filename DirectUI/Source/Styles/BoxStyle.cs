@@ -17,6 +17,7 @@ public class BoxStyle
 
     public float BorderLength
     {
+        get => BorderLengthTop; // Return a representative value
         set
         {
             BorderLengthTop = value;

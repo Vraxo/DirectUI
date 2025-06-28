@@ -27,25 +27,35 @@ internal class LineEdit
     private const int HistoryLimit = 50;
 
     // === MAIN UPDATE & DRAW METHOD ===
-    public bool UpdateAndDraw(int intId, ref string text, LineEditDefinition definition)
+    public bool UpdateAndDraw(
+        int intId,
+        ref string text,
+        Vector2 position,
+        Vector2 size,
+        ButtonStylePack? theme,
+        string placeholderText,
+        bool isPassword,
+        char passwordChar,
+        int maxLength,
+        bool disabled,
+        Vector2 textMargin)
     {
         var context = UI.Context;
         var state = UI.State;
         var resources = UI.Resources;
 
         var themeId = HashCode.Combine(intId, "theme");
-        var theme = definition.Theme ?? state.GetOrCreateElement<ButtonStylePack>(themeId);
+        var finalTheme = theme ?? state.GetOrCreateElement<ButtonStylePack>(themeId);
         var input = context.InputState;
 
-        var position = context.Layout.ApplyLayout(definition.Position);
-        Rect bounds = new(position.X, position.Y, definition.Size.X, definition.Size.Y);
+        Rect bounds = new(position.X, position.Y, size.X, size.Y);
 
         bool isFocused = state.FocusedElementId == intId;
         bool textChanged = false;
 
         // --- Focus Management ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        if (input.WasLeftMousePressedThisFrame && isHovering && !definition.Disabled)
+        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
         {
             state.SetFocus(intId);
             state.SetPotentialCaptorForFrame(intId); // Claim the press
@@ -53,38 +63,38 @@ internal class LineEdit
         }
 
         // --- Input Processing ---
-        if (isFocused && !definition.Disabled)
+        if (isFocused && !disabled)
         {
-            textChanged = ProcessInput(ref text, definition, input);
+            textChanged = ProcessInput(ref text, size, maxLength, textMargin, input);
         }
 
         // --- Drawing ---
-        theme.UpdateCurrentStyle(isHovering, false, definition.Disabled, isFocused);
-        resources.DrawBoxStyleHelper(context.RenderTarget, position, definition.Size, theme.Current);
+        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, isFocused);
+        resources.DrawBoxStyleHelper(context.RenderTarget, position, size, finalTheme.Current);
 
         // Define content area and clip to it
         Rect contentRect = new Rect(
-            bounds.X + definition.TextMargin.X,
-            bounds.Y + definition.TextMargin.Y,
-            Math.Max(0, bounds.Width - definition.TextMargin.X * 2),
-            Math.Max(0, bounds.Height - definition.TextMargin.Y * 2)
+            bounds.X + textMargin.X,
+            bounds.Y + textMargin.Y,
+            Math.Max(0, bounds.Width - textMargin.X * 2),
+            Math.Max(0, bounds.Height - textMargin.Y * 2)
         );
         context.RenderTarget.PushAxisAlignedClip(contentRect, D2D.AntialiasMode.PerPrimitive);
 
-        var textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
+        var textToDraw = isPassword ? new string(passwordChar, text.Length) : text;
 
         if (string.IsNullOrEmpty(text) && !isFocused)
         {
-            DrawVisibleText(definition.PlaceholderText, definition, theme.Disabled, contentRect.TopLeft);
+            DrawVisibleText(placeholderText, size, textMargin, finalTheme.Disabled, contentRect.TopLeft);
         }
         else
         {
-            DrawVisibleText(textToDraw, definition, theme.Current, contentRect.TopLeft);
+            DrawVisibleText(textToDraw, size, textMargin, finalTheme.Current, contentRect.TopLeft);
         }
 
         if (isFocused && _isBlinkOn)
         {
-            DrawCaret(textToDraw, definition, theme.Current, contentRect);
+            DrawCaret(textToDraw, size, textMargin, finalTheme.Current, contentRect);
         }
 
         context.RenderTarget.PopAxisAlignedClip();
@@ -92,7 +102,7 @@ internal class LineEdit
         return textChanged;
     }
 
-    private bool ProcessInput(ref string text, LineEditDefinition def, InputState input)
+    private bool ProcessInput(ref string text, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
     {
         bool textChanged = false;
 
@@ -110,7 +120,7 @@ internal class LineEdit
             PushUndoState(text);
             foreach (char c in input.TypedCharacters)
             {
-                if (text.Length < def.MaxLength)
+                if (text.Length < maxLength)
                 {
                     text = text.Insert(_caretPosition, c.ToString());
                     _caretPosition++;
@@ -161,7 +171,7 @@ internal class LineEdit
 
         if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End))
         {
-            UpdateView(text, def);
+            UpdateView(text, size, textMargin);
             _isBlinkOn = true;
             _blinkTimer = 0;
         }
@@ -187,14 +197,14 @@ internal class LineEdit
         return pos;
     }
 
-    private void DrawVisibleText(string fullText, LineEditDefinition def, ButtonStyle style, Vector2 contentTopLeft)
+    private void DrawVisibleText(string fullText, Vector2 size, Vector2 textMargin, ButtonStyle style, Vector2 contentTopLeft)
     {
         if (string.IsNullOrEmpty(fullText)) return;
 
         var context = UI.Context;
         var rt = context.RenderTarget;
         var textBrush = UI.Resources.GetOrCreateBrush(rt, style.FontColor);
-        var textLayout = GetTextLayout(fullText, def, style, float.MaxValue); // Get layout for full string
+        var textLayout = GetTextLayout(fullText, size, style, float.MaxValue); // Get layout for full string
 
         if (textBrush == null || textLayout == null) return;
 
@@ -209,9 +219,9 @@ internal class LineEdit
         rt.Transform = originalTransform;
     }
 
-    private void DrawCaret(string text, LineEditDefinition def, ButtonStyle style, Rect contentRect)
+    private void DrawCaret(string text, Vector2 size, Vector2 textMargin, ButtonStyle style, Rect contentRect)
     {
-        var textLayout = GetTextLayout(text, def, style, float.MaxValue);
+        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
         if (textLayout == null) return;
 
         // Use HitTest to find the exact caret position
@@ -234,7 +244,7 @@ internal class LineEdit
         }
     }
 
-    private IDWriteTextLayout? GetTextLayout(string text, LineEditDefinition def, ButtonStyle style, float maxWidth)
+    private IDWriteTextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
     {
         var context = UI.Context;
         var resources = UI.Resources;
@@ -242,7 +252,7 @@ internal class LineEdit
 
         // Use a consistent alignment for caching and creation
         var alignment = new Alignment(HAlignment.Left, VAlignment.Center);
-        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(maxWidth, def.Size.Y), alignment);
+        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(maxWidth, size.Y), alignment);
 
         if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
         {
@@ -253,19 +263,19 @@ internal class LineEdit
             textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
             textFormat.ParagraphAlignment = ParagraphAlignment.Center;
 
-            textLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, def.Size.Y);
+            textLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, size.Y);
             resources.textLayoutCache[layoutKey] = textLayout;
         }
         return textLayout;
     }
 
 
-    private void UpdateView(string text, LineEditDefinition def)
+    private void UpdateView(string text, Vector2 size, Vector2 textMargin)
     {
-        float availableWidth = def.Size.X - def.TextMargin.X * 2;
-        var style = def.Theme?.Normal ?? new ButtonStyle();
+        float availableWidth = size.X - textMargin.X * 2;
+        var style = new ButtonStyle(); // A default style is fine for measuring
 
-        var textLayout = GetTextLayout(text, def, style, float.MaxValue);
+        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
         if (textLayout == null) return;
 
         // Get the absolute pixel position of the caret

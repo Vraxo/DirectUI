@@ -726,7 +726,7 @@ public readonly struct InputState
 }
 </file>
 
-<file path="Key.cs">
+<file path="Keys.cs">
 namespace DirectUI;
 
 /// <summary>
@@ -2299,7 +2299,7 @@ public static partial class UI
                 };
                 Resources.textLayoutCache[layoutKey] = textLayout;
             }
-            renderTarget.DrawTextLayout(new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush);
+            renderTarget.DrawTextLayout(new Vector2(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush, DrawTextOptions.None);
         }
         return wasClickedThisFrame;
     }
@@ -2308,6 +2308,7 @@ public static partial class UI
 
 <file path="Core\UI.TabBar.cs">
 using System.Numerics;
+using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
@@ -2361,7 +2362,7 @@ public static partial class UI
 
             if (textLayout is not null)
             {
-                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush);
+                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush, DrawTextOptions.None);
             }
         }
 
@@ -4956,11 +4957,10 @@ public class MyDirectUIApp : Direct2DAppWindow
         var key = (actionName, bindingIndex, elementKey);
         if (!_idCache.TryGetValue(key, out var idHash))
         {
-            // ID hash not found, generate string, hash it, and cache the hash.
-            string idStr = bindingIndex < 0
-                ? $"{elementKey}_{actionName}"
-                : $"{elementKey}_{actionName}_{bindingIndex}";
-            idHash = idStr.GetHashCode();
+            // OPTIMIZATION: Use HashCode.Combine to avoid string allocations and hashing overhead.
+            idHash = bindingIndex < 0
+                ? HashCode.Combine(elementKey, actionName)
+                : HashCode.Combine(elementKey, actionName, bindingIndex);
             _idCache[key] = idHash;
         }
         return idHash;
