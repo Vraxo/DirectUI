@@ -2,11 +2,11 @@
 
 internal class ResizablePanelState
 {
-    internal string Id { get; }
+    internal int Id { get; }
     internal VBoxContainerState InnerVBox { get; }
     internal bool ClipRectWasPushed { get; }
 
-    internal ResizablePanelState(string id, VBoxContainerState innerVBox, bool clipPushed)
+    internal ResizablePanelState(int id, VBoxContainerState innerVBox, bool clipPushed)
     {
         Id = id;
         InnerVBox = innerVBox;

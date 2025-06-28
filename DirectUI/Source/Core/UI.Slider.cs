@@ -4,7 +4,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static float HSlider(string id, float currentValue, SliderDefinition definition)
+    public static float HSlider(int id, float currentValue, SliderDefinition definition)
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
@@ -17,7 +17,7 @@ public static partial class UI
         return newValue;
     }
 
-    public static float VSlider(string id, float currentValue, SliderDefinition definition)
+    public static float VSlider(int id, float currentValue, SliderDefinition definition)
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);

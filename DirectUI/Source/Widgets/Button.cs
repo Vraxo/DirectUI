@@ -47,7 +47,7 @@ public class Button
     private bool isPressed = false;
 
 
-    internal bool Update(string id)
+    internal bool Update(int intId)
     {
         var context = UI.Context;
         var state = UI.State;
@@ -56,7 +56,6 @@ public class Button
         var renderTarget = context.RenderTarget;
         var dwriteFactory = context.DWriteFactory;
         var input = context.InputState;
-        var intId = id.GetHashCode();
 
         if (renderTarget is null || dwriteFactory is null)
         {
@@ -130,7 +129,7 @@ public class Button
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Error drawing button {id}: {ex}");
+            Console.WriteLine($"Error drawing button {intId}: {ex}");
             return false;
         }
 

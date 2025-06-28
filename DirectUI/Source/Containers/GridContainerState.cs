@@ -7,7 +7,7 @@ namespace DirectUI;
 
 internal class GridContainerState
 {
-    internal string Id { get; }
+    internal int Id { get; }
     internal Vector2 StartPosition { get; } // Top-left corner of the grid area
     internal int NumColumns { get; }
     internal Vector2 Gap { get; } // Gap between cells (X and Y)
@@ -25,7 +25,7 @@ internal class GridContainerState
     internal float AccumulatedHeight { get; set; } = 0f;
 
 
-    internal GridContainerState(string id, Vector2 startPosition, Vector2 availableSize, int numColumns, Vector2 gap)
+    internal GridContainerState(int id, Vector2 startPosition, Vector2 availableSize, int numColumns, Vector2 gap)
     {
         Id = id;
         StartPosition = startPosition;

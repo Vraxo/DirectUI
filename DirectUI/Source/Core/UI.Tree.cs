@@ -6,16 +6,17 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void Tree<T>(string id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
+    public static void Tree<T>(int id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
     {
         if (!IsContextValid() || root is null) { clickedNode = null; return; }
 
         clickedNode = null;
-        var treeStyle = style ?? State.GetOrCreateElement<TreeStyle>(id + "_style");
+        var styleId = HashCode.Combine(id, "style");
+        var treeStyle = style ?? State.GetOrCreateElement<TreeStyle>(styleId);
 
         var treeState = new TreeViewState(id, treeStyle);
         Context.treeStateStack.Push(treeState);
-        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
+        ProcessTreeNodeRecursive(id, 0, root, ref clickedNode);
         Context.treeStateStack.Pop();
     }
 

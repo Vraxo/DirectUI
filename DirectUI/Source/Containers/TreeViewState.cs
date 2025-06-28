@@ -2,11 +2,11 @@
 
 internal class TreeViewState
 {
-    internal string Id { get; }
+    internal int Id { get; }
     internal TreeStyle Style { get; }
     internal Stack<bool> IndentLineState { get; } = new();
 
-    internal TreeViewState(string id, TreeStyle style)
+    internal TreeViewState(int id, TreeStyle style)
     {
         Id = id;
         Style = style;

@@ -2,7 +2,7 @@
 
 public static partial class UI
 {
-    public static bool LineEdit(string id, ref string text, LineEditDefinition definition)
+    public static bool LineEdit(int id, ref string text, LineEditDefinition definition)
     {
         if (!IsContextValid() || definition == null) return false;
 

@@ -10,9 +10,9 @@ namespace DirectUI;
 public class UIPersistentState
 {
     // --- Persistent Element State ---
-    private readonly Dictionary<string, object> uiElements = new();
+    private readonly Dictionary<int, object> uiElements = new();
 
-    public T GetOrCreateElement<T>(string id) where T : new()
+    public T GetOrCreateElement<T>(int id) where T : new()
     {
         if (uiElements.TryGetValue(id, out object? element) && element is T existingElement)
         {

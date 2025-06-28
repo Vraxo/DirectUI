@@ -30,7 +30,7 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     // --- Caching for performance ---
     private readonly List<string> _actionNamesCache = new();
-    private readonly Dictionary<(string ActionName, int BindingIndex, string ElementKey), string> _idCache = new();
+    private readonly Dictionary<(string ActionName, int BindingIndex, string ElementKey), int> _idCache = new();
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
     private readonly BoxStyle _modalPanelStyle;
 
@@ -141,19 +141,19 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
     }
 
-    private string GetId(string actionName, int bindingIndex, string elementKey)
+    private int GetIdHash(string actionName, int bindingIndex, string elementKey)
     {
         var key = (actionName, bindingIndex, elementKey);
-        if (!_idCache.TryGetValue(key, out var id))
+        if (!_idCache.TryGetValue(key, out var idHash))
         {
-            // ID not found, generate and cache it.
-            // Action-level items use index -1, binding-level items use their index.
-            id = bindingIndex < 0
+            // ID hash not found, generate string, hash it, and cache the hash.
+            string idStr = bindingIndex < 0
                 ? $"{elementKey}_{actionName}"
                 : $"{elementKey}_{actionName}_{bindingIndex}";
-            _idCache[key] = id;
+            idHash = idStr.GetHashCode();
+            _idCache[key] = idHash;
         }
-        return id;
+        return idHash;
     }
 
 
@@ -258,12 +258,12 @@ public class MyDirectUIApp : Direct2DAppWindow
                 TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
             };
 
-            UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
+            UI.BeginHBoxContainer("menu_bar".GetHashCode(), new Vector2(5, 0), 0);
             menuButtonDef.Text = "File";
-            if (UI.Button("file_button", menuButtonDef)) { Console.WriteLine("File clicked"); }
+            if (UI.Button("file_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("File clicked"); }
 
             menuButtonDef.Text = "Project";
-            if (UI.Button("project_button", menuButtonDef))
+            if (UI.Button("project_button".GetHashCode(), menuButtonDef))
             {
                 // Create the window immediately upon click if it's not already open.
                 if (!_isProjectWindowOpen)
@@ -283,11 +283,11 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
 
             menuButtonDef.Text = "Edit";
-            if (UI.Button("edit_button", menuButtonDef)) { Console.WriteLine("Edit clicked"); }
+            if (UI.Button("edit_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("Edit clicked"); }
             menuButtonDef.Text = "View";
-            if (UI.Button("view_button", menuButtonDef)) { Console.WriteLine("View clicked"); }
+            if (UI.Button("view_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("View clicked"); }
             menuButtonDef.Text = "Help";
-            if (UI.Button("help_button", menuButtonDef)) { Console.WriteLine("Help clicked"); }
+            if (UI.Button("help_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("Help clicked"); }
             UI.EndHBoxContainer();
         }
 
@@ -327,11 +327,11 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         // --- Left Panel ---
         {
-            UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
+            UI.BeginResizableVPanel("left_panel".GetHashCode(), ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
             // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-            UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
-            UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+            UI.BeginVBoxContainer("tree_vbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 0);
+            UI.Tree("file_tree".GetHashCode(), _fileRoot, out var clickedNode, _treeStyle);
             if (clickedNode is not null)
             {
                 Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
@@ -343,26 +343,26 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         // --- Right Panel ---
         {
-            UI.BeginResizableVPanel("right_panel", ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
+            UI.BeginResizableVPanel("right_panel".GetHashCode(), ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
 
-            if (UI.Button("right_button_1", new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
+            if (UI.Button("right_button_1".GetHashCode(), new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
             {
                 Console.WriteLine("Right panel button 1 clicked!");
             }
-            if (UI.Button("right_button_2", new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
+            if (UI.Button("right_button_2".GetHashCode(), new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
             {
                 Console.WriteLine("Right panel button 2 clicked!");
             }
-            sliderValue = UI.HSlider("my_slider", sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+            sliderValue = UI.HSlider("my_slider".GetHashCode(), sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
 
             UI.EndResizableVPanel();
         }
 
         // --- Bottom Panel ---
         {
-            UI.BeginResizableHPanel("bottom_panel", ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
+            UI.BeginResizableHPanel("bottom_panel".GetHashCode(), ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
 
-            if (UI.Button("bottom_button", new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
+            if (UI.Button("bottom_button".GetHashCode(), new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
             {
                 Console.WriteLine("Bottom button clicked!");
             }
@@ -381,7 +381,7 @@ public class MyDirectUIApp : Direct2DAppWindow
         var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
         // --- Draw Tab Bar ---
-        UI.TabBar("project_tabs", ProjectWindowTabLabels, ref _projectWindowActiveTab);
+        UI.TabBar("project_tabs".GetHashCode(), ProjectWindowTabLabels, ref _projectWindowActiveTab);
 
         // --- Draw Content Panel and Content ---
         UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), _modalPanelStyle);
@@ -397,12 +397,12 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         if (_projectWindowActiveTab == 0) // General Tab
         {
-            UI.BeginVBoxContainer("tab_content_vbox_general", new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
-            if (UI.Button("modal_button_1", new ButtonDefinition { Text = "A button in a modal" }))
+            UI.BeginVBoxContainer("tab_content_vbox_general".GetHashCode(), new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
+            if (UI.Button("modal_button_1".GetHashCode(), new ButtonDefinition { Text = "A button in a modal" }))
             {
                 Console.WriteLine("Modal button clicked!");
             }
-            if (UI.Button("modal_button_close", new ButtonDefinition { Text = "Close Me" }))
+            if (UI.Button("modal_button_close".GetHashCode(), new ButtonDefinition { Text = "Close Me" }))
             {
                 _isProjectWindowOpen = false;
             }
@@ -415,9 +415,9 @@ public class MyDirectUIApp : Direct2DAppWindow
             // --- DEFERRED MODIFICATION VARS ---
             string? actionToRemove = null;
 
-            UI.BeginVBoxContainer("input_editor_main_vbox", new Vector2(paddedContentRect.X, paddedContentRect.Y), 15);
+            UI.BeginVBoxContainer("input_editor_main_vbox".GetHashCode(), new Vector2(paddedContentRect.X, paddedContentRect.Y), 15);
 
-            UI.BeginVBoxContainer("actions_list_vbox", UI.Context.Layout.GetCurrentPosition(), 8);
+            UI.BeginVBoxContainer("actions_list_vbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 8);
             for (int i = 0; i < _actionNamesCache.Count; i++)
             {
                 string actionName = _actionNamesCache[i];
@@ -425,51 +425,51 @@ public class MyDirectUIApp : Direct2DAppWindow
                 var bindings = _inputMap[actionName];
                 int bindingToRemove = -1; // Deferred removal for bindings
 
-                UI.BeginHBoxContainer(GetId(actionName, -1, "action_header"), UI.Context.Layout.GetCurrentPosition(), 5);
+                UI.BeginHBoxContainer(GetIdHash(actionName, -1, "action_header"), UI.Context.Layout.GetCurrentPosition(), 5);
                 buttonDef.Text = actionName;
                 buttonDef.Theme = _labelStyle;
                 buttonDef.Disabled = true;
                 buttonDef.AutoWidth = true;
                 buttonDef.TextMargin = null;
                 buttonDef.Size = default;
-                UI.Button(GetId(actionName, -1, "action_label"), buttonDef);
+                UI.Button(GetIdHash(actionName, -1, "action_label"), buttonDef);
 
                 buttonDef.Text = "x";
                 buttonDef.Theme = _removeButtonStyle;
                 buttonDef.Size = new Vector2(20, 20);
                 buttonDef.Disabled = false;
                 buttonDef.AutoWidth = false;
-                if (UI.Button(GetId(actionName, -1, "remove_action"), buttonDef))
+                if (UI.Button(GetIdHash(actionName, -1, "remove_action"), buttonDef))
                 {
                     actionToRemove = actionName; // Defer removal
                 }
                 UI.EndHBoxContainer();
 
-                UI.BeginHBoxContainer(GetId(actionName, -1, "bindings_outer_hbox"), UI.Context.Layout.GetCurrentPosition(), 0);
+                UI.BeginHBoxContainer(GetIdHash(actionName, -1, "bindings_outer_hbox"), UI.Context.Layout.GetCurrentPosition(), 0);
                 buttonDef.Size = new Vector2(20, 0);
                 buttonDef.Theme = _labelStyle;
                 buttonDef.Disabled = true;
                 buttonDef.Text = "";
-                UI.Button(GetId(actionName, -1, "indent_spacer"), buttonDef);
+                UI.Button(GetIdHash(actionName, -1, "indent_spacer"), buttonDef);
 
-                UI.BeginVBoxContainer(GetId(actionName, -1, "bindings_vbox"), UI.Context.Layout.GetCurrentPosition(), 5);
+                UI.BeginVBoxContainer(GetIdHash(actionName, -1, "bindings_vbox"), UI.Context.Layout.GetCurrentPosition(), 5);
                 for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
-                    UI.BeginHBoxContainer(GetId(actionName, j, "binding_row"), UI.Context.Layout.GetCurrentPosition(), 5);
+                    UI.BeginHBoxContainer(GetIdHash(actionName, j, "binding_row"), UI.Context.Layout.GetCurrentPosition(), 5);
 
                     buttonDef.Text = binding.Type.ToString();
                     buttonDef.Theme = _editorButtonStyle;
                     buttonDef.Size = new Vector2(100, 24);
                     buttonDef.Disabled = false;
-                    if (UI.Button(GetId(actionName, j, "binding_type"), buttonDef))
+                    if (UI.Button(GetIdHash(actionName, j, "binding_type"), buttonDef))
                     {
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
                         _inputMapDirty = true;
                     }
 
                     string tempKeyOrButton = binding.KeyOrButton;
-                    if (UI.LineEdit(GetId(actionName, j, "binding_key"), ref tempKeyOrButton, _lineEditDef))
+                    if (UI.LineEdit(GetIdHash(actionName, j, "binding_key"), ref tempKeyOrButton, _lineEditDef))
                     {
                         binding.KeyOrButton = tempKeyOrButton;
                         _inputMapDirty = true;
@@ -478,7 +478,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                     buttonDef.Text = "x";
                     buttonDef.Theme = _removeButtonStyle;
                     buttonDef.Size = new Vector2(24, 24);
-                    if (UI.Button(GetId(actionName, j, "remove_binding"), buttonDef))
+                    if (UI.Button(GetIdHash(actionName, j, "remove_binding"), buttonDef))
                     {
                         bindingToRemove = j; // Defer removal
                     }
@@ -495,7 +495,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 buttonDef.Text = "Add Binding";
                 buttonDef.Theme = _editorButtonStyle;
                 buttonDef.Size = new Vector2(100, 24);
-                if (UI.Button(GetId(actionName, -1, "add_binding"), buttonDef))
+                if (UI.Button(GetIdHash(actionName, -1, "add_binding"), buttonDef))
                 {
                     bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
                     _inputMapDirty = true;
@@ -514,14 +514,14 @@ public class MyDirectUIApp : Direct2DAppWindow
                 _inputMapDirty = true;
             }
 
-            UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.Layout.GetCurrentPosition(), 10);
+            UI.BeginHBoxContainer("input_editor_utils_hbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 10);
             buttonDef.Text = "Add New Action";
             buttonDef.Theme = _utilityButtonStyle;
             buttonDef.AutoWidth = true;
             buttonDef.TextMargin = new Vector2(10, 5);
             buttonDef.Size = default;
             buttonDef.Disabled = false;
-            if (UI.Button("add_action", buttonDef))
+            if (UI.Button("add_action".GetHashCode(), buttonDef))
             {
                 string newActionName;
                 do { newActionName = $"NewAction_{_newActionCounter++}"; } while (_inputMap.ContainsKey(newActionName));
@@ -533,7 +533,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             buttonDef.Text = "Apply Changes";
             buttonDef.Theme = _utilityButtonStyle;
             buttonDef.Disabled = !_inputMapDirty;
-            if (UI.Button("apply_changes", buttonDef))
+            if (UI.Button("apply_changes".GetHashCode(), buttonDef))
             {
                 InputMapManager.Save(_inputMapPath, _inputMap);
                 _inputMapDirty = false;
@@ -541,7 +541,7 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             buttonDef.Text = "Revert";
             buttonDef.Disabled = false;
-            if (UI.Button("revert_changes", buttonDef))
+            if (UI.Button("revert_changes".GetHashCode(), buttonDef))
             {
                 _inputMap = InputMapManager.Load(_inputMapPath);
                 _idCache.Clear();

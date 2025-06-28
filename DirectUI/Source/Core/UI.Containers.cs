@@ -9,7 +9,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginHBoxContainer(int id, Vector2 position, float gap = 5.0f)
     {
         Context.Layout.BeginHBox(id, position, gap);
     }
@@ -23,7 +23,7 @@ public static partial class UI
         { Context.Layout.AdvanceContainerLayout(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
     }
 
-    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginVBoxContainer(int id, Vector2 position, float gap = 5.0f)
     {
         Context.Layout.BeginVBox(id, position, gap);
     }
@@ -37,7 +37,7 @@ public static partial class UI
         { Context.Layout.AdvanceContainerLayout(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
     }
 
-    public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
+    public static void BeginGridContainer(int id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
         Context.Layout.PushContainer(new GridContainerState(id, position, availableSize, numColumns, gap));
     }
@@ -54,10 +54,10 @@ public static partial class UI
         }
     }
 
-    public static void BeginResizableVPanel(string id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
+    public static void BeginResizableVPanel(int id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
-        var intId = id.GetHashCode();
+        var intId = id;
 
         var input = Context.InputState;
         var renderTarget = Context.RenderTarget;
@@ -101,7 +101,8 @@ public static partial class UI
             clipPushed = true;
         }
 
-        var vboxState = Context.Layout.GetOrCreateVBoxState(id + "_vbox");
+        var vboxId = HashCode.Combine(id, "_vbox");
+        var vboxState = Context.Layout.GetOrCreateVBoxState(vboxId);
         vboxState.StartPosition = contentStartPosition;
         vboxState.CurrentPosition = contentStartPosition;
         vboxState.Gap = definition.Gap;
@@ -124,10 +125,10 @@ public static partial class UI
         Context.Layout.PopContainer();
     }
 
-    public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
+    public static void BeginResizableHPanel(int id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
     {
         if (!IsContextValid() || definition == null) return;
-        var intId = id.GetHashCode();
+        var intId = id;
 
         var input = Context.InputState;
         var renderTarget = Context.RenderTarget;
@@ -177,7 +178,8 @@ public static partial class UI
             clipPushed = true;
         }
 
-        var hboxState = Context.Layout.GetOrCreateHBoxState(id + "_hbox");
+        var hboxId = HashCode.Combine(id, "_hbox");
+        var hboxState = Context.Layout.GetOrCreateHBoxState(hboxId);
         hboxState.StartPosition = contentStartPosition;
         hboxState.CurrentPosition = contentStartPosition;
         hboxState.Gap = definition.Gap;

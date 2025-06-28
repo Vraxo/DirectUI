@@ -6,11 +6,11 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    private static bool TabButtonPrimitive(string id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
+    private static bool TabButtonPrimitive(int id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
     {
         if (!IsContextValid()) return false;
 
-        var intId = id.GetHashCode();
+        var intId = id;
         var position = Context.Layout.GetCurrentPosition();
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
 
@@ -60,11 +60,12 @@ public static partial class UI
         return wasClicked;
     }
 
-    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    public static void TabBar(int id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
     {
         if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
 
-        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
+        var themeId = HashCode.Combine(id, "theme_default");
+        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(themeId);
         var state = State.GetOrCreateElement<TabBarState>(id);
 
         const float textMarginX = 15f;
@@ -93,11 +94,13 @@ public static partial class UI
 
         var tabSize = new Vector2(uniformTabWidth, tabHeight);
 
-        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), 0);
+        var hboxId = HashCode.Combine(id, "hbox");
+        BeginHBoxContainer(hboxId, Context.Layout.GetCurrentPosition(), 0);
         for (int i = 0; i < tabLabels.Length; i++)
         {
+            var buttonId = HashCode.Combine(id, i);
             bool wasClicked = TabButtonPrimitive(
-                id + "_" + i,
+                buttonId,
                 tabLabels[i],
                 tabSize,
                 i == activeIndex,

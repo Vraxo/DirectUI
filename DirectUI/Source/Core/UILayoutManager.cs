@@ -5,7 +5,7 @@ namespace DirectUI;
 public class UILayoutManager
 {
     private readonly Stack<object> _containerStack = new();
-    private readonly Dictionary<string, object> _containerStateCache = new();
+    private readonly Dictionary<int, object> _containerStateCache = new();
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
@@ -15,7 +15,7 @@ public class UILayoutManager
     public object PeekContainer() => _containerStack.Peek();
     public void ClearStack() => _containerStack.Clear();
 
-    public HBoxContainerState GetOrCreateHBoxState(string id)
+    public HBoxContainerState GetOrCreateHBoxState(int id)
     {
         if (!_containerStateCache.TryGetValue(id, out var state) || state is not HBoxContainerState hboxState)
         {
@@ -25,7 +25,7 @@ public class UILayoutManager
         return hboxState;
     }
 
-    public VBoxContainerState GetOrCreateVBoxState(string id)
+    public VBoxContainerState GetOrCreateVBoxState(int id)
     {
         if (!_containerStateCache.TryGetValue(id, out var state) || state is not VBoxContainerState vboxState)
         {
@@ -35,7 +35,7 @@ public class UILayoutManager
         return vboxState;
     }
 
-    public void BeginHBox(string id, Vector2 startPosition, float gap)
+    public void BeginHBox(int id, Vector2 startPosition, float gap)
     {
         var hboxState = GetOrCreateHBoxState(id);
 
@@ -50,7 +50,7 @@ public class UILayoutManager
         PushContainer(hboxState);
     }
 
-    public void BeginVBox(string id, Vector2 startPosition, float gap)
+    public void BeginVBox(int id, Vector2 startPosition, float gap)
     {
         var vboxState = GetOrCreateVBoxState(id);
 

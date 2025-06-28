@@ -30,7 +30,6 @@ internal abstract class InternalSliderLogic
     protected float trackMaxBound;
     protected bool pendingTrackClickValueJump = false;
     protected float trackClickPosition = 0f;
-    protected string GlobalId { get; private set; } = string.Empty;
     protected int GlobalIntId { get; private set; } = 0;
 
 
@@ -46,13 +45,12 @@ internal abstract class InternalSliderLogic
 
 
     // --- Common Logic ---
-    internal float UpdateAndDraw(string id, float currentValue)
+    internal float UpdateAndDraw(int id, float currentValue)
     {
         var context = UI.Context;
         var state = UI.State;
 
-        GlobalId = id;
-        GlobalIntId = id.GetHashCode();
+        GlobalIntId = id;
         isFocused = state.FocusedElementId == GlobalIntId;
         trackPosition = Position - Origin;
         CalculateTrackBounds();

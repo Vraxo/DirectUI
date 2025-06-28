@@ -10,14 +10,14 @@ using D2D = Vortice.Direct2D1;
 namespace DirectUI;
 
 // Record for undo/redo functionality
-internal record struct LineEditUndoRecord(string Text, int CaretPosition, int TextStartIndex);
+internal record struct LineEditUndoRecord(string Text, int CaretPosition, float ScrollPixelOffset);
 
 // State and logic for an immediate-mode LineEdit control, encapsulated in a single class.
 internal class LineEdit
 {
     // === PERSISTENT STATE ===
     private int _caretPosition;
-    private int _textStartIndex; // The starting character index for the visible text portion
+    private float _scrollPixelOffset; // The horizontal scroll position in pixels
 
     private float _blinkTimer;
     private bool _isBlinkOn = true;
@@ -27,14 +27,14 @@ internal class LineEdit
     private const int HistoryLimit = 50;
 
     // === MAIN UPDATE & DRAW METHOD ===
-    public bool UpdateAndDraw(string id, ref string text, LineEditDefinition definition)
+    public bool UpdateAndDraw(int intId, ref string text, LineEditDefinition definition)
     {
         var context = UI.Context;
         var state = UI.State;
         var resources = UI.Resources;
 
-        var intId = id.GetHashCode();
-        var theme = definition.Theme ?? state.GetOrCreateElement<ButtonStylePack>(id + "_theme");
+        var themeId = HashCode.Combine(intId, "theme");
+        var theme = definition.Theme ?? state.GetOrCreateElement<ButtonStylePack>(themeId);
         var input = context.InputState;
 
         var position = context.Layout.ApplyLayout(definition.Position);
@@ -62,23 +62,29 @@ internal class LineEdit
         theme.UpdateCurrentStyle(isHovering, false, definition.Disabled, isFocused);
         resources.DrawBoxStyleHelper(context.RenderTarget, position, definition.Size, theme.Current);
 
-        context.RenderTarget.PushAxisAlignedClip(bounds, D2D.AntialiasMode.PerPrimitive);
+        // Define content area and clip to it
+        Rect contentRect = new Rect(
+            bounds.X + definition.TextMargin.X,
+            bounds.Y + definition.TextMargin.Y,
+            Math.Max(0, bounds.Width - definition.TextMargin.X * 2),
+            Math.Max(0, bounds.Height - definition.TextMargin.Y * 2)
+        );
+        context.RenderTarget.PushAxisAlignedClip(contentRect, D2D.AntialiasMode.PerPrimitive);
 
-        string textToDraw;
+        var textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
+
         if (string.IsNullOrEmpty(text) && !isFocused)
         {
-            DrawPlaceholderText(definition.PlaceholderText, definition, theme.Disabled, position);
+            DrawVisibleText(definition.PlaceholderText, definition, theme.Disabled, contentRect.TopLeft);
         }
         else
         {
-            textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
-            DrawVisibleText(textToDraw, definition, theme.Current, position);
+            DrawVisibleText(textToDraw, definition, theme.Current, contentRect.TopLeft);
         }
 
         if (isFocused && _isBlinkOn)
         {
-            textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
-            DrawCaret(textToDraw, definition, theme.Current, position);
+            DrawCaret(textToDraw, definition, theme.Current, contentRect);
         }
 
         context.RenderTarget.PopAxisAlignedClip();
@@ -153,7 +159,7 @@ internal class LineEdit
 
         _caretPosition = Math.Clamp(_caretPosition, 0, text.Length);
 
-        if (textChanged)
+        if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End))
         {
             UpdateView(text, def);
             _isBlinkOn = true;
@@ -181,76 +187,43 @@ internal class LineEdit
         return pos;
     }
 
-    private void DrawPlaceholderText(string placeholder, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    private void DrawVisibleText(string fullText, LineEditDefinition def, ButtonStyle style, Vector2 contentTopLeft)
     {
-        DrawTextLayout(placeholder, def, style, position, 0);
-    }
-
-    private void DrawVisibleText(string fullText, LineEditDefinition def, ButtonStyle style, Vector2 position)
-    {
-        string visibleText = fullText;
-        if (_textStartIndex > 0 && _textStartIndex < fullText.Length)
-        {
-            visibleText = fullText.Substring(_textStartIndex);
-        }
-        else if (_textStartIndex >= fullText.Length)
-        {
-            visibleText = "";
-        }
-        DrawTextLayout(visibleText, def, style, position, _textStartIndex);
-    }
-
-    private void DrawTextLayout(string textToDraw, LineEditDefinition def, ButtonStyle style, Vector2 position, int startIndex)
-    {
-        if (string.IsNullOrEmpty(textToDraw)) return;
+        if (string.IsNullOrEmpty(fullText)) return;
 
         var context = UI.Context;
-        var resources = UI.Resources;
         var rt = context.RenderTarget;
-        var dwrite = context.DWriteFactory;
+        var textBrush = UI.Resources.GetOrCreateBrush(rt, style.FontColor);
+        var textLayout = GetTextLayout(fullText, def, style, float.MaxValue); // Get layout for full string
 
-        var textBrush = resources.GetOrCreateBrush(rt, style.FontColor);
-        if (textBrush == null) return;
+        if (textBrush == null || textLayout == null) return;
 
-        Rect layoutRect = new Rect(
-            position.X + def.TextMargin.X,
-            position.Y + def.TextMargin.Y,
-            Math.Max(0, def.Size.X - def.TextMargin.X * 2),
-            Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
-        );
+        // Apply a transform to scroll the text
+        var originalTransform = rt.Transform;
+        var translation = Matrix3x2.CreateTranslation(contentTopLeft.X - _scrollPixelOffset, contentTopLeft.Y);
+        rt.Transform = translation * originalTransform;
 
-        // This is a fixed alignment for all LineEdit text.
-        var alignment = new Alignment(HAlignment.Left, VAlignment.Center);
-        var layoutKey = new UIResources.TextLayoutCacheKey(textToDraw, style, new(layoutRect.Width, layoutRect.Height), alignment);
+        rt.DrawTextLayout(Vector2.Zero, textLayout, textBrush, DrawTextOptions.None);
 
-        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-        {
-            var textFormat = resources.GetOrCreateTextFormat(dwrite, style);
-            if (textFormat == null) return;
-            textFormat.WordWrapping = WordWrapping.NoWrap; // Crucial for LineEdit
-            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
-            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-
-            textLayout = dwrite.CreateTextLayout(textToDraw, textFormat, layoutRect.Width, layoutRect.Height);
-            resources.textLayoutCache[layoutKey] = textLayout;
-        }
-
-        rt.DrawTextLayout(new Vector2(layoutRect.X, layoutRect.Y), textLayout, textBrush, DrawTextOptions.Clip);
+        // Restore original transform
+        rt.Transform = originalTransform;
     }
 
-
-    private void DrawCaret(string text, LineEditDefinition def, ButtonStyle style, Vector2 position)
+    private void DrawCaret(string text, LineEditDefinition def, ButtonStyle style, Rect contentRect)
     {
-        if (_caretPosition < _textStartIndex) return;
+        var textLayout = GetTextLayout(text, def, style, float.MaxValue);
+        if (textLayout == null) return;
 
-        string textBeforeCaret = text.Substring(_textStartIndex, _caretPosition - _textStartIndex);
-        float caretXOffset = MeasureTextWidth(textBeforeCaret, style);
+        // Use HitTest to find the exact caret position
+        textLayout.HitTestTextPosition((uint)_caretPosition, false, out _, out _, out var hitTestMetrics);
+
+        float caretX = contentRect.Left + hitTestMetrics.Left - _scrollPixelOffset;
 
         Rect caretRect = new Rect(
-            position.X + def.TextMargin.X + caretXOffset,
-            position.Y + def.TextMargin.Y,
+            caretX,
+            contentRect.Top,
             1, // Caret width
-            Math.Max(0, def.Size.Y - def.TextMargin.Y * 2)
+            contentRect.Height
         );
 
         var context = UI.Context;
@@ -261,93 +234,88 @@ internal class LineEdit
         }
     }
 
-    private float MeasureTextWidth(string text, ButtonStyle style)
+    private IDWriteTextLayout? GetTextLayout(string text, LineEditDefinition def, ButtonStyle style, float maxWidth)
     {
-        if (string.IsNullOrEmpty(text)) return 0;
         var context = UI.Context;
         var resources = UI.Resources;
         var dwrite = context.DWriteFactory;
 
-        // Use a consistent key for measurement, assuming infinite width.
-        // The specific alignment doesn't matter for width measurement.
-        var alignment = new Alignment(HAlignment.Left, VAlignment.Top);
-        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(float.MaxValue, float.MaxValue), alignment);
+        // Use a consistent alignment for caching and creation
+        var alignment = new Alignment(HAlignment.Left, VAlignment.Center);
+        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(maxWidth, def.Size.Y), alignment);
 
         if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
         {
             var textFormat = resources.GetOrCreateTextFormat(dwrite, style);
-            if (textFormat == null) return 0;
-            textFormat.WordWrapping = WordWrapping.NoWrap;
+            if (textFormat == null) return null;
 
-            textLayout = dwrite.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+            textFormat.WordWrapping = WordWrapping.NoWrap;
+            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
+            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+
+            textLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, def.Size.Y);
             resources.textLayoutCache[layoutKey] = textLayout;
         }
-
-        return textLayout.Metrics.WidthIncludingTrailingWhitespace;
+        return textLayout;
     }
+
 
     private void UpdateView(string text, LineEditDefinition def)
     {
         float availableWidth = def.Size.X - def.TextMargin.X * 2;
-        var style = def.Theme?.Normal ?? new ButtonStyle(); // A default style for measurement
+        var style = def.Theme?.Normal ?? new ButtonStyle();
 
-        string textBeforeCaret = text.Substring(0, _caretPosition);
-        float caretPixelX = MeasureTextWidth(textBeforeCaret, style);
+        var textLayout = GetTextLayout(text, def, style, float.MaxValue);
+        if (textLayout == null) return;
 
-        string textInView = text.Substring(_textStartIndex);
-        float viewStartX = MeasureTextWidth(text.Substring(0, _textStartIndex), style);
+        // Get the absolute pixel position of the caret
+        textLayout.HitTestTextPosition((uint)_caretPosition, false, out _, out _, out var hitTestMetrics);
+        float caretAbsoluteX = hitTestMetrics.Left;
 
-        float caretPosInView = caretPixelX - viewStartX;
-
-        if (caretPosInView > availableWidth)
+        // Check if caret is outside the visible area and adjust scroll offset
+        if (caretAbsoluteX - _scrollPixelOffset > availableWidth)
         {
-            // Caret moved past the right edge, scroll right
-            _textStartIndex++;
-            while (MeasureTextWidth(text.Substring(_textStartIndex, _caretPosition - _textStartIndex), style) > availableWidth && _textStartIndex < _caretPosition)
-            {
-                _textStartIndex++;
-            }
+            // Caret is past the right edge, scroll right to bring it into view
+            _scrollPixelOffset = caretAbsoluteX - availableWidth;
         }
-        else if (caretPosInView < 0)
+        else if (caretAbsoluteX - _scrollPixelOffset < 0)
         {
-            // Caret moved before the left edge, scroll left
-            _textStartIndex = _caretPosition;
+            // Caret is before the left edge, scroll left to bring it into view
+            _scrollPixelOffset = caretAbsoluteX;
         }
 
-        // Ensure the full visible text fits if possible
-        while (_textStartIndex > 0 && MeasureTextWidth(text.Substring(_textStartIndex), style) > availableWidth)
-        {
-            _textStartIndex++;
-        }
-
-        _textStartIndex = Math.Clamp(_textStartIndex, 0, text.Length);
+        // Ensure we don't scroll too far if the text is shorter than the view
+        float maxScroll = Math.Max(0, textLayout.Metrics.WidthIncludingTrailingWhitespace - availableWidth);
+        _scrollPixelOffset = Math.Clamp(_scrollPixelOffset, 0, maxScroll);
     }
 
     private void PushUndoState(string text)
     {
-        if (_undoStack.Count > 0 && _undoStack.Peek().Text == text) return;
+        var lastState = _undoStack.Count > 0 ? _undoStack.Peek() : default;
+        if (_undoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == _caretPosition) return;
+
         if (_undoStack.Count >= HistoryLimit) _undoStack.Pop();
-        _undoStack.Push(new LineEditUndoRecord(text, _caretPosition, _textStartIndex));
+        _undoStack.Push(new LineEditUndoRecord(text, _caretPosition, _scrollPixelOffset));
         _redoStack.Clear();
     }
 
     private void Undo(ref string text)
     {
         if (_undoStack.Count == 0) return;
-        _redoStack.Push(new LineEditUndoRecord(text, _caretPosition, _textStartIndex));
+        _redoStack.Push(new LineEditUndoRecord(text, _caretPosition, _scrollPixelOffset));
         var lastState = _undoStack.Pop();
         text = lastState.Text;
         _caretPosition = lastState.CaretPosition;
-        _textStartIndex = lastState.TextStartIndex;
+        _scrollPixelOffset = lastState.ScrollPixelOffset;
     }
 
     private void Redo(ref string text)
     {
         if (_redoStack.Count == 0) return;
-        _undoStack.Push(new LineEditUndoRecord(text, _caretPosition, _textStartIndex));
+        _undoStack.Push(new LineEditUndoRecord(text, _caretPosition, _scrollPixelOffset));
         var nextState = _redoStack.Pop();
         text = nextState.Text;
         _caretPosition = nextState.CaretPosition;
-        _textStartIndex = nextState.TextStartIndex;
+        _scrollPixelOffset = nextState.ScrollPixelOffset;
     }
 }

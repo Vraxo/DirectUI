@@ -8,7 +8,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-	public static bool Button(string id, ButtonDefinition definition)
+	public static bool Button(int id, ButtonDefinition definition)
 	{
 		if (!IsContextValid() || definition is null) return false;
 		Button buttonInstance = State.GetOrCreateElement<Button>(id);
