@@ -22,7 +22,7 @@ public static partial class UI
 
         State.ResetFrameState(context.InputState);
 
-        Context.containerStack.Clear();
+        Context.Layout.ClearStack();
         Context.treeStateStack.Clear();
     }
 
@@ -34,10 +34,10 @@ public static partial class UI
             State.SetFocus(0);
         }
 
-        if (Context.containerStack.Count > 0)
+        if (Context.Layout.ContainerStackCount > 0)
         {
-            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.containerStack.Count} containers left open at EndFrame.");
-            Context.containerStack.Clear();
+            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.Layout.ContainerStackCount} containers left open at EndFrame.");
+            Context.Layout.ClearStack();
         }
         if (Context.treeStateStack.Count > 0)
         {

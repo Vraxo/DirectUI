@@ -26,7 +26,7 @@ public static partial class UI
         var style = treeState.Style;
         var renderTarget = Context.RenderTarget;
 
-        var startLayoutPos = Context.GetCurrentLayoutPosition();
+        var startLayoutPos = Context.Layout.GetCurrentPosition();
         var brush = Resources.GetOrCreateBrush(renderTarget, style.LineColor);
         if (brush is not null)
         {
@@ -82,7 +82,7 @@ public static partial class UI
         }
         currentX += labelWidth;
 
-        Context.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
+        Context.Layout.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
 
         if (node.IsExpanded && node.Children.Count > 0)
         {

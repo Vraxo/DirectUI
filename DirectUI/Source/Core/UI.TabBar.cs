@@ -11,7 +11,7 @@ public static partial class UI
         if (!IsContextValid()) return false;
 
         var intId = id.GetHashCode();
-        var position = Context.GetCurrentLayoutPosition();
+        var position = Context.Layout.GetCurrentPosition();
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
 
         InputState input = Context.InputState;
@@ -39,7 +39,7 @@ public static partial class UI
             rt.DrawText(text, textFormat, bounds, textBrush);
         }
 
-        Context.AdvanceLayout(size);
+        Context.Layout.AdvanceLayout(size);
         return wasClicked;
     }
 
@@ -64,7 +64,7 @@ public static partial class UI
         float uniformTabWidth = maxWidth + textMargin.X * 2;
         var tabSize = new Vector2(uniformTabWidth, tabHeight);
 
-        BeginHBoxContainer(id + "_hbox", Context.GetCurrentLayoutPosition(), 0);
+        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), 0);
         for (int i = 0; i < tabLabels.Length; i++)
         {
             bool wasClicked = TabButtonPrimitive(

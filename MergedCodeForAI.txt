@@ -18,6 +18,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Diagnostics;
+using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -33,21 +34,13 @@ public class AppHost
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
     private readonly UIResources _uiResources;
+    private readonly InputManager _inputManager;
 
     private GraphicsDevice? _graphicsDevice;
     private IntPtr _hwnd;
 
-    // Input state
-    private Vector2 _currentMousePos = new(-1, -1);
-    private bool _isLeftMouseButtonDown = false;
-    private bool _wasLeftMouseClickedThisFrame = false;
-    private readonly Queue<char> _typedCharsThisFrame = new();
-    private readonly List<Keys> _pressedKeysThisFrame = new();
-    private readonly List<Keys> _releasedKeysThisFrame = new();
-    private readonly HashSet<Keys> _heldKeys = new();
-
-
     public bool ShowFpsCounter { get; set; } = true;
+    public InputManager Input => _inputManager;
 
     public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
@@ -55,6 +48,7 @@ public class AppHost
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _uiResources = new UIResources();
+        _inputManager = new InputManager();
 
         // Initialize the FpsCounter once during construction.
         // The DWriteFactory is available from shared resources, which are initialized
@@ -109,10 +103,8 @@ public class AppHost
         {
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))
             {
-                _wasLeftMouseClickedThisFrame = false;
-                _typedCharsThisFrame.Clear(); // Clear queue on failed render
-                _pressedKeysThisFrame.Clear();
-                _releasedKeysThisFrame.Clear();
+                // On failure, still need to prepare the input manager for the next attempt.
+                _inputManager.PrepareNextFrame();
                 return;
             }
         }
@@ -128,18 +120,8 @@ public class AppHost
         {
             rt.Clear(_backgroundColor);
 
-            var inputState = new InputState(
-                _currentMousePos,
-                _wasLeftMouseClickedThisFrame,
-                _isLeftMouseButtonDown,
-                _typedCharsThisFrame.ToList(),
-                _pressedKeysThisFrame,
-                _releasedKeysThisFrame,
-                _heldKeys
-            );
-            _typedCharsThisFrame.Clear();
-            _pressedKeysThisFrame.Clear();
-            _releasedKeysThisFrame.Clear();
+            // Get the immutable input state for this frame from the InputManager
+            var inputState = _inputManager.GetCurrentState();
 
             var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
@@ -161,7 +143,8 @@ public class AppHost
         finally
         {
             _graphicsDevice.EndDraw();
-            _wasLeftMouseClickedThisFrame = false;
+            // Prepare the input manager for the next frame.
+            _inputManager.PrepareNextFrame();
         }
     }
 
@@ -176,54 +159,6 @@ public class AppHost
         // Fallback for when the handle is not yet valid during initialization.
         // This size isn't critical as resize will be called immediately after.
         return new SizeI(1, 1);
-    }
-
-    public void SetMousePosition(int x, int y)
-    {
-        _currentMousePos = new Vector2(x, y);
-    }
-
-    public void SetMouseDown(MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _isLeftMouseButtonDown = true;
-            _wasLeftMouseClickedThisFrame = true;
-        }
-    }
-
-    public void SetMouseUp(MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _isLeftMouseButtonDown = false;
-        }
-    }
-
-    public void AddCharacterInput(char c)
-    {
-        if (!char.IsControl(c) || c == '\t' || c == '\n')
-        {
-            _typedCharsThisFrame.Enqueue(c);
-        }
-    }
-
-    public void AddKeyPressed(Keys key)
-    {
-        if (!_heldKeys.Contains(key))
-        {
-            _pressedKeysThisFrame.Add(key);
-            _heldKeys.Add(key);
-        }
-    }
-
-    public void AddKeyReleased(Keys key)
-    {
-        if (_heldKeys.Contains(key))
-        {
-            _releasedKeysThisFrame.Add(key);
-            _heldKeys.Remove(key);
-        }
     }
 }
 </file>
@@ -345,6 +280,7 @@ public static class Application
 // Direct2DAppWindow.cs
 using System;
 using System.Numerics;
+using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -396,27 +332,27 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnMouseMove(int x, int y)
     {
-        _appHost?.SetMousePosition(x, y);
+        _appHost?.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appHost?.SetMousePosition(x, y); // Update position on click
-        _appHost?.SetMouseDown(button);
+        _appHost?.Input.SetMousePosition(x, y); // Update position on click
+        _appHost?.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appHost?.SetMousePosition(x, y); // Update position on release
-        _appHost?.SetMouseUp(button);
+        _appHost?.Input.SetMousePosition(x, y); // Update position on release
+        _appHost?.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appHost?.AddKeyPressed(key);
+        _appHost?.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
@@ -427,13 +363,13 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnKeyUp(Keys key)
     {
-        _appHost?.AddKeyReleased(key);
+        _appHost?.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appHost?.AddCharacterInput(c);
+        _appHost?.Input.AddCharacterInput(c);
         Invalidate();
     }
 
@@ -643,6 +579,111 @@ public class GraphicsDevice : IDisposable
     ~GraphicsDevice()
     {
         Dispose();
+    }
+}
+</file>
+
+<file path="InputManager.cs">
+// Input/InputManager.cs
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+
+namespace DirectUI.Input;
+
+/// <summary>
+/// Aggregates raw input events over a frame and provides a snapshot of the input state.
+/// </summary>
+public class InputManager
+{
+    // Persistent state (held across frames)
+    private Vector2 _currentMousePos = new(-1, -1);
+    private bool _isLeftMouseButtonDown;
+    private readonly HashSet<Keys> _heldKeys = new();
+
+    // Per-frame state (reset every frame)
+    private bool _wasLeftMouseClickedThisFrame;
+    private readonly Queue<char> _typedCharsThisFrame = new();
+    private readonly List<Keys> _pressedKeysThisFrame = new();
+    private readonly List<Keys> _releasedKeysThisFrame = new();
+
+    /// <summary>
+    /// Creates a snapshot of the current input state for the UI to process.
+    /// </summary>
+    public InputState GetCurrentState()
+    {
+        return new InputState(
+            _currentMousePos,
+            _wasLeftMouseClickedThisFrame,
+            _isLeftMouseButtonDown,
+            _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
+            _pressedKeysThisFrame,
+            _releasedKeysThisFrame,
+            _heldKeys
+        );
+    }
+
+    /// <summary>
+    /// Resets the per-frame input state. Should be called after a frame has been rendered.
+    /// </summary>
+    public void PrepareNextFrame()
+    {
+        _wasLeftMouseClickedThisFrame = false;
+        _typedCharsThisFrame.Clear();
+        _pressedKeysThisFrame.Clear();
+        _releasedKeysThisFrame.Clear();
+    }
+
+    // --- Raw Event Handlers ---
+
+    public void SetMousePosition(int x, int y)
+    {
+        _currentMousePos = new Vector2(x, y);
+    }
+
+    public void SetMouseDown(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = true;
+            _wasLeftMouseClickedThisFrame = true;
+        }
+    }
+
+    public void SetMouseUp(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = false;
+        }
+    }
+
+    public void AddCharacterInput(char c)
+    {
+        // Filter out control characters except for tab and newline which might be useful in text boxes.
+        if (!char.IsControl(c) || c == '\t' || c == '\n')
+        {
+            _typedCharsThisFrame.Enqueue(c);
+        }
+    }
+
+    public void AddKeyPressed(Keys key)
+    {
+        if (!_heldKeys.Contains(key))
+        {
+            _pressedKeysThisFrame.Add(key);
+            _heldKeys.Add(key);
+        }
+    }
+
+    public void AddKeyReleased(Keys key)
+    {
+        if (_heldKeys.Contains(key))
+        {
+            _releasedKeysThisFrame.Add(key);
+            _heldKeys.Remove(key);
+        }
     }
 }
 </file>
@@ -4764,19 +4805,8 @@ public class MyDirectUIApp : Direct2DAppWindow
         };
     }
 
-    protected override void OnKeyUp(Keys key)
-    {
-        _appHost?.AddKeyReleased(key);
-        Invalidate();
-    }
-
-    // FrameUpdate override is no longer needed for window management.
-    // The base implementation will handle invalidation for the render loop.
-
     protected override void OnKeyDown(Keys key)
     {
-        _appHost?.AddKeyPressed(key);
-
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -4785,7 +4815,8 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
         }
 
-        // Call the base implementation to handle default behavior (like ESC to close).
+        // Call the base implementation to handle input registration (AddKeyPressed)
+        // and default behavior (like ESC to close).
         base.OnKeyDown(key);
     }
 

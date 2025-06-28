@@ -8,12 +8,12 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
-        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        sliderInstance.Position = Context.Layout.ApplyLayout(definition.Position);
         ApplySliderDefinition(sliderInstance, definition);
         sliderInstance.Direction = definition.HorizontalDirection;
 
         float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
-        Context.AdvanceLayout(sliderInstance.Size);
+        Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 
@@ -21,12 +21,12 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
-        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        sliderInstance.Position = Context.Layout.ApplyLayout(definition.Position);
         ApplySliderDefinition(sliderInstance, definition);
         sliderInstance.Direction = definition.VerticalDirection;
 
         float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
-        Context.AdvanceLayout(sliderInstance.Size);
+        Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 }

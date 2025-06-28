@@ -280,7 +280,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
             // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-            UI.BeginVBoxContainer("tree_vbox", UI.Context.GetCurrentLayoutPosition(), 0);
+            UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
             UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
             if (clickedNode is not null)
             {
@@ -375,7 +375,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             var actionNames = _inputMap.Keys.ToList();
 
             // --- Actions and Bindings ---
-            UI.BeginVBoxContainer("actions_list_vbox", UI.Context.GetCurrentLayoutPosition(), 8);
+            UI.BeginVBoxContainer("actions_list_vbox", UI.Context.Layout.GetCurrentPosition(), 8);
             for (int i = 0; i < actionNames.Count; i++)
             {
                 string actionName = actionNames[i];
@@ -383,7 +383,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 var bindings = _inputMap[actionName];
 
                 // Action Header
-                UI.BeginHBoxContainer($"action_header_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
+                UI.BeginHBoxContainer($"action_header_{actionName}", UI.Context.Layout.GetCurrentPosition(), 5);
                 UI.Button($"action_label_{actionName}", new ButtonDefinition { Text = actionName, Disabled = true, Theme = _labelStyle, AutoWidth = true });
                 if (UI.Button($"remove_action_{actionName}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(20, 20) }))
                 {
@@ -394,13 +394,13 @@ public class MyDirectUIApp : Direct2DAppWindow
                 UI.EndHBoxContainer();
 
                 // Bindings List (indented)
-                UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 0);
+                UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.Layout.GetCurrentPosition(), 0);
                 UI.Button($"indent_spacer_for_{actionName}", new ButtonDefinition { Size = new Vector2(20, 0), Disabled = true, Theme = _labelStyle });
-                UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
+                UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.Layout.GetCurrentPosition(), 5);
                 for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
-                    UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.GetCurrentLayoutPosition(), 5);
+                    UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.Layout.GetCurrentPosition(), 5);
                     if (UI.Button($"binding_type_{actionName}_{j}", new ButtonDefinition { Text = binding.Type.ToString(), Theme = _editorButtonStyle, Size = new Vector2(100, 24) }))
                     {
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
@@ -433,7 +433,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.EndVBoxContainer();
 
             // --- Utility Buttons ---
-            UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.GetCurrentLayoutPosition(), 10);
+            UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.Layout.GetCurrentPosition(), 10);
             if (UI.Button("add_action", new ButtonDefinition { Text = "Add New Action", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
             {
                 string newActionName;

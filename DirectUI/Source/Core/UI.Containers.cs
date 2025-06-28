@@ -11,46 +11,46 @@ public static partial class UI
 {
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.containerStack.Push(new HBoxContainerState(id, position, gap));
+        Context.Layout.PushContainer(new HBoxContainerState(id, position, gap));
     }
 
     public static void EndHBoxContainer()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not HBoxContainerState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not HBoxContainerState state)
         { Console.WriteLine("Error: EndHBoxContainer called without a matching BeginHBoxContainer."); return; }
-        Context.containerStack.Pop();
-        if (Context.IsInLayoutContainer())
-        { Context.AdvanceLayoutCursor(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
+        Context.Layout.PopContainer();
+        if (Context.Layout.IsInLayoutContainer())
+        { Context.Layout.AdvanceContainerLayout(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
     }
 
     public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.containerStack.Push(new VBoxContainerState(id, position, gap));
+        Context.Layout.PushContainer(new VBoxContainerState(id, position, gap));
     }
 
     public static void EndVBoxContainer()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not VBoxContainerState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
         { Console.WriteLine("Error: EndVBoxContainer called without a matching BeginVBoxContainer."); return; }
-        Context.containerStack.Pop();
-        if (Context.IsInLayoutContainer())
-        { Context.AdvanceLayoutCursor(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
+        Context.Layout.PopContainer();
+        if (Context.Layout.IsInLayoutContainer())
+        { Context.Layout.AdvanceContainerLayout(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
     }
 
     public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        Context.containerStack.Push(new GridContainerState(id, position, availableSize, numColumns, gap));
+        Context.Layout.PushContainer(new GridContainerState(id, position, availableSize, numColumns, gap));
     }
 
     public static void EndGridContainer()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not GridContainerState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not GridContainerState state)
         { Console.WriteLine("Error: EndGridContainer called without a matching BeginGridContainer."); return; }
-        Context.containerStack.Pop();
-        if (Context.IsInLayoutContainer())
+        Context.Layout.PopContainer();
+        if (Context.Layout.IsInLayoutContainer())
         {
             Vector2 containerSize = state.GetTotalOccupiedSize();
-            Context.AdvanceLayoutCursor(containerSize);
+            Context.Layout.AdvanceContainerLayout(containerSize);
         }
     }
 
@@ -102,18 +102,18 @@ public static partial class UI
         }
         var vboxState = new VBoxContainerState(id + "_vbox", contentStartPosition, definition.Gap);
         var panelState = new ResizablePanelState(id, vboxState, clipPushed);
-        Context.containerStack.Push(panelState);
+        Context.Layout.PushContainer(panelState);
     }
 
     public static void EndResizableVPanel()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not ResizablePanelState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizablePanelState state)
         { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();
         }
-        Context.containerStack.Pop();
+        Context.Layout.PopContainer();
     }
 
     public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
@@ -170,17 +170,17 @@ public static partial class UI
         }
         var hboxState = new HBoxContainerState(id + "_hbox", contentStartPosition, definition.Gap);
         var panelState = new ResizableHPanelState(id, hboxState, clipPushed);
-        Context.containerStack.Push(panelState);
+        Context.Layout.PushContainer(panelState);
     }
 
     public static void EndResizableHPanel()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not ResizableHPanelState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizableHPanelState state)
         { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();
         }
-        Context.containerStack.Pop();
+        Context.Layout.PopContainer();
     }
 }

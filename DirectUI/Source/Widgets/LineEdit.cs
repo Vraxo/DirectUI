@@ -37,7 +37,7 @@ internal class LineEdit
         var theme = definition.Theme ?? state.GetOrCreateElement<ButtonStylePack>(id + "_theme");
         var input = context.InputState;
 
-        var position = context.ApplyLayout(definition.Position);
+        var position = context.Layout.ApplyLayout(definition.Position);
         Rect bounds = new(position.X, position.Y, definition.Size.X, definition.Size.Y);
 
         bool isFocused = state.FocusedElementId == intId;
