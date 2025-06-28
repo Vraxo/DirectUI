@@ -107,19 +107,8 @@ public class MyDirectUIApp : Direct2DAppWindow
         };
     }
 
-    protected override void OnKeyUp(Keys key)
-    {
-        _appHost?.AddKeyReleased(key);
-        Invalidate();
-    }
-
-    // FrameUpdate override is no longer needed for window management.
-    // The base implementation will handle invalidation for the render loop.
-
     protected override void OnKeyDown(Keys key)
     {
-        _appHost?.AddKeyPressed(key);
-
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -128,7 +117,8 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
         }
 
-        // Call the base implementation to handle default behavior (like ESC to close).
+        // Call the base implementation to handle input registration (AddKeyPressed)
+        // and default behavior (like ESC to close).
         base.OnKeyDown(key);
     }
 

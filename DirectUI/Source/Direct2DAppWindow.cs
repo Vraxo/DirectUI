@@ -1,6 +1,7 @@
 ﻿// Direct2DAppWindow.cs
 using System;
 using System.Numerics;
+using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -52,27 +53,27 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnMouseMove(int x, int y)
     {
-        _appHost?.SetMousePosition(x, y);
+        _appHost?.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appHost?.SetMousePosition(x, y); // Update position on click
-        _appHost?.SetMouseDown(button);
+        _appHost?.Input.SetMousePosition(x, y); // Update position on click
+        _appHost?.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appHost?.SetMousePosition(x, y); // Update position on release
-        _appHost?.SetMouseUp(button);
+        _appHost?.Input.SetMousePosition(x, y); // Update position on release
+        _appHost?.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appHost?.AddKeyPressed(key);
+        _appHost?.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
@@ -83,13 +84,13 @@ public abstract class Direct2DAppWindow : Win32Window
 
     protected override void OnKeyUp(Keys key)
     {
-        _appHost?.AddKeyReleased(key);
+        _appHost?.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appHost?.AddCharacterInput(c);
+        _appHost?.Input.AddCharacterInput(c);
         Invalidate();
     }
 

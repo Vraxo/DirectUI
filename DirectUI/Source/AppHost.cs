@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Diagnostics;
+using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -18,21 +19,13 @@ public class AppHost
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
     private readonly UIResources _uiResources;
+    private readonly InputManager _inputManager;
 
     private GraphicsDevice? _graphicsDevice;
     private IntPtr _hwnd;
 
-    // Input state
-    private Vector2 _currentMousePos = new(-1, -1);
-    private bool _isLeftMouseButtonDown = false;
-    private bool _wasLeftMouseClickedThisFrame = false;
-    private readonly Queue<char> _typedCharsThisFrame = new();
-    private readonly List<Keys> _pressedKeysThisFrame = new();
-    private readonly List<Keys> _releasedKeysThisFrame = new();
-    private readonly HashSet<Keys> _heldKeys = new();
-
-
     public bool ShowFpsCounter { get; set; } = true;
+    public InputManager Input => _inputManager;
 
     public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
@@ -40,6 +33,7 @@ public class AppHost
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _uiResources = new UIResources();
+        _inputManager = new InputManager();
 
         // Initialize the FpsCounter once during construction.
         // The DWriteFactory is available from shared resources, which are initialized
@@ -94,10 +88,8 @@ public class AppHost
         {
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))
             {
-                _wasLeftMouseClickedThisFrame = false;
-                _typedCharsThisFrame.Clear(); // Clear queue on failed render
-                _pressedKeysThisFrame.Clear();
-                _releasedKeysThisFrame.Clear();
+                // On failure, still need to prepare the input manager for the next attempt.
+                _inputManager.PrepareNextFrame();
                 return;
             }
         }
@@ -113,18 +105,8 @@ public class AppHost
         {
             rt.Clear(_backgroundColor);
 
-            var inputState = new InputState(
-                _currentMousePos,
-                _wasLeftMouseClickedThisFrame,
-                _isLeftMouseButtonDown,
-                _typedCharsThisFrame.ToList(),
-                _pressedKeysThisFrame,
-                _releasedKeysThisFrame,
-                _heldKeys
-            );
-            _typedCharsThisFrame.Clear();
-            _pressedKeysThisFrame.Clear();
-            _releasedKeysThisFrame.Clear();
+            // Get the immutable input state for this frame from the InputManager
+            var inputState = _inputManager.GetCurrentState();
 
             var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
             UI.BeginFrame(uiContext);
@@ -146,7 +128,8 @@ public class AppHost
         finally
         {
             _graphicsDevice.EndDraw();
-            _wasLeftMouseClickedThisFrame = false;
+            // Prepare the input manager for the next frame.
+            _inputManager.PrepareNextFrame();
         }
     }
 
@@ -161,53 +144,5 @@ public class AppHost
         // Fallback for when the handle is not yet valid during initialization.
         // This size isn't critical as resize will be called immediately after.
         return new SizeI(1, 1);
-    }
-
-    public void SetMousePosition(int x, int y)
-    {
-        _currentMousePos = new Vector2(x, y);
-    }
-
-    public void SetMouseDown(MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _isLeftMouseButtonDown = true;
-            _wasLeftMouseClickedThisFrame = true;
-        }
-    }
-
-    public void SetMouseUp(MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _isLeftMouseButtonDown = false;
-        }
-    }
-
-    public void AddCharacterInput(char c)
-    {
-        if (!char.IsControl(c) || c == '\t' || c == '\n')
-        {
-            _typedCharsThisFrame.Enqueue(c);
-        }
-    }
-
-    public void AddKeyPressed(Keys key)
-    {
-        if (!_heldKeys.Contains(key))
-        {
-            _pressedKeysThisFrame.Add(key);
-            _heldKeys.Add(key);
-        }
-    }
-
-    public void AddKeyReleased(Keys key)
-    {
-        if (_heldKeys.Contains(key))
-        {
-            _releasedKeysThisFrame.Add(key);
-            _heldKeys.Remove(key);
-        }
     }
 }
