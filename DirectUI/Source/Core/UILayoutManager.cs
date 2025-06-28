@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -6,6 +7,7 @@ public class UILayoutManager
 {
     private readonly Stack<object> _containerStack = new();
     private readonly Dictionary<int, object> _containerStateCache = new();
+    private readonly Stack<Rect> _clipRectStack = new();
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
@@ -13,7 +15,43 @@ public class UILayoutManager
     public void PushContainer(object containerState) => _containerStack.Push(containerState);
     public object PopContainer() => _containerStack.Pop();
     public object PeekContainer() => _containerStack.Peek();
-    public void ClearStack() => _containerStack.Clear();
+    public void ClearStack()
+    {
+        _containerStack.Clear();
+        _clipRectStack.Clear();
+    }
+
+    public void PushClipRect(Rect rect) => _clipRectStack.Push(rect);
+    public void PopClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            _clipRectStack.Pop();
+        }
+    }
+
+    public Rect GetCurrentClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            return _clipRectStack.Peek();
+        }
+        // Return a very large rectangle representing no clipping
+        return new Rect(float.MinValue / 2, float.MinValue / 2, float.MaxValue, float.MaxValue);
+    }
+
+    public bool IsRectVisible(Rect rect)
+    {
+        if (_clipRectStack.Count == 0) return true;
+
+        var currentClip = GetCurrentClipRect();
+
+        // Basic intersection test
+        return rect.X < currentClip.X + currentClip.Width &&
+               rect.X + rect.Width > currentClip.X &&
+               rect.Y < currentClip.Y + currentClip.Height &&
+               rect.Y + rect.Height > currentClip.Y;
+    }
 
     public HBoxContainerState GetOrCreateHBoxState(int id)
     {

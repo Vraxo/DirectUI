@@ -24,12 +24,24 @@ public static partial class UI
     {
         if (!IsContextValid()) return false;
 
+        Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
+        Vector2 finalOrigin = origin ?? Vector2.Zero;
+
+        // Culling Check
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(finalSize); // Still advance layout cursor
+            return false;
+        }
+
         Button buttonInstance = State.GetOrCreateElement<Button>(id);
-        buttonInstance.Position = Context.Layout.ApplyLayout(Vector2.Zero);
+        buttonInstance.Position = drawPos;
 
         // Configure the button instance from parameters
         buttonInstance.Text = text;
-        buttonInstance.Size = size == default ? new Vector2(84, 28) : size;
+        buttonInstance.Size = finalSize;
         buttonInstance.Themes = theme ?? buttonInstance.Themes ?? new ButtonStylePack();
         buttonInstance.Disabled = disabled;
         buttonInstance.AutoWidth = autoWidth;
@@ -37,7 +49,7 @@ public static partial class UI
         buttonInstance.LeftClickActionMode = clickMode;
         buttonInstance.TextAlignment = textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
         buttonInstance.TextOffset = textOffset ?? Vector2.Zero;
-        buttonInstance.Origin = origin ?? Vector2.Zero;
+        buttonInstance.Origin = finalOrigin;
         buttonInstance.UserData = userData;
 
 

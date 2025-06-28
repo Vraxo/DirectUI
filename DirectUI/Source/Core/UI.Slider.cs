@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -22,8 +23,18 @@ public static partial class UI
     {
         if (!IsContextValid()) return currentValue;
 
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Culling Check
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return currentValue;
+        }
+
         InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
-        sliderInstance.Position = Context.Layout.ApplyLayout(position);
+        sliderInstance.Position = drawPos;
 
         // Configure instance
         sliderInstance.Size = size;
@@ -61,8 +72,19 @@ public static partial class UI
         Vector2? origin = null)
     {
         if (!IsContextValid()) return currentValue;
+
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Culling Check
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return currentValue;
+        }
+
         InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
-        sliderInstance.Position = Context.Layout.ApplyLayout(position);
+        sliderInstance.Position = drawPos;
 
         // Configure instance
         sliderInstance.Size = size;

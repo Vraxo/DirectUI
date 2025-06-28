@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -19,10 +20,18 @@ public static partial class UI
     {
         if (!IsContextValid()) return false;
 
-        var lineEditInstance = State.GetOrCreateElement<LineEdit>(id);
-
         var finalPosition = Context.Layout.ApplyLayout(position);
         var finalMargin = textMargin ?? new Vector2(4, 2);
+
+        // Culling Check
+        Rect widgetBounds = new Rect(finalPosition.X, finalPosition.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size); // Still advance layout cursor
+            return false;
+        }
+
+        var lineEditInstance = State.GetOrCreateElement<LineEdit>(id);
 
         bool textChanged = lineEditInstance.UpdateAndDraw(
             id,

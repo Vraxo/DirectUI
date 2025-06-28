@@ -111,6 +111,7 @@ public static partial class UI
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
 
@@ -133,6 +134,7 @@ public static partial class UI
         { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
+            Context.Layout.PopClipRect(); // For culling
             Context.RenderTarget.PopAxisAlignedClip();
         }
         Context.Layout.PopContainer();
@@ -199,6 +201,7 @@ public static partial class UI
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
 
@@ -221,6 +224,7 @@ public static partial class UI
         { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
+            Context.Layout.PopClipRect(); // For culling
             Context.RenderTarget.PopAxisAlignedClip();
         }
         Context.Layout.PopContainer();
