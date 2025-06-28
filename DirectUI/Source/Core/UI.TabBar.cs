@@ -26,17 +26,34 @@ public static partial class UI
         }
 
         theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
+        var currentStyle = theme.Current;
 
         var rt = Context.RenderTarget;
-        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
+        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
 
-        var textBrush = Resources.GetOrCreateBrush(rt, theme.Current.FontColor);
-        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, theme.Current);
-        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        var textBrush = Resources.GetOrCreateBrush(rt, currentStyle.FontColor);
+        if (textBrush is not null && !string.IsNullOrEmpty(text))
         {
-            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
-            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-            rt.DrawText(text, textFormat, bounds, textBrush);
+            var dwriteFactory = Context.DWriteFactory;
+            var textAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
+
+            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, size, textAlignment);
+            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            {
+                var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
+                if (textFormat is not null)
+                {
+                    textLayout = dwriteFactory.CreateTextLayout(text, textFormat, size.X, size.Y);
+                    textLayout.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
+                    textLayout.ParagraphAlignment = ParagraphAlignment.Center;
+                    Resources.textLayoutCache[layoutKey] = textLayout;
+                }
+            }
+
+            if (textLayout is not null)
+            {
+                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush);
+            }
         }
 
         Context.Layout.AdvanceLayout(size);
@@ -48,20 +65,32 @@ public static partial class UI
         if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
 
         var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
-        var textMargin = new Vector2(15, 5);
-        float tabHeight = 30f;
-        float maxWidth = 0;
+        var state = State.GetOrCreateElement<TabBarState>(id);
 
-        var styleForMeasuring = tabTheme.Normal;
-        foreach (var label in tabLabels)
+        const float textMarginX = 15f;
+        const float tabHeight = 30f;
+        float uniformTabWidth;
+
+        if (state.CachedUniformWidth < 0) // Not calculated yet, or invalidated.
         {
-            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
-            if (measuredSize.X > maxWidth)
+            float maxWidth = 0;
+            var styleForMeasuring = tabTheme.Normal;
+            foreach (var label in tabLabels)
             {
-                maxWidth = measuredSize.X;
+                Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
+                if (measuredSize.X > maxWidth)
+                {
+                    maxWidth = measuredSize.X;
+                }
             }
+            uniformTabWidth = maxWidth + textMarginX * 2;
+            state.CachedUniformWidth = uniformTabWidth;
         }
-        float uniformTabWidth = maxWidth + textMargin.X * 2;
+        else
+        {
+            uniformTabWidth = state.CachedUniformWidth;
+        }
+
         var tabSize = new Vector2(uniformTabWidth, tabHeight);
 
         BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), 0);

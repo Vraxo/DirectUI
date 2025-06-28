@@ -31,6 +31,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     // --- Caching for performance ---
     private readonly List<string> _actionNamesCache = new();
     private readonly Dictionary<(string ActionName, int BindingIndex, string ElementKey), string> _idCache = new();
+    private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
+    private readonly BoxStyle _modalPanelStyle;
+
 
     // Styles for the editor UI
     private readonly ButtonStylePack _labelStyle;
@@ -109,6 +112,14 @@ public class MyDirectUIApp : Direct2DAppWindow
         {
             Size = new Vector2(120, 24),
             Theme = lineEditTheme
+        };
+
+        _modalPanelStyle = new BoxStyle
+        {
+            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
+            BorderColor = DefaultTheme.HoverBorder,
+            BorderLengthTop = 1f,
+            Roundness = 0f
         };
     }
 
@@ -370,18 +381,10 @@ public class MyDirectUIApp : Direct2DAppWindow
         var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
         // --- Draw Tab Bar ---
-        var tabLabels = new[] { "General", "Input Map" };
-        UI.TabBar("project_tabs", tabLabels, ref _projectWindowActiveTab);
+        UI.TabBar("project_tabs", ProjectWindowTabLabels, ref _projectWindowActiveTab);
 
         // --- Draw Content Panel and Content ---
-        var panelStyle = new BoxStyle
-        {
-            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
-            BorderColor = DefaultTheme.HoverBorder,
-            BorderLengthTop = 1f,
-            Roundness = 0f
-        };
-        UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), panelStyle);
+        UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), _modalPanelStyle);
 
         var contentPadding = new Vector2(10, 10);
         var paddedContentRect = new Rect(
