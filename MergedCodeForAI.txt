@@ -885,7 +885,8 @@ public class ModalWindow : Direct2DAppWindow
         int? x = null;
         int? y = null;
 
-        if (Handle != IntPtr.Zero && GetWindowRect(out NativeMethods.RECT ownerRect))
+        // FIX: Use the owner's handle to get its position for centering.
+        if (_owner.Handle != IntPtr.Zero && _owner.GetWindowRect(out NativeMethods.RECT ownerRect))
         {
             int ownerWidth = ownerRect.right - ownerRect.left;
             int ownerHeight = ownerRect.bottom - ownerRect.top;
@@ -896,26 +897,30 @@ public class ModalWindow : Direct2DAppWindow
             y = ownerRect.top + (ownerHeight - modalHeight) / 2;
         }
 
-        if (!Create(Handle, style, x, y))
+        // FIX: Pass the owner's handle to the base Create method.
+        if (!Create(_owner.Handle, style, x, y))
         {
             return false;
         }
 
         if (Handle == IntPtr.Zero)
         {
-            return true;
+            return false;
         }
 
-        NativeMethods.EnableWindow(Handle, false);
+        // FIX: Disable the OWNER window, not this modal window.
+        // This is the core fix for the modal behavior bug.
+        NativeMethods.EnableWindow(_owner.Handle, false);
 
         return true;
     }
 
     protected override void OnDestroy()
     {
-        if (Handle != IntPtr.Zero)
+        // FIX: Re-enable the OWNER window when this modal is destroyed.
+        if (_owner.Handle != IntPtr.Zero)
         {
-            NativeMethods.EnableWindow(Handle, true);
+            NativeMethods.EnableWindow(_owner.Handle, true);
         }
 
         base.OnDestroy();
@@ -1805,6 +1810,44 @@ internal class VBoxContainerState
 }
 </file>
 
+<file path="Core\UI.Button.cs">
+using System;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static bool Button(string id, ButtonDefinition definition)
+    {
+        if (!IsContextValid() || definition is null) return false;
+        Button buttonInstance = State.GetOrCreateElement<Button>(id);
+        buttonInstance.Position = Context.ApplyLayout(definition.Position);
+        ApplyButtonDefinition(buttonInstance, definition);
+
+        bool pushedClip = false;
+        if (Context.IsInLayoutContainer() && Context.containerStack.Peek() is GridContainerState grid)
+        {
+            float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
+            float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
+            Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
+            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
+            { Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
+        }
+
+        bool clicked = buttonInstance.Update(id);
+        if (pushedClip && Context.RenderTarget is not null)
+        { Context.RenderTarget.PopAxisAlignedClip(); }
+
+        Context.AdvanceLayout(buttonInstance.Size);
+        return clicked;
+    }
+}
+</file>
+
 <file path="Core\UI.Containers.cs">
 // Core/UI.Containers.cs
 using System;
@@ -2076,94 +2119,11 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.StatelessWidgets.cs">
-using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
-using Vortice.Mathematics;
-
-namespace DirectUI;
-
-public static partial class UI
-{
-    internal static bool StatelessButton(int id, Rect bounds, string text, ButtonStylePack stylePack, Alignment textAlignment, DirectUI.Button.ActionMode clickActionMode, bool autoWidth = false, Vector2? textMargin = null, Vector2 textOffset = default)
-    {
-        InputState input = Context.InputState;
-        var renderTarget = Context.RenderTarget;
-        var dwriteFactory = Context.DWriteFactory;
-
-        Vector2 finalSize = new(bounds.Width, bounds.Height);
-        if (autoWidth)
-        {
-            Vector2 measuredSize = Resources.MeasureText(dwriteFactory, text, stylePack.Normal);
-            Vector2 margin = textMargin ?? new Vector2(10, 5);
-            finalSize.X = measuredSize.X + margin.X * 2;
-        }
-        Rect finalBounds = new(bounds.X, bounds.Y, finalSize.X, finalSize.Y);
-
-        bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool isPressed = State.ActivelyPressedElementId == id;
-        bool isFocused = State.FocusedElementId == id;
-        bool wasClickedThisFrame = false;
-
-        if (isHovering) State.SetPotentialInputTarget(id);
-
-        if (!input.IsLeftMouseDown && isPressed)
-        {
-            if (isHovering && clickActionMode == DirectUI.Button.ActionMode.Release) wasClickedThisFrame = true;
-            State.ClearActivePress(id);
-            isPressed = false;
-        }
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == id && !State.DragInProgressFromPreviousFrame)
-        {
-            State.SetButtonPotentialCaptorForFrame(id);
-            State.SetFocus(id);
-            isPressed = true;
-        }
-
-        if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && State.InputCaptorId == id) wasClickedThisFrame = true;
-
-        stylePack.UpdateCurrentStyle(isHovering, isPressed, false, isFocused);
-        ButtonStyle currentStyle = stylePack.Current;
-        Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
-
-        var textBrush = Resources.GetOrCreateBrush(renderTarget, currentStyle.FontColor);
-        var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
-        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
-        {
-            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, new(finalBounds.Width, finalBounds.Height), textAlignment);
-            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-            {
-                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
-                textLayout.TextAlignment = textAlignment.Horizontal switch
-                {
-                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                    _ => Vortice.DirectWrite.TextAlignment.Leading
-                };
-                textLayout.ParagraphAlignment = textAlignment.Vertical switch
-                {
-                    VAlignment.Top => ParagraphAlignment.Near,
-                    VAlignment.Center => ParagraphAlignment.Center,
-                    VAlignment.Bottom => ParagraphAlignment.Far,
-                    _ => ParagraphAlignment.Near
-                };
-                Resources.textLayoutCache[layoutKey] = textLayout;
-            }
-            renderTarget.DrawTextLayout(new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush);
-        }
-        return wasClickedThisFrame;
-    }
-}
-</file>
-
-<file path="Core\UI.Widgets.cs">
+<file path="Core\UI.LineEdit.cs">
 using System;
 using System.Collections.Generic;
-using System.Numerics;
 using System.Linq;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -2173,224 +2133,6 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool Button(string id, ButtonDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return false;
-        Button buttonInstance = State.GetOrCreateElement<Button>(id);
-        buttonInstance.Position = Context.ApplyLayout(definition.Position);
-        ApplyButtonDefinition(buttonInstance, definition);
-
-        bool pushedClip = false;
-        if (Context.IsInLayoutContainer() && Context.containerStack.Peek() is GridContainerState grid)
-        {
-            float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
-            float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
-            Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
-            { Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
-        }
-
-        bool clicked = buttonInstance.Update(id);
-        if (pushedClip && Context.RenderTarget is not null)
-        { Context.RenderTarget.PopAxisAlignedClip(); }
-
-        Context.AdvanceLayout(buttonInstance.Size);
-        return clicked;
-    }
-
-    private static bool TabButtonPrimitive(string id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
-    {
-        if (!IsContextValid()) return false;
-
-        var intId = id.GetHashCode();
-        var position = Context.GetCurrentLayoutPosition();
-        Rect bounds = new(position.X, position.Y, size.X, size.Y);
-
-        InputState input = Context.InputState;
-        bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool wasClicked = false;
-
-        if (isHovering) State.SetPotentialInputTarget(intId);
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == intId)
-        {
-            wasClicked = true;
-        }
-
-        theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
-
-        var rt = Context.RenderTarget;
-        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
-
-        var textBrush = Resources.GetOrCreateBrush(rt, theme.Current.FontColor);
-        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, theme.Current);
-        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
-        {
-            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
-            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-            rt.DrawText(text, textFormat, bounds, textBrush);
-        }
-
-        Context.AdvanceLayout(size);
-        return wasClicked;
-    }
-
-    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
-    {
-        if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
-
-        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
-        var textMargin = new Vector2(15, 5);
-        float tabHeight = 30f;
-        float maxWidth = 0;
-
-        var styleForMeasuring = tabTheme.Normal;
-        foreach (var label in tabLabels)
-        {
-            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
-            if (measuredSize.X > maxWidth)
-            {
-                maxWidth = measuredSize.X;
-            }
-        }
-        float uniformTabWidth = maxWidth + textMargin.X * 2;
-        var tabSize = new Vector2(uniformTabWidth, tabHeight);
-
-        BeginHBoxContainer(id + "_hbox", Context.GetCurrentLayoutPosition(), 0);
-        for (int i = 0; i < tabLabels.Length; i++)
-        {
-            bool wasClicked = TabButtonPrimitive(
-                id + "_" + i,
-                tabLabels[i],
-                tabSize,
-                i == activeIndex,
-                tabTheme,
-                false
-            );
-            if (wasClicked)
-            {
-                activeIndex = i;
-            }
-        }
-        EndHBoxContainer();
-    }
-
-    public static float HSlider(string id, float currentValue, SliderDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return currentValue;
-        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
-        sliderInstance.Position = Context.ApplyLayout(definition.Position);
-        ApplySliderDefinition(sliderInstance, definition);
-        sliderInstance.Direction = definition.HorizontalDirection;
-
-        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
-        Context.AdvanceLayout(sliderInstance.Size);
-        return newValue;
-    }
-
-    public static float VSlider(string id, float currentValue, SliderDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return currentValue;
-        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
-        sliderInstance.Position = Context.ApplyLayout(definition.Position);
-        ApplySliderDefinition(sliderInstance, definition);
-        sliderInstance.Direction = definition.VerticalDirection;
-
-        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
-        Context.AdvanceLayout(sliderInstance.Size);
-        return newValue;
-    }
-
-    public static void Tree<T>(string id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
-    {
-        if (!IsContextValid() || root is null) { clickedNode = null; return; }
-
-        clickedNode = null;
-        var treeStyle = style ?? State.GetOrCreateElement<TreeStyle>(id + "_style");
-
-        var treeState = new TreeViewState(id, treeStyle);
-        Context.treeStateStack.Push(treeState);
-        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
-        Context.treeStateStack.Pop();
-    }
-
-    private static void ProcessTreeNodeRecursive<T>(int parentIdHash, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
-    {
-        if (Context.treeStateStack.Count == 0) return;
-        var treeState = Context.treeStateStack.Peek();
-        var style = treeState.Style;
-        var renderTarget = Context.RenderTarget;
-
-        var startLayoutPos = Context.GetCurrentLayoutPosition();
-        var brush = Resources.GetOrCreateBrush(renderTarget, style.LineColor);
-        if (brush is not null)
-        {
-            int i = 0;
-            foreach (var shouldDrawLine in treeState.IndentLineState)
-            {
-                if (shouldDrawLine)
-                {
-                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
-                    renderTarget.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), brush, 1.0f);
-                }
-                i++;
-            }
-            if (treeState.IndentLineState.Count > 0)
-            {
-                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
-                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
-                renderTarget.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), brush, 1.0f);
-            }
-        }
-
-        float indentSize = treeState.IndentLineState.Count * style.Indent;
-        var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
-        float currentX = nodeRowStartPos.X;
-        float gap = 5;
-
-        int nodeHash = node.GetHashCode();
-        int toggleId = HashCode.Combine(parentIdHash, index, nodeHash, 0);
-        int labelId = HashCode.Combine(parentIdHash, index, nodeHash, 1);
-
-        float toggleWidth = style.RowHeight - 4;
-        if (node.Children.Count > 0)
-        {
-            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
-            {
-                node.IsExpanded = !node.IsExpanded;
-            }
-        }
-        currentX += toggleWidth;
-
-        currentX += gap;
-        var labelStyle = style.NodeLabelStyle;
-        var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
-        float labelMargin = 4;
-        var labelSize = Resources.MeasureText(Context.DWriteFactory, node.Text, labelStyle.Normal);
-        float labelWidth = labelSize.X + labelMargin * 2;
-        var labelOffset = new Vector2(labelMargin, 0);
-        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
-        {
-            clickedNode = node;
-        }
-        currentX += labelWidth;
-
-        Context.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
-
-        if (node.IsExpanded && node.Children.Count > 0)
-        {
-            for (int childIdx = 0; childIdx < node.Children.Count; childIdx++)
-            {
-                bool isLastChild = childIdx == node.Children.Count - 1;
-                treeState.IndentLineState.Push(!isLastChild);
-                ProcessTreeNodeRecursive(toggleId, childIdx, node.Children[childIdx], ref clickedNode);
-                treeState.IndentLineState.Pop();
-            }
-        }
-    }
-
     #region LineEdit
     public static bool LineEdit(string id, ref string text, LineEditDefinition definition)
     {
@@ -2661,7 +2403,313 @@ public static partial class UI
         state.TextStartIndex = nextState.TextStartIndex;
     }
     #endregion
+}
+</file>
 
+<file path="Core\UI.Slider.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static float HSlider(string id, float currentValue, SliderDefinition definition)
+    {
+        if (!IsContextValid() || definition is null) return currentValue;
+        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
+        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        ApplySliderDefinition(sliderInstance, definition);
+        sliderInstance.Direction = definition.HorizontalDirection;
+
+        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
+        Context.AdvanceLayout(sliderInstance.Size);
+        return newValue;
+    }
+
+    public static float VSlider(string id, float currentValue, SliderDefinition definition)
+    {
+        if (!IsContextValid() || definition is null) return currentValue;
+        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
+        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        ApplySliderDefinition(sliderInstance, definition);
+        sliderInstance.Direction = definition.VerticalDirection;
+
+        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
+        Context.AdvanceLayout(sliderInstance.Size);
+        return newValue;
+    }
+}
+</file>
+
+<file path="Core\UI.StatelessWidgets.cs">
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    internal static bool StatelessButton(int id, Rect bounds, string text, ButtonStylePack stylePack, Alignment textAlignment, DirectUI.Button.ActionMode clickActionMode, bool autoWidth = false, Vector2? textMargin = null, Vector2 textOffset = default)
+    {
+        InputState input = Context.InputState;
+        var renderTarget = Context.RenderTarget;
+        var dwriteFactory = Context.DWriteFactory;
+
+        Vector2 finalSize = new(bounds.Width, bounds.Height);
+        if (autoWidth)
+        {
+            Vector2 measuredSize = Resources.MeasureText(dwriteFactory, text, stylePack.Normal);
+            Vector2 margin = textMargin ?? new Vector2(10, 5);
+            finalSize.X = measuredSize.X + margin.X * 2;
+        }
+        Rect finalBounds = new(bounds.X, bounds.Y, finalSize.X, finalSize.Y);
+
+        bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool isPressed = State.ActivelyPressedElementId == id;
+        bool isFocused = State.FocusedElementId == id;
+        bool wasClickedThisFrame = false;
+
+        if (isHovering) State.SetPotentialInputTarget(id);
+
+        if (!input.IsLeftMouseDown && isPressed)
+        {
+            if (isHovering && clickActionMode == DirectUI.Button.ActionMode.Release) wasClickedThisFrame = true;
+            State.ClearActivePress(id);
+            isPressed = false;
+        }
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == id && !State.DragInProgressFromPreviousFrame)
+        {
+            State.SetButtonPotentialCaptorForFrame(id);
+            State.SetFocus(id);
+            isPressed = true;
+        }
+
+        if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && State.InputCaptorId == id) wasClickedThisFrame = true;
+
+        stylePack.UpdateCurrentStyle(isHovering, isPressed, false, isFocused);
+        ButtonStyle currentStyle = stylePack.Current;
+        Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
+
+        var textBrush = Resources.GetOrCreateBrush(renderTarget, currentStyle.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
+        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        {
+            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, new(finalBounds.Width, finalBounds.Height), textAlignment);
+            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            {
+                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
+                textLayout.TextAlignment = textAlignment.Horizontal switch
+                {
+                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                    _ => Vortice.DirectWrite.TextAlignment.Leading
+                };
+                textLayout.ParagraphAlignment = textAlignment.Vertical switch
+                {
+                    VAlignment.Top => ParagraphAlignment.Near,
+                    VAlignment.Center => ParagraphAlignment.Center,
+                    VAlignment.Bottom => ParagraphAlignment.Far,
+                    _ => ParagraphAlignment.Near
+                };
+                Resources.textLayoutCache[layoutKey] = textLayout;
+            }
+            renderTarget.DrawTextLayout(new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush);
+        }
+        return wasClickedThisFrame;
+    }
+}
+</file>
+
+<file path="Core\UI.TabBar.cs">
+using System.Numerics;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    private static bool TabButtonPrimitive(string id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
+    {
+        if (!IsContextValid()) return false;
+
+        var intId = id.GetHashCode();
+        var position = Context.GetCurrentLayoutPosition();
+        Rect bounds = new(position.X, position.Y, size.X, size.Y);
+
+        InputState input = Context.InputState;
+        bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool wasClicked = false;
+
+        if (isHovering) State.SetPotentialInputTarget(intId);
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == intId)
+        {
+            wasClicked = true;
+        }
+
+        theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
+
+        var rt = Context.RenderTarget;
+        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), theme.Current);
+
+        var textBrush = Resources.GetOrCreateBrush(rt, theme.Current.FontColor);
+        var textFormat = Resources.GetOrCreateTextFormat(Context.DWriteFactory, theme.Current);
+        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+        {
+            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
+            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+            rt.DrawText(text, textFormat, bounds, textBrush);
+        }
+
+        Context.AdvanceLayout(size);
+        return wasClicked;
+    }
+
+    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    {
+        if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
+
+        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(id + "_theme_default");
+        var textMargin = new Vector2(15, 5);
+        float tabHeight = 30f;
+        float maxWidth = 0;
+
+        var styleForMeasuring = tabTheme.Normal;
+        foreach (var label in tabLabels)
+        {
+            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
+            if (measuredSize.X > maxWidth)
+            {
+                maxWidth = measuredSize.X;
+            }
+        }
+        float uniformTabWidth = maxWidth + textMargin.X * 2;
+        var tabSize = new Vector2(uniformTabWidth, tabHeight);
+
+        BeginHBoxContainer(id + "_hbox", Context.GetCurrentLayoutPosition(), 0);
+        for (int i = 0; i < tabLabels.Length; i++)
+        {
+            bool wasClicked = TabButtonPrimitive(
+                id + "_" + i,
+                tabLabels[i],
+                tabSize,
+                i == activeIndex,
+                tabTheme,
+                false
+            );
+            if (wasClicked)
+            {
+                activeIndex = i;
+            }
+        }
+        EndHBoxContainer();
+    }
+}
+</file>
+
+<file path="Core\UI.Tree.cs">
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void Tree<T>(string id, TreeNode<T> root, out TreeNode<T>? clickedNode, TreeStyle? style = null)
+    {
+        if (!IsContextValid() || root is null) { clickedNode = null; return; }
+
+        clickedNode = null;
+        var treeStyle = style ?? State.GetOrCreateElement<TreeStyle>(id + "_style");
+
+        var treeState = new TreeViewState(id, treeStyle);
+        Context.treeStateStack.Push(treeState);
+        ProcessTreeNodeRecursive(id.GetHashCode(), 0, root, ref clickedNode);
+        Context.treeStateStack.Pop();
+    }
+
+    private static void ProcessTreeNodeRecursive<T>(int parentIdHash, int index, TreeNode<T> node, ref TreeNode<T>? clickedNode)
+    {
+        if (Context.treeStateStack.Count == 0) return;
+        var treeState = Context.treeStateStack.Peek();
+        var style = treeState.Style;
+        var renderTarget = Context.RenderTarget;
+
+        var startLayoutPos = Context.GetCurrentLayoutPosition();
+        var brush = Resources.GetOrCreateBrush(renderTarget, style.LineColor);
+        if (brush is not null)
+        {
+            int i = 0;
+            foreach (var shouldDrawLine in treeState.IndentLineState)
+            {
+                if (shouldDrawLine)
+                {
+                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
+                    renderTarget.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), brush, 1.0f);
+                }
+                i++;
+            }
+            if (treeState.IndentLineState.Count > 0)
+            {
+                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
+                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
+                renderTarget.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), brush, 1.0f);
+            }
+        }
+
+        float indentSize = treeState.IndentLineState.Count * style.Indent;
+        var nodeRowStartPos = startLayoutPos + new Vector2(indentSize, 0);
+        float currentX = nodeRowStartPos.X;
+        float gap = 5;
+
+        int nodeHash = node.GetHashCode();
+        int toggleId = HashCode.Combine(parentIdHash, index, nodeHash, 0);
+        int labelId = HashCode.Combine(parentIdHash, index, nodeHash, 1);
+
+        float toggleWidth = style.RowHeight - 4;
+        if (node.Children.Count > 0)
+        {
+            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
+            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            {
+                node.IsExpanded = !node.IsExpanded;
+            }
+        }
+        currentX += toggleWidth;
+
+        currentX += gap;
+        var labelStyle = style.NodeLabelStyle;
+        var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
+        float labelMargin = 4;
+        var labelSize = Resources.MeasureText(Context.DWriteFactory, node.Text, labelStyle.Normal);
+        float labelWidth = labelSize.X + labelMargin * 2;
+        var labelOffset = new Vector2(labelMargin, 0);
+        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
+        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
+        {
+            clickedNode = node;
+        }
+        currentX += labelWidth;
+
+        Context.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
+
+        if (node.IsExpanded && node.Children.Count > 0)
+        {
+            for (int childIdx = 0; childIdx < node.Children.Count; childIdx++)
+            {
+                bool isLastChild = childIdx == node.Children.Count - 1;
+                treeState.IndentLineState.Push(!isLastChild);
+                ProcessTreeNodeRecursive(toggleId, childIdx, node.Children[childIdx], ref clickedNode);
+                treeState.IndentLineState.Pop();
+            }
+        }
+    }
 }
 </file>
 

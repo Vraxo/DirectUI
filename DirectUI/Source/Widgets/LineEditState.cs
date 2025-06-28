@@ -3,9 +3,6 @@ using System.Collections.Generic;
 
 namespace DirectUI;
 
-// Record for undo/redo functionality
-internal record struct LineEditUndoRecord(string Text, int CaretPosition, int TextStartIndex);
-
 // State object for an immediate-mode LineEdit control
 internal class LineEditState
 {
