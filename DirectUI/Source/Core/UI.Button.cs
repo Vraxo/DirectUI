@@ -9,7 +9,7 @@ namespace DirectUI;
 public static partial class UI
 {
     public static bool Button(
-        int id,
+        string id,
         string text,
         Vector2 size = default,
         ButtonStylePack? theme = null,
@@ -24,6 +24,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return false;
 
+        int intId = id.GetHashCode();
         Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
         Vector2 finalOrigin = origin ?? Vector2.Zero;
 
@@ -36,7 +37,7 @@ public static partial class UI
             return false;
         }
 
-        Button buttonInstance = State.GetOrCreateElement<Button>(id);
+        Button buttonInstance = State.GetOrCreateElement<Button>(intId);
         buttonInstance.Position = drawPos;
 
         // Configure the button instance from parameters
@@ -67,7 +68,7 @@ public static partial class UI
             }
         }
 
-        bool clicked = buttonInstance.Update(id);
+        bool clicked = buttonInstance.Update(intId);
         if (pushedClip && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();

@@ -6,7 +6,7 @@ namespace DirectUI;
 public static partial class UI
 {
     public static bool LineEdit(
-        int id,
+        string id,
         ref string text,
         Vector2 size,
         Vector2 position = default,
@@ -20,6 +20,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return false;
 
+        int intId = id.GetHashCode();
         var finalPosition = Context.Layout.ApplyLayout(position);
         var finalMargin = textMargin ?? new Vector2(4, 2);
 
@@ -31,10 +32,10 @@ public static partial class UI
             return false;
         }
 
-        var lineEditInstance = State.GetOrCreateElement<LineEdit>(id);
+        var lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
 
         bool textChanged = lineEditInstance.UpdateAndDraw(
-            id,
+            intId,
             ref text,
             finalPosition,
             size,

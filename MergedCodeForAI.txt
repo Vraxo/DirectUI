@@ -350,6 +350,12 @@ public abstract class Direct2DAppWindow : Win32Window
         Invalidate();
     }
 
+    protected override void OnMouseWheel(float delta)
+    {
+        _appHost?.Input.AddMouseWheelDelta(delta);
+        Invalidate();
+    }
+
     protected override void OnKeyDown(Keys key)
     {
         _appHost?.Input.AddKeyPressed(key);
@@ -583,309 +589,6 @@ public class GraphicsDevice : IDisposable
 }
 </file>
 
-<file path="InputManager.cs">
-// Input/InputManager.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-
-namespace DirectUI.Input;
-
-/// <summary>
-/// Aggregates raw input events over a frame and provides a snapshot of the input state.
-/// </summary>
-public class InputManager
-{
-    // Persistent state (held across frames)
-    private Vector2 _currentMousePos = new(-1, -1);
-    private bool _isLeftMouseButtonDown;
-    private readonly HashSet<Keys> _heldKeys = new();
-
-    // Per-frame state (reset every frame)
-    private bool _wasLeftMouseClickedThisFrame;
-    private readonly Queue<char> _typedCharsThisFrame = new();
-    private readonly List<Keys> _pressedKeysThisFrame = new();
-    private readonly List<Keys> _releasedKeysThisFrame = new();
-
-    /// <summary>
-    /// Creates a snapshot of the current input state for the UI to process.
-    /// </summary>
-    public InputState GetCurrentState()
-    {
-        return new InputState(
-            _currentMousePos,
-            _wasLeftMouseClickedThisFrame,
-            _isLeftMouseButtonDown,
-            _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
-            _pressedKeysThisFrame,
-            _releasedKeysThisFrame,
-            _heldKeys
-        );
-    }
-
-    /// <summary>
-    /// Resets the per-frame input state. Should be called after a frame has been rendered.
-    /// </summary>
-    public void PrepareNextFrame()
-    {
-        _wasLeftMouseClickedThisFrame = false;
-        _typedCharsThisFrame.Clear();
-        _pressedKeysThisFrame.Clear();
-        _releasedKeysThisFrame.Clear();
-    }
-
-    // --- Raw Event Handlers ---
-
-    public void SetMousePosition(int x, int y)
-    {
-        _currentMousePos = new Vector2(x, y);
-    }
-
-    public void SetMouseDown(MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _isLeftMouseButtonDown = true;
-            _wasLeftMouseClickedThisFrame = true;
-        }
-    }
-
-    public void SetMouseUp(MouseButton button)
-    {
-        if (button == MouseButton.Left)
-        {
-            _isLeftMouseButtonDown = false;
-        }
-    }
-
-    public void AddCharacterInput(char c)
-    {
-        // Filter out control characters except for tab and newline which might be useful in text boxes.
-        if (!char.IsControl(c) || c == '\t' || c == '\n')
-        {
-            _typedCharsThisFrame.Enqueue(c);
-        }
-    }
-
-    public void AddKeyPressed(Keys key)
-    {
-        if (!_heldKeys.Contains(key))
-        {
-            _pressedKeysThisFrame.Add(key);
-            _heldKeys.Add(key);
-        }
-    }
-
-    public void AddKeyReleased(Keys key)
-    {
-        if (_heldKeys.Contains(key))
-        {
-            _releasedKeysThisFrame.Add(key);
-            _heldKeys.Remove(key);
-        }
-    }
-}
-</file>
-
-<file path="InputState.cs">
-// InputState.cs
-using System.Collections.Generic;
-using System.Numerics;
-
-namespace DirectUI;
-
-// Holds input state needed for UI processing in a single frame
-public readonly struct InputState
-{
-    public readonly Vector2 MousePosition;
-    public readonly bool WasLeftMousePressedThisFrame; // True if the left button went down this frame
-    public readonly bool IsLeftMouseDown; // True if the left button is currently held down
-    public readonly IReadOnlyList<char> TypedCharacters; // Characters typed this frame
-    public readonly IReadOnlyList<Keys> PressedKeys; // Keys pressed down this frame
-    public readonly IReadOnlyList<Keys> ReleasedKeys; // Keys released this frame
-    public readonly IReadOnlyCollection<Keys> HeldKeys; // Keys currently held down
-
-    public InputState(
-        Vector2 mousePosition,
-        bool wasLeftMousePressedThisFrame,
-        bool isLeftMouseDown,
-        IReadOnlyList<char> typedCharacters,
-        IReadOnlyList<Keys> pressedKeys,
-        IReadOnlyList<Keys> releasedKeys,
-        IReadOnlyCollection<Keys> heldKeys)
-    {
-        MousePosition = mousePosition;
-        WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
-        IsLeftMouseDown = isLeftMouseDown;
-        TypedCharacters = typedCharacters;
-        PressedKeys = pressedKeys;
-        ReleasedKeys = releasedKeys;
-        HeldKeys = heldKeys;
-    }
-}
-</file>
-
-<file path="Keys.cs">
-namespace DirectUI;
-
-/// <summary>
-/// Defines keyboard keys for use in application-level input handling.
-/// The values correspond to Win32 Virtual-Key Codes.
-/// </summary>
-public enum Keys
-{
-    /// <summary>
-    /// The key is not recognized.
-    /// </summary>
-    Unknown = 0,
-
-    // Action Keys
-    /// <summary>The BACKSPACE key.</summary>
-    Backspace = 0x08,
-    /// <summary>The TAB key.</summary>
-    Tab = 0x09,
-    /// <summary>The ENTER key.</summary>
-    Enter = 0x0D,
-    /// <summary>The SHIFT key.</summary>
-    Shift = 0x10,
-    /// <summary>The CTRL key.</summary>
-    Control = 0x11,
-    /// <summary>The ALT key.</summary>
-    Alt = 0x12,
-    /// <summary>The PAUSE key.</summary>
-    Pause = 0x13,
-    /// <summary>The CAPS LOCK key.</summary>
-    CapsLock = 0x14,
-    /// <summary>The ESC key.</summary>
-    Escape = 0x1B,
-    /// <summary>The SPACEBAR key.</summary>
-    Space = 0x20,
-    /// <summary>The PAGE UP key.</summary>
-    PageUp = 0x21,
-    /// <summary>The PAGE DOWN key.</summary>
-    PageDown = 0x22,
-    /// <summary>The END key.</summary>
-    End = 0x23,
-    /// <summary>The HOME key.</summary>
-    Home = 0x24,
-    /// <summary>The LEFT ARROW key.</summary>
-    LeftArrow = 0x25,
-    /// <summary>The UP ARROW key.</summary>
-    UpArrow = 0x26,
-    /// <summary>The RIGHT ARROW key.</summary>
-    RightArrow = 0x27,
-    /// <summary>The DOWN ARROW key.</summary>
-    DownArrow = 0x28,
-    /// <summary>The INSERT key.</summary>
-    Insert = 0x2D,
-    /// <summary>The DELETE key.</summary>
-    Delete = 0x2E,
-
-    // Digit Keys
-    /// <summary>The 0 key.</summary>
-    D0 = 0x30,
-    /// <summary>The 1 key.</summary>
-    D1 = 0x31,
-    /// <summary>The 2 key.</summary>
-    D2 = 0x32,
-    /// <summary>The 3 key.</summary>
-    D3 = 0x33,
-    /// <summary>The 4 key.</summary>
-    D4 = 0x34,
-    /// <summary>The 5 key.</summary>
-    D5 = 0x35,
-    /// <summary>The 6 key.</summary>
-    D6 = 0x36,
-    /// <summary>The 7 key.</summary>
-    D7 = 0x37,
-    /// <summary>The 8 key.</summary>
-    D8 = 0x38,
-    /// <summary>The 9 key.</summary>
-    D9 = 0x39,
-
-    // Letter Keys
-    /// <summary>The A key.</summary>
-    A = 0x41,
-    /// <summary>The B key.</summary>
-    B = 0x42,
-    /// <summary>The C key.</summary>
-    C = 0x43,
-    /// <summary>The D key.</summary>
-    D = 0x44,
-    /// <summary>The E key.</summary>
-    E = 0x45,
-    /// <summary>The F key.</summary>
-    F = 0x46,
-    /// <summary>The G key.</summary>
-    G = 0x47,
-    /// <summary>The H key.</summary>
-    H = 0x48,
-    /// <summary>The I key.</summary>
-    I = 0x49,
-    /// <summary>The J key.</summary>
-    J = 0x4A,
-    /// <summary>The K key.</summary>
-    K = 0x4B,
-    /// <summary>The L key.</summary>
-    L = 0x4C,
-    /// <summary>The M key.</summary>
-    M = 0x4D,
-    /// <summary>The N key.</summary>
-    N = 0x4E,
-    /// <summary>The O key.</summary>
-    O = 0x4F,
-    /// <summary>The P key.</summary>
-    P = 0x50,
-    /// <summary>The Q key.</summary>
-    Q = 0x51,
-    /// <summary>The R key.</summary>
-    R = 0x52,
-    /// <summary>The S key.</summary>
-    S = 0x53,
-    /// <summary>The T key.</summary>
-    T = 0x54,
-    /// <summary>The U key.</summary>
-    U = 0x55,
-    /// <summary>The V key.</summary>
-    V = 0x56,
-    /// <summary>The W key.</summary>
-    W = 0x57,
-    /// <summary>The X key.</summary>
-    X = 0x58,
-    /// <summary>The Y key.</summary>
-    Y = 0x59,
-    /// <summary>The Z key.</summary>
-    Z = 0x5A,
-
-    // Function Keys
-    /// <summary>The F1 key.</summary>
-    F1 = 0x70,
-    /// <summary>The F2 key.</summary>
-    F2 = 0x71,
-    /// <summary>The F3 key.</summary>
-    F3 = 0x72,
-    /// <summary>The F4 key.</summary>
-    F4 = 0x73,
-    /// <summary>The F5 key.</summary>
-    F5 = 0x74,
-    /// <summary>The F6 key.</summary>
-    F6 = 0x75,
-    /// <summary>The F7 key.</summary>
-    F7 = 0x76,
-    /// <summary>The F8 key.</summary>
-    F8 = 0x77,
-    /// <summary>The F9 key.</summary>
-    F9 = 0x78,
-    /// <summary>The F10 key.</summary>
-    F10 = 0x79,
-    /// <summary>The F11 key.</summary>
-    F11 = 0x7A,
-    /// <summary>The F12 key.</summary>
-    F12 = 0x7B,
-}
-</file>
-
 <file path="ModalWindow.cs">
 using Vortice.Mathematics;
 
@@ -1027,6 +730,7 @@ internal static class NativeMethods
     public const int WM_LBUTTONDOWN = 0x0201;
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
+    public const int WM_MOUSEWHEEL = 0x020A;
     public const int WM_QUIT = 0x0012;
     public const int WM_CHAR = 0x0102;
 
@@ -1278,7 +982,7 @@ public abstract class Win32Window : IDisposable
     public bool Create(IntPtr owner = default, uint? style = null, int? x = null, int? y = null)
     {
         OwnerHandle = owner;
-        
+
         if (_hwnd != IntPtr.Zero)
         {
             return true;
@@ -1307,7 +1011,7 @@ public abstract class Win32Window : IDisposable
     private bool TryCreateWindow(IntPtr owner, uint? style, int? x, int? y)
     {
         _hInstance = NativeMethods.GetModuleHandle(null);
-        
+
         if (_hInstance == IntPtr.Zero)
         {
             _hInstance = Process.GetCurrentProcess().Handle;
@@ -1330,13 +1034,13 @@ public abstract class Win32Window : IDisposable
                     hCursor = NativeMethods.LoadCursor(IntPtr.Zero, 32512),
                 };
 
-                if (NativeMethods.RegisterClassEx(ref wndClass) == 0) 
-                { 
-                    Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}"); 
-                    return false; 
+                if (NativeMethods.RegisterClassEx(ref wndClass) == 0)
+                {
+                    Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}");
+                    return false;
                 }
 
-                RegisteredClassNames.Add(_windowClassName); 
+                RegisteredClassNames.Add(_windowClassName);
                 Console.WriteLine($"Class '{_windowClassName}' registered.");
             }
         }
@@ -1362,7 +1066,7 @@ public abstract class Win32Window : IDisposable
             _hInstance,
             GCHandle.ToIntPtr(_gcHandle));
 
-        if (_hwnd == IntPtr.Zero) 
+        if (_hwnd == IntPtr.Zero)
         {
             Console.WriteLine($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
 
@@ -1371,7 +1075,7 @@ public abstract class Win32Window : IDisposable
                 _gcHandle.Free();
             }
 
-            return false; 
+            return false;
         }
 
         Console.WriteLine($"Window created: {_hwnd}"); return true;
@@ -1420,14 +1124,14 @@ public abstract class Win32Window : IDisposable
     {
         switch (msg)
         {
-            case NativeMethods.WM_PAINT: 
-                OnPaint(); 
+            case NativeMethods.WM_PAINT:
+                OnPaint();
                 return IntPtr.Zero;
 
-            case NativeMethods.WM_SIZE: 
-                Width = NativeMethods.LoWord(lParam); 
-                Height = NativeMethods.HiWord(lParam); 
-                OnSize(Width, Height); 
+            case NativeMethods.WM_SIZE:
+                Width = NativeMethods.LoWord(lParam);
+                Height = NativeMethods.HiWord(lParam);
+                OnSize(Width, Height);
                 return IntPtr.Zero;
 
             case NativeMethods.WM_MOUSEMOVE:
@@ -1444,6 +1148,11 @@ public abstract class Win32Window : IDisposable
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
 
+            case NativeMethods.WM_MOUSEWHEEL:
+                short wheelDelta = NativeMethods.HiWord(wParam);
+                OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
+                return IntPtr.Zero;
+
             case NativeMethods.WM_KEYDOWN:
                 OnKeyDown((Keys)wParam);
                 return IntPtr.Zero;
@@ -1457,11 +1166,11 @@ public abstract class Win32Window : IDisposable
                 return IntPtr.Zero;
 
             case NativeMethods.WM_CLOSE:
-                if (OnClose()) 
+                if (OnClose())
                 {
-                    NativeMethods.DestroyWindow(hWnd); 
-                } 
-                
+                    NativeMethods.DestroyWindow(hWnd);
+                }
+
                 return IntPtr.Zero;
 
             case NativeMethods.WM_DESTROY:
@@ -1478,13 +1187,13 @@ public abstract class Win32Window : IDisposable
 
             case NativeMethods.WM_NCDESTROY:
                 Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
-                
+
                 IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
-                
+
                 if (ptr != IntPtr.Zero)
                 {
                     var handle = GCHandle.FromIntPtr(ptr);
-                    
+
                     if (handle.IsAllocated)
                     {
                         handle.Free();
@@ -1496,14 +1205,14 @@ public abstract class Win32Window : IDisposable
                 if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
                 {
                     _gcHandle = default;
-                
+
                 }
 
                 _hwnd = IntPtr.Zero;
 
                 return IntPtr.Zero;
 
-            default: 
+            default:
                 return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
         }
     }
@@ -1530,7 +1239,7 @@ public abstract class Win32Window : IDisposable
 
     public virtual void FrameUpdate()
     {
-    
+
     }
 
     internal bool GetWindowRect(out NativeMethods.RECT rect)
@@ -1544,61 +1253,66 @@ public abstract class Win32Window : IDisposable
         return NativeMethods.GetWindowRect(Handle, out rect);
     }
 
-    protected virtual bool Initialize() 
-    { 
-        return true; 
+    protected virtual bool Initialize()
+    {
+        return true;
     }
-    
+
     protected abstract void OnPaint();
-    
-    protected virtual void OnSize(int width, int height) 
+
+    protected virtual void OnSize(int width, int height)
     {
 
     }
-    
-    protected virtual void OnMouseDown(MouseButton button, int x, int y) 
-    { 
+
+    protected virtual void OnMouseDown(MouseButton button, int x, int y)
+    {
 
     }
-    
-    protected virtual void OnMouseUp(MouseButton button, int x, int y) 
+
+    protected virtual void OnMouseUp(MouseButton button, int x, int y)
     {
-    
+
     }
-    
+
     protected virtual void OnMouseMove(int x, int y)
     {
-    
+
     }
-    
+
     protected virtual void OnKeyDown(Keys key)
     {
 
     }
-    
+
     protected virtual void OnKeyUp(Keys key)
     {
 
     }
-    
+
+    protected virtual void OnMouseWheel(float delta)
+    {
+
+    }
+
     protected virtual void OnChar(char c)
     {
 
     }
-    
+
     protected virtual bool OnClose()
-    { 
+    {
         return true;
     }
-    
+
     protected virtual void OnDestroy()
     {
 
     }
-    
-    protected virtual void Cleanup() 
+
+    protected virtual void Cleanup()
     {
-        
+
     }
 
     public void Dispose()
@@ -1803,6 +1517,29 @@ internal class ResizablePanelState
 }
 </file>
 
+<file path="Containers\ScrollContainerState.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public class ScrollContainerState
+{
+    // State managed by the UI system
+    internal Vector2 CurrentScrollOffset { get; set; }
+
+    // Per-frame calculated values
+    internal int Id { get; set; }
+    internal Vector2 Position { get; set; }
+    internal Vector2 VisibleSize { get; set; }
+    internal Vector2 ContentSize { get; set; }
+    internal bool IsHovered { get; set; }
+    internal VBoxContainerState ContentVBox { get; set; } = null!;
+
+    // Public parameterless constructor required for GetOrCreateElement
+    public ScrollContainerState() { }
+}
+</file>
+
 <file path="Containers\TreeViewState.cs">
 namespace DirectUI;
 
@@ -1853,30 +1590,74 @@ namespace DirectUI;
 
 public static partial class UI
 {
-	public static bool Button(int id, ButtonDefinition definition)
-	{
-		if (!IsContextValid() || definition is null) return false;
-		Button buttonInstance = State.GetOrCreateElement<Button>(id);
-		buttonInstance.Position = Context.Layout.ApplyLayout(definition.Position);
-		ApplyButtonDefinition(buttonInstance, definition);
+    public static bool Button(
+        int id,
+        string text,
+        Vector2 size = default,
+        ButtonStylePack? theme = null,
+        bool disabled = false,
+        bool autoWidth = false,
+        Vector2? textMargin = null,
+        DirectUI.Button.ActionMode clickMode = DirectUI.Button.ActionMode.Release,
+        Alignment? textAlignment = null,
+        Vector2? textOffset = null,
+        Vector2? origin = null,
+        object? userData = null)
+    {
+        if (!IsContextValid()) return false;
 
-		bool pushedClip = false;
-		if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is GridContainerState grid)
-		{
-			float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
-			float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
-			Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-			if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
-			{ Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
-		}
+        Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
+        Vector2 finalOrigin = origin ?? Vector2.Zero;
 
-		bool clicked = buttonInstance.Update(id);
-		if (pushedClip && Context.RenderTarget is not null)
-		{ Context.RenderTarget.PopAxisAlignedClip(); }
+        // Culling Check
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(finalSize); // Still advance layout cursor
+            return false;
+        }
 
-		Context.Layout.AdvanceLayout(buttonInstance.Size);
-		return clicked;
-	}
+        Button buttonInstance = State.GetOrCreateElement<Button>(id);
+        buttonInstance.Position = drawPos;
+
+        // Configure the button instance from parameters
+        buttonInstance.Text = text;
+        buttonInstance.Size = finalSize;
+        buttonInstance.Themes = theme ?? buttonInstance.Themes ?? new ButtonStylePack();
+        buttonInstance.Disabled = disabled;
+        buttonInstance.AutoWidth = autoWidth;
+        buttonInstance.TextMargin = textMargin ?? new Vector2(10, 5);
+        buttonInstance.LeftClickActionMode = clickMode;
+        buttonInstance.TextAlignment = textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
+        buttonInstance.TextOffset = textOffset ?? Vector2.Zero;
+        buttonInstance.Origin = finalOrigin;
+        buttonInstance.UserData = userData;
+
+
+        bool pushedClip = false;
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is GridContainerState grid)
+        {
+            float clipStartY = grid.CurrentDrawPosition.Y;
+            float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
+            float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
+            Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
+            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
+            {
+                Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased);
+                pushedClip = true;
+            }
+        }
+
+        bool clicked = buttonInstance.Update(id);
+        if (pushedClip && Context.RenderTarget is not null)
+        {
+            Context.RenderTarget.PopAxisAlignedClip();
+        }
+
+        Context.Layout.AdvanceLayout(buttonInstance.Size);
+        return clicked;
+    }
 }
 </file>
 
@@ -1937,10 +1718,97 @@ public static partial class UI
         }
     }
 
-    public static void BeginResizableVPanel(int id, ref float currentWidth, ResizablePanelDefinition definition, HAlignment alignment = HAlignment.Left, float topOffset = 0f)
+    public static void BeginScrollableRegion(int id, Vector2 size)
     {
-        if (!IsContextValid() || definition == null) return;
+        if (!IsContextValid()) return;
+
+        Vector2 position = Context.Layout.GetCurrentPosition();
+        Rect regionBounds = new Rect(position.X, position.Y, size.X, size.Y);
+
+        var scrollState = State.GetOrCreateElement<ScrollContainerState>(id);
+        scrollState.Id = id;
+        scrollState.Position = position;
+        scrollState.VisibleSize = size;
+        scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
+
+        // Handle scroll input
+        if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
+        {
+            var offset = scrollState.CurrentScrollOffset;
+            offset.Y -= Context.InputState.ScrollDelta * 20; // Adjust multiplier as needed
+            scrollState.CurrentScrollOffset = offset;
+        }
+
+        // Begin the inner container for content layout, offset by the scroll position
+        var contentVBoxId = HashCode.Combine(id, "scroll_vbox");
+        var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
+        contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
+        contentVBox.CurrentPosition = position - scrollState.CurrentScrollOffset;
+        contentVBox.Gap = 0; // The user can nest another VBox inside for gaps
+        contentVBox.MaxElementWidth = 0f;
+        contentVBox.AccumulatedHeight = 0f;
+        contentVBox.ElementCount = 0;
+        scrollState.ContentVBox = contentVBox;
+
+        Context.Layout.PushClipRect(regionBounds);
+        Context.RenderTarget.PushAxisAlignedClip(regionBounds, D2D.AntialiasMode.Aliased);
+
+        Context.Layout.PushContainer(scrollState);
+    }
+
+    public static void EndScrollableRegion()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
+        { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
+
+        // Finalize content size
+        scrollState.ContentSize = new Vector2(scrollState.ContentVBox.MaxElementWidth, scrollState.ContentVBox.AccumulatedHeight);
+
+        // Clamp scroll offset based on final content size
+        float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
+        var offset = scrollState.CurrentScrollOffset;
+        offset.Y = Math.Clamp(offset.Y, 0, maxScrollY);
+        scrollState.CurrentScrollOffset = offset;
+
+        // Pop the main container and clip rect
+        Context.Layout.PopContainer();
+        Context.RenderTarget.PopAxisAlignedClip();
+        Context.Layout.PopClipRect();
+
+        // Draw scrollbar if needed
+        if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
+        {
+            var sliderId = HashCode.Combine(scrollState.Id, "scrollbar");
+            var sliderPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - 10, scrollState.Position.Y);
+
+            float scrollbarPos = VSlider(sliderId, scrollState.CurrentScrollOffset.Y, 0, maxScrollY,
+                new Vector2(10, scrollState.VisibleSize.Y), sliderPos);
+
+            offset = scrollState.CurrentScrollOffset;
+            offset.Y = scrollbarPos;
+            scrollState.CurrentScrollOffset = offset;
+        }
+
+        Context.Layout.AdvanceLayout(scrollState.VisibleSize);
+    }
+
+    public static void BeginResizableVPanel(
+        int id,
+        ref float currentWidth,
+        HAlignment alignment = HAlignment.Left,
+        float topOffset = 0f,
+        float minWidth = 50f,
+        float maxWidth = 500f,
+        float resizeHandleWidth = 5f,
+        BoxStyle? panelStyle = null,
+        Vector2 padding = default,
+        float gap = 5f,
+        bool disabled = false)
+    {
+        if (!IsContextValid()) return;
         var intId = id;
+
+        Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
         var input = Context.InputState;
         var renderTarget = Context.RenderTarget;
@@ -1948,9 +1816,9 @@ public static partial class UI
         var windowHeight = renderTarget.Size.Height;
         var availableHeight = windowHeight - topOffset;
 
-        if (!definition.Disabled)
+        if (!disabled)
         {
-            float handleWidth = Math.Min(definition.ResizeHandleWidth, currentWidth);
+            float handleWidth = Math.Min(resizeHandleWidth, currentWidth);
             float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
             float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
             Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
@@ -1961,26 +1829,27 @@ public static partial class UI
             if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
-                if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
-                else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, definition.MinWidth, definition.MaxWidth);
+                if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
+                else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, minWidth, maxWidth);
             }
         }
 
-        var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
+        var finalPanelStyle = panelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
         currentWidth = Math.Max(0, currentWidth);
         float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
         Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
+            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), finalPanelStyle);
         }
 
-        Vector2 contentStartPosition = new Vector2(finalPanelX + definition.Padding.X, topOffset + definition.Padding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (definition.Padding.X * 2)), Math.Max(0, availableHeight - (definition.Padding.Y * 2)));
+        Vector2 contentStartPosition = new Vector2(finalPanelX + finalPadding.X, topOffset + finalPadding.Y);
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (finalPadding.X * 2)), Math.Max(0, availableHeight - (finalPadding.Y * 2)));
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
 
@@ -1988,7 +1857,7 @@ public static partial class UI
         var vboxState = Context.Layout.GetOrCreateVBoxState(vboxId);
         vboxState.StartPosition = contentStartPosition;
         vboxState.CurrentPosition = contentStartPosition;
-        vboxState.Gap = definition.Gap;
+        vboxState.Gap = gap;
         vboxState.MaxElementWidth = 0f;
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
@@ -2003,15 +1872,30 @@ public static partial class UI
         { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
+            Context.Layout.PopClipRect(); // For culling
             Context.RenderTarget.PopAxisAlignedClip();
         }
         Context.Layout.PopContainer();
     }
 
-    public static void BeginResizableHPanel(int id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
+    public static void BeginResizableHPanel(
+        int id,
+        ref float currentHeight,
+        float reservedLeftSpace,
+        float reservedRightSpace,
+        float topOffset = 0f,
+        float minHeight = 50f,
+        float maxHeight = 300f,
+        float resizeHandleHeight = 5f,
+        BoxStyle? panelStyle = null,
+        Vector2 padding = default,
+        float gap = 5f,
+        bool disabled = false)
     {
-        if (!IsContextValid() || definition == null) return;
+        if (!IsContextValid()) return;
         var intId = id;
+
+        Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
         var input = Context.InputState;
         var renderTarget = Context.RenderTarget;
@@ -2019,17 +1903,14 @@ public static partial class UI
         var windowHeight = renderTarget.Size.Height;
         var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
         var maxAllowedHeight = windowHeight - topOffset;
-        var effectiveMaxHeight = Math.Min(definition.MaxHeight, maxAllowedHeight);
+        var effectiveMaxHeight = Math.Min(maxHeight, maxAllowedHeight);
+        float clampMax = Math.Max(minHeight, effectiveMaxHeight);
 
-        // Fix: Ensure the max value for clamping is not less than the min value.
-        // This prevents a crash when the window is resized to a very small height.
-        float clampMax = Math.Max(definition.MinHeight, effectiveMaxHeight);
-
-        if (!definition.Disabled)
+        if (!disabled)
         {
-            currentHeight = Math.Clamp(currentHeight, definition.MinHeight, clampMax);
+            currentHeight = Math.Clamp(currentHeight, minHeight, clampMax);
             float panelY = windowHeight - currentHeight;
-            float handleHeight = Math.Min(definition.ResizeHandleWidth, currentHeight);
+            float handleHeight = Math.Min(resizeHandleHeight, currentHeight);
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
@@ -2039,25 +1920,26 @@ public static partial class UI
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
-                currentHeight = Math.Clamp(windowHeight - clampedMouseY, definition.MinHeight, clampMax);
+                currentHeight = Math.Clamp(windowHeight - clampedMouseY, minHeight, clampMax);
             }
         }
 
-        var panelStyle = definition.PanelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentHeight = Math.Clamp(currentHeight, definition.MinHeight, clampMax);
+        var finalPanelStyle = panelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
+        currentHeight = Math.Clamp(currentHeight, minHeight, clampMax);
         float finalPanelY = windowHeight - currentHeight;
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), panelStyle);
+            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), finalPanelStyle);
         }
 
-        Vector2 contentStartPosition = new Vector2(reservedLeftSpace + definition.Padding.X, finalPanelY + definition.Padding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, availableWidth - (definition.Padding.X * 2)), Math.Max(0, currentHeight - (definition.Padding.Y * 2)));
+        Vector2 contentStartPosition = new Vector2(reservedLeftSpace + finalPadding.X, finalPanelY + finalPadding.Y);
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, availableWidth - (finalPadding.X * 2)), Math.Max(0, currentHeight - (finalPadding.Y * 2)));
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
 
@@ -2065,7 +1947,7 @@ public static partial class UI
         var hboxState = Context.Layout.GetOrCreateHBoxState(hboxId);
         hboxState.StartPosition = contentStartPosition;
         hboxState.CurrentPosition = contentStartPosition;
-        hboxState.Gap = definition.Gap;
+        hboxState.Gap = gap;
         hboxState.MaxElementHeight = 0f;
         hboxState.AccumulatedWidth = 0f;
         hboxState.ElementCount = 0;
@@ -2080,6 +1962,7 @@ public static partial class UI
         { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
+            Context.Layout.PopClipRect(); // For culling
             Context.RenderTarget.PopAxisAlignedClip();
         }
         Context.Layout.PopContainer();
@@ -2151,38 +2034,59 @@ public static partial class UI
         }
         return true;
     }
-
-    private static void ApplyButtonDefinition(Button instance, ButtonDefinition definition)
-    {
-        instance.Size = definition.Size; instance.Text = definition.Text; instance.Themes = definition.Theme ?? instance.Themes ?? new ButtonStylePack();
-        instance.Origin = definition.Origin ?? Vector2.Zero; instance.TextAlignment = definition.TextAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
-        instance.TextOffset = definition.TextOffset ?? Vector2.Zero; instance.AutoWidth = definition.AutoWidth; instance.TextMargin = definition.TextMargin ?? new Vector2(10, 5);
-        instance.Behavior = definition.Behavior; instance.LeftClickActionMode = definition.LeftClickActionMode; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
-    }
-
-    private static void ApplySliderDefinition(InternalSliderLogic instance, SliderDefinition definition)
-    {
-        instance.Size = definition.Size; instance.MinValue = definition.MinValue; instance.MaxValue = definition.MaxValue; instance.Step = definition.Step;
-        instance.Theme = definition.Theme ?? instance.Theme ?? new SliderStyle(); instance.GrabberTheme = definition.GrabberTheme ?? instance.GrabberTheme ?? new ButtonStylePack();
-        instance.GrabberSize = definition.GrabberSize ?? instance.GrabberSize; instance.Origin = definition.Origin ?? Vector2.Zero; instance.Disabled = definition.Disabled; instance.UserData = definition.UserData;
-    }
 }
 </file>
 
 <file path="Core\UI.LineEdit.cs">
+using System.Numerics;
+using Vortice.Mathematics;
+
 namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool LineEdit(int id, ref string text, LineEditDefinition definition)
+    public static bool LineEdit(
+        int id,
+        ref string text,
+        Vector2 size,
+        Vector2 position = default,
+        ButtonStylePack? theme = null,
+        string placeholderText = "",
+        bool isPassword = false,
+        char passwordChar = '*',
+        int maxLength = 1024,
+        bool disabled = false,
+        Vector2? textMargin = null)
     {
-        if (!IsContextValid() || definition == null) return false;
+        if (!IsContextValid()) return false;
+
+        var finalPosition = Context.Layout.ApplyLayout(position);
+        var finalMargin = textMargin ?? new Vector2(4, 2);
+
+        // Culling Check
+        Rect widgetBounds = new Rect(finalPosition.X, finalPosition.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size); // Still advance layout cursor
+            return false;
+        }
 
         var lineEditInstance = State.GetOrCreateElement<LineEdit>(id);
 
-        bool textChanged = lineEditInstance.UpdateAndDraw(id, ref text, definition);
+        bool textChanged = lineEditInstance.UpdateAndDraw(
+            id,
+            ref text,
+            finalPosition,
+            size,
+            theme,
+            placeholderText,
+            isPassword,
+            passwordChar,
+            maxLength,
+            disabled,
+            finalMargin);
 
-        Context.Layout.AdvanceLayout(definition.Size);
+        Context.Layout.AdvanceLayout(size);
         return textChanged;
     }
 }
@@ -2190,31 +2094,105 @@ public static partial class UI
 
 <file path="Core\UI.Slider.cs">
 using System.Numerics;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
 public static partial class UI
 {
-    public static float HSlider(int id, float currentValue, SliderDefinition definition)
+    public static float HSlider(
+        int id,
+        float currentValue,
+        float minValue,
+        float maxValue,
+        Vector2 size,
+        Vector2 position = default,
+        float step = 0.01f,
+        SliderStyle? theme = null,
+        ButtonStylePack? grabberTheme = null,
+        Vector2? grabberSize = null,
+        HSliderDirection direction = HSliderDirection.LeftToRight,
+        bool disabled = false,
+        object? userData = null,
+        Vector2? origin = null)
     {
-        if (!IsContextValid() || definition is null) return currentValue;
+        if (!IsContextValid()) return currentValue;
+
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Culling Check
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return currentValue;
+        }
+
         InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
-        sliderInstance.Position = Context.Layout.ApplyLayout(definition.Position);
-        ApplySliderDefinition(sliderInstance, definition);
-        sliderInstance.Direction = definition.HorizontalDirection;
+        sliderInstance.Position = drawPos;
+
+        // Configure instance
+        sliderInstance.Size = size;
+        sliderInstance.MinValue = minValue;
+        sliderInstance.MaxValue = maxValue;
+        sliderInstance.Step = step;
+        sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
+        sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
+        sliderInstance.GrabberSize = grabberSize ?? new Vector2(16, 16);
+        sliderInstance.Origin = origin ?? Vector2.Zero;
+        sliderInstance.Disabled = disabled;
+        sliderInstance.UserData = userData;
+        sliderInstance.Direction = direction;
+
 
         float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
         Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 
-    public static float VSlider(int id, float currentValue, SliderDefinition definition)
+    public static float VSlider(
+        int id,
+        float currentValue,
+        float minValue,
+        float maxValue,
+        Vector2 size,
+        Vector2 position = default,
+        float step = 0.01f,
+        SliderStyle? theme = null,
+        ButtonStylePack? grabberTheme = null,
+        Vector2? grabberSize = null,
+        VSliderDirection direction = VSliderDirection.TopToBottom,
+        bool disabled = false,
+        object? userData = null,
+        Vector2? origin = null)
     {
-        if (!IsContextValid() || definition is null) return currentValue;
+        if (!IsContextValid()) return currentValue;
+
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Culling Check
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return currentValue;
+        }
+
         InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
-        sliderInstance.Position = Context.Layout.ApplyLayout(definition.Position);
-        ApplySliderDefinition(sliderInstance, definition);
-        sliderInstance.Direction = definition.VerticalDirection;
+        sliderInstance.Position = drawPos;
+
+        // Configure instance
+        sliderInstance.Size = size;
+        sliderInstance.MinValue = minValue;
+        sliderInstance.MaxValue = maxValue;
+        sliderInstance.Step = step;
+        sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
+        sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
+        sliderInstance.GrabberSize = grabberSize ?? new Vector2(16, 16);
+        sliderInstance.Origin = origin ?? Vector2.Zero;
+        sliderInstance.Disabled = disabled;
+        sliderInstance.UserData = userData;
+        sliderInstance.Direction = direction;
 
         float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
         Context.Layout.AdvanceLayout(sliderInstance.Size);
@@ -2302,6 +2280,108 @@ public static partial class UI
             renderTarget.DrawTextLayout(new Vector2(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush, DrawTextOptions.None);
         }
         return wasClickedThisFrame;
+    }
+}
+</file>
+
+<file path="Core\UI.Style.cs">
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public enum StyleVar
+{
+    FrameRounding,
+    FrameBorderSize,
+    // Future additions could include:
+    // ItemSpacing,
+    // FramePadding,
+    // ButtonTextAlign,
+}
+
+public enum StyleColor
+{
+    Text,
+    TextDisabled,
+    Button,
+    ButtonHovered,
+    ButtonPressed,
+    ButtonDisabled,
+    Border,
+    BorderHovered,
+    BorderPressed,
+    BorderDisabled,
+    BorderFocused,
+}
+
+public static partial class UI
+{
+    // --- Style Stack API ---
+
+    public static void PushStyleVar(StyleVar styleVar, float value)
+    {
+        Context.styleVarStack.Push((styleVar, value));
+    }
+
+    public static void PushStyleVar(StyleVar styleVar, Vector2 value)
+    {
+        Context.styleVarStack.Push((styleVar, value));
+    }
+
+    public static void PopStyleVar(int count = 1)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (Context.styleVarStack.Count > 0)
+            {
+                Context.styleVarStack.Pop();
+            }
+        }
+    }
+
+    public static void PushStyleColor(StyleColor styleColor, Color4 color)
+    {
+        Context.styleColorStack.Push((styleColor, color));
+    }
+
+    public static void PopStyleColor(int count = 1)
+    {
+        for (int i = 0; i < count; i++)
+        {
+            if (Context.styleColorStack.Count > 0)
+            {
+                Context.styleColorStack.Pop();
+            }
+        }
+    }
+
+    // --- Style Accessors (for internal widget use) ---
+
+    internal static T GetStyleVar<T>(StyleVar styleVar, T defaultValue)
+    {
+        foreach (var (key, value) in Context.styleVarStack)
+        {
+            if (key == styleVar && value is T typedValue)
+            {
+                return typedValue;
+            }
+        }
+        return defaultValue;
+    }
+
+    internal static Color4 GetStyleColor(StyleColor styleColor, Color4 defaultValue)
+    {
+        foreach (var (key, value) in Context.styleColorStack)
+        {
+            if (key == styleColor)
+            {
+                return value;
+            }
+        }
+        return defaultValue;
     }
 }
 </file>
@@ -2547,6 +2627,8 @@ public class UIContext
     // Layout and state management
     public UILayoutManager Layout { get; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
+    internal readonly Stack<(StyleVar, object)> styleVarStack = new();
+    internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
 
     public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources)
     {
@@ -2561,6 +2643,8 @@ public class UIContext
 
 <file path="Core\UILayoutManager.cs">
 using System.Numerics;
+using Vortice.Mathematics;
+using System;
 
 namespace DirectUI;
 
@@ -2568,6 +2652,7 @@ public class UILayoutManager
 {
     private readonly Stack<object> _containerStack = new();
     private readonly Dictionary<int, object> _containerStateCache = new();
+    private readonly Stack<Rect> _clipRectStack = new();
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
@@ -2575,7 +2660,43 @@ public class UILayoutManager
     public void PushContainer(object containerState) => _containerStack.Push(containerState);
     public object PopContainer() => _containerStack.Pop();
     public object PeekContainer() => _containerStack.Peek();
-    public void ClearStack() => _containerStack.Clear();
+    public void ClearStack()
+    {
+        _containerStack.Clear();
+        _clipRectStack.Clear();
+    }
+
+    public void PushClipRect(Rect rect) => _clipRectStack.Push(rect);
+    public void PopClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            _clipRectStack.Pop();
+        }
+    }
+
+    public Rect GetCurrentClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            return _clipRectStack.Peek();
+        }
+        // Return a very large rectangle representing no clipping
+        return new Rect(float.MinValue / 2, float.MinValue / 2, float.MaxValue, float.MaxValue);
+    }
+
+    public bool IsRectVisible(Rect rect)
+    {
+        if (_clipRectStack.Count == 0) return true;
+
+        var currentClip = GetCurrentClipRect();
+
+        // Basic intersection test
+        return rect.X < currentClip.X + currentClip.Width &&
+               rect.X + rect.Width > currentClip.X &&
+               rect.Y < currentClip.Y + currentClip.Height &&
+               rect.Y + rect.Height > currentClip.Y;
+    }
 
     public HBoxContainerState GetOrCreateHBoxState(int id)
     {
@@ -2652,6 +2773,7 @@ public class UILayoutManager
             HBoxContainerState hbox => hbox.CurrentPosition,
             VBoxContainerState vbox => vbox.CurrentPosition,
             GridContainerState grid => grid.CurrentDrawPosition,
+            ScrollContainerState scroll => scroll.ContentVBox.CurrentPosition,
             ResizablePanelState panel => panel.InnerVBox.CurrentPosition,
             ResizableHPanelState hpanel => hpanel.InnerHBox.CurrentPosition,
             _ => Vector2.Zero,
@@ -2661,7 +2783,15 @@ public class UILayoutManager
     public void AdvanceContainerLayout(Vector2 elementSize)
     {
         if (_containerStack.Count == 0) return;
+
         object currentContainerState = _containerStack.Peek();
+
+        // Handle nested containers
+        if (currentContainerState is ScrollContainerState scrollState)
+        {
+            currentContainerState = scrollState.ContentVBox;
+        }
+
         switch (currentContainerState)
         {
             case HBoxContainerState hbox:
@@ -3167,6 +3297,320 @@ public class FpsCounter
 }
 </file>
 
+<file path="Input\InputManager.cs">
+// Input/InputManager.cs
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+
+namespace DirectUI.Input;
+
+/// <summary>
+/// Aggregates raw input events over a frame and provides a snapshot of the input state.
+/// </summary>
+public class InputManager
+{
+    // Persistent state (held across frames)
+    private Vector2 _currentMousePos = new(-1, -1);
+    private bool _isLeftMouseButtonDown;
+    private readonly HashSet<Keys> _heldKeys = new();
+
+    // Per-frame state (reset every frame)
+    private bool _wasLeftMouseClickedThisFrame;
+    private float _scrollDeltaThisFrame;
+    private readonly Queue<char> _typedCharsThisFrame = new();
+    private readonly List<Keys> _pressedKeysThisFrame = new();
+    private readonly List<Keys> _releasedKeysThisFrame = new();
+
+    /// <summary>
+    /// Creates a snapshot of the current input state for the UI to process.
+    /// </summary>
+    public InputState GetCurrentState()
+    {
+        return new InputState(
+            _currentMousePos,
+            _wasLeftMouseClickedThisFrame,
+            _isLeftMouseButtonDown,
+            _scrollDeltaThisFrame,
+            _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
+            _pressedKeysThisFrame,
+            _releasedKeysThisFrame,
+            _heldKeys
+        );
+    }
+
+    /// <summary>
+    /// Resets the per-frame input state. Should be called after a frame has been rendered.
+    /// </summary>
+    public void PrepareNextFrame()
+    {
+        _wasLeftMouseClickedThisFrame = false;
+        _scrollDeltaThisFrame = 0f;
+        _typedCharsThisFrame.Clear();
+        _pressedKeysThisFrame.Clear();
+        _releasedKeysThisFrame.Clear();
+    }
+
+    // --- Raw Event Handlers ---
+
+    public void SetMousePosition(int x, int y)
+    {
+        _currentMousePos = new Vector2(x, y);
+    }
+
+    public void AddMouseWheelDelta(float delta)
+    {
+        _scrollDeltaThisFrame += delta;
+    }
+
+    public void SetMouseDown(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = true;
+            _wasLeftMouseClickedThisFrame = true;
+        }
+    }
+
+    public void SetMouseUp(MouseButton button)
+    {
+        if (button == MouseButton.Left)
+        {
+            _isLeftMouseButtonDown = false;
+        }
+    }
+
+    public void AddCharacterInput(char c)
+    {
+        // Filter out control characters except for tab and newline which might be useful in text boxes.
+        if (!char.IsControl(c) || c == '\t' || c == '\n')
+        {
+            _typedCharsThisFrame.Enqueue(c);
+        }
+    }
+
+    public void AddKeyPressed(Keys key)
+    {
+        if (!_heldKeys.Contains(key))
+        {
+            _pressedKeysThisFrame.Add(key);
+            _heldKeys.Add(key);
+        }
+    }
+
+    public void AddKeyReleased(Keys key)
+    {
+        if (_heldKeys.Contains(key))
+        {
+            _releasedKeysThisFrame.Add(key);
+            _heldKeys.Remove(key);
+        }
+    }
+}
+</file>
+
+<file path="Input\InputState.cs">
+// InputState.cs
+using System.Collections.Generic;
+using System.Numerics;
+
+namespace DirectUI;
+
+// Holds input state needed for UI processing in a single frame
+public readonly struct InputState
+{
+    public readonly Vector2 MousePosition;
+    public readonly bool WasLeftMousePressedThisFrame; // True if the left button went down this frame
+    public readonly bool IsLeftMouseDown; // True if the left button is currently held down
+    public readonly float ScrollDelta; // Mouse wheel scroll amount this frame
+    public readonly IReadOnlyList<char> TypedCharacters; // Characters typed this frame
+    public readonly IReadOnlyList<Keys> PressedKeys; // Keys pressed down this frame
+    public readonly IReadOnlyList<Keys> ReleasedKeys; // Keys released this frame
+    public readonly IReadOnlyCollection<Keys> HeldKeys; // Keys currently held down
+
+    public InputState(
+        Vector2 mousePosition,
+        bool wasLeftMousePressedThisFrame,
+        bool isLeftMouseDown,
+        float scrollDelta,
+        IReadOnlyList<char> typedCharacters,
+        IReadOnlyList<Keys> pressedKeys,
+        IReadOnlyList<Keys> releasedKeys,
+        IReadOnlyCollection<Keys> heldKeys)
+    {
+        MousePosition = mousePosition;
+        WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
+        IsLeftMouseDown = isLeftMouseDown;
+        ScrollDelta = scrollDelta;
+        TypedCharacters = typedCharacters;
+        PressedKeys = pressedKeys;
+        ReleasedKeys = releasedKeys;
+        HeldKeys = heldKeys;
+    }
+}
+</file>
+
+<file path="Input\Keys.cs">
+namespace DirectUI;
+
+/// <summary>
+/// Defines keyboard keys for use in application-level input handling.
+/// The values correspond to Win32 Virtual-Key Codes.
+/// </summary>
+public enum Keys
+{
+    /// <summary>
+    /// The key is not recognized.
+    /// </summary>
+    Unknown = 0,
+
+    // Action Keys
+    /// <summary>The BACKSPACE key.</summary>
+    Backspace = 0x08,
+    /// <summary>The TAB key.</summary>
+    Tab = 0x09,
+    /// <summary>The ENTER key.</summary>
+    Enter = 0x0D,
+    /// <summary>The SHIFT key.</summary>
+    Shift = 0x10,
+    /// <summary>The CTRL key.</summary>
+    Control = 0x11,
+    /// <summary>The ALT key.</summary>
+    Alt = 0x12,
+    /// <summary>The PAUSE key.</summary>
+    Pause = 0x13,
+    /// <summary>The CAPS LOCK key.</summary>
+    CapsLock = 0x14,
+    /// <summary>The ESC key.</summary>
+    Escape = 0x1B,
+    /// <summary>The SPACEBAR key.</summary>
+    Space = 0x20,
+    /// <summary>The PAGE UP key.</summary>
+    PageUp = 0x21,
+    /// <summary>The PAGE DOWN key.</summary>
+    PageDown = 0x22,
+    /// <summary>The END key.</summary>
+    End = 0x23,
+    /// <summary>The HOME key.</summary>
+    Home = 0x24,
+    /// <summary>The LEFT ARROW key.</summary>
+    LeftArrow = 0x25,
+    /// <summary>The UP ARROW key.</summary>
+    UpArrow = 0x26,
+    /// <summary>The RIGHT ARROW key.</summary>
+    RightArrow = 0x27,
+    /// <summary>The DOWN ARROW key.</summary>
+    DownArrow = 0x28,
+    /// <summary>The INSERT key.</summary>
+    Insert = 0x2D,
+    /// <summary>The DELETE key.</summary>
+    Delete = 0x2E,
+
+    // Digit Keys
+    /// <summary>The 0 key.</summary>
+    D0 = 0x30,
+    /// <summary>The 1 key.</summary>
+    D1 = 0x31,
+    /// <summary>The 2 key.</summary>
+    D2 = 0x32,
+    /// <summary>The 3 key.</summary>
+    D3 = 0x33,
+    /// <summary>The 4 key.</summary>
+    D4 = 0x34,
+    /// <summary>The 5 key.</summary>
+    D5 = 0x35,
+    /// <summary>The 6 key.</summary>
+    D6 = 0x36,
+    /// <summary>The 7 key.</summary>
+    D7 = 0x37,
+    /// <summary>The 8 key.</summary>
+    D8 = 0x38,
+    /// <summary>The 9 key.</summary>
+    D9 = 0x39,
+
+    // Letter Keys
+    /// <summary>The A key.</summary>
+    A = 0x41,
+    /// <summary>The B key.</summary>
+    B = 0x42,
+    /// <summary>The C key.</summary>
+    C = 0x43,
+    /// <summary>The D key.</summary>
+    D = 0x44,
+    /// <summary>The E key.</summary>
+    E = 0x45,
+    /// <summary>The F key.</summary>
+    F = 0x46,
+    /// <summary>The G key.</summary>
+    G = 0x47,
+    /// <summary>The H key.</summary>
+    H = 0x48,
+    /// <summary>The I key.</summary>
+    I = 0x49,
+    /// <summary>The J key.</summary>
+    J = 0x4A,
+    /// <summary>The K key.</summary>
+    K = 0x4B,
+    /// <summary>The L key.</summary>
+    L = 0x4C,
+    /// <summary>The M key.</summary>
+    M = 0x4D,
+    /// <summary>The N key.</summary>
+    N = 0x4E,
+    /// <summary>The O key.</summary>
+    O = 0x4F,
+    /// <summary>The P key.</summary>
+    P = 0x50,
+    /// <summary>The Q key.</summary>
+    Q = 0x51,
+    /// <summary>The R key.</summary>
+    R = 0x52,
+    /// <summary>The S key.</summary>
+    S = 0x53,
+    /// <summary>The T key.</summary>
+    T = 0x54,
+    /// <summary>The U key.</summary>
+    U = 0x55,
+    /// <summary>The V key.</summary>
+    V = 0x56,
+    /// <summary>The W key.</summary>
+    W = 0x57,
+    /// <summary>The X key.</summary>
+    X = 0x58,
+    /// <summary>The Y key.</summary>
+    Y = 0x59,
+    /// <summary>The Z key.</summary>
+    Z = 0x5A,
+
+    // Function Keys
+    /// <summary>The F1 key.</summary>
+    F1 = 0x70,
+    /// <summary>The F2 key.</summary>
+    F2 = 0x71,
+    /// <summary>The F3 key.</summary>
+    F3 = 0x72,
+    /// <summary>The F4 key.</summary>
+    F4 = 0x73,
+    /// <summary>The F5 key.</summary>
+    F5 = 0x74,
+    /// <summary>The F6 key.</summary>
+    F6 = 0x75,
+    /// <summary>The F7 key.</summary>
+    F7 = 0x76,
+    /// <summary>The F8 key.</summary>
+    F8 = 0x77,
+    /// <summary>The F9 key.</summary>
+    F9 = 0x78,
+    /// <summary>The F10 key.</summary>
+    F10 = 0x79,
+    /// <summary>The F11 key.</summary>
+    F11 = 0x7A,
+    /// <summary>The F12 key.</summary>
+    F12 = 0x7B,
+}
+</file>
+
 <file path="Styles\BoxStyle.cs">
 // MODIFIED: Styles/BoxStyle.cs
 // Summary: Replaced BorderThickness with BorderLengthTop, BorderLengthRight, BorderLengthBottom, BorderLengthLeft. Added convenience setter BorderLength.
@@ -3187,6 +3631,7 @@ public class BoxStyle
 
     public float BorderLength
     {
+        get => BorderLengthTop; // Return a representative value
         set
         {
             BorderLengthTop = value;
@@ -3232,7 +3677,7 @@ namespace DirectUI;
 
 public sealed class ButtonStylePack
 {
-    public ButtonStyle Current { get; private set; }
+    public ButtonStyle Current { get; internal set; }
     public ButtonStyle Normal { get; set; } = new();
     public ButtonStyle Hover { get; set; } = new();
     public ButtonStyle Pressed { get; set; } = new();
@@ -3636,6 +4081,10 @@ public class Button
     public bool IsHovering { get; internal set; } = false;
     public bool IsFocused { get; internal set; } = false;
 
+    // --- Internal Stateful Cache ---
+    private IDWriteTextLayout? _cachedTextLayout;
+    private UIResources.TextLayoutCacheKey _cachedLayoutKey;
+
     public Rect GlobalBounds
     {
         get
@@ -3749,7 +4198,72 @@ public class Button
 
     internal void UpdateStyle()
     {
-        Themes?.UpdateCurrentStyle(IsHovering, isPressed, Disabled, IsFocused);
+        if (Themes is null) return;
+
+        // Determine base style from interaction state
+        ButtonStyle baseStyle;
+        if (Disabled) baseStyle = Themes.Disabled;
+        else if (isPressed) baseStyle = Themes.Pressed;
+        else if (IsHovering) baseStyle = Themes.Hover;
+        else if (IsFocused) baseStyle = Themes.Focused;
+        else baseStyle = Themes.Normal;
+
+        // Create a temporary, modifiable copy for this frame
+        var currentStyle = new ButtonStyle
+        {
+            FillColor = baseStyle.FillColor,
+            BorderColor = baseStyle.BorderColor,
+            FontColor = baseStyle.FontColor,
+            BorderLengthTop = baseStyle.BorderLengthTop,
+            BorderLengthRight = baseStyle.BorderLengthRight,
+            BorderLengthBottom = baseStyle.BorderLengthBottom,
+            BorderLengthLeft = baseStyle.BorderLengthLeft,
+            Roundness = baseStyle.Roundness,
+            FontName = baseStyle.FontName,
+            FontSize = baseStyle.FontSize,
+            FontWeight = baseStyle.FontWeight,
+            FontStyle = baseStyle.FontStyle,
+            FontStretch = baseStyle.FontStretch
+        };
+
+        // Override with values from the style stack if they exist
+        if (Disabled)
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonDisabled, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderDisabled, currentStyle.BorderColor);
+            currentStyle.FontColor = UI.GetStyleColor(StyleColor.TextDisabled, currentStyle.FontColor);
+        }
+        else if (isPressed)
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonPressed, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderPressed, currentStyle.BorderColor);
+        }
+        else if (IsHovering)
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonHovered, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderHovered, currentStyle.BorderColor);
+        }
+        else if (IsFocused)
+        {
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderFocused, currentStyle.BorderColor);
+        }
+        else // Normal
+        {
+            currentStyle.FillColor = UI.GetStyleColor(StyleColor.Button, currentStyle.FillColor);
+            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.Border, currentStyle.BorderColor);
+        }
+
+        // Apply general text color override if not disabled
+        if (!Disabled)
+        {
+            currentStyle.FontColor = UI.GetStyleColor(StyleColor.Text, currentStyle.FontColor);
+        }
+
+        currentStyle.Roundness = UI.GetStyleVar(StyleVar.FrameRounding, currentStyle.Roundness);
+        currentStyle.BorderLength = UI.GetStyleVar(StyleVar.FrameBorderSize, currentStyle.BorderLength);
+
+        // Finally, assign the computed style to the pack's Current property
+        Themes.Current = currentStyle;
     }
 
     internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
@@ -3791,67 +4305,45 @@ public class Button
 
         try
         {
-            var layoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
-            if (!UI.Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            var newLayoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
+            if (_cachedTextLayout == null || !newLayoutKey.Equals(_cachedLayoutKey))
             {
                 IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
                 if (textFormat is null) return;
 
-                textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
-                textLayout.TextAlignment = TextAlignment.Horizontal switch
+                _cachedTextLayout?.Dispose();
+                _cachedTextLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
+                _cachedTextLayout.TextAlignment = TextAlignment.Horizontal switch
                 {
                     HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
                     HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
                     HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
                     _ => Vortice.DirectWrite.TextAlignment.Leading
                 };
-                textLayout.ParagraphAlignment = TextAlignment.Vertical switch
+                _cachedTextLayout.ParagraphAlignment = TextAlignment.Vertical switch
                 {
                     VAlignment.Top => ParagraphAlignment.Near,
                     VAlignment.Center => ParagraphAlignment.Center,
                     VAlignment.Bottom => ParagraphAlignment.Far,
                     _ => ParagraphAlignment.Near
                 };
-                UI.Resources.textLayoutCache[layoutKey] = textLayout;
+                _cachedLayoutKey = newLayoutKey;
             }
 
             var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
-            renderTarget.DrawTextLayout(textOrigin, textLayout, textBrush, DrawTextOptions.None);
+            renderTarget.DrawTextLayout(textOrigin, _cachedTextLayout, textBrush, DrawTextOptions.None);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
             Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
+            _cachedTextLayout?.Dispose();
+            _cachedTextLayout = null;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error drawing button text: {ex.Message}");
         }
     }
-}
-</file>
-
-<file path="Widgets\ButtonDefinition.cs">
-// ButtonDefinition.cs
-using System.Numerics;
-using Vortice.Mathematics; // For Color4 if needed directly, though ButtonStylePack handles colors
-
-namespace DirectUI;
-
-public class ButtonDefinition
-{
-    public Vector2 Position { get; set; } = Vector2.Zero;
-    public Vector2 Size { get; set; } = new(84, 28); // Default size
-    public string Text { get; set; } = "";
-    public ButtonStylePack? Theme { get; set; } = null; // Optional theme override
-    public Vector2? Origin { get; set; } = null; // Use null to indicate default (Vector2.Zero)
-    public Alignment? TextAlignment { get; set; } = null; // Use null for default (Center, Center)
-    public Vector2? TextOffset { get; set; } = null; // Use null for default (Vector2.Zero)
-    public bool AutoWidth { get; set; } = false;
-    public Vector2? TextMargin { get; set; } = null; // Use null for default (10, 5)
-    public Button.ClickBehavior Behavior { get; set; } = Button.ClickBehavior.Left;
-    public Button.ActionMode LeftClickActionMode { get; set; } = Button.ActionMode.Release;
-    public bool Disabled { get; set; } = false;
-    public object? UserData { get; set; } = null;
 }
 </file>
 
@@ -4267,26 +4759,42 @@ internal class LineEdit
     private readonly Stack<LineEditUndoRecord> _redoStack = new();
     private const int HistoryLimit = 50;
 
+    // --- Internal State-based Caching ---
+    private IDWriteTextLayout? _cachedTextLayout;
+    private string _cachedText = " "; // Use a non-null, non-empty default
+    private ButtonStyle? _cachedStyle;
+    private float _cachedMaxWidth = -1;
+
     // === MAIN UPDATE & DRAW METHOD ===
-    public bool UpdateAndDraw(int intId, ref string text, LineEditDefinition definition)
+    public bool UpdateAndDraw(
+        int intId,
+        ref string text,
+        Vector2 position,
+        Vector2 size,
+        ButtonStylePack? theme,
+        string placeholderText,
+        bool isPassword,
+        char passwordChar,
+        int maxLength,
+        bool disabled,
+        Vector2 textMargin)
     {
         var context = UI.Context;
         var state = UI.State;
         var resources = UI.Resources;
 
         var themeId = HashCode.Combine(intId, "theme");
-        var theme = definition.Theme ?? state.GetOrCreateElement<ButtonStylePack>(themeId);
+        var finalTheme = theme ?? state.GetOrCreateElement<ButtonStylePack>(themeId);
         var input = context.InputState;
 
-        var position = context.Layout.ApplyLayout(definition.Position);
-        Rect bounds = new(position.X, position.Y, definition.Size.X, definition.Size.Y);
+        Rect bounds = new(position.X, position.Y, size.X, size.Y);
 
         bool isFocused = state.FocusedElementId == intId;
         bool textChanged = false;
 
         // --- Focus Management ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        if (input.WasLeftMousePressedThisFrame && isHovering && !definition.Disabled)
+        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
         {
             state.SetFocus(intId);
             state.SetPotentialCaptorForFrame(intId); // Claim the press
@@ -4294,38 +4802,40 @@ internal class LineEdit
         }
 
         // --- Input Processing ---
-        if (isFocused && !definition.Disabled)
+        if (isFocused && !disabled)
         {
-            textChanged = ProcessInput(ref text, definition, input);
+            textChanged = ProcessInput(ref text, size, maxLength, textMargin, input);
         }
 
         // --- Drawing ---
-        theme.UpdateCurrentStyle(isHovering, false, definition.Disabled, isFocused);
-        resources.DrawBoxStyleHelper(context.RenderTarget, position, definition.Size, theme.Current);
+        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, isFocused);
+        resources.DrawBoxStyleHelper(context.RenderTarget, position, size, finalTheme.Current);
 
         // Define content area and clip to it
         Rect contentRect = new Rect(
-            bounds.X + definition.TextMargin.X,
-            bounds.Y + definition.TextMargin.Y,
-            Math.Max(0, bounds.Width - definition.TextMargin.X * 2),
-            Math.Max(0, bounds.Height - definition.TextMargin.Y * 2)
+            bounds.X + textMargin.X,
+            bounds.Y + textMargin.Y,
+            Math.Max(0, bounds.Width - textMargin.X * 2),
+            Math.Max(0, bounds.Height - textMargin.Y * 2)
         );
         context.RenderTarget.PushAxisAlignedClip(contentRect, D2D.AntialiasMode.PerPrimitive);
 
-        var textToDraw = definition.IsPassword ? new string(definition.PasswordChar, text.Length) : text;
+        var textToDraw = isPassword ? new string(passwordChar, text.Length) : text;
+        var styleToDraw = finalTheme.Current;
+        var drawPos = contentRect.TopLeft;
 
         if (string.IsNullOrEmpty(text) && !isFocused)
         {
-            DrawVisibleText(definition.PlaceholderText, definition, theme.Disabled, contentRect.TopLeft);
+            DrawVisibleText(placeholderText, size, finalTheme.Disabled, drawPos);
         }
         else
         {
-            DrawVisibleText(textToDraw, definition, theme.Current, contentRect.TopLeft);
+            DrawVisibleText(textToDraw, size, styleToDraw, drawPos);
         }
 
         if (isFocused && _isBlinkOn)
         {
-            DrawCaret(textToDraw, definition, theme.Current, contentRect);
+            DrawCaret(textToDraw, size, styleToDraw, contentRect);
         }
 
         context.RenderTarget.PopAxisAlignedClip();
@@ -4333,7 +4843,7 @@ internal class LineEdit
         return textChanged;
     }
 
-    private bool ProcessInput(ref string text, LineEditDefinition def, InputState input)
+    private bool ProcessInput(ref string text, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
     {
         bool textChanged = false;
 
@@ -4351,7 +4861,7 @@ internal class LineEdit
             PushUndoState(text);
             foreach (char c in input.TypedCharacters)
             {
-                if (text.Length < def.MaxLength)
+                if (text.Length < maxLength)
                 {
                     text = text.Insert(_caretPosition, c.ToString());
                     _caretPosition++;
@@ -4402,7 +4912,7 @@ internal class LineEdit
 
         if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End))
         {
-            UpdateView(text, def);
+            UpdateView(text, size, textMargin);
             _isBlinkOn = true;
             _blinkTimer = 0;
         }
@@ -4428,44 +4938,34 @@ internal class LineEdit
         return pos;
     }
 
-    private void DrawVisibleText(string fullText, LineEditDefinition def, ButtonStyle style, Vector2 contentTopLeft)
+    private void DrawVisibleText(string fullText, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
     {
         if (string.IsNullOrEmpty(fullText)) return;
 
         var context = UI.Context;
         var rt = context.RenderTarget;
         var textBrush = UI.Resources.GetOrCreateBrush(rt, style.FontColor);
-        var textLayout = GetTextLayout(fullText, def, style, float.MaxValue); // Get layout for full string
+        var textLayout = GetTextLayout(fullText, size, style, float.MaxValue);
 
         if (textBrush == null || textLayout == null) return;
 
-        // Apply a transform to scroll the text
         var originalTransform = rt.Transform;
         var translation = Matrix3x2.CreateTranslation(contentTopLeft.X - _scrollPixelOffset, contentTopLeft.Y);
         rt.Transform = translation * originalTransform;
 
         rt.DrawTextLayout(Vector2.Zero, textLayout, textBrush, DrawTextOptions.None);
 
-        // Restore original transform
         rt.Transform = originalTransform;
     }
 
-    private void DrawCaret(string text, LineEditDefinition def, ButtonStyle style, Rect contentRect)
+    private void DrawCaret(string text, Vector2 size, ButtonStyle style, Rect contentRect)
     {
-        var textLayout = GetTextLayout(text, def, style, float.MaxValue);
+        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
         if (textLayout == null) return;
 
-        // Use HitTest to find the exact caret position
         textLayout.HitTestTextPosition((uint)_caretPosition, false, out _, out _, out var hitTestMetrics);
-
         float caretX = contentRect.Left + hitTestMetrics.Left - _scrollPixelOffset;
-
-        Rect caretRect = new Rect(
-            caretX,
-            contentRect.Top,
-            1, // Caret width
-            contentRect.Height
-        );
+        Rect caretRect = new Rect(caretX, contentRect.Top, 1, contentRect.Height);
 
         var context = UI.Context;
         var caretBrush = UI.Resources.GetOrCreateBrush(context.RenderTarget, style.FontColor);
@@ -4475,57 +4975,55 @@ internal class LineEdit
         }
     }
 
-    private IDWriteTextLayout? GetTextLayout(string text, LineEditDefinition def, ButtonStyle style, float maxWidth)
+    private IDWriteTextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
     {
-        var context = UI.Context;
-        var resources = UI.Resources;
-        var dwrite = context.DWriteFactory;
+        var dwrite = UI.Context.DWriteFactory;
 
-        // Use a consistent alignment for caching and creation
-        var alignment = new Alignment(HAlignment.Left, VAlignment.Center);
-        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(maxWidth, def.Size.Y), alignment);
-
-        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        // Check if cached layout is still valid
+        if (_cachedTextLayout != null && _cachedText == text && _cachedStyle == style && _cachedMaxWidth == maxWidth)
         {
-            var textFormat = resources.GetOrCreateTextFormat(dwrite, style);
-            if (textFormat == null) return null;
-
-            textFormat.WordWrapping = WordWrapping.NoWrap;
-            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
-            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-
-            textLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, def.Size.Y);
-            resources.textLayoutCache[layoutKey] = textLayout;
+            return _cachedTextLayout;
         }
-        return textLayout;
+
+        // If not, create a new one
+        var textFormat = UI.Resources.GetOrCreateTextFormat(dwrite, style);
+        if (textFormat == null) return null;
+
+        textFormat.WordWrapping = WordWrapping.NoWrap;
+        textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
+        textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+
+        _cachedTextLayout?.Dispose();
+        _cachedTextLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, size.Y);
+
+        // Update cache state
+        _cachedText = text;
+        _cachedStyle = style;
+        _cachedMaxWidth = maxWidth;
+
+        return _cachedTextLayout;
     }
 
-
-    private void UpdateView(string text, LineEditDefinition def)
+    private void UpdateView(string text, Vector2 size, Vector2 textMargin)
     {
-        float availableWidth = def.Size.X - def.TextMargin.X * 2;
-        var style = def.Theme?.Normal ?? new ButtonStyle();
+        float availableWidth = size.X - textMargin.X * 2;
+        var style = new ButtonStyle(); // A default style is fine for measuring
 
-        var textLayout = GetTextLayout(text, def, style, float.MaxValue);
+        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
         if (textLayout == null) return;
 
-        // Get the absolute pixel position of the caret
         textLayout.HitTestTextPosition((uint)_caretPosition, false, out _, out _, out var hitTestMetrics);
         float caretAbsoluteX = hitTestMetrics.Left;
 
-        // Check if caret is outside the visible area and adjust scroll offset
         if (caretAbsoluteX - _scrollPixelOffset > availableWidth)
         {
-            // Caret is past the right edge, scroll right to bring it into view
             _scrollPixelOffset = caretAbsoluteX - availableWidth;
         }
         else if (caretAbsoluteX - _scrollPixelOffset < 0)
         {
-            // Caret is before the left edge, scroll left to bring it into view
             _scrollPixelOffset = caretAbsoluteX;
         }
 
-        // Ensure we don't scroll too far if the text is shorter than the view
         float maxScroll = Math.Max(0, textLayout.Metrics.WidthIncludingTrailingWhitespace - availableWidth);
         _scrollPixelOffset = Math.Clamp(_scrollPixelOffset, 0, maxScroll);
     }
@@ -4562,25 +5060,6 @@ internal class LineEdit
 }
 </file>
 
-<file path="Widgets\LineEditDefinition.cs">
-using System.Numerics;
-
-namespace DirectUI;
-
-public class LineEditDefinition
-{
-    public Vector2 Position { get; set; } = Vector2.Zero;
-    public Vector2 Size { get; set; } = new(150, 24);
-    public ButtonStylePack? Theme { get; set; } = null;
-    public string PlaceholderText { get; set; } = "";
-    public bool IsPassword { get; set; } = false;
-    public char PasswordChar { get; set; } = '*';
-    public int MaxLength { get; set; } = 1024;
-    public bool Disabled { get; set; } = false;
-    public Vector2 TextMargin { get; set; } = new(4, 2); // Padding inside the control
-}
-</file>
-
 <file path="Widgets\LineEditState.cs">
 // NEW: Widgets/LineEditState.cs
 using System.Collections.Generic;
@@ -4609,74 +5088,6 @@ internal class LineEditState
 
     // A flag to prevent pushing duplicate states to the undo stack
     internal bool NeedsUndoStatePush = false;
-}
-</file>
-
-<file path="Widgets\ResizableHPanelDefinition.cs">
-using System.Numerics;
-
-namespace DirectUI;
-
-public class ResizableHPanelDefinition
-{
-    public float MinHeight { get; set; } = 50f;
-    public float MaxHeight { get; set; } = 300f;
-    public float ResizeHandleWidth { get; set; } = 5f; // This is actually handle *height* here
-    public BoxStyle? PanelStyle { get; set; } = null;
-    public Vector2 Padding { get; set; } = new Vector2(5, 5);
-    public float Gap { get; set; } = 5f;
-    public bool Disabled { get; set; } = false;
-}
-</file>
-
-<file path="Widgets\ResizablePanelDefinition.cs">
-using System.Numerics;
-
-namespace DirectUI;
-
-public class ResizablePanelDefinition
-{
-    public float MinWidth { get; set; } = 50f;
-    public float MaxWidth { get; set; } = 500f;
-    public float ResizeHandleWidth { get; set; } = 5f;
-    public BoxStyle? PanelStyle { get; set; } = null;
-    public Vector2 Padding { get; set; } = new Vector2(5, 5);
-    public float Gap { get; set; } = 5f;
-    public bool Disabled { get; set; } = false;
-}
-</file>
-
-<file path="Widgets\SliderDefinition.cs">
-// NEW: SliderDefinition.cs
-// Summary: Configuration object for creating immediate-mode sliders (HSlider/VSlider).
-using System.Numerics;
-
-namespace DirectUI;
-
-// Enums for direction (can reuse or redefine if needed, assume reuse for now)
-// public enum HSliderDirection { LeftToRight, RightToLeft } // Already exists if Cherris files were added
-// public enum VSliderDirection { TopToBottom, BottomToTop } // Already exists if Cherris files were added
-
-
-public class SliderDefinition
-{
-    public Vector2 Position { get; set; } = Vector2.Zero; // Used if not in a container
-    public Vector2 Size { get; set; } = new(200, 16); // Default size (adjust as needed)
-    public float MinValue { get; set; } = 0.0f;
-    public float MaxValue { get; set; } = 1.0f;
-    public float Step { get; set; } = 0.01f;
-
-    public SliderStyle? Theme { get; set; } = null; // Optional override for track style
-    public ButtonStylePack? GrabberTheme { get; set; } = null; // Optional override for grabber style
-    public Vector2? GrabberSize { get; set; } = null; // Optional override for grabber size (e.g., new(16, 16))
-
-    // Direction specific to slider type, ignored by the other type
-    public HSliderDirection HorizontalDirection { get; set; } = HSliderDirection.LeftToRight;
-    public VSliderDirection VerticalDirection { get; set; } = VSliderDirection.TopToBottom;
-
-    public bool Disabled { get; set; } = false;
-    public object? UserData { get; set; } = null;
-    public Vector2? Origin { get; set; } = null; // Use null for default (Vector2.Zero)
 }
 </file>
 
@@ -4841,19 +5252,8 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     // --- Caching for performance ---
     private readonly List<string> _actionNamesCache = new();
-    private readonly Dictionary<(string ActionName, int BindingIndex, string ElementKey), int> _idCache = new();
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
-    private readonly BoxStyle _modalPanelStyle;
-
-
-    // Styles for the editor UI
-    private readonly ButtonStylePack _labelStyle;
-    private readonly ButtonStylePack _editorButtonStyle;
-    private readonly ButtonStylePack _removeButtonStyle;
-    private readonly ButtonStylePack _utilityButtonStyle;
-    private readonly LineEditDefinition _lineEditDef;
-
-    private readonly ButtonDefinition _reusableButtonDef = new();
+    private static readonly Dictionary<BindingType, string> s_bindingTypeStringCache = new();
 
 
     private readonly TreeNode<string> _fileRoot;
@@ -4882,56 +5282,15 @@ public class MyDirectUIApp : Direct2DAppWindow
             _fileRoot = CreateDefaultTree();
         }
 
-        // --- NEW: Load input map ---
+        // Load input map
         _inputMap = InputMapManager.Load(_inputMapPath);
         UpdateActionNamesCache();
 
-        // --- NEW: Initialize styles for editor ---
-        _labelStyle = new ButtonStylePack { BorderLength = 0, Roundness = 0 };
-        _labelStyle.Normal.FillColor = Colors.Transparent;
-        _labelStyle.Disabled.FillColor = Colors.Transparent; // Important for disabled button as label
-        _labelStyle.Disabled.FontColor = DefaultTheme.Text;
-
-        _editorButtonStyle = new ButtonStylePack { FontSize = 12, Roundness = 0.2f };
-        _editorButtonStyle.Normal.FillColor = new Color4(0.25f, 0.25f, 0.3f, 1.0f);
-        _editorButtonStyle.Hover.FillColor = new Color4(0.35f, 0.35f, 0.4f, 1.0f);
-        _editorButtonStyle.Pressed.FillColor = DefaultTheme.Accent;
-        _editorButtonStyle.Disabled.FillColor = DefaultTheme.DisabledFill;
-        _editorButtonStyle.Disabled.FontColor = DefaultTheme.DisabledText;
-
-
-        _removeButtonStyle = new ButtonStylePack { FontSize = 12, Roundness = 0.5f, FontName = "Segoe UI Symbol" };
-        _removeButtonStyle.Normal.FillColor = new Color4(0.5f, 0.2f, 0.2f, 1f);
-        _removeButtonStyle.Hover.FillColor = new Color4(0.7f, 0.3f, 0.3f, 1f);
-        _removeButtonStyle.Pressed.FillColor = new Color4(0.9f, 0.4f, 0.4f, 1f);
-
-        _utilityButtonStyle = new ButtonStylePack { FontSize = 14, Roundness = 0.2f };
-        _utilityButtonStyle.Normal.FillColor = DefaultTheme.NormalFill;
-        _utilityButtonStyle.Hover.FillColor = DefaultTheme.HoverFill;
-        _utilityButtonStyle.Pressed.FillColor = DefaultTheme.Accent;
-        _utilityButtonStyle.Disabled.FillColor = DefaultTheme.DisabledFill;
-        _utilityButtonStyle.Disabled.FontColor = DefaultTheme.DisabledText;
-
-        // --- NEW: Define a style for the LineEdit ---
-        var lineEditTheme = new ButtonStylePack { FontSize = 12, Roundness = 0.2f };
-        lineEditTheme.Normal.FillColor = new Color4(0.2f, 0.2f, 0.25f, 1.0f);
-        lineEditTheme.Normal.BorderColor = new Color4(0.1f, 0.1f, 0.1f, 1.0f);
-        lineEditTheme.Hover.FillColor = new Color4(0.22f, 0.22f, 0.27f, 1.0f);
-        lineEditTheme.Focused.FillColor = new Color4(0.22f, 0.22f, 0.27f, 1.0f);
-        lineEditTheme.Focused.BorderColor = DefaultTheme.Accent;
-        _lineEditDef = new LineEditDefinition
+        // Pre-cache enum strings
+        foreach (BindingType val in Enum.GetValues(typeof(BindingType)))
         {
-            Size = new Vector2(120, 24),
-            Theme = lineEditTheme
-        };
-
-        _modalPanelStyle = new BoxStyle
-        {
-            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
-            BorderColor = DefaultTheme.HoverBorder,
-            BorderLengthTop = 1f,
-            Roundness = 0f
-        };
+            s_bindingTypeStringCache[val] = val.ToString();
+        }
     }
 
     private void UpdateActionNamesCache()
@@ -4942,30 +5301,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             _actionNamesCache.AddRange(_inputMap.Keys);
         }
     }
-
-    private void InvalidateIdCacheForAction(string actionName)
-    {
-        var keysToRemove = _idCache.Keys.Where(k => k.ActionName == actionName).ToList();
-        foreach (var key in keysToRemove)
-        {
-            _idCache.Remove(key);
-        }
-    }
-
-    private int GetIdHash(string actionName, int bindingIndex, string elementKey)
-    {
-        var key = (actionName, bindingIndex, elementKey);
-        if (!_idCache.TryGetValue(key, out var idHash))
-        {
-            // OPTIMIZATION: Use HashCode.Combine to avoid string allocations and hashing overhead.
-            idHash = bindingIndex < 0
-                ? HashCode.Combine(elementKey, actionName)
-                : HashCode.Combine(elementKey, actionName, bindingIndex);
-            _idCache[key] = idHash;
-        }
-        return idHash;
-    }
-
 
     protected override void OnKeyDown(Keys key)
     {
@@ -5021,6 +5356,17 @@ public class MyDirectUIApp : Direct2DAppWindow
         return root;
     }
 
+    // --- User-side Helper Function ---
+    // This is the recommended pattern to avoid repeating parameters for similar widgets.
+    private bool MenuBarButton(string id, string text)
+    {
+        var menuButtonSize = new Vector2(0, 30); // Height of the menu bar
+        var menuButtonAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
+        var menuButtonTextMargin = new Vector2(10, 0);
+
+        return UI.Button(id.GetHashCode(), text, menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment);
+    }
+
     // The actual drawing logic for the main window.
     private void DrawUI(UIContext context)
     {
@@ -5047,33 +5393,19 @@ public class MyDirectUIApp : Direct2DAppWindow
                 rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
             }
 
-            var menuButtonTheme = new ButtonStylePack
-            {
-                Roundness = 0f,
-                BorderLength = 0,
-                FontName = "Segoe UI",
-                FontSize = 14
-            };
-            menuButtonTheme.Normal.FillColor = Colors.Transparent;
-            menuButtonTheme.Normal.FontColor = new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f);
-            menuButtonTheme.Hover.FillColor = new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f);
-            menuButtonTheme.Pressed.FillColor = DefaultTheme.Accent;
-
-            var menuButtonDef = new ButtonDefinition
-            {
-                Theme = menuButtonTheme,
-                AutoWidth = true,
-                TextMargin = new Vector2(10, 0),
-                Size = new Vector2(0, menuBarHeight),
-                TextAlignment = new Alignment(HAlignment.Center, VAlignment.Center)
-            };
+            // Use the style stack to define the look for all menu buttons
+            UI.PushStyleVar(StyleVar.FrameRounding, 0.0f);
+            UI.PushStyleVar(StyleVar.FrameBorderSize, 0.0f);
+            UI.PushStyleColor(StyleColor.Button, Colors.Transparent);
+            UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f));
+            UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
+            UI.PushStyleColor(StyleColor.Text, new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f));
 
             UI.BeginHBoxContainer("menu_bar".GetHashCode(), new Vector2(5, 0), 0);
-            menuButtonDef.Text = "File";
-            if (UI.Button("file_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("File clicked"); }
 
-            menuButtonDef.Text = "Project";
-            if (UI.Button("project_button".GetHashCode(), menuButtonDef))
+            if (MenuBarButton("file_button", "File")) { Console.WriteLine("File clicked"); }
+
+            if (MenuBarButton("project_button", "Project"))
             {
                 // Create the window immediately upon click if it's not already open.
                 if (!_isProjectWindowOpen)
@@ -5092,23 +5424,15 @@ public class MyDirectUIApp : Direct2DAppWindow
                 }
             }
 
-            menuButtonDef.Text = "Edit";
-            if (UI.Button("edit_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("Edit clicked"); }
-            menuButtonDef.Text = "View";
-            if (UI.Button("view_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("View clicked"); }
-            menuButtonDef.Text = "Help";
-            if (UI.Button("help_button".GetHashCode(), menuButtonDef)) { Console.WriteLine("Help clicked"); }
-            UI.EndHBoxContainer();
-        }
+            if (MenuBarButton("edit_button", "Edit")) { Console.WriteLine("Edit clicked"); }
+            if (MenuBarButton("view_button", "View")) { Console.WriteLine("View clicked"); }
+            if (MenuBarButton("help_button", "Help")) { Console.WriteLine("Help clicked"); }
 
-        // --- Define shared styles ---
-        var buttonTheme = new ButtonStylePack
-        {
-            Roundness = 0.2f,
-            BorderLength = 1, // Thinner border
-            FontName = "Segoe UI",
-            FontSize = 16,
-        };
+            UI.EndHBoxContainer();
+
+            UI.PopStyleColor(4);
+            UI.PopStyleVar(2);
+        }
 
         var panelStyle = new BoxStyle
         {
@@ -5116,28 +5440,19 @@ public class MyDirectUIApp : Direct2DAppWindow
             Roundness = 0f
         };
 
-        var vPanelDef = new ResizablePanelDefinition
-        {
-            MinWidth = 150,
-            MaxWidth = 400,
-            Padding = new Vector2(10, 10),
-            Gap = 10,
-            PanelStyle = panelStyle
-        };
-
-        var hPanelDef = new ResizableHPanelDefinition
-        {
-            MinHeight = 50,
-            MaxHeight = 300,
-            Padding = new Vector2(10, 10),
-            Gap = 10,
-            PanelStyle = panelStyle
-        };
-
 
         // --- Left Panel ---
         {
-            UI.BeginResizableVPanel("left_panel".GetHashCode(), ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
+            UI.BeginResizableVPanel(
+                "left_panel".GetHashCode(),
+                ref leftPanelWidth,
+                HAlignment.Left,
+                menuBarHeight,
+                minWidth: 150,
+                maxWidth: 400,
+                padding: new Vector2(10, 10),
+                gap: 10,
+                panelStyle: panelStyle);
 
             // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
             UI.BeginVBoxContainer("tree_vbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 0);
@@ -5153,29 +5468,54 @@ public class MyDirectUIApp : Direct2DAppWindow
 
         // --- Right Panel ---
         {
-            UI.BeginResizableVPanel("right_panel".GetHashCode(), ref rightPanelWidth, vPanelDef, HAlignment.Right, menuBarHeight);
+            UI.BeginResizableVPanel(
+                "right_panel".GetHashCode(),
+                ref rightPanelWidth,
+                HAlignment.Right,
+                menuBarHeight,
+                minWidth: 150,
+                maxWidth: 400,
+                padding: new Vector2(10, 10),
+                gap: 10,
+                panelStyle: panelStyle);
 
-            if (UI.Button("right_button_1".GetHashCode(), new ButtonDefinition { Text = "Right Panel", Theme = buttonTheme }))
+            UI.PushStyleVar(StyleVar.FrameRounding, 0.2f); // Rounded buttons in this panel
+            if (UI.Button("right_button_1".GetHashCode(), "Right Panel"))
             {
                 Console.WriteLine("Right panel button 1 clicked!");
             }
-            if (UI.Button("right_button_2".GetHashCode(), new ButtonDefinition { Text = "Another Button", Theme = buttonTheme }))
+            if (UI.Button("right_button_2".GetHashCode(), "Another Button"))
             {
                 Console.WriteLine("Right panel button 2 clicked!");
             }
-            sliderValue = UI.HSlider("my_slider".GetHashCode(), sliderValue, new SliderDefinition { Size = new Vector2(200, 20) });
+            UI.PopStyleVar();
+
+            sliderValue = UI.HSlider("my_slider".GetHashCode(), sliderValue, 0f, 1f, new Vector2(200, 20));
 
             UI.EndResizableVPanel();
         }
 
         // --- Bottom Panel ---
         {
-            UI.BeginResizableHPanel("bottom_panel".GetHashCode(), ref bottomPanelHeight, hPanelDef, leftPanelWidth, rightPanelWidth, menuBarHeight);
+            UI.BeginResizableHPanel(
+                "bottom_panel".GetHashCode(),
+                ref bottomPanelHeight,
+                leftPanelWidth,
+                rightPanelWidth,
+                menuBarHeight,
+                minHeight: 50,
+                maxHeight: 300,
+                padding: new Vector2(10, 10),
+                gap: 10,
+                panelStyle: panelStyle);
 
-            if (UI.Button("bottom_button".GetHashCode(), new ButtonDefinition { Text = "Bottom Panel Button", Theme = buttonTheme }))
+
+            UI.PushStyleVar(StyleVar.FrameRounding, 0f); // Sharp buttons in this panel
+            if (UI.Button("bottom_button".GetHashCode(), "Bottom Panel Button"))
             {
                 Console.WriteLine("Bottom button clicked!");
             }
+            UI.PopStyleVar();
 
             UI.EndResizableHPanel();
         }
@@ -5194,7 +5534,14 @@ public class MyDirectUIApp : Direct2DAppWindow
         UI.TabBar("project_tabs".GetHashCode(), ProjectWindowTabLabels, ref _projectWindowActiveTab);
 
         // --- Draw Content Panel and Content ---
-        UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), _modalPanelStyle);
+        var modalPanelStyle = new BoxStyle
+        {
+            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
+            BorderColor = DefaultTheme.HoverBorder,
+            BorderLengthTop = 1f,
+            Roundness = 0f
+        };
+        UI.Resources.DrawBoxStyleHelper(rt, new Vector2(contentArea.X, contentArea.Y), new Vector2(contentArea.Width, contentArea.Height), modalPanelStyle);
 
         var contentPadding = new Vector2(10, 10);
         var paddedContentRect = new Rect(
@@ -5203,16 +5550,14 @@ public class MyDirectUIApp : Direct2DAppWindow
             Math.Max(0, contentArea.Height - contentPadding.Y * 2)
         );
 
-        rt.PushAxisAlignedClip(paddedContentRect, Vortice.Direct2D1.AntialiasMode.Aliased);
-
         if (_projectWindowActiveTab == 0) // General Tab
         {
             UI.BeginVBoxContainer("tab_content_vbox_general".GetHashCode(), new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
-            if (UI.Button("modal_button_1".GetHashCode(), new ButtonDefinition { Text = "A button in a modal" }))
+            if (UI.Button("modal_button_1".GetHashCode(), "A button in a modal"))
             {
                 Console.WriteLine("Modal button clicked!");
             }
-            if (UI.Button("modal_button_close".GetHashCode(), new ButtonDefinition { Text = "Close Me" }))
+            if (UI.Button("modal_button_close".GetHashCode(), "Close Me"))
             {
                 _isProjectWindowOpen = false;
             }
@@ -5220,154 +5565,150 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
         else if (_projectWindowActiveTab == 1 && _inputMap != null) // Input Map Tab
         {
-            var buttonDef = _reusableButtonDef;
-
-            // --- DEFERRED MODIFICATION VARS ---
+            int idCounter = 0;
             string? actionToRemove = null;
+            var scrollableSize = new Vector2(paddedContentRect.Width, paddedContentRect.Height - 40); // Leave space for buttons
 
-            UI.BeginVBoxContainer("input_editor_main_vbox".GetHashCode(), new Vector2(paddedContentRect.X, paddedContentRect.Y), 15);
+            UI.BeginVBoxContainer(idCounter++, new Vector2(paddedContentRect.X, paddedContentRect.Y), 5);
 
-            UI.BeginVBoxContainer("actions_list_vbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 8);
+            UI.BeginScrollableRegion(idCounter++, scrollableSize);
+            UI.BeginVBoxContainer(idCounter++, Vector2.Zero, 8); // Inner VBox for item spacing
+
             for (int i = 0; i < _actionNamesCache.Count; i++)
             {
                 string actionName = _actionNamesCache[i];
                 if (!_inputMap.ContainsKey(actionName)) continue;
                 var bindings = _inputMap[actionName];
-                int bindingToRemove = -1; // Deferred removal for bindings
+                int bindingToRemove = -1;
 
-                UI.BeginHBoxContainer(GetIdHash(actionName, -1, "action_header"), UI.Context.Layout.GetCurrentPosition(), 5);
-                buttonDef.Text = actionName;
-                buttonDef.Theme = _labelStyle;
-                buttonDef.Disabled = true;
-                buttonDef.AutoWidth = true;
-                buttonDef.TextMargin = null;
-                buttonDef.Size = default;
-                UI.Button(GetIdHash(actionName, -1, "action_label"), buttonDef);
+                UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 5);
 
-                buttonDef.Text = "x";
-                buttonDef.Theme = _removeButtonStyle;
-                buttonDef.Size = new Vector2(20, 20);
-                buttonDef.Disabled = false;
-                buttonDef.AutoWidth = false;
-                if (UI.Button(GetIdHash(actionName, -1, "remove_action"), buttonDef))
+                UI.PushStyleColor(StyleColor.Button, Colors.Transparent);
+                UI.PushStyleColor(StyleColor.TextDisabled, DefaultTheme.Text);
+                UI.Button(idCounter++, actionName, disabled: true, autoWidth: true);
+                UI.PopStyleColor(2);
+
+                UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
+                UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
+                UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.7f, 0.3f, 0.3f, 1f));
+                UI.PushStyleColor(StyleColor.ButtonPressed, new Color4(0.9f, 0.4f, 0.4f, 1f));
+                if (UI.Button(idCounter++, "x", size: new Vector2(20, 20)))
                 {
-                    actionToRemove = actionName; // Defer removal
+                    actionToRemove = actionName;
                 }
+                UI.PopStyleColor(3);
+                UI.PopStyleVar();
                 UI.EndHBoxContainer();
 
-                UI.BeginHBoxContainer(GetIdHash(actionName, -1, "bindings_outer_hbox"), UI.Context.Layout.GetCurrentPosition(), 0);
-                buttonDef.Size = new Vector2(20, 0);
-                buttonDef.Theme = _labelStyle;
-                buttonDef.Disabled = true;
-                buttonDef.Text = "";
-                UI.Button(GetIdHash(actionName, -1, "indent_spacer"), buttonDef);
+                UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 0);
+                UI.Button(idCounter++, "", size: new Vector2(20, 0), disabled: true);
+                UI.BeginVBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 5);
 
-                UI.BeginVBoxContainer(GetIdHash(actionName, -1, "bindings_vbox"), UI.Context.Layout.GetCurrentPosition(), 5);
                 for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
-                    UI.BeginHBoxContainer(GetIdHash(actionName, j, "binding_row"), UI.Context.Layout.GetCurrentPosition(), 5);
+                    UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 5);
 
-                    buttonDef.Text = binding.Type.ToString();
-                    buttonDef.Theme = _editorButtonStyle;
-                    buttonDef.Size = new Vector2(100, 24);
-                    buttonDef.Disabled = false;
-                    if (UI.Button(GetIdHash(actionName, j, "binding_type"), buttonDef))
+                    UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
+                    UI.PushStyleColor(StyleColor.Button, new Color4(0.25f, 0.25f, 0.3f, 1.0f));
+                    UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.35f, 0.35f, 0.4f, 1.0f));
+                    UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
+                    if (UI.Button(idCounter++, s_bindingTypeStringCache[binding.Type], size: new Vector2(100, 24)))
                     {
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
                         _inputMapDirty = true;
                     }
+                    UI.PopStyleColor(3);
 
+                    UI.PushStyleColor(StyleColor.Button, new Color4(0.2f, 0.2f, 0.25f, 1.0f));
+                    UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.22f, 0.22f, 0.27f, 1.0f));
+                    UI.PushStyleColor(StyleColor.Border, new Color4(0.1f, 0.1f, 0.1f, 1.0f));
+                    UI.PushStyleColor(StyleColor.BorderFocused, DefaultTheme.Accent);
                     string tempKeyOrButton = binding.KeyOrButton;
-                    if (UI.LineEdit(GetIdHash(actionName, j, "binding_key"), ref tempKeyOrButton, _lineEditDef))
+                    if (UI.LineEdit(idCounter++, ref tempKeyOrButton, new Vector2(120, 24)))
                     {
                         binding.KeyOrButton = tempKeyOrButton;
                         _inputMapDirty = true;
                     }
+                    UI.PopStyleColor(4);
 
-                    buttonDef.Text = "x";
-                    buttonDef.Theme = _removeButtonStyle;
-                    buttonDef.Size = new Vector2(24, 24);
-                    if (UI.Button(GetIdHash(actionName, j, "remove_binding"), buttonDef))
+                    UI.PopStyleVar();
+
+                    UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
+                    UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
+                    UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.7f, 0.3f, 0.3f, 1f));
+                    UI.PushStyleColor(StyleColor.ButtonPressed, new Color4(0.9f, 0.4f, 0.4f, 1f));
+                    if (UI.Button(idCounter++, "x", size: new Vector2(24, 24)))
                     {
-                        bindingToRemove = j; // Defer removal
+                        bindingToRemove = j;
                     }
+                    UI.PopStyleColor(3);
+                    UI.PopStyleVar();
                     UI.EndHBoxContainer();
                 }
 
                 if (bindingToRemove != -1)
                 {
                     bindings.RemoveAt(bindingToRemove);
-                    InvalidateIdCacheForAction(actionName); // Clean cache for this action
                     _inputMapDirty = true;
                 }
 
-                buttonDef.Text = "Add Binding";
-                buttonDef.Theme = _editorButtonStyle;
-                buttonDef.Size = new Vector2(100, 24);
-                if (UI.Button(GetIdHash(actionName, -1, "add_binding"), buttonDef))
+                UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
+                UI.PushStyleColor(StyleColor.Button, new Color4(0.25f, 0.25f, 0.3f, 1.0f));
+                UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.35f, 0.35f, 0.4f, 1.0f));
+                UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
+                if (UI.Button(idCounter++, "Add Binding", size: new Vector2(100, 24)))
                 {
                     bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
                     _inputMapDirty = true;
                 }
+                UI.PopStyleColor(3);
+                UI.PopStyleVar();
                 UI.EndVBoxContainer();
                 UI.EndHBoxContainer();
             }
             UI.EndVBoxContainer();
+            UI.EndScrollableRegion();
 
-            // --- PERFORM DEFERRED ACTION REMOVAL ---
             if (actionToRemove != null)
             {
                 _inputMap.Remove(actionToRemove);
-                InvalidateIdCacheForAction(actionToRemove);
                 UpdateActionNamesCache();
                 _inputMapDirty = true;
             }
 
-            UI.BeginHBoxContainer("input_editor_utils_hbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 10);
-            buttonDef.Text = "Add New Action";
-            buttonDef.Theme = _utilityButtonStyle;
-            buttonDef.AutoWidth = true;
-            buttonDef.TextMargin = new Vector2(10, 5);
-            buttonDef.Size = default;
-            buttonDef.Disabled = false;
-            if (UI.Button("add_action".GetHashCode(), buttonDef))
+            UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 10);
+
+            UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
+            UI.PushStyleColor(StyleColor.Button, DefaultTheme.NormalFill);
+            UI.PushStyleColor(StyleColor.ButtonHovered, DefaultTheme.HoverFill);
+            UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
+            UI.PushStyleColor(StyleColor.ButtonDisabled, DefaultTheme.DisabledFill);
+            UI.PushStyleColor(StyleColor.TextDisabled, DefaultTheme.DisabledText);
+            if (UI.Button(idCounter++, "Add New Action", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 string newActionName;
                 do { newActionName = $"NewAction_{_newActionCounter++}"; } while (_inputMap.ContainsKey(newActionName));
                 _inputMap[newActionName] = new List<InputBinding>();
-                _actionNamesCache.Add(newActionName);
+                UpdateActionNamesCache();
                 _inputMapDirty = true;
             }
-
-            buttonDef.Text = "Apply Changes";
-            buttonDef.Theme = _utilityButtonStyle;
-            buttonDef.Disabled = !_inputMapDirty;
-            if (UI.Button("apply_changes".GetHashCode(), buttonDef))
+            if (UI.Button(idCounter++, "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 InputMapManager.Save(_inputMapPath, _inputMap);
                 _inputMapDirty = false;
             }
-
-            buttonDef.Text = "Revert";
-            buttonDef.Disabled = false;
-            if (UI.Button("revert_changes".GetHashCode(), buttonDef))
+            if (UI.Button(idCounter++, "Revert", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 _inputMap = InputMapManager.Load(_inputMapPath);
-                _idCache.Clear();
                 UpdateActionNamesCache();
                 _inputMapDirty = false;
             }
-
-            buttonDef.AutoWidth = false;
-            buttonDef.TextMargin = null;
-
+            UI.PopStyleColor(5);
+            UI.PopStyleVar();
             UI.EndHBoxContainer();
-
             UI.EndVBoxContainer();
         }
-
-        rt.PopAxisAlignedClip();
     }
 }
 </file>

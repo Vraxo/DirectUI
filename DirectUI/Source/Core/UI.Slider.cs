@@ -6,7 +6,7 @@ namespace DirectUI;
 public static partial class UI
 {
     public static float HSlider(
-        int id,
+        string id,
         float currentValue,
         float minValue,
         float maxValue,
@@ -23,6 +23,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return currentValue;
 
+        int intId = id.GetHashCode();
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
 
         // Culling Check
@@ -33,7 +34,7 @@ public static partial class UI
             return currentValue;
         }
 
-        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
+        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(intId);
         sliderInstance.Position = drawPos;
 
         // Configure instance
@@ -50,13 +51,13 @@ public static partial class UI
         sliderInstance.Direction = direction;
 
 
-        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
+        float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
         Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 
     public static float VSlider(
-        int id,
+        string id,
         float currentValue,
         float minValue,
         float maxValue,
@@ -73,6 +74,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return currentValue;
 
+        int intId = id.GetHashCode();
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
 
         // Culling Check
@@ -83,7 +85,7 @@ public static partial class UI
             return currentValue;
         }
 
-        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
+        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(intId);
         sliderInstance.Position = drawPos;
 
         // Configure instance
@@ -99,7 +101,7 @@ public static partial class UI
         sliderInstance.UserData = userData;
         sliderInstance.Direction = direction;
 
-        float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
+        float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
         Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }

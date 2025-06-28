@@ -9,9 +9,9 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginHBoxContainer(int id, Vector2 position, float gap = 5.0f)
+    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.Layout.BeginHBox(id, position, gap);
+        Context.Layout.BeginHBox(id.GetHashCode(), position, gap);
     }
 
     public static void EndHBoxContainer()
@@ -23,9 +23,9 @@ public static partial class UI
         { Context.Layout.AdvanceContainerLayout(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
     }
 
-    public static void BeginVBoxContainer(int id, Vector2 position, float gap = 5.0f)
+    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.Layout.BeginVBox(id, position, gap);
+        Context.Layout.BeginVBox(id.GetHashCode(), position, gap);
     }
 
     public static void EndVBoxContainer()
@@ -37,9 +37,9 @@ public static partial class UI
         { Context.Layout.AdvanceContainerLayout(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
     }
 
-    public static void BeginGridContainer(int id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
+    public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        Context.Layout.PushContainer(new GridContainerState(id, position, availableSize, numColumns, gap));
+        Context.Layout.PushContainer(new GridContainerState(id.GetHashCode(), position, availableSize, numColumns, gap));
     }
 
     public static void EndGridContainer()
@@ -54,15 +54,16 @@ public static partial class UI
         }
     }
 
-    public static void BeginScrollableRegion(int id, Vector2 size)
+    public static void BeginScrollableRegion(string id, Vector2 size)
     {
         if (!IsContextValid()) return;
 
+        int intId = id.GetHashCode();
         Vector2 position = Context.Layout.GetCurrentPosition();
         Rect regionBounds = new Rect(position.X, position.Y, size.X, size.Y);
 
-        var scrollState = State.GetOrCreateElement<ScrollContainerState>(id);
-        scrollState.Id = id;
+        var scrollState = State.GetOrCreateElement<ScrollContainerState>(intId);
+        scrollState.Id = intId;
         scrollState.Position = position;
         scrollState.VisibleSize = size;
         scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
@@ -76,7 +77,7 @@ public static partial class UI
         }
 
         // Begin the inner container for content layout, offset by the scroll position
-        var contentVBoxId = HashCode.Combine(id, "scroll_vbox");
+        var contentVBoxId = HashCode.Combine(intId, "scroll_vbox");
         var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
         contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
         contentVBox.CurrentPosition = position - scrollState.CurrentScrollOffset;
@@ -114,10 +115,11 @@ public static partial class UI
         // Draw scrollbar if needed
         if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
         {
-            var sliderId = HashCode.Combine(scrollState.Id, "scrollbar");
+            // The ID for the VSlider must be stable. We derive it from the scroll region's string ID.
+            string sliderIdString = scrollState.Id + "_scrollbar";
             var sliderPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - 10, scrollState.Position.Y);
 
-            float scrollbarPos = VSlider(sliderId, scrollState.CurrentScrollOffset.Y, 0, maxScrollY,
+            float scrollbarPos = VSlider(sliderIdString, scrollState.CurrentScrollOffset.Y, 0, maxScrollY,
                 new Vector2(10, scrollState.VisibleSize.Y), sliderPos);
 
             offset = scrollState.CurrentScrollOffset;
@@ -129,7 +131,7 @@ public static partial class UI
     }
 
     public static void BeginResizableVPanel(
-        int id,
+        string id,
         ref float currentWidth,
         HAlignment alignment = HAlignment.Left,
         float topOffset = 0f,
@@ -142,7 +144,7 @@ public static partial class UI
         bool disabled = false)
     {
         if (!IsContextValid()) return;
-        var intId = id;
+        var intId = id.GetHashCode();
 
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
@@ -189,7 +191,7 @@ public static partial class UI
             clipPushed = true;
         }
 
-        var vboxId = HashCode.Combine(id, "_vbox");
+        var vboxId = HashCode.Combine(intId, "_vbox");
         var vboxState = Context.Layout.GetOrCreateVBoxState(vboxId);
         vboxState.StartPosition = contentStartPosition;
         vboxState.CurrentPosition = contentStartPosition;
@@ -198,7 +200,7 @@ public static partial class UI
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
 
-        var panelState = new ResizablePanelState(id, vboxState, clipPushed);
+        var panelState = new ResizablePanelState(intId, vboxState, clipPushed);
         Context.Layout.PushContainer(panelState);
     }
 
@@ -215,7 +217,7 @@ public static partial class UI
     }
 
     public static void BeginResizableHPanel(
-        int id,
+        string id,
         ref float currentHeight,
         float reservedLeftSpace,
         float reservedRightSpace,
@@ -229,7 +231,7 @@ public static partial class UI
         bool disabled = false)
     {
         if (!IsContextValid()) return;
-        var intId = id;
+        var intId = id.GetHashCode();
 
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
@@ -279,7 +281,7 @@ public static partial class UI
             clipPushed = true;
         }
 
-        var hboxId = HashCode.Combine(id, "_hbox");
+        var hboxId = HashCode.Combine(intId, "_hbox");
         var hboxState = Context.Layout.GetOrCreateHBoxState(hboxId);
         hboxState.StartPosition = contentStartPosition;
         hboxState.CurrentPosition = contentStartPosition;
@@ -288,7 +290,7 @@ public static partial class UI
         hboxState.AccumulatedWidth = 0f;
         hboxState.ElementCount = 0;
 
-        var panelState = new ResizableHPanelState(id, hboxState, clipPushed);
+        var panelState = new ResizableHPanelState(intId, hboxState, clipPushed);
         Context.Layout.PushContainer(panelState);
     }
 

@@ -61,13 +61,14 @@ public static partial class UI
         return wasClicked;
     }
 
-    public static void TabBar(int id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
     {
         if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
 
-        var themeId = HashCode.Combine(id, "theme_default");
+        int intId = id.GetHashCode();
+        var themeId = HashCode.Combine(intId, "theme_default");
         var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(themeId);
-        var state = State.GetOrCreateElement<TabBarState>(id);
+        var state = State.GetOrCreateElement<TabBarState>(intId);
 
         const float textMarginX = 15f;
         const float tabHeight = 30f;
@@ -95,11 +96,11 @@ public static partial class UI
 
         var tabSize = new Vector2(uniformTabWidth, tabHeight);
 
-        var hboxId = HashCode.Combine(id, "hbox");
-        BeginHBoxContainer(hboxId, Context.Layout.GetCurrentPosition(), 0);
+        var hboxIdString = id + "_hbox";
+        BeginHBoxContainer(hboxIdString, Context.Layout.GetCurrentPosition(), 0);
         for (int i = 0; i < tabLabels.Length; i++)
         {
-            var buttonId = HashCode.Combine(id, i);
+            var buttonId = HashCode.Combine(intId, i);
             bool wasClicked = TabButtonPrimitive(
                 buttonId,
                 tabLabels[i],
