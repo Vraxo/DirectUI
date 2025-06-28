@@ -152,6 +152,17 @@ public class MyDirectUIApp : Direct2DAppWindow
         return root;
     }
 
+    // --- User-side Helper Function ---
+    // This is the recommended pattern to avoid repeating parameters for similar widgets.
+    private bool MenuBarButton(string id, string text)
+    {
+        var menuButtonSize = new Vector2(0, 30); // Height of the menu bar
+        var menuButtonAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
+        var menuButtonTextMargin = new Vector2(10, 0);
+
+        return UI.Button(id.GetHashCode(), text, menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment);
+    }
+
     // The actual drawing logic for the main window.
     private void DrawUI(UIContext context)
     {
@@ -178,21 +189,19 @@ public class MyDirectUIApp : Direct2DAppWindow
                 rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
             }
 
-            var menuButtonSize = new Vector2(0, menuBarHeight);
-            var menuButtonAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
-            var menuButtonTextMargin = new Vector2(10, 0);
-
             // Use the style stack to define the look for all menu buttons
+            UI.PushStyleVar(StyleVar.FrameRounding, 0.0f);
+            UI.PushStyleVar(StyleVar.FrameBorderSize, 0.0f);
             UI.PushStyleColor(StyleColor.Button, Colors.Transparent);
             UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f));
             UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
             UI.PushStyleColor(StyleColor.Text, new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f));
 
-
             UI.BeginHBoxContainer("menu_bar".GetHashCode(), new Vector2(5, 0), 0);
-            if (UI.Button("file_button".GetHashCode(), "File", menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment)) { Console.WriteLine("File clicked"); }
 
-            if (UI.Button("project_button".GetHashCode(), "Project", menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment))
+            if (MenuBarButton("file_button", "File")) { Console.WriteLine("File clicked"); }
+
+            if (MenuBarButton("project_button", "Project"))
             {
                 // Create the window immediately upon click if it's not already open.
                 if (!_isProjectWindowOpen)
@@ -211,12 +220,14 @@ public class MyDirectUIApp : Direct2DAppWindow
                 }
             }
 
-            if (UI.Button("edit_button".GetHashCode(), "Edit", menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment)) { Console.WriteLine("Edit clicked"); }
-            if (UI.Button("view_button".GetHashCode(), "View", menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment)) { Console.WriteLine("View clicked"); }
-            if (UI.Button("help_button".GetHashCode(), "Help", menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment)) { Console.WriteLine("Help clicked"); }
+            if (MenuBarButton("edit_button", "Edit")) { Console.WriteLine("Edit clicked"); }
+            if (MenuBarButton("view_button", "View")) { Console.WriteLine("View clicked"); }
+            if (MenuBarButton("help_button", "Help")) { Console.WriteLine("Help clicked"); }
+
             UI.EndHBoxContainer();
 
-            UI.PopStyleColor(4); // Pop the 4 colors we pushed
+            UI.PopStyleColor(4);
+            UI.PopStyleVar(2);
         }
 
         var panelStyle = new BoxStyle
@@ -264,6 +275,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 gap: 10,
                 panelStyle: panelStyle);
 
+            UI.PushStyleVar(StyleVar.FrameRounding, 0.2f); // Rounded buttons in this panel
             if (UI.Button("right_button_1".GetHashCode(), "Right Panel"))
             {
                 Console.WriteLine("Right panel button 1 clicked!");
@@ -272,6 +284,8 @@ public class MyDirectUIApp : Direct2DAppWindow
             {
                 Console.WriteLine("Right panel button 2 clicked!");
             }
+            UI.PopStyleVar();
+
             sliderValue = UI.HSlider("my_slider".GetHashCode(), sliderValue, 0f, 1f, new Vector2(200, 20));
 
             UI.EndResizableVPanel();
@@ -292,10 +306,12 @@ public class MyDirectUIApp : Direct2DAppWindow
                 panelStyle: panelStyle);
 
 
+            UI.PushStyleVar(StyleVar.FrameRounding, 0f); // Sharp buttons in this panel
             if (UI.Button("bottom_button".GetHashCode(), "Bottom Panel Button"))
             {
                 Console.WriteLine("Bottom button clicked!");
             }
+            UI.PopStyleVar();
 
             UI.EndResizableHPanel();
         }
@@ -368,6 +384,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 UI.PopStyleColor(2);
 
                 // Remove Action Button
+                UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
                 UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
                 UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.7f, 0.3f, 0.3f, 1f));
                 UI.PushStyleColor(StyleColor.ButtonPressed, new Color4(0.9f, 0.4f, 0.4f, 1f));
@@ -376,6 +393,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                     actionToRemove = actionName; // Defer removal
                 }
                 UI.PopStyleColor(3);
+                UI.PopStyleVar();
                 UI.EndHBoxContainer();
 
                 UI.BeginHBoxContainer(GetIdHash(actionName, -1, "bindings_outer_hbox"), UI.Context.Layout.GetCurrentPosition(), 0);
@@ -388,6 +406,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                     UI.BeginHBoxContainer(GetIdHash(actionName, j, "binding_row"), UI.Context.Layout.GetCurrentPosition(), 5);
 
                     // Style for Editor buttons
+                    UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
                     UI.PushStyleColor(StyleColor.Button, new Color4(0.25f, 0.25f, 0.3f, 1.0f));
                     UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.35f, 0.35f, 0.4f, 1.0f));
                     UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
@@ -403,7 +422,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                     UI.PushStyleColor(StyleColor.Button, new Color4(0.2f, 0.2f, 0.25f, 1.0f)); // Normal background
                     UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.22f, 0.22f, 0.27f, 1.0f)); // Hover/Focus background
                     UI.PushStyleColor(StyleColor.Border, new Color4(0.1f, 0.1f, 0.1f, 1.0f)); // Normal border
-                    UI.PushStyleColor(StyleColor.BorderFocused, DefaultTheme.Accent); // Focus border
+                    UI.PushStyleColor(StyleColor.BorderFocused, DefaultTheme.Accent);
 
                     string tempKeyOrButton = binding.KeyOrButton;
                     var lineEditSize = new Vector2(120, 24);
@@ -413,8 +432,10 @@ public class MyDirectUIApp : Direct2DAppWindow
                         _inputMapDirty = true;
                     }
                     UI.PopStyleColor(4);
+                    UI.PopStyleVar(); // Pop rounding from editor button
 
                     // Style for Remove Binding Button
+                    UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
                     UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
                     UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.7f, 0.3f, 0.3f, 1f));
                     UI.PushStyleColor(StyleColor.ButtonPressed, new Color4(0.9f, 0.4f, 0.4f, 1f));
@@ -423,6 +444,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                         bindingToRemove = j; // Defer removal
                     }
                     UI.PopStyleColor(3);
+                    UI.PopStyleVar();
 
                     UI.EndHBoxContainer();
                 }
@@ -435,6 +457,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 }
 
                 // Style for "Add Binding" button
+                UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
                 UI.PushStyleColor(StyleColor.Button, new Color4(0.25f, 0.25f, 0.3f, 1.0f));
                 UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.35f, 0.35f, 0.4f, 1.0f));
                 UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
@@ -444,6 +467,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                     _inputMapDirty = true;
                 }
                 UI.PopStyleColor(3);
+                UI.PopStyleVar();
 
                 UI.EndVBoxContainer();
                 UI.EndHBoxContainer();
@@ -462,6 +486,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginHBoxContainer("input_editor_utils_hbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 10);
 
             // Style for bottom utility buttons
+            UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
             UI.PushStyleColor(StyleColor.Button, DefaultTheme.NormalFill);
             UI.PushStyleColor(StyleColor.ButtonHovered, DefaultTheme.HoverFill);
             UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
@@ -492,6 +517,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             }
 
             UI.PopStyleColor(5);
+            UI.PopStyleVar();
 
             UI.EndHBoxContainer();
 

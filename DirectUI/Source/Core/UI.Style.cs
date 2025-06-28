@@ -7,12 +7,12 @@ namespace DirectUI;
 
 public enum StyleVar
 {
-    ItemSpacing,
-    InnerItemSpacing,
-    FramePadding,
     FrameRounding,
     FrameBorderSize,
-    ButtonTextAlign,
+    // Future additions could include:
+    // ItemSpacing,
+    // FramePadding,
+    // ButtonTextAlign,
 }
 
 public enum StyleColor
