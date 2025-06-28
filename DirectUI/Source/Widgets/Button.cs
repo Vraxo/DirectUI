@@ -30,6 +30,10 @@ public class Button
     public bool IsHovering { get; internal set; } = false;
     public bool IsFocused { get; internal set; } = false;
 
+    // --- Internal Stateful Cache ---
+    private IDWriteTextLayout? _cachedTextLayout;
+    private UIResources.TextLayoutCacheKey _cachedLayoutKey;
+
     public Rect GlobalBounds
     {
         get
@@ -250,36 +254,39 @@ public class Button
 
         try
         {
-            var layoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
-            if (!UI.Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            var newLayoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
+            if (_cachedTextLayout == null || !newLayoutKey.Equals(_cachedLayoutKey))
             {
                 IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
                 if (textFormat is null) return;
 
-                textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
-                textLayout.TextAlignment = TextAlignment.Horizontal switch
+                _cachedTextLayout?.Dispose();
+                _cachedTextLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
+                _cachedTextLayout.TextAlignment = TextAlignment.Horizontal switch
                 {
                     HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
                     HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
                     HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
                     _ => Vortice.DirectWrite.TextAlignment.Leading
                 };
-                textLayout.ParagraphAlignment = TextAlignment.Vertical switch
+                _cachedTextLayout.ParagraphAlignment = TextAlignment.Vertical switch
                 {
                     VAlignment.Top => ParagraphAlignment.Near,
                     VAlignment.Center => ParagraphAlignment.Center,
                     VAlignment.Bottom => ParagraphAlignment.Far,
                     _ => ParagraphAlignment.Near
                 };
-                UI.Resources.textLayoutCache[layoutKey] = textLayout;
+                _cachedLayoutKey = newLayoutKey;
             }
 
             var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
-            renderTarget.DrawTextLayout(textOrigin, textLayout, textBrush, DrawTextOptions.None);
+            renderTarget.DrawTextLayout(textOrigin, _cachedTextLayout, textBrush, DrawTextOptions.None);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
             Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
+            _cachedTextLayout?.Dispose();
+            _cachedTextLayout = null;
         }
         catch (Exception ex)
         {

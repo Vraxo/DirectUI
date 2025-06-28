@@ -30,8 +30,8 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     // --- Caching for performance ---
     private readonly List<string> _actionNamesCache = new();
-    private readonly Dictionary<(string ActionName, int BindingIndex, string ElementKey), int> _idCache = new();
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
+    private static readonly Dictionary<BindingType, string> s_bindingTypeStringCache = new();
 
 
     private readonly TreeNode<string> _fileRoot;
@@ -63,6 +63,12 @@ public class MyDirectUIApp : Direct2DAppWindow
         // Load input map
         _inputMap = InputMapManager.Load(_inputMapPath);
         UpdateActionNamesCache();
+
+        // Pre-cache enum strings
+        foreach (BindingType val in Enum.GetValues(typeof(BindingType)))
+        {
+            s_bindingTypeStringCache[val] = val.ToString();
+        }
     }
 
     private void UpdateActionNamesCache()
@@ -73,30 +79,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             _actionNamesCache.AddRange(_inputMap.Keys);
         }
     }
-
-    private void InvalidateIdCacheForAction(string actionName)
-    {
-        var keysToRemove = _idCache.Keys.Where(k => k.ActionName == actionName).ToList();
-        foreach (var key in keysToRemove)
-        {
-            _idCache.Remove(key);
-        }
-    }
-
-    private int GetIdHash(string actionName, int bindingIndex, string elementKey)
-    {
-        var key = (actionName, bindingIndex, elementKey);
-        if (!_idCache.TryGetValue(key, out var idHash))
-        {
-            // OPTIMIZATION: Use HashCode.Combine to avoid string allocations and hashing overhead.
-            idHash = bindingIndex < 0
-                ? HashCode.Combine(elementKey, actionName)
-                : HashCode.Combine(elementKey, actionName, bindingIndex);
-            _idCache[key] = idHash;
-        }
-        return idHash;
-    }
-
 
     protected override void OnKeyDown(Keys key)
     {
@@ -346,8 +328,6 @@ public class MyDirectUIApp : Direct2DAppWindow
             Math.Max(0, contentArea.Height - contentPadding.Y * 2)
         );
 
-        rt.PushAxisAlignedClip(paddedContentRect, Vortice.Direct2D1.AntialiasMode.Aliased);
-
         if (_projectWindowActiveTab == 0) // General Tab
         {
             UI.BeginVBoxContainer("tab_content_vbox_general".GetHashCode(), new Vector2(paddedContentRect.X, paddedContentRect.Y), 10);
@@ -363,167 +343,149 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
         else if (_projectWindowActiveTab == 1 && _inputMap != null) // Input Map Tab
         {
-            // --- DEFERRED MODIFICATION VARS ---
+            int idCounter = 0;
             string? actionToRemove = null;
+            var scrollableSize = new Vector2(paddedContentRect.Width, paddedContentRect.Height - 40); // Leave space for buttons
 
-            UI.BeginVBoxContainer("input_editor_main_vbox".GetHashCode(), new Vector2(paddedContentRect.X, paddedContentRect.Y), 15);
+            UI.BeginVBoxContainer(idCounter++, new Vector2(paddedContentRect.X, paddedContentRect.Y), 5);
 
-            UI.BeginVBoxContainer("actions_list_vbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 8);
+            UI.BeginScrollableRegion(idCounter++, scrollableSize);
+            UI.BeginVBoxContainer(idCounter++, Vector2.Zero, 8); // Inner VBox for item spacing
+
             for (int i = 0; i < _actionNamesCache.Count; i++)
             {
                 string actionName = _actionNamesCache[i];
                 if (!_inputMap.ContainsKey(actionName)) continue;
                 var bindings = _inputMap[actionName];
-                int bindingToRemove = -1; // Deferred removal for bindings
+                int bindingToRemove = -1;
 
-                UI.BeginHBoxContainer(GetIdHash(actionName, -1, "action_header"), UI.Context.Layout.GetCurrentPosition(), 5);
-                // Action Label (use a disabled button)
+                UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 5);
+
                 UI.PushStyleColor(StyleColor.Button, Colors.Transparent);
                 UI.PushStyleColor(StyleColor.TextDisabled, DefaultTheme.Text);
-                UI.Button(GetIdHash(actionName, -1, "action_label"), actionName, disabled: true, autoWidth: true);
+                UI.Button(idCounter++, actionName, disabled: true, autoWidth: true);
                 UI.PopStyleColor(2);
 
-                // Remove Action Button
                 UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
                 UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
                 UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.7f, 0.3f, 0.3f, 1f));
                 UI.PushStyleColor(StyleColor.ButtonPressed, new Color4(0.9f, 0.4f, 0.4f, 1f));
-                if (UI.Button(GetIdHash(actionName, -1, "remove_action"), "x", size: new Vector2(20, 20)))
+                if (UI.Button(idCounter++, "x", size: new Vector2(20, 20)))
                 {
-                    actionToRemove = actionName; // Defer removal
+                    actionToRemove = actionName;
                 }
                 UI.PopStyleColor(3);
                 UI.PopStyleVar();
                 UI.EndHBoxContainer();
 
-                UI.BeginHBoxContainer(GetIdHash(actionName, -1, "bindings_outer_hbox"), UI.Context.Layout.GetCurrentPosition(), 0);
-                UI.Button(GetIdHash(actionName, -1, "indent_spacer"), "", size: new Vector2(20, 0), disabled: true);
+                UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 0);
+                UI.Button(idCounter++, "", size: new Vector2(20, 0), disabled: true);
+                UI.BeginVBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 5);
 
-                UI.BeginVBoxContainer(GetIdHash(actionName, -1, "bindings_vbox"), UI.Context.Layout.GetCurrentPosition(), 5);
                 for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
-                    UI.BeginHBoxContainer(GetIdHash(actionName, j, "binding_row"), UI.Context.Layout.GetCurrentPosition(), 5);
+                    UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 5);
 
-                    // Style for Editor buttons
                     UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
                     UI.PushStyleColor(StyleColor.Button, new Color4(0.25f, 0.25f, 0.3f, 1.0f));
                     UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.35f, 0.35f, 0.4f, 1.0f));
                     UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
-
-                    if (UI.Button(GetIdHash(actionName, j, "binding_type"), binding.Type.ToString(), size: new Vector2(100, 24)))
+                    if (UI.Button(idCounter++, s_bindingTypeStringCache[binding.Type], size: new Vector2(100, 24)))
                     {
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
                         _inputMapDirty = true;
                     }
                     UI.PopStyleColor(3);
 
-                    // Style for LineEdit
-                    UI.PushStyleColor(StyleColor.Button, new Color4(0.2f, 0.2f, 0.25f, 1.0f)); // Normal background
-                    UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.22f, 0.22f, 0.27f, 1.0f)); // Hover/Focus background
-                    UI.PushStyleColor(StyleColor.Border, new Color4(0.1f, 0.1f, 0.1f, 1.0f)); // Normal border
+                    UI.PushStyleColor(StyleColor.Button, new Color4(0.2f, 0.2f, 0.25f, 1.0f));
+                    UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.22f, 0.22f, 0.27f, 1.0f));
+                    UI.PushStyleColor(StyleColor.Border, new Color4(0.1f, 0.1f, 0.1f, 1.0f));
                     UI.PushStyleColor(StyleColor.BorderFocused, DefaultTheme.Accent);
-
                     string tempKeyOrButton = binding.KeyOrButton;
-                    var lineEditSize = new Vector2(120, 24);
-                    if (UI.LineEdit(GetIdHash(actionName, j, "binding_key"), ref tempKeyOrButton, lineEditSize))
+                    if (UI.LineEdit(idCounter++, ref tempKeyOrButton, new Vector2(120, 24)))
                     {
                         binding.KeyOrButton = tempKeyOrButton;
                         _inputMapDirty = true;
                     }
                     UI.PopStyleColor(4);
-                    UI.PopStyleVar(); // Pop rounding from editor button
 
-                    // Style for Remove Binding Button
+                    UI.PopStyleVar();
+
                     UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
                     UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
                     UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.7f, 0.3f, 0.3f, 1f));
                     UI.PushStyleColor(StyleColor.ButtonPressed, new Color4(0.9f, 0.4f, 0.4f, 1f));
-                    if (UI.Button(GetIdHash(actionName, j, "remove_binding"), "x", size: new Vector2(24, 24)))
+                    if (UI.Button(idCounter++, "x", size: new Vector2(24, 24)))
                     {
-                        bindingToRemove = j; // Defer removal
+                        bindingToRemove = j;
                     }
                     UI.PopStyleColor(3);
                     UI.PopStyleVar();
-
                     UI.EndHBoxContainer();
                 }
 
                 if (bindingToRemove != -1)
                 {
                     bindings.RemoveAt(bindingToRemove);
-                    InvalidateIdCacheForAction(actionName); // Clean cache for this action
                     _inputMapDirty = true;
                 }
 
-                // Style for "Add Binding" button
                 UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
                 UI.PushStyleColor(StyleColor.Button, new Color4(0.25f, 0.25f, 0.3f, 1.0f));
                 UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(0.35f, 0.35f, 0.4f, 1.0f));
                 UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
-                if (UI.Button(GetIdHash(actionName, -1, "add_binding"), "Add Binding", size: new Vector2(100, 24)))
+                if (UI.Button(idCounter++, "Add Binding", size: new Vector2(100, 24)))
                 {
                     bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
                     _inputMapDirty = true;
                 }
                 UI.PopStyleColor(3);
                 UI.PopStyleVar();
-
                 UI.EndVBoxContainer();
                 UI.EndHBoxContainer();
             }
             UI.EndVBoxContainer();
+            UI.EndScrollableRegion();
 
-            // --- PERFORM DEFERRED ACTION REMOVAL ---
             if (actionToRemove != null)
             {
                 _inputMap.Remove(actionToRemove);
-                InvalidateIdCacheForAction(actionToRemove);
                 UpdateActionNamesCache();
                 _inputMapDirty = true;
             }
 
-            UI.BeginHBoxContainer("input_editor_utils_hbox".GetHashCode(), UI.Context.Layout.GetCurrentPosition(), 10);
+            UI.BeginHBoxContainer(idCounter++, UI.Context.Layout.GetCurrentPosition(), 10);
 
-            // Style for bottom utility buttons
             UI.PushStyleVar(StyleVar.FrameRounding, 0.2f);
             UI.PushStyleColor(StyleColor.Button, DefaultTheme.NormalFill);
             UI.PushStyleColor(StyleColor.ButtonHovered, DefaultTheme.HoverFill);
             UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
             UI.PushStyleColor(StyleColor.ButtonDisabled, DefaultTheme.DisabledFill);
             UI.PushStyleColor(StyleColor.TextDisabled, DefaultTheme.DisabledText);
-
-            if (UI.Button("add_action".GetHashCode(), "Add New Action", autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button(idCounter++, "Add New Action", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 string newActionName;
                 do { newActionName = $"NewAction_{_newActionCounter++}"; } while (_inputMap.ContainsKey(newActionName));
                 _inputMap[newActionName] = new List<InputBinding>();
-                _actionNamesCache.Add(newActionName);
+                UpdateActionNamesCache();
                 _inputMapDirty = true;
             }
-
-            if (UI.Button("apply_changes".GetHashCode(), "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button(idCounter++, "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 InputMapManager.Save(_inputMapPath, _inputMap);
                 _inputMapDirty = false;
             }
-
-            if (UI.Button("revert_changes".GetHashCode(), "Revert", autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button(idCounter++, "Revert", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 _inputMap = InputMapManager.Load(_inputMapPath);
-                _idCache.Clear();
                 UpdateActionNamesCache();
                 _inputMapDirty = false;
             }
-
             UI.PopStyleColor(5);
             UI.PopStyleVar();
-
             UI.EndHBoxContainer();
-
             UI.EndVBoxContainer();
         }
-
-        rt.PopAxisAlignedClip();
     }
 }

@@ -18,6 +18,7 @@ public class InputManager
 
     // Per-frame state (reset every frame)
     private bool _wasLeftMouseClickedThisFrame;
+    private float _scrollDeltaThisFrame;
     private readonly Queue<char> _typedCharsThisFrame = new();
     private readonly List<Keys> _pressedKeysThisFrame = new();
     private readonly List<Keys> _releasedKeysThisFrame = new();
@@ -31,6 +32,7 @@ public class InputManager
             _currentMousePos,
             _wasLeftMouseClickedThisFrame,
             _isLeftMouseButtonDown,
+            _scrollDeltaThisFrame,
             _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
             _pressedKeysThisFrame,
             _releasedKeysThisFrame,
@@ -44,6 +46,7 @@ public class InputManager
     public void PrepareNextFrame()
     {
         _wasLeftMouseClickedThisFrame = false;
+        _scrollDeltaThisFrame = 0f;
         _typedCharsThisFrame.Clear();
         _pressedKeysThisFrame.Clear();
         _releasedKeysThisFrame.Clear();
@@ -54,6 +57,11 @@ public class InputManager
     public void SetMousePosition(int x, int y)
     {
         _currentMousePos = new Vector2(x, y);
+    }
+
+    public void AddMouseWheelDelta(float delta)
+    {
+        _scrollDeltaThisFrame += delta;
     }
 
     public void SetMouseDown(MouseButton button)

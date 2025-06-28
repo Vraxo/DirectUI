@@ -35,7 +35,7 @@ public abstract class Win32Window : IDisposable
     public bool Create(IntPtr owner = default, uint? style = null, int? x = null, int? y = null)
     {
         OwnerHandle = owner;
-        
+
         if (_hwnd != IntPtr.Zero)
         {
             return true;
@@ -64,7 +64,7 @@ public abstract class Win32Window : IDisposable
     private bool TryCreateWindow(IntPtr owner, uint? style, int? x, int? y)
     {
         _hInstance = NativeMethods.GetModuleHandle(null);
-        
+
         if (_hInstance == IntPtr.Zero)
         {
             _hInstance = Process.GetCurrentProcess().Handle;
@@ -87,13 +87,13 @@ public abstract class Win32Window : IDisposable
                     hCursor = NativeMethods.LoadCursor(IntPtr.Zero, 32512),
                 };
 
-                if (NativeMethods.RegisterClassEx(ref wndClass) == 0) 
-                { 
-                    Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}"); 
-                    return false; 
+                if (NativeMethods.RegisterClassEx(ref wndClass) == 0)
+                {
+                    Console.WriteLine($"RegisterClassEx failed: {Marshal.GetLastWin32Error()}");
+                    return false;
                 }
 
-                RegisteredClassNames.Add(_windowClassName); 
+                RegisteredClassNames.Add(_windowClassName);
                 Console.WriteLine($"Class '{_windowClassName}' registered.");
             }
         }
@@ -119,7 +119,7 @@ public abstract class Win32Window : IDisposable
             _hInstance,
             GCHandle.ToIntPtr(_gcHandle));
 
-        if (_hwnd == IntPtr.Zero) 
+        if (_hwnd == IntPtr.Zero)
         {
             Console.WriteLine($"CreateWindowEx failed: {Marshal.GetLastWin32Error()}");
 
@@ -128,7 +128,7 @@ public abstract class Win32Window : IDisposable
                 _gcHandle.Free();
             }
 
-            return false; 
+            return false;
         }
 
         Console.WriteLine($"Window created: {_hwnd}"); return true;
@@ -177,14 +177,14 @@ public abstract class Win32Window : IDisposable
     {
         switch (msg)
         {
-            case NativeMethods.WM_PAINT: 
-                OnPaint(); 
+            case NativeMethods.WM_PAINT:
+                OnPaint();
                 return IntPtr.Zero;
 
-            case NativeMethods.WM_SIZE: 
-                Width = NativeMethods.LoWord(lParam); 
-                Height = NativeMethods.HiWord(lParam); 
-                OnSize(Width, Height); 
+            case NativeMethods.WM_SIZE:
+                Width = NativeMethods.LoWord(lParam);
+                Height = NativeMethods.HiWord(lParam);
+                OnSize(Width, Height);
                 return IntPtr.Zero;
 
             case NativeMethods.WM_MOUSEMOVE:
@@ -201,6 +201,11 @@ public abstract class Win32Window : IDisposable
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
 
+            case NativeMethods.WM_MOUSEWHEEL:
+                short wheelDelta = NativeMethods.HiWord(wParam);
+                OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
+                return IntPtr.Zero;
+
             case NativeMethods.WM_KEYDOWN:
                 OnKeyDown((Keys)wParam);
                 return IntPtr.Zero;
@@ -214,11 +219,11 @@ public abstract class Win32Window : IDisposable
                 return IntPtr.Zero;
 
             case NativeMethods.WM_CLOSE:
-                if (OnClose()) 
+                if (OnClose())
                 {
-                    NativeMethods.DestroyWindow(hWnd); 
-                } 
-                
+                    NativeMethods.DestroyWindow(hWnd);
+                }
+
                 return IntPtr.Zero;
 
             case NativeMethods.WM_DESTROY:
@@ -235,13 +240,13 @@ public abstract class Win32Window : IDisposable
 
             case NativeMethods.WM_NCDESTROY:
                 Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
-                
+
                 IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
-                
+
                 if (ptr != IntPtr.Zero)
                 {
                     var handle = GCHandle.FromIntPtr(ptr);
-                    
+
                     if (handle.IsAllocated)
                     {
                         handle.Free();
@@ -253,14 +258,14 @@ public abstract class Win32Window : IDisposable
                 if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
                 {
                     _gcHandle = default;
-                
+
                 }
 
                 _hwnd = IntPtr.Zero;
 
                 return IntPtr.Zero;
 
-            default: 
+            default:
                 return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
         }
     }
@@ -287,7 +292,7 @@ public abstract class Win32Window : IDisposable
 
     public virtual void FrameUpdate()
     {
-    
+
     }
 
     internal bool GetWindowRect(out NativeMethods.RECT rect)
@@ -301,61 +306,66 @@ public abstract class Win32Window : IDisposable
         return NativeMethods.GetWindowRect(Handle, out rect);
     }
 
-    protected virtual bool Initialize() 
-    { 
-        return true; 
+    protected virtual bool Initialize()
+    {
+        return true;
     }
-    
+
     protected abstract void OnPaint();
-    
-    protected virtual void OnSize(int width, int height) 
+
+    protected virtual void OnSize(int width, int height)
     {
 
     }
-    
-    protected virtual void OnMouseDown(MouseButton button, int x, int y) 
-    { 
+
+    protected virtual void OnMouseDown(MouseButton button, int x, int y)
+    {
 
     }
-    
-    protected virtual void OnMouseUp(MouseButton button, int x, int y) 
+
+    protected virtual void OnMouseUp(MouseButton button, int x, int y)
     {
-    
+
     }
-    
+
     protected virtual void OnMouseMove(int x, int y)
     {
-    
+
     }
-    
+
     protected virtual void OnKeyDown(Keys key)
     {
 
     }
-    
+
     protected virtual void OnKeyUp(Keys key)
     {
 
     }
-    
+
+    protected virtual void OnMouseWheel(float delta)
+    {
+
+    }
+
     protected virtual void OnChar(char c)
     {
 
     }
-    
+
     protected virtual bool OnClose()
-    { 
+    {
         return true;
     }
-    
+
     protected virtual void OnDestroy()
     {
 
     }
-    
-    protected virtual void Cleanup() 
+
+    protected virtual void Cleanup()
     {
-        
+
     }
 
     public void Dispose()

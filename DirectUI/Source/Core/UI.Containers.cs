@@ -54,6 +54,80 @@ public static partial class UI
         }
     }
 
+    public static void BeginScrollableRegion(int id, Vector2 size)
+    {
+        if (!IsContextValid()) return;
+
+        Vector2 position = Context.Layout.GetCurrentPosition();
+        Rect regionBounds = new Rect(position.X, position.Y, size.X, size.Y);
+
+        var scrollState = State.GetOrCreateElement<ScrollContainerState>(id);
+        scrollState.Id = id;
+        scrollState.Position = position;
+        scrollState.VisibleSize = size;
+        scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
+
+        // Handle scroll input
+        if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
+        {
+            var offset = scrollState.CurrentScrollOffset;
+            offset.Y -= Context.InputState.ScrollDelta * 20; // Adjust multiplier as needed
+            scrollState.CurrentScrollOffset = offset;
+        }
+
+        // Begin the inner container for content layout, offset by the scroll position
+        var contentVBoxId = HashCode.Combine(id, "scroll_vbox");
+        var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
+        contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
+        contentVBox.CurrentPosition = position - scrollState.CurrentScrollOffset;
+        contentVBox.Gap = 0; // The user can nest another VBox inside for gaps
+        contentVBox.MaxElementWidth = 0f;
+        contentVBox.AccumulatedHeight = 0f;
+        contentVBox.ElementCount = 0;
+        scrollState.ContentVBox = contentVBox;
+
+        Context.Layout.PushClipRect(regionBounds);
+        Context.RenderTarget.PushAxisAlignedClip(regionBounds, D2D.AntialiasMode.Aliased);
+
+        Context.Layout.PushContainer(scrollState);
+    }
+
+    public static void EndScrollableRegion()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
+        { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
+
+        // Finalize content size
+        scrollState.ContentSize = new Vector2(scrollState.ContentVBox.MaxElementWidth, scrollState.ContentVBox.AccumulatedHeight);
+
+        // Clamp scroll offset based on final content size
+        float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
+        var offset = scrollState.CurrentScrollOffset;
+        offset.Y = Math.Clamp(offset.Y, 0, maxScrollY);
+        scrollState.CurrentScrollOffset = offset;
+
+        // Pop the main container and clip rect
+        Context.Layout.PopContainer();
+        Context.RenderTarget.PopAxisAlignedClip();
+        Context.Layout.PopClipRect();
+
+        // Draw scrollbar if needed
+        if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
+        {
+            var sliderId = HashCode.Combine(scrollState.Id, "scrollbar");
+            var sliderPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - 10, scrollState.Position.Y);
+
+            float scrollbarPos = VSlider(sliderId, scrollState.CurrentScrollOffset.Y, 0, maxScrollY,
+                new Vector2(10, scrollState.VisibleSize.Y), sliderPos);
+
+            offset = scrollState.CurrentScrollOffset;
+            offset.Y = scrollbarPos;
+            scrollState.CurrentScrollOffset = offset;
+        }
+
+        Context.Layout.AdvanceLayout(scrollState.VisibleSize);
+    }
+
     public static void BeginResizableVPanel(
         int id,
         ref float currentWidth,

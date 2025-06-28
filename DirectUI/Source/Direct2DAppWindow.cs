@@ -71,6 +71,12 @@ public abstract class Direct2DAppWindow : Win32Window
         Invalidate();
     }
 
+    protected override void OnMouseWheel(float delta)
+    {
+        _appHost?.Input.AddMouseWheelDelta(delta);
+        Invalidate();
+    }
+
     protected override void OnKeyDown(Keys key)
     {
         _appHost?.Input.AddKeyPressed(key);

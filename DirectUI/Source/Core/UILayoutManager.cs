@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Vortice.Mathematics;
+using System;
 
 namespace DirectUI;
 
@@ -128,6 +129,7 @@ public class UILayoutManager
             HBoxContainerState hbox => hbox.CurrentPosition,
             VBoxContainerState vbox => vbox.CurrentPosition,
             GridContainerState grid => grid.CurrentDrawPosition,
+            ScrollContainerState scroll => scroll.ContentVBox.CurrentPosition,
             ResizablePanelState panel => panel.InnerVBox.CurrentPosition,
             ResizableHPanelState hpanel => hpanel.InnerHBox.CurrentPosition,
             _ => Vector2.Zero,
@@ -137,7 +139,15 @@ public class UILayoutManager
     public void AdvanceContainerLayout(Vector2 elementSize)
     {
         if (_containerStack.Count == 0) return;
+
         object currentContainerState = _containerStack.Peek();
+
+        // Handle nested containers
+        if (currentContainerState is ScrollContainerState scrollState)
+        {
+            currentContainerState = scrollState.ContentVBox;
+        }
+
         switch (currentContainerState)
         {
             case HBoxContainerState hbox:
