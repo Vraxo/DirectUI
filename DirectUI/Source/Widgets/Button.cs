@@ -181,30 +181,34 @@ public class Button
         ID2D1SolidColorBrush textBrush = UI.Resources.GetOrCreateBrush(renderTarget, style.FontColor);
         if (textBrush is null) return;
 
-        IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
-        if (textFormat is null) return;
+        Rect bounds = GlobalBounds;
+        if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
-        IDWriteTextLayout? textLayout = null;
         try
         {
-            Rect bounds = GlobalBounds;
-            if (bounds.Width <= 0 || bounds.Height <= 0) return;
+            var layoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
+            if (!UI.Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            {
+                IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
+                if (textFormat is null) return;
 
-            textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
-            textLayout.TextAlignment = TextAlignment.Horizontal switch
-            {
-                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                _ => Vortice.DirectWrite.TextAlignment.Leading
-            };
-            textLayout.ParagraphAlignment = TextAlignment.Vertical switch
-            {
-                VAlignment.Top => ParagraphAlignment.Near,
-                VAlignment.Center => ParagraphAlignment.Center,
-                VAlignment.Bottom => ParagraphAlignment.Far,
-                _ => ParagraphAlignment.Near
-            };
+                textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
+                textLayout.TextAlignment = TextAlignment.Horizontal switch
+                {
+                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                    _ => Vortice.DirectWrite.TextAlignment.Leading
+                };
+                textLayout.ParagraphAlignment = TextAlignment.Vertical switch
+                {
+                    VAlignment.Top => ParagraphAlignment.Near,
+                    VAlignment.Center => ParagraphAlignment.Center,
+                    VAlignment.Bottom => ParagraphAlignment.Far,
+                    _ => ParagraphAlignment.Near
+                };
+                UI.Resources.textLayoutCache[layoutKey] = textLayout;
+            }
 
             var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
             renderTarget.DrawTextLayout(textOrigin, textLayout, textBrush, DrawTextOptions.None);
@@ -216,10 +220,6 @@ public class Button
         catch (Exception ex)
         {
             Console.WriteLine($"Error drawing button text: {ex.Message}");
-        }
-        finally
-        {
-            textLayout?.Dispose();
         }
     }
 }

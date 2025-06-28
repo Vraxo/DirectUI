@@ -5,6 +5,7 @@ namespace DirectUI;
 public class UILayoutManager
 {
     private readonly Stack<object> _containerStack = new();
+    private readonly Dictionary<string, object> _containerStateCache = new();
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
@@ -13,6 +14,56 @@ public class UILayoutManager
     public object PopContainer() => _containerStack.Pop();
     public object PeekContainer() => _containerStack.Peek();
     public void ClearStack() => _containerStack.Clear();
+
+    public HBoxContainerState GetOrCreateHBoxState(string id)
+    {
+        if (!_containerStateCache.TryGetValue(id, out var state) || state is not HBoxContainerState hboxState)
+        {
+            hboxState = new HBoxContainerState(id);
+            _containerStateCache[id] = hboxState;
+        }
+        return hboxState;
+    }
+
+    public VBoxContainerState GetOrCreateVBoxState(string id)
+    {
+        if (!_containerStateCache.TryGetValue(id, out var state) || state is not VBoxContainerState vboxState)
+        {
+            vboxState = new VBoxContainerState(id);
+            _containerStateCache[id] = vboxState;
+        }
+        return vboxState;
+    }
+
+    public void BeginHBox(string id, Vector2 startPosition, float gap)
+    {
+        var hboxState = GetOrCreateHBoxState(id);
+
+        // Reset per-frame properties
+        hboxState.StartPosition = startPosition;
+        hboxState.CurrentPosition = startPosition;
+        hboxState.Gap = gap;
+        hboxState.MaxElementHeight = 0f;
+        hboxState.AccumulatedWidth = 0f;
+        hboxState.ElementCount = 0;
+
+        PushContainer(hboxState);
+    }
+
+    public void BeginVBox(string id, Vector2 startPosition, float gap)
+    {
+        var vboxState = GetOrCreateVBoxState(id);
+
+        // Reset per-frame properties
+        vboxState.StartPosition = startPosition;
+        vboxState.CurrentPosition = startPosition;
+        vboxState.Gap = gap;
+        vboxState.MaxElementWidth = 0f;
+        vboxState.AccumulatedHeight = 0f;
+        vboxState.ElementCount = 0;
+
+        PushContainer(vboxState);
+    }
 
     public Vector2 ApplyLayout(Vector2 defaultPosition)
     {

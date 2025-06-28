@@ -11,7 +11,7 @@ public static partial class UI
 {
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.Layout.PushContainer(new HBoxContainerState(id, position, gap));
+        Context.Layout.BeginHBox(id, position, gap);
     }
 
     public static void EndHBoxContainer()
@@ -25,7 +25,7 @@ public static partial class UI
 
     public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.Layout.PushContainer(new VBoxContainerState(id, position, gap));
+        Context.Layout.BeginVBox(id, position, gap);
     }
 
     public static void EndVBoxContainer()
@@ -100,7 +100,15 @@ public static partial class UI
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
             clipPushed = true;
         }
-        var vboxState = new VBoxContainerState(id + "_vbox", contentStartPosition, definition.Gap);
+
+        var vboxState = Context.Layout.GetOrCreateVBoxState(id + "_vbox");
+        vboxState.StartPosition = contentStartPosition;
+        vboxState.CurrentPosition = contentStartPosition;
+        vboxState.Gap = definition.Gap;
+        vboxState.MaxElementWidth = 0f;
+        vboxState.AccumulatedHeight = 0f;
+        vboxState.ElementCount = 0;
+
         var panelState = new ResizablePanelState(id, vboxState, clipPushed);
         Context.Layout.PushContainer(panelState);
     }
@@ -168,7 +176,15 @@ public static partial class UI
             renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
             clipPushed = true;
         }
-        var hboxState = new HBoxContainerState(id + "_hbox", contentStartPosition, definition.Gap);
+
+        var hboxState = Context.Layout.GetOrCreateHBoxState(id + "_hbox");
+        hboxState.StartPosition = contentStartPosition;
+        hboxState.CurrentPosition = contentStartPosition;
+        hboxState.Gap = definition.Gap;
+        hboxState.MaxElementHeight = 0f;
+        hboxState.AccumulatedWidth = 0f;
+        hboxState.ElementCount = 0;
+
         var panelState = new ResizableHPanelState(id, hboxState, clipPushed);
         Context.Layout.PushContainer(panelState);
     }
