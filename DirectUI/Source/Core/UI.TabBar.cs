@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
@@ -52,7 +53,7 @@ public static partial class UI
 
             if (textLayout is not null)
             {
-                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush);
+                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush, DrawTextOptions.None);
             }
         }
 

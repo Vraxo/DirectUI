@@ -1,7 +1,4 @@
-﻿// NEW: GridContainerState.cs
-// Summary: State object for managing grid layout.
-using System.Collections.Generic;
-using System.Numerics;
+﻿using System.Numerics;
 
 namespace DirectUI;
 

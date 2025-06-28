@@ -146,11 +146,10 @@ public class MyDirectUIApp : Direct2DAppWindow
         var key = (actionName, bindingIndex, elementKey);
         if (!_idCache.TryGetValue(key, out var idHash))
         {
-            // ID hash not found, generate string, hash it, and cache the hash.
-            string idStr = bindingIndex < 0
-                ? $"{elementKey}_{actionName}"
-                : $"{elementKey}_{actionName}_{bindingIndex}";
-            idHash = idStr.GetHashCode();
+            // OPTIMIZATION: Use HashCode.Combine to avoid string allocations and hashing overhead.
+            idHash = bindingIndex < 0
+                ? HashCode.Combine(elementKey, actionName)
+                : HashCode.Combine(elementKey, actionName, bindingIndex);
             _idCache[key] = idHash;
         }
         return idHash;

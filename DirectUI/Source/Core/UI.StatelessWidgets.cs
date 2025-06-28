@@ -73,7 +73,7 @@ public static partial class UI
                 };
                 Resources.textLayoutCache[layoutKey] = textLayout;
             }
-            renderTarget.DrawTextLayout(new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush);
+            renderTarget.DrawTextLayout(new Vector2(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush, DrawTextOptions.None);
         }
         return wasClickedThisFrame;
     }
