@@ -23,25 +23,19 @@ public class UIResources
         public readonly FontWeight FontWeight;
         public readonly FontStyle FontStyle;
         public readonly FontStretch FontStretch;
-        public readonly HAlignment HAlign;
-        public readonly VAlignment VAlign;
-        public readonly WordWrapping WordWrapping;
 
-        public FontKey(ButtonStyle style, Alignment alignment, WordWrapping wordWrapping)
+        public FontKey(ButtonStyle style)
         {
             FontName = style.FontName;
             FontSize = style.FontSize;
             FontWeight = style.FontWeight;
             FontStyle = style.FontStyle;
             FontStretch = style.FontStretch;
-            HAlign = alignment.Horizontal;
-            VAlign = alignment.Vertical;
-            WordWrapping = wordWrapping;
         }
 
-        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch && HAlign == other.HAlign && VAlign == other.VAlign && WordWrapping == other.WordWrapping;
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
         public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch, HAlign, VAlign, WordWrapping);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
     }
 
     // --- Text Layout Caching Key ---
@@ -50,17 +44,21 @@ public class UIResources
         public readonly string Text;
         public readonly FontKey FontKey;
         public readonly Vector2 MaxSize;
+        public readonly HAlignment HAlign;
+        public readonly VAlignment VAlign;
 
-        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment, WordWrapping wordWrapping)
+        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
         {
             Text = text;
-            FontKey = new FontKey(style, alignment, wordWrapping);
+            FontKey = new FontKey(style);
             MaxSize = maxSize;
+            HAlign = alignment.Horizontal;
+            VAlign = alignment.Vertical;
         }
 
-        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && FontKey.Equals(other.FontKey);
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
         public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
     }
 
     // --- Caches ---
@@ -85,11 +83,11 @@ public class UIResources
         catch (Exception ex) { Console.WriteLine($"Error creating brush for color {color}: {ex.Message}"); return null!; }
     }
 
-    public IDWriteTextFormat? GetOrCreateTextFormat(IDWriteFactory dwriteFactory, ButtonStyle style, Alignment alignment, WordWrapping wordWrapping)
+    public IDWriteTextFormat? GetOrCreateTextFormat(IDWriteFactory dwriteFactory, ButtonStyle style)
     {
         if (dwriteFactory is null) return null;
 
-        var key = new FontKey(style, alignment, wordWrapping);
+        var key = new FontKey(style);
         if (textFormatCache.TryGetValue(key, out var format))
         {
             return format;
@@ -98,25 +96,7 @@ public class UIResources
         try
         {
             var newFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (newFormat is not null)
-            {
-                newFormat.TextAlignment = alignment.Horizontal switch
-                {
-                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                    _ => Vortice.DirectWrite.TextAlignment.Leading
-                };
-                newFormat.ParagraphAlignment = alignment.Vertical switch
-                {
-                    VAlignment.Top => ParagraphAlignment.Near,
-                    VAlignment.Center => ParagraphAlignment.Center,
-                    VAlignment.Bottom => ParagraphAlignment.Far,
-                    _ => ParagraphAlignment.Near
-                };
-                newFormat.WordWrapping = wordWrapping;
-                textFormatCache[key] = newFormat;
-            }
+            if (newFormat is not null) { textFormatCache[key] = newFormat; }
             return newFormat;
         }
         catch (Exception ex)
@@ -130,15 +110,11 @@ public class UIResources
     {
         if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
 
-        // Use a default alignment for measuring, it doesn't matter for unconstrained width/height.
-        var alignment = new Alignment(HAlignment.Left, VAlignment.Top);
-        // Use NoWrap to get the natural unconstrained size of the text.
-        var fontKey = new FontKey(style, alignment, WordWrapping.NoWrap);
+        var fontKey = new FontKey(style);
         var cacheKey = (text, fontKey);
-
         if (textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
 
-        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(dwriteFactory, style, alignment, WordWrapping.NoWrap);
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(dwriteFactory, style);
         if (textFormat is null) { Console.WriteLine("Warning: Failed to create/get TextFormat for measurement."); return Vector2.Zero; }
 
         using var textLayout = dwriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);

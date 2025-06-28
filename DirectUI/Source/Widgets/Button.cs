@@ -183,19 +183,34 @@ public class Button
         Rect bounds = GlobalBounds;
         if (bounds.Width <= 0 || bounds.Height <= 0) return;
 
-        // OPTIMIZATION: Use DrawText directly instead of creating a TextLayout object.
-        // This is significantly faster for simple, single-line text.
         try
         {
-            // Get a text format that is cached with the correct alignment and wrapping.
-            // Using NoWrap is critical for performance on single-line buttons.
-            IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style, TextAlignment, WordWrapping.NoWrap);
-            if (textFormat is null) return;
+            var layoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
+            if (!UI.Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            {
+                IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
+                if (textFormat is null) return;
 
-            // Apply the text offset by adjusting the layout rectangle.
-            var textLayoutRect = new Rect(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y, bounds.Width, bounds.Height);
+                textLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
+                textLayout.TextAlignment = TextAlignment.Horizontal switch
+                {
+                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                    _ => Vortice.DirectWrite.TextAlignment.Leading
+                };
+                textLayout.ParagraphAlignment = TextAlignment.Vertical switch
+                {
+                    VAlignment.Top => ParagraphAlignment.Near,
+                    VAlignment.Center => ParagraphAlignment.Center,
+                    VAlignment.Bottom => ParagraphAlignment.Far,
+                    _ => ParagraphAlignment.Near
+                };
+                UI.Resources.textLayoutCache[layoutKey] = textLayout;
+            }
 
-            renderTarget.DrawText(Text, textFormat, textLayoutRect, textBrush, DrawTextOptions.None);
+            var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
+            renderTarget.DrawTextLayout(textOrigin, textLayout, textBrush, DrawTextOptions.None);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
         {
