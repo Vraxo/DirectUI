@@ -37,7 +37,8 @@ public class ModalWindow : Direct2DAppWindow
         int? x = null;
         int? y = null;
 
-        if (Handle != IntPtr.Zero && GetWindowRect(out NativeMethods.RECT ownerRect))
+        // FIX: Use the owner's handle to get its position for centering.
+        if (_owner.Handle != IntPtr.Zero && _owner.GetWindowRect(out NativeMethods.RECT ownerRect))
         {
             int ownerWidth = ownerRect.right - ownerRect.left;
             int ownerHeight = ownerRect.bottom - ownerRect.top;
@@ -48,26 +49,30 @@ public class ModalWindow : Direct2DAppWindow
             y = ownerRect.top + (ownerHeight - modalHeight) / 2;
         }
 
-        if (!Create(Handle, style, x, y))
+        // FIX: Pass the owner's handle to the base Create method.
+        if (!Create(_owner.Handle, style, x, y))
         {
             return false;
         }
 
         if (Handle == IntPtr.Zero)
         {
-            return true;
+            return false;
         }
 
-        NativeMethods.EnableWindow(Handle, false);
+        // FIX: Disable the OWNER window, not this modal window.
+        // This is the core fix for the modal behavior bug.
+        NativeMethods.EnableWindow(_owner.Handle, false);
 
         return true;
     }
 
     protected override void OnDestroy()
     {
-        if (Handle != IntPtr.Zero)
+        // FIX: Re-enable the OWNER window when this modal is destroyed.
+        if (_owner.Handle != IntPtr.Zero)
         {
-            NativeMethods.EnableWindow(Handle, true);
+            NativeMethods.EnableWindow(_owner.Handle, true);
         }
 
         base.OnDestroy();
