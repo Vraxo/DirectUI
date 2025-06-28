@@ -50,30 +50,23 @@ public static partial class UI
         Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
 
         var textBrush = Resources.GetOrCreateBrush(renderTarget, currentStyle.FontColor);
-        var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
-        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
+
+        // OPTIMIZATION: Use DrawText instead of DrawTextLayout for simple labels and buttons.
+        if (textBrush is not null && !string.IsNullOrEmpty(text))
         {
-            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, new(finalBounds.Width, finalBounds.Height), textAlignment);
-            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            // Get a text format that is cached with the correct alignment and wrapping.
+            var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle, textAlignment, WordWrapping.NoWrap);
+            if (textFormat is not null)
             {
-                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
-                textLayout.TextAlignment = textAlignment.Horizontal switch
-                {
-                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                    _ => Vortice.DirectWrite.TextAlignment.Leading
-                };
-                textLayout.ParagraphAlignment = textAlignment.Vertical switch
-                {
-                    VAlignment.Top => ParagraphAlignment.Near,
-                    VAlignment.Center => ParagraphAlignment.Center,
-                    VAlignment.Bottom => ParagraphAlignment.Far,
-                    _ => ParagraphAlignment.Near
-                };
-                Resources.textLayoutCache[layoutKey] = textLayout;
+                // Apply the text offset by adjusting the layout rectangle.
+                var textLayoutRect = new Rect(
+                    finalBounds.X + textOffset.X,
+                    finalBounds.Y + textOffset.Y,
+                    finalBounds.Width,
+                    finalBounds.Height
+                );
+                renderTarget.DrawText(text, textFormat, textLayoutRect, textBrush);
             }
-            renderTarget.DrawTextLayout(new(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush);
         }
         return wasClickedThisFrame;
     }

@@ -242,16 +242,17 @@ internal class LineEdit
 
         // Use a consistent alignment for caching and creation
         var alignment = new Alignment(HAlignment.Left, VAlignment.Center);
-        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(maxWidth, def.Size.Y), alignment);
+        var wordWrapping = WordWrapping.NoWrap; // LineEdit should not wrap
+
+        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(maxWidth, def.Size.Y), alignment, wordWrapping);
 
         if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
         {
-            var textFormat = resources.GetOrCreateTextFormat(dwrite, style);
+            var textFormat = resources.GetOrCreateTextFormat(dwrite, style, alignment, wordWrapping);
             if (textFormat == null) return null;
 
-            textFormat.WordWrapping = WordWrapping.NoWrap;
-            textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
-            textFormat.ParagraphAlignment = ParagraphAlignment.Center;
+            // BUG FIX: Removed modification of the cached textFormat object.
+            // All properties are now set during creation and cached correctly.
 
             textLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, def.Size.Y);
             resources.textLayoutCache[layoutKey] = textLayout;

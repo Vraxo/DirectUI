@@ -32,27 +32,18 @@ public static partial class UI
         Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
 
         var textBrush = Resources.GetOrCreateBrush(rt, currentStyle.FontColor);
+
+        // OPTIMIZATION: Use DrawText instead of DrawTextLayout
         if (textBrush is not null && !string.IsNullOrEmpty(text))
         {
             var dwriteFactory = Context.DWriteFactory;
             var textAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
 
-            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, size, textAlignment);
-            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            // Get a text format cached with the correct alignment and wrapping.
+            var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle, textAlignment, WordWrapping.NoWrap);
+            if (textFormat is not null)
             {
-                var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
-                if (textFormat is not null)
-                {
-                    textLayout = dwriteFactory.CreateTextLayout(text, textFormat, size.X, size.Y);
-                    textLayout.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
-                    textLayout.ParagraphAlignment = ParagraphAlignment.Center;
-                    Resources.textLayoutCache[layoutKey] = textLayout;
-                }
-            }
-
-            if (textLayout is not null)
-            {
-                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush);
+                rt.DrawText(text, textFormat, bounds, textBrush);
             }
         }
 
