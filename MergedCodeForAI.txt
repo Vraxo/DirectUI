@@ -1240,6 +1240,129 @@ internal static class SharedGraphicsResources
 }
 </file>
 
+<file path="UILayoutManager.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public class UILayoutManager
+{
+    private readonly Stack<object> _containerStack = new();
+
+    public int ContainerStackCount => _containerStack.Count;
+    public bool IsInLayoutContainer() => _containerStack.Count > 0;
+
+    public void PushContainer(object containerState) => _containerStack.Push(containerState);
+    public object PopContainer() => _containerStack.Pop();
+    public object PeekContainer() => _containerStack.Peek();
+    public void ClearStack() => _containerStack.Clear();
+
+    public Vector2 ApplyLayout(Vector2 defaultPosition)
+    {
+        return IsInLayoutContainer() ? GetCurrentPosition() : defaultPosition;
+    }
+
+    public void AdvanceLayout(Vector2 elementSize)
+    {
+        if (IsInLayoutContainer())
+        {
+            AdvanceContainerLayout(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y)));
+        }
+    }
+
+    public Vector2 GetCurrentPosition()
+    {
+        if (_containerStack.Count == 0)
+        {
+            return Vector2.Zero;
+        }
+
+        return _containerStack.Peek() switch
+        {
+            HBoxContainerState hbox => hbox.CurrentPosition,
+            VBoxContainerState vbox => vbox.CurrentPosition,
+            GridContainerState grid => grid.CurrentDrawPosition,
+            ResizablePanelState panel => panel.InnerVBox.CurrentPosition,
+            ResizableHPanelState hpanel => hpanel.InnerHBox.CurrentPosition,
+            _ => Vector2.Zero,
+        };
+    }
+
+    public void AdvanceContainerLayout(Vector2 elementSize)
+    {
+        if (_containerStack.Count == 0) return;
+        object currentContainerState = _containerStack.Peek();
+        switch (currentContainerState)
+        {
+            case HBoxContainerState hbox:
+                {
+                    if (elementSize.Y > hbox.MaxElementHeight) hbox.MaxElementHeight = elementSize.Y;
+                    hbox.AccumulatedWidth += elementSize.X;
+                    if (hbox.ElementCount > 0)
+                    {
+                        hbox.AccumulatedWidth += hbox.Gap;
+                    }
+                    float advanceX = elementSize.X + hbox.Gap;
+                    hbox.CurrentPosition = new Vector2(hbox.CurrentPosition.X + advanceX, hbox.CurrentPosition.Y);
+                    hbox.ElementCount++;
+                    break;
+                }
+            case VBoxContainerState vbox:
+                {
+                    if (elementSize.X > vbox.MaxElementWidth) vbox.MaxElementWidth = elementSize.X;
+                    vbox.AccumulatedHeight += elementSize.Y;
+                    if (vbox.ElementCount > 0)
+                    {
+                        vbox.AccumulatedHeight += vbox.Gap;
+                    }
+                    float advanceY = elementSize.Y + vbox.Gap;
+                    vbox.CurrentPosition = new Vector2(vbox.CurrentPosition.X, vbox.CurrentPosition.Y + advanceY);
+                    vbox.ElementCount++;
+                    break;
+                }
+            case GridContainerState grid:
+                {
+                    grid.MoveToNextCell(elementSize);
+                    break;
+                }
+            case ResizablePanelState panel:
+                {
+                    var innerVBox = panel.InnerVBox;
+                    if (elementSize.X > innerVBox.MaxElementWidth) innerVBox.MaxElementWidth = elementSize.X;
+                    innerVBox.AccumulatedHeight += elementSize.Y;
+                    if (innerVBox.ElementCount > 0)
+                    {
+                        innerVBox.AccumulatedHeight += innerVBox.Gap;
+                    }
+                    float advanceY = elementSize.Y + innerVBox.Gap;
+                    innerVBox.CurrentPosition = new Vector2(innerVBox.CurrentPosition.X, innerVBox.CurrentPosition.Y + advanceY);
+                    innerVBox.ElementCount++;
+                    break;
+                }
+            case ResizableHPanelState hpanel:
+                {
+                    var innerHBox = hpanel.InnerHBox;
+                    if (elementSize.Y > innerHBox.MaxElementHeight) innerHBox.MaxElementHeight = elementSize.Y;
+                    innerHBox.AccumulatedWidth += elementSize.X;
+                    if (innerHBox.ElementCount > 0)
+                    {
+                        innerHBox.AccumulatedWidth += innerHBox.Gap;
+                    }
+                    float advanceX = elementSize.X + innerHBox.Gap;
+                    innerHBox.CurrentPosition = new Vector2(innerHBox.CurrentPosition.X + advanceX, innerHBox.CurrentPosition.Y);
+                    innerHBox.ElementCount++;
+                    break;
+                }
+            default:
+                {
+                    Console.WriteLine("Error: AdvanceContainerLayout called with unexpected container type.");
+                    break;
+                }
+        }
+    }
+}
+</file>
+
 <file path="Win32Window.cs">
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -1862,30 +1985,30 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool Button(string id, ButtonDefinition definition)
-    {
-        if (!IsContextValid() || definition is null) return false;
-        Button buttonInstance = State.GetOrCreateElement<Button>(id);
-        buttonInstance.Position = Context.ApplyLayout(definition.Position);
-        ApplyButtonDefinition(buttonInstance, definition);
+	public static bool Button(string id, ButtonDefinition definition)
+	{
+		if (!IsContextValid() || definition is null) return false;
+		Button buttonInstance = State.GetOrCreateElement<Button>(id);
+		buttonInstance.Position = Context.Layout.ApplyLayout(definition.Position);
+		ApplyButtonDefinition(buttonInstance, definition);
 
-        bool pushedClip = false;
-        if (Context.IsInLayoutContainer() && Context.containerStack.Peek() is GridContainerState grid)
-        {
-            float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
-            float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
-            Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
-            { Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
-        }
+		bool pushedClip = false;
+		if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is GridContainerState grid)
+		{
+			float clipStartY = grid.CurrentDrawPosition.Y; float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
+			float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
+			Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
+			if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
+			{ Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased); pushedClip = true; }
+		}
 
-        bool clicked = buttonInstance.Update(id);
-        if (pushedClip && Context.RenderTarget is not null)
-        { Context.RenderTarget.PopAxisAlignedClip(); }
+		bool clicked = buttonInstance.Update(id);
+		if (pushedClip && Context.RenderTarget is not null)
+		{ Context.RenderTarget.PopAxisAlignedClip(); }
 
-        Context.AdvanceLayout(buttonInstance.Size);
-        return clicked;
-    }
+		Context.Layout.AdvanceLayout(buttonInstance.Size);
+		return clicked;
+	}
 }
 </file>
 
@@ -1903,46 +2026,46 @@ public static partial class UI
 {
     public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.containerStack.Push(new HBoxContainerState(id, position, gap));
+        Context.Layout.PushContainer(new HBoxContainerState(id, position, gap));
     }
 
     public static void EndHBoxContainer()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not HBoxContainerState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not HBoxContainerState state)
         { Console.WriteLine("Error: EndHBoxContainer called without a matching BeginHBoxContainer."); return; }
-        Context.containerStack.Pop();
-        if (Context.IsInLayoutContainer())
-        { Context.AdvanceLayoutCursor(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
+        Context.Layout.PopContainer();
+        if (Context.Layout.IsInLayoutContainer())
+        { Context.Layout.AdvanceContainerLayout(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
     }
 
     public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
     {
-        Context.containerStack.Push(new VBoxContainerState(id, position, gap));
+        Context.Layout.PushContainer(new VBoxContainerState(id, position, gap));
     }
 
     public static void EndVBoxContainer()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not VBoxContainerState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
         { Console.WriteLine("Error: EndVBoxContainer called without a matching BeginVBoxContainer."); return; }
-        Context.containerStack.Pop();
-        if (Context.IsInLayoutContainer())
-        { Context.AdvanceLayoutCursor(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
+        Context.Layout.PopContainer();
+        if (Context.Layout.IsInLayoutContainer())
+        { Context.Layout.AdvanceContainerLayout(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
     }
 
     public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        Context.containerStack.Push(new GridContainerState(id, position, availableSize, numColumns, gap));
+        Context.Layout.PushContainer(new GridContainerState(id, position, availableSize, numColumns, gap));
     }
 
     public static void EndGridContainer()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not GridContainerState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not GridContainerState state)
         { Console.WriteLine("Error: EndGridContainer called without a matching BeginGridContainer."); return; }
-        Context.containerStack.Pop();
-        if (Context.IsInLayoutContainer())
+        Context.Layout.PopContainer();
+        if (Context.Layout.IsInLayoutContainer())
         {
             Vector2 containerSize = state.GetTotalOccupiedSize();
-            Context.AdvanceLayoutCursor(containerSize);
+            Context.Layout.AdvanceContainerLayout(containerSize);
         }
     }
 
@@ -1994,18 +2117,18 @@ public static partial class UI
         }
         var vboxState = new VBoxContainerState(id + "_vbox", contentStartPosition, definition.Gap);
         var panelState = new ResizablePanelState(id, vboxState, clipPushed);
-        Context.containerStack.Push(panelState);
+        Context.Layout.PushContainer(panelState);
     }
 
     public static void EndResizableVPanel()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not ResizablePanelState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizablePanelState state)
         { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();
         }
-        Context.containerStack.Pop();
+        Context.Layout.PopContainer();
     }
 
     public static void BeginResizableHPanel(string id, ref float currentHeight, ResizableHPanelDefinition definition, float reservedLeftSpace, float reservedRightSpace, float topOffset = 0f)
@@ -2062,18 +2185,18 @@ public static partial class UI
         }
         var hboxState = new HBoxContainerState(id + "_hbox", contentStartPosition, definition.Gap);
         var panelState = new ResizableHPanelState(id, hboxState, clipPushed);
-        Context.containerStack.Push(panelState);
+        Context.Layout.PushContainer(panelState);
     }
 
     public static void EndResizableHPanel()
     {
-        if (Context.containerStack.Count == 0 || Context.containerStack.Peek() is not ResizableHPanelState state)
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizableHPanelState state)
         { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
         if (state.ClipRectWasPushed && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();
         }
-        Context.containerStack.Pop();
+        Context.Layout.PopContainer();
     }
 }
 </file>
@@ -2103,7 +2226,7 @@ public static partial class UI
 
         State.ResetFrameState(context.InputState);
 
-        Context.containerStack.Clear();
+        Context.Layout.ClearStack();
         Context.treeStateStack.Clear();
     }
 
@@ -2115,10 +2238,10 @@ public static partial class UI
             State.SetFocus(0);
         }
 
-        if (Context.containerStack.Count > 0)
+        if (Context.Layout.ContainerStackCount > 0)
         {
-            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.containerStack.Count} containers left open at EndFrame.");
-            Context.containerStack.Clear();
+            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.Layout.ContainerStackCount} containers left open at EndFrame.");
+            Context.Layout.ClearStack();
         }
         if (Context.treeStateStack.Count > 0)
         {
@@ -2165,13 +2288,6 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    /// <summary>
-    /// Renders an editable text input box.
-    /// </summary>
-    /// <param name="id">A unique identifier for the control.</param>
-    /// <param name="text">The string to be displayed and edited. This value is modified by the control.</param>
-    /// <param name="definition">The definition object describing the control's appearance and behavior.</param>
-    /// <returns>True if the text was changed during this frame; otherwise, false.</returns>
     public static bool LineEdit(string id, ref string text, LineEditDefinition definition)
     {
         if (!IsContextValid() || definition == null) return false;
@@ -2180,7 +2296,7 @@ public static partial class UI
 
         bool textChanged = lineEditInstance.UpdateAndDraw(id, ref text, definition);
 
-        Context.AdvanceLayout(definition.Size);
+        Context.Layout.AdvanceLayout(definition.Size);
         return textChanged;
     }
 }
@@ -2197,12 +2313,12 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(id);
-        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        sliderInstance.Position = Context.Layout.ApplyLayout(definition.Position);
         ApplySliderDefinition(sliderInstance, definition);
         sliderInstance.Direction = definition.HorizontalDirection;
 
         float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
-        Context.AdvanceLayout(sliderInstance.Size);
+        Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 
@@ -2210,12 +2326,12 @@ public static partial class UI
     {
         if (!IsContextValid() || definition is null) return currentValue;
         InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(id);
-        sliderInstance.Position = Context.ApplyLayout(definition.Position);
+        sliderInstance.Position = Context.Layout.ApplyLayout(definition.Position);
         ApplySliderDefinition(sliderInstance, definition);
         sliderInstance.Direction = definition.VerticalDirection;
 
         float newValue = sliderInstance.UpdateAndDraw(id, currentValue);
-        Context.AdvanceLayout(sliderInstance.Size);
+        Context.Layout.AdvanceLayout(sliderInstance.Size);
         return newValue;
     }
 }
@@ -2318,7 +2434,7 @@ public static partial class UI
         if (!IsContextValid()) return false;
 
         var intId = id.GetHashCode();
-        var position = Context.GetCurrentLayoutPosition();
+        var position = Context.Layout.GetCurrentPosition();
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
 
         InputState input = Context.InputState;
@@ -2346,7 +2462,7 @@ public static partial class UI
             rt.DrawText(text, textFormat, bounds, textBrush);
         }
 
-        Context.AdvanceLayout(size);
+        Context.Layout.AdvanceLayout(size);
         return wasClicked;
     }
 
@@ -2371,7 +2487,7 @@ public static partial class UI
         float uniformTabWidth = maxWidth + textMargin.X * 2;
         var tabSize = new Vector2(uniformTabWidth, tabHeight);
 
-        BeginHBoxContainer(id + "_hbox", Context.GetCurrentLayoutPosition(), 0);
+        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), 0);
         for (int i = 0; i < tabLabels.Length; i++)
         {
             bool wasClicked = TabButtonPrimitive(
@@ -2421,7 +2537,7 @@ public static partial class UI
         var style = treeState.Style;
         var renderTarget = Context.RenderTarget;
 
-        var startLayoutPos = Context.GetCurrentLayoutPosition();
+        var startLayoutPos = Context.Layout.GetCurrentPosition();
         var brush = Resources.GetOrCreateBrush(renderTarget, style.LineColor);
         if (brush is not null)
         {
@@ -2477,7 +2593,7 @@ public static partial class UI
         }
         currentX += labelWidth;
 
-        Context.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
+        Context.Layout.AdvanceLayout(new Vector2((currentX - nodeRowStartPos.X), style.RowHeight));
 
         if (node.IsExpanded && node.Children.Count > 0)
         {
@@ -2494,7 +2610,7 @@ public static partial class UI
 </file>
 
 <file path="Core\UIContext.cs">
-using System.Numerics;
+using System.Collections.Generic;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 
@@ -2508,8 +2624,8 @@ public class UIContext
     public InputState InputState { get; }
     public UIResources Resources { get; }
 
-    // Per-frame layout state
-    internal readonly Stack<object> containerStack = new();
+    // Layout and state management
+    public UILayoutManager Layout { get; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
 
     public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources)
@@ -2518,118 +2634,7 @@ public class UIContext
         DWriteFactory = dwriteFactory;
         InputState = inputState;
         Resources = resources;
-    }
-
-    // --- Layout Helpers ---
-    internal Vector2 ApplyLayout(Vector2 defaultPosition)
-    {
-        return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : defaultPosition;
-    }
-
-    internal void AdvanceLayout(Vector2 elementSize)
-    {
-        if (IsInLayoutContainer())
-        {
-            AdvanceLayoutCursor(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y)));
-        }
-    }
-
-    public bool IsInLayoutContainer() => containerStack.Count > 0;
-
-    public Vector2 GetCurrentLayoutPosition()
-    {
-        return IsInLayoutContainer() ? GetCurrentLayoutPositionInternal() : Vector2.Zero;
-    }
-
-    private Vector2 GetCurrentLayoutPositionInternal()
-    {
-        if (containerStack.Count == 0)
-        {
-            return Vector2.Zero;
-        }
-
-        return containerStack.Peek() switch
-        {
-            HBoxContainerState hbox => hbox.CurrentPosition,
-            VBoxContainerState vbox => vbox.CurrentPosition,
-            GridContainerState grid => grid.CurrentDrawPosition,
-            ResizablePanelState panel => panel.InnerVBox.CurrentPosition,
-            ResizableHPanelState hpanel => hpanel.InnerHBox.CurrentPosition,
-            _ => Vector2.Zero,
-        };
-    }
-
-    internal void AdvanceLayoutCursor(Vector2 elementSize)
-    {
-        if (containerStack.Count == 0) return;
-        object currentContainerState = containerStack.Peek();
-        switch (currentContainerState)
-        {
-            case HBoxContainerState hbox:
-                {
-                    if (elementSize.Y > hbox.MaxElementHeight) hbox.MaxElementHeight = elementSize.Y;
-                    hbox.AccumulatedWidth += elementSize.X;
-                    if (hbox.ElementCount > 0)
-                    {
-                        hbox.AccumulatedWidth += hbox.Gap;
-                    }
-                    float advanceX = elementSize.X + hbox.Gap;
-                    hbox.CurrentPosition = new Vector2(hbox.CurrentPosition.X + advanceX, hbox.CurrentPosition.Y);
-                    hbox.ElementCount++;
-                    break;
-                }
-            case VBoxContainerState vbox:
-                {
-                    if (elementSize.X > vbox.MaxElementWidth) vbox.MaxElementWidth = elementSize.X;
-                    vbox.AccumulatedHeight += elementSize.Y;
-                    if (vbox.ElementCount > 0)
-                    {
-                        vbox.AccumulatedHeight += vbox.Gap;
-                    }
-                    float advanceY = elementSize.Y + vbox.Gap;
-                    vbox.CurrentPosition = new Vector2(vbox.CurrentPosition.X, vbox.CurrentPosition.Y + advanceY);
-                    vbox.ElementCount++;
-                    break;
-                }
-            case GridContainerState grid:
-                {
-                    grid.MoveToNextCell(elementSize);
-                    break;
-                }
-            case ResizablePanelState panel:
-                {
-                    var innerVBox = panel.InnerVBox;
-                    if (elementSize.X > innerVBox.MaxElementWidth) innerVBox.MaxElementWidth = elementSize.X;
-                    innerVBox.AccumulatedHeight += elementSize.Y;
-                    if (innerVBox.ElementCount > 0)
-                    {
-                        innerVBox.AccumulatedHeight += innerVBox.Gap;
-                    }
-                    float advanceY = elementSize.Y + innerVBox.Gap;
-                    innerVBox.CurrentPosition = new Vector2(innerVBox.CurrentPosition.X, innerVBox.CurrentPosition.Y + advanceY);
-                    innerVBox.ElementCount++;
-                    break;
-                }
-            case ResizableHPanelState hpanel:
-                {
-                    var innerHBox = hpanel.InnerHBox;
-                    if (elementSize.Y > innerHBox.MaxElementHeight) innerHBox.MaxElementHeight = elementSize.Y;
-                    innerHBox.AccumulatedWidth += elementSize.X;
-                    if (innerHBox.ElementCount > 0)
-                    {
-                        innerHBox.AccumulatedWidth += innerHBox.Gap;
-                    }
-                    float advanceX = elementSize.X + innerHBox.Gap;
-                    innerHBox.CurrentPosition = new Vector2(innerHBox.CurrentPosition.X + advanceX, innerHBox.CurrentPosition.Y);
-                    innerHBox.ElementCount++;
-                    break;
-                }
-            default:
-                {
-                    Console.WriteLine("Error: AdvanceLayoutCursor called with unexpected container type.");
-                    break;
-                }
-        }
+        Layout = new UILayoutManager();
     }
 }
 </file>
@@ -4182,7 +4187,7 @@ internal class LineEdit
         var theme = definition.Theme ?? state.GetOrCreateElement<ButtonStylePack>(id + "_theme");
         var input = context.InputState;
 
-        var position = context.ApplyLayout(definition.Position);
+        var position = context.Layout.ApplyLayout(definition.Position);
         Rect bounds = new(position.X, position.Y, definition.Size.X, definition.Size.Y);
 
         bool isFocused = state.FocusedElementId == intId;
@@ -4978,7 +4983,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.BeginResizableVPanel("left_panel", ref leftPanelWidth, vPanelDef, HAlignment.Left, menuBarHeight);
 
             // Wrap tree in a VBox with 0 gap to ensure lines connect correctly
-            UI.BeginVBoxContainer("tree_vbox", UI.Context.GetCurrentLayoutPosition(), 0);
+            UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
             UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
             if (clickedNode is not null)
             {
@@ -5073,7 +5078,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             var actionNames = _inputMap.Keys.ToList();
 
             // --- Actions and Bindings ---
-            UI.BeginVBoxContainer("actions_list_vbox", UI.Context.GetCurrentLayoutPosition(), 8);
+            UI.BeginVBoxContainer("actions_list_vbox", UI.Context.Layout.GetCurrentPosition(), 8);
             for (int i = 0; i < actionNames.Count; i++)
             {
                 string actionName = actionNames[i];
@@ -5081,7 +5086,7 @@ public class MyDirectUIApp : Direct2DAppWindow
                 var bindings = _inputMap[actionName];
 
                 // Action Header
-                UI.BeginHBoxContainer($"action_header_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
+                UI.BeginHBoxContainer($"action_header_{actionName}", UI.Context.Layout.GetCurrentPosition(), 5);
                 UI.Button($"action_label_{actionName}", new ButtonDefinition { Text = actionName, Disabled = true, Theme = _labelStyle, AutoWidth = true });
                 if (UI.Button($"remove_action_{actionName}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(20, 20) }))
                 {
@@ -5092,13 +5097,13 @@ public class MyDirectUIApp : Direct2DAppWindow
                 UI.EndHBoxContainer();
 
                 // Bindings List (indented)
-                UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 0);
+                UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.Layout.GetCurrentPosition(), 0);
                 UI.Button($"indent_spacer_for_{actionName}", new ButtonDefinition { Size = new Vector2(20, 0), Disabled = true, Theme = _labelStyle });
-                UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.GetCurrentLayoutPosition(), 5);
+                UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.Layout.GetCurrentPosition(), 5);
                 for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
-                    UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.GetCurrentLayoutPosition(), 5);
+                    UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.Layout.GetCurrentPosition(), 5);
                     if (UI.Button($"binding_type_{actionName}_{j}", new ButtonDefinition { Text = binding.Type.ToString(), Theme = _editorButtonStyle, Size = new Vector2(100, 24) }))
                     {
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
@@ -5131,7 +5136,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             UI.EndVBoxContainer();
 
             // --- Utility Buttons ---
-            UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.GetCurrentLayoutPosition(), 10);
+            UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.Layout.GetCurrentPosition(), 10);
             if (UI.Button("add_action", new ButtonDefinition { Text = "Add New Action", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
             {
                 string newActionName;

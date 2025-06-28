@@ -34,7 +34,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     private readonly ButtonStylePack _removeButtonStyle;
     private readonly ButtonStylePack _utilityButtonStyle;
     private readonly LineEditDefinition _lineEditDef;
-    // --- END NEW STATE ---
+
+    // --- NEW: Reusable definition to reduce GC pressure ---
+    private readonly ButtonDefinition _reusableButtonDef = new();
 
 
     private readonly TreeNode<string> _fileRoot;
@@ -85,7 +87,6 @@ public class MyDirectUIApp : Direct2DAppWindow
         _removeButtonStyle.Hover.FillColor = new Color4(0.7f, 0.3f, 0.3f, 1f);
         _removeButtonStyle.Pressed.FillColor = new Color4(0.9f, 0.4f, 0.4f, 1f);
 
-        // CORRECTED: AutoWidth and TextMargin are part of ButtonDefinition, not ButtonStylePack
         _utilityButtonStyle = new ButtonStylePack { FontSize = 14, Roundness = 0.2f };
         _utilityButtonStyle.Normal.FillColor = DefaultTheme.NormalFill;
         _utilityButtonStyle.Hover.FillColor = DefaultTheme.HoverFill;
@@ -368,6 +369,9 @@ public class MyDirectUIApp : Direct2DAppWindow
         }
         else if (_projectWindowActiveTab == 1 && _inputMap != null) // Input Map Tab
         {
+            // --- REFACTOR START: Use reusable definition object to avoid GC pressure ---
+            var buttonDef = _reusableButtonDef;
+
             // Main VBox for the entire editor content
             UI.BeginVBoxContainer("input_editor_main_vbox", new Vector2(paddedContentRect.X, paddedContentRect.Y), 15);
 
@@ -384,8 +388,23 @@ public class MyDirectUIApp : Direct2DAppWindow
 
                 // Action Header
                 UI.BeginHBoxContainer($"action_header_{actionName}", UI.Context.Layout.GetCurrentPosition(), 5);
-                UI.Button($"action_label_{actionName}", new ButtonDefinition { Text = actionName, Disabled = true, Theme = _labelStyle, AutoWidth = true });
-                if (UI.Button($"remove_action_{actionName}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(20, 20) }))
+
+                // Use reusable def for the action name label (a disabled button)
+                buttonDef.Text = actionName;
+                buttonDef.Theme = _labelStyle;
+                buttonDef.Disabled = true;
+                buttonDef.AutoWidth = true;
+                buttonDef.TextMargin = null; // Reset
+                buttonDef.Size = default; // Reset
+                UI.Button($"action_label_{actionName}", buttonDef);
+
+                // Use reusable def for the remove action button
+                buttonDef.Text = "x";
+                buttonDef.Theme = _removeButtonStyle;
+                buttonDef.Size = new Vector2(20, 20);
+                buttonDef.Disabled = false;
+                buttonDef.AutoWidth = false;
+                if (UI.Button($"remove_action_{actionName}", buttonDef))
                 {
                     _inputMap.Remove(actionName);
                     _inputMapDirty = true;
@@ -395,18 +414,32 @@ public class MyDirectUIApp : Direct2DAppWindow
 
                 // Bindings List (indented)
                 UI.BeginHBoxContainer($"bindings_outer_hbox_{actionName}", UI.Context.Layout.GetCurrentPosition(), 0);
-                UI.Button($"indent_spacer_for_{actionName}", new ButtonDefinition { Size = new Vector2(20, 0), Disabled = true, Theme = _labelStyle });
+
+                // Spacer
+                buttonDef.Size = new Vector2(20, 0);
+                buttonDef.Theme = _labelStyle;
+                buttonDef.Disabled = true;
+                buttonDef.Text = ""; // Spacer has no text
+                UI.Button($"indent_spacer_for_{actionName}", buttonDef);
+
                 UI.BeginVBoxContainer($"bindings_vbox_{actionName}", UI.Context.Layout.GetCurrentPosition(), 5);
                 for (int j = 0; j < bindings.Count; j++)
                 {
                     var binding = bindings[j];
                     UI.BeginHBoxContainer($"binding_row_{actionName}_{j}", UI.Context.Layout.GetCurrentPosition(), 5);
-                    if (UI.Button($"binding_type_{actionName}_{j}", new ButtonDefinition { Text = binding.Type.ToString(), Theme = _editorButtonStyle, Size = new Vector2(100, 24) }))
+
+                    // Binding type button
+                    buttonDef.Text = binding.Type.ToString();
+                    buttonDef.Theme = _editorButtonStyle;
+                    buttonDef.Size = new Vector2(100, 24);
+                    buttonDef.Disabled = false;
+                    if (UI.Button($"binding_type_{actionName}_{j}", buttonDef))
                     {
                         binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
                         _inputMapDirty = true;
                     }
 
+                    // LineEdit for key/button name
                     string tempKeyOrButton = binding.KeyOrButton;
                     if (UI.LineEdit($"binding_key_{actionName}_{j}", ref tempKeyOrButton, _lineEditDef))
                     {
@@ -414,7 +447,11 @@ public class MyDirectUIApp : Direct2DAppWindow
                         _inputMapDirty = true;
                     }
 
-                    if (UI.Button($"remove_binding_{actionName}_{j}", new ButtonDefinition { Text = "x", Theme = _removeButtonStyle, Size = new Vector2(24, 24) }))
+                    // Remove binding button
+                    buttonDef.Text = "x";
+                    buttonDef.Theme = _removeButtonStyle;
+                    buttonDef.Size = new Vector2(24, 24);
+                    if (UI.Button($"remove_binding_{actionName}_{j}", buttonDef))
                     {
                         bindings.RemoveAt(j);
                         _inputMapDirty = true;
@@ -422,7 +459,12 @@ public class MyDirectUIApp : Direct2DAppWindow
                     }
                     UI.EndHBoxContainer();
                 }
-                if (UI.Button($"add_binding_to_{actionName}", new ButtonDefinition { Text = "Add Binding", Theme = _editorButtonStyle, Size = new Vector2(100, 24) }))
+
+                // Add Binding button
+                buttonDef.Text = "Add Binding";
+                buttonDef.Theme = _editorButtonStyle;
+                buttonDef.Size = new Vector2(100, 24);
+                if (UI.Button($"add_binding_to_{actionName}", buttonDef))
                 {
                     bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
                     _inputMapDirty = true;
@@ -434,27 +476,51 @@ public class MyDirectUIApp : Direct2DAppWindow
 
             // --- Utility Buttons ---
             UI.BeginHBoxContainer("input_editor_utils_hbox", UI.Context.Layout.GetCurrentPosition(), 10);
-            if (UI.Button("add_action", new ButtonDefinition { Text = "Add New Action", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
+
+            // Add New Action button
+            buttonDef.Text = "Add New Action";
+            buttonDef.Theme = _utilityButtonStyle;
+            buttonDef.AutoWidth = true;
+            buttonDef.TextMargin = new Vector2(10, 5);
+            buttonDef.Size = default; // Reset
+            buttonDef.Disabled = false;
+            if (UI.Button("add_action", buttonDef))
             {
                 string newActionName;
                 do { newActionName = $"NewAction_{_newActionCounter++}"; } while (_inputMap.ContainsKey(newActionName));
                 _inputMap[newActionName] = new List<InputBinding>();
                 _inputMapDirty = true;
             }
-            var applyDef = new ButtonDefinition { Text = "Apply Changes", Theme = _utilityButtonStyle, Disabled = !_inputMapDirty, AutoWidth = true, TextMargin = new Vector2(10, 5) };
-            if (UI.Button("apply_changes", applyDef))
+
+            // Apply Changes button
+            buttonDef.Text = "Apply Changes";
+            buttonDef.Theme = _utilityButtonStyle;
+            buttonDef.Disabled = !_inputMapDirty;
+            // AutoWidth and TextMargin are already set correctly from the previous button
+            if (UI.Button("apply_changes", buttonDef))
             {
                 InputMapManager.Save(_inputMapPath, _inputMap);
                 _inputMapDirty = false;
             }
-            if (UI.Button("revert_changes", new ButtonDefinition { Text = "Revert", Theme = _utilityButtonStyle, AutoWidth = true, TextMargin = new Vector2(10, 5) }))
+
+            // Revert button
+            buttonDef.Text = "Revert";
+            buttonDef.Disabled = false;
+            // AutoWidth and TextMargin are still correct
+            if (UI.Button("revert_changes", buttonDef))
             {
                 _inputMap = InputMapManager.Load(_inputMapPath);
                 _inputMapDirty = false;
             }
+
+            // Clean up sticky properties for next frame/other UI
+            buttonDef.AutoWidth = false;
+            buttonDef.TextMargin = null;
+
             UI.EndHBoxContainer();
 
             UI.EndVBoxContainer();
+            // --- REFACTOR END ---
         }
 
         rt.PopAxisAlignedClip();
