@@ -68,9 +68,9 @@ public class InputMapEditor
         {
             // --- Scrollable list of actions and bindings ---
             UI.BeginScrollableRegion("input_map_scroll", scrollableSize);
-            // The content is now inside a VBox managed by BeginScrollableRegion.
-            // We can nest another one for spacing if desired.
-            UI.BeginVBoxContainer("input_map_scroll_content_spacer", UI.Context.Layout.GetCurrentPosition(), 8);
+            // FIX: Pass the current layout position to the inner VBox so it inherits the scroll offset.
+            // Previously, this was Vector2.Zero, which caused the content to ignore the scroll container.
+            UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8); // Inner VBox for item spacing
             {
                 // Use a standard for-loop for safe removal from the cache during iteration
                 for (int i = 0; i < _actionNamesCache.Count; i++)
@@ -85,7 +85,7 @@ public class InputMapEditor
                     }
                 }
             }
-            UI.EndVBoxContainer(); // End spacer VBox
+            UI.EndVBoxContainer();
             UI.EndScrollableRegion();
 
             if (actionToRemove != null)
