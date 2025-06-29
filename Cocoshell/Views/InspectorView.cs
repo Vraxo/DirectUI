@@ -122,30 +122,39 @@ public class InspectorView
 
     private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
     {
-        float labelCellWidth = (availableWidth - GridGap) * 0.4f;
-        float valueCellWidth = (availableWidth - GridGap) * 0.6f;
-        string gridId = $"grid_prop_{node.Name}_{prop.Name}";
+        float labelWidth = (availableWidth - GridGap) * 0.4f;
+        float editorWidth = (availableWidth - GridGap) * 0.6f;
+        string hboxId = $"hbox_prop_{node.Name}_{prop.Name}";
+        object? value;
 
-        UI.BeginGridContainer(gridId, UI.Context.Layout.GetCurrentPosition(), new(availableWidth, 24), 2, new(GridGap, 0));
+        try
+        {
+            value = prop.GetValue(node, null);
+        }
+        catch (Exception ex)
+        {
+            UI.Label($"prop_error_{prop.Name}", $"Error getting value: {ex.Message}");
+            return;
+        }
+
+        UI.BeginHBoxContainer(hboxId, UI.Context.Layout.GetCurrentPosition(), GridGap);
         try
         {
             UI.Label(
                 $"prop_label_{prop.Name}",
                 SplitPascalCase(prop.Name),
-                size: new(labelCellWidth, 24),
+                size: new(labelWidth, 24),
                 textAlignment: new(HAlignment.Left, VAlignment.Center)
             );
 
-            object? value = prop.GetValue(node, null);
-
-            DrawPropertyEditor(node, prop, value, valueCellWidth);
+            DrawPropertyEditor(node, prop, value, editorWidth);
         }
-        catch (Exception ex)
+        finally
         {
-            UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
+            UI.EndHBoxContainer();
         }
-        UI.EndGridContainer();
     }
+
 
     private void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
