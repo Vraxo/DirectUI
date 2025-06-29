@@ -68,7 +68,9 @@ public class InputMapEditor
         {
             // --- Scrollable list of actions and bindings ---
             UI.BeginScrollableRegion("input_map_scroll", scrollableSize);
-            UI.BeginVBoxContainer("input_map_scroll_content", Vector2.Zero, 8); // Inner VBox for item spacing
+            // FIX: Pass the current layout position to the inner VBox so it inherits the scroll offset.
+            // Previously, this was Vector2.Zero, which caused the content to ignore the scroll container.
+            UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8); // Inner VBox for item spacing
             {
                 // Use a standard for-loop for safe removal from the cache during iteration
                 for (int i = 0; i < _actionNamesCache.Count; i++)
@@ -188,18 +190,18 @@ public class InputMapEditor
             if (UI.Button("add_new_action", "Add New Action", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 string newActionName;
-                
-                do 
-                { 
-                    newActionName = $"NewAction_{_newActionCounter++}"; 
-                } 
+
+                do
+                {
+                    newActionName = $"NewAction_{_newActionCounter++}";
+                }
                 while (_inputMap.ContainsKey(newActionName));
-                
+
                 _inputMap[newActionName] = [];
                 UpdateActionNamesCache();
                 _inputMapDirty = true;
             }
-            
+
             if (UI.Button("apply_changes", "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 SaveChanges();

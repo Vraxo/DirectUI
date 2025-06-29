@@ -91,7 +91,7 @@ public class UILayoutManager
 
     public void BeginVBox(int id, Vector2 startPosition, float gap)
     {
-        var vboxState = GetOrCreateVBoxState(id);
+        VBoxContainerState vboxState = GetOrCreateVBoxState(id);
 
         // Reset per-frame properties
         vboxState.StartPosition = startPosition;
