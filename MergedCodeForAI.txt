@@ -2269,6 +2269,110 @@ public static partial class UI
 }
 </file>
 
+<file path="Core\UI.Label.cs">
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void Label(string id, string text, ButtonStyle? style = null, Alignment? textAlignment = null)
+    {
+        if (!IsContextValid() || string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        ButtonStyle finalStyle = style ?? new();
+        finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
+
+        Alignment finalAlignment = textAlignment 
+            ?? new(HAlignment.Left, VAlignment.Center);
+
+        Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, finalStyle);
+
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, measuredSize.X, measuredSize.Y);
+
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(measuredSize);
+            return;
+        }
+
+        DrawLabelText(
+            Context.RenderTarget,
+            Context.DWriteFactory,
+            Resources,
+            widgetBounds,
+            text,
+            finalStyle,
+            finalAlignment);
+
+        Context.Layout.AdvanceLayout(measuredSize);
+    }
+
+    private static void DrawLabelText(
+        ID2D1RenderTarget renderTarget,
+        IDWriteFactory dwriteFactory,
+        UIResources resources,
+        Rect bounds,
+        string text,
+        ButtonStyle style,
+        Alignment textAlignment)
+    {
+        ID2D1SolidColorBrush? textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
+        
+        if (textBrush is null)
+        {
+            return;
+        }
+
+        UIResources.TextLayoutCacheKey layoutKey = new(text, style, new(bounds.Width, bounds.Height), textAlignment);
+        
+        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        {
+            IDWriteTextFormat? textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
+            
+            if (textFormat is null)
+            {
+                return;
+            }
+
+            textLayout = dwriteFactory.CreateTextLayout(text, textFormat, bounds.Width, bounds.Height);
+            textLayout.TextAlignment = textAlignment.Horizontal switch
+            {
+                HAlignment.Left => TextAlignment.Leading,
+                HAlignment.Center => TextAlignment.Center,
+                HAlignment.Right => TextAlignment.Trailing,
+                _ => TextAlignment.Leading
+            };
+            textLayout.ParagraphAlignment = textAlignment.Vertical switch
+            {
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
+            };
+            resources.textLayoutCache[layoutKey] = textLayout;
+        }
+
+        float yOffsetCorrection = textAlignment.Vertical == VAlignment.Center
+            ? -1.5f 
+            : 0f;
+
+        renderTarget.DrawTextLayout(
+            new(bounds.X, bounds.Y + yOffsetCorrection),
+            textLayout, 
+            textBrush, 
+            DrawTextOptions.None);
+    }
+}
+</file>
+
 <file path="Core\UI.LineEdit.cs">
 using System.Numerics;
 using Vortice.Mathematics;
@@ -6063,148 +6167,6 @@ public class InputMapEditor
 }
 </file>
 
-<file path="MainView.cs">
-using System;
-using System.IO;
-using System.Numerics;
-using Vortice.Mathematics;
-
-namespace DirectUI;
-
-/// <summary>
-/// Encapsulates the state and drawing logic for the main application view.
-/// </summary>
-public class MainView
-{
-    // State for the main view's widgets
-    private float _sliderValue = 0.5f;
-    private float _leftPanelWidth = 250f;
-    private float _rightPanelWidth = 250f;
-    private float _bottomPanelHeight = 150f;
-    private readonly TreeNode<string> _fileRoot;
-    private readonly TreeStyle _treeStyle = new();
-
-    public MainView()
-    {
-        // Load scene data for the tree view
-        try
-        {
-            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
-            _fileRoot = File.Exists(scenePath)
-                ? SceneParser.Parse(scenePath)
-                : CreateDefaultTree("Scene file not found", scenePath);
-        }
-        catch (Exception ex)
-        {
-            _fileRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
-        }
-    }
-
-    /// <summary>
-    /// The main drawing entry point for this view.
-    /// </summary>
-    public void Draw(UIContext context, Action openProjectWindowAction)
-    {
-        DrawMenuBar(context, openProjectWindowAction);
-        DrawMainLayoutPanels(context);
-    }
-
-    private void DrawMenuBar(UIContext context, Action openProjectWindowAction)
-    {
-        float menuBarHeight = 30f;
-        var rt = context.RenderTarget;
-
-        // Draw menu bar background
-        var menuBarBackgroundBrush = UI.Resources.GetOrCreateBrush(rt, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-        var menuBarBorderBrush = UI.Resources.GetOrCreateBrush(rt, DefaultTheme.NormalBorder);
-        rt.FillRectangle(new Rect(0, 0, rt.Size.Width, menuBarHeight), menuBarBackgroundBrush);
-        rt.DrawLine(new Vector2(0, menuBarHeight - 1), new Vector2(rt.Size.Width, menuBarHeight - 1), menuBarBorderBrush, 1f);
-
-        // Define a shared style for all menu buttons using the style stack
-        UI.PushStyleVar(StyleVar.FrameRounding, 0.0f);
-        UI.PushStyleVar(StyleVar.FrameBorderSize, 0.0f);
-        UI.PushStyleColor(StyleColor.Button, Colors.Transparent);
-        UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f));
-        UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
-        UI.PushStyleColor(StyleColor.Text, new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f));
-
-        UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
-        if (MenuBarButton("file_button", "File")) { /* File logic */ }
-        if (MenuBarButton("project_button", "Project"))
-        {
-            openProjectWindowAction?.Invoke();
-        }
-        if (MenuBarButton("edit_button", "Edit")) { /* Edit logic */ }
-        if (MenuBarButton("view_button", "View")) { /* View logic */ }
-        if (MenuBarButton("help_button", "Help")) { /* Help logic */ }
-        UI.EndHBoxContainer();
-
-        UI.PopStyleColor(4); // Pop all 4 colors
-        UI.PopStyleVar(2);   // Pop both style vars
-    }
-
-    private void DrawMainLayoutPanels(UIContext context)
-    {
-        float menuBarHeight = 30f;
-        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
-
-        // --- Left Panel (Scene Tree) ---
-        UI.BeginResizableVPanel("left_panel", ref _leftPanelWidth, HAlignment.Left, menuBarHeight,
-            minWidth: 150, maxWidth: 400, padding: new Vector2(10, 10), gap: 10, panelStyle: panelStyle);
-        {
-            UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
-            UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
-            if (clickedNode is not null) Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
-            UI.EndVBoxContainer();
-        }
-        UI.EndResizableVPanel();
-
-        // --- Right Panel (Properties) ---
-        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, menuBarHeight,
-            minWidth: 150, maxWidth: 400, padding: new Vector2(10, 10), gap: 10, panelStyle: panelStyle);
-        {
-            UI.PushStyleVar(StyleVar.FrameRounding, 0.2f); // Rounded buttons in this panel
-            if (UI.Button("right_button_1", "Right Panel")) { /* ... */ }
-            if (UI.Button("right_button_2", "Another Button")) { /* ... */ }
-            UI.PopStyleVar();
-
-            _sliderValue = UI.HSlider("my_slider", _sliderValue, 0f, 1f, new Vector2(200, 20));
-        }
-        UI.EndResizableVPanel();
-
-        // --- Bottom Panel ---
-        UI.BeginResizableHPanel("bottom_panel", ref _bottomPanelHeight, _leftPanelWidth, _rightPanelWidth, menuBarHeight,
-            minHeight: 50, maxHeight: 300, padding: new Vector2(10, 10), gap: 10, panelStyle: panelStyle);
-        {
-            UI.PushStyleVar(StyleVar.FrameRounding, 0f); // Sharp buttons in this panel
-            if (UI.Button("bottom_button", "Bottom Panel Button")) { /* ... */ }
-            UI.PopStyleVar();
-        }
-        UI.EndResizableHPanel();
-    }
-
-    private bool MenuBarButton(string id, string text)
-    {
-        var menuButtonSize = new Vector2(0, 30); // Auto-width, height of menu bar
-        var menuButtonAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
-        var menuButtonTextMargin = new Vector2(10, 0);
-
-        return UI.Button(id, text, menuButtonSize, autoWidth: true, textMargin: menuButtonTextMargin, textAlignment: menuButtonAlignment);
-    }
-
-    private TreeNode<string> CreateDefaultTree(string reason, string path)
-    {
-        var root = new TreeNode<string>("Error", "Could not load scene", true);
-        root.AddChild(reason, "");
-        if (!string.IsNullOrEmpty(path))
-        {
-            root.AddChild($"Path: {path}", "");
-        }
-        return root;
-    }
-}
-</file>
-
 <file path="MyDirectUIApp.cs">
 // MyDirectUIApp.cs
 using System;
@@ -6483,6 +6445,267 @@ public static class SceneParser
         }
 
         return treeNode;
+    }
+}
+</file>
+
+<file path="Views\BottomPanelView.cs">
+namespace DirectUI;
+
+public class BottomPanelView
+{
+    public static void Draw()
+    {
+        UI.PushStyleVar(StyleVar.FrameRounding, 0f);
+        
+        if (UI.Button("bottom_button", "Bottom Panel Button"))
+        {
+
+        }
+
+        UI.PopStyleVar();
+    }
+}
+</file>
+
+<file path="Views\InspectorView.cs">
+using Vortice.DirectWrite;
+
+namespace DirectUI;
+
+public class InspectorView
+{
+    private const float PanelPadding = 10f;
+
+    public static void Draw(TreeNode<string>? selectedNode, float panelWidth)
+    {
+        ButtonStyle titleStyle = new()
+        {
+            FontWeight = FontWeight.SemiBold,
+            FontSize = 16f
+        };
+
+        UI.Label("inspector_title", "Inspector", style: titleStyle);
+
+        UI.Button("inspector_separator", "", disabled: true, size: new(0, 10));
+
+        if (selectedNode is null)
+        {
+            return;
+        }
+
+        string nodeName = selectedNode.Text;
+        float availableWidth = panelWidth - (PanelPadding * 2);
+
+        if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
+        {
+            selectedNode.Text = nodeName;
+        }
+
+        else
+        {
+            UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+        }
+    }
+}
+</file>
+
+<file path="Views\MainView.cs">
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public class MainView
+{
+    // --- Constants ---
+    private const float MenuBarHeight = 30f;
+    private const float PanelPadding = 10f;
+    private const float PanelGap = 10f;
+
+    // --- State for layout ---
+    private float _leftPanelWidth = 250f;
+    private float _rightPanelWidth = 300f;
+    private float _bottomPanelHeight = 150f;
+
+    // --- Child Views ---
+    private readonly MenuBarView _menuBarView;
+    private readonly SceneTreeView _sceneTreeView;
+    private readonly InspectorView _inspectorView;
+    private readonly BottomPanelView _bottomPanelView;
+
+    public MainView()
+    {
+        _menuBarView = new MenuBarView();
+        _sceneTreeView = new SceneTreeView();
+        _inspectorView = new InspectorView();
+        _bottomPanelView = new BottomPanelView();
+    }
+
+    public void Draw(UIContext context, Action openProjectWindowAction)
+    {
+        _menuBarView.Draw(context, openProjectWindowAction);
+        DrawMainLayoutPanels();
+    }
+
+    private void DrawMainLayoutPanels()
+    {
+        DrawLeftPanel();
+        DrawRightPanel();
+        DrawBottomPanel();
+    }
+
+    private void DrawLeftPanel()
+    {
+        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
+        var padding = new Vector2(PanelPadding, PanelPadding);
+
+        UI.BeginResizableVPanel("left_panel", ref _leftPanelWidth, HAlignment.Left, MenuBarHeight,
+            minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
+
+        _sceneTreeView.Draw();
+
+        UI.EndResizableVPanel();
+    }
+
+    private void DrawRightPanel()
+    {
+        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
+        var padding = new Vector2(PanelPadding, PanelPadding);
+
+        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
+            minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
+
+        InspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
+
+        UI.EndResizableVPanel();
+    }
+
+    private void DrawBottomPanel()
+    {
+        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
+        var padding = new Vector2(PanelPadding, PanelPadding);
+
+        UI.BeginResizableHPanel("bottom_panel", ref _bottomPanelHeight, _leftPanelWidth, _rightPanelWidth, MenuBarHeight,
+            minHeight: 50, maxHeight: 300, padding: padding, gap: PanelGap, panelStyle: panelStyle);
+
+        BottomPanelView.Draw();
+
+        UI.EndResizableHPanel();
+    }
+}
+</file>
+
+<file path="Views\MenuBarView.cs">
+using System;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public class MenuBarView
+{
+    private const float MenuBarHeight = 30f;
+
+    public void Draw(UIContext context, Action openProjectWindowAction)
+    {
+        var rt = context.RenderTarget;
+
+        ID2D1SolidColorBrush menuBarBackgroundBrush = UI.Resources.GetOrCreateBrush(rt, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
+        ID2D1SolidColorBrush menuBarBorderBrush = UI.Resources.GetOrCreateBrush(rt, DefaultTheme.NormalBorder);
+        rt.FillRectangle(new Rect(0, 0, rt.Size.Width, MenuBarHeight), menuBarBackgroundBrush);
+        rt.DrawLine(new Vector2(0, MenuBarHeight - 1), new Vector2(rt.Size.Width, MenuBarHeight - 1), menuBarBorderBrush, 1f);
+
+        // Define a shared style for all menu buttons
+        UI.PushStyleVar(StyleVar.FrameRounding, 0.0f);
+        UI.PushStyleVar(StyleVar.FrameBorderSize, 0.0f);
+        UI.PushStyleColor(StyleColor.Button, Colors.Transparent);
+        UI.PushStyleColor(StyleColor.ButtonHovered, new Color4(63 / 255f, 63 / 255f, 70 / 255f, 1f));
+        UI.PushStyleColor(StyleColor.ButtonPressed, DefaultTheme.Accent);
+        UI.PushStyleColor(StyleColor.Text, new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f));
+
+        UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
+        if (MenuBarButton("file_button", "File")) { /* File logic */ }
+        if (MenuBarButton("project_button", "Project"))
+        {
+            openProjectWindowAction?.Invoke();
+        }
+        if (MenuBarButton("edit_button", "Edit")) { /* Edit logic */ }
+        if (MenuBarButton("view_button", "View")) { /* View logic */ }
+        if (MenuBarButton("help_button", "Help")) { /* Help logic */ }
+        UI.EndHBoxContainer();
+
+        UI.PopStyleColor(4);
+        UI.PopStyleVar(2);
+    }
+
+    private bool MenuBarButton(string id, string text)
+    {
+        return UI.Button(
+            id,
+            text,
+            size: new Vector2(0, MenuBarHeight),
+            autoWidth: true,
+            textMargin: new Vector2(10, 0),
+            textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
+    }
+}
+</file>
+
+<file path="Views\SceneTreeView.cs">
+using System;
+using System.IO;
+
+namespace DirectUI;
+
+public class SceneTreeView
+{
+    private readonly TreeNode<string> _fileRoot;
+    private readonly TreeStyle _treeStyle = new();
+
+    public TreeNode<string>? SelectedNode { get; private set; }
+
+    public SceneTreeView()
+    {
+        try
+        {
+            // A hardcoded path for demonstration purposes.
+            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
+            _fileRoot = File.Exists(scenePath)
+                ? SceneParser.Parse(scenePath)
+                : CreateDefaultTree("Scene file not found", scenePath);
+        }
+        catch (Exception ex)
+        {
+            _fileRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
+        }
+        SelectedNode = null;
+    }
+
+    public void Draw()
+    {
+        UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
+        UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+        if (clickedNode is not null)
+        {
+            SelectedNode = clickedNode;
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private static TreeNode<string> CreateDefaultTree(string reason, string path)
+    {
+        var root = new TreeNode<string>("Error", "Could not load scene", true);
+        root.AddChild(reason, "");
+
+        if (!string.IsNullOrEmpty(path))
+        {
+            root.AddChild($"Path: {path}", "");
+        }
+
+        return root;
     }
 }
 </file>

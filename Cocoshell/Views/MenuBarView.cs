@@ -27,28 +27,46 @@ public class MenuBarView
         UI.PushStyleColor(StyleColor.Text, new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f));
 
         UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
-        if (MenuBarButton("file_button", "File")) { /* File logic */ }
-        if (MenuBarButton("project_button", "Project"))
         {
-            openProjectWindowAction?.Invoke();
+            if (MenuBarButton("file_button", "File"))
+            {
+
+            }
+
+            if (MenuBarButton("project_button", "Project"))
+            {
+                openProjectWindowAction?.Invoke();
+            }
+
+            if (MenuBarButton("edit_button", "Edit"))
+            {
+
+            }
+
+            if (MenuBarButton("view_button", "View"))
+            {
+
+            }
+
+            if (MenuBarButton("help_button", "Help")) 
+            {
+
+            }
         }
-        if (MenuBarButton("edit_button", "Edit")) { /* Edit logic */ }
-        if (MenuBarButton("view_button", "View")) { /* View logic */ }
-        if (MenuBarButton("help_button", "Help")) { /* Help logic */ }
         UI.EndHBoxContainer();
 
         UI.PopStyleColor(4);
         UI.PopStyleVar(2);
     }
 
-    private bool MenuBarButton(string id, string text)
+    private static bool MenuBarButton(string id, string text)
     {
         return UI.Button(
             id,
             text,
-            size: new Vector2(0, MenuBarHeight),
+            size: new(0, MenuBarHeight),
             autoWidth: true,
-            textMargin: new Vector2(10, 0),
-            textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
+            textMargin: new(10, 0),
+            textAlignment: new(HAlignment.Center, VAlignment.Center));
     }
 }

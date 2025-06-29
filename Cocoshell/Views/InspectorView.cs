@@ -6,31 +6,35 @@ public class InspectorView
 {
     private const float PanelPadding = 10f;
 
-    public static void Draw(TreeNode<string>? selectedNode, float panelWidth)
+    private ButtonStyle titleStyle = new()
     {
-        ButtonStyle titleStyle = new()
-        {
-            FontWeight = FontWeight.SemiBold,
-            FontSize = 16f
-        };
+        FontWeight = FontWeight.SemiBold,
+        FontSize = 16f
+    };
 
-        UI.Label("inspector_title", "Inspector", style: titleStyle);
+    public void Draw(TreeNode<string>? selectedNode, float panelWidth)
+    {
+        float availableWidth = panelWidth - (PanelPadding * 2);
+        
+        UI.Label(
+            "inspector_title",
+            "Inspector",
+            size: new(availableWidth, 0),
+            style: titleStyle,
+            textAlignment: new(HAlignment.Center, VAlignment.Center)
+        );
 
         UI.Button("inspector_separator", "", disabled: true, size: new(0, 10));
 
-        if (selectedNode is null)
+        if (selectedNode is not null)
         {
-            return;
+            string nodeName = selectedNode.Text;
+            
+            if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
+            {
+                selectedNode.Text = nodeName;
+            }
         }
-
-        string nodeName = selectedNode.Text;
-        float availableWidth = panelWidth - (PanelPadding * 2);
-
-        if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
-        {
-            selectedNode.Text = nodeName;
-        }
-
         else
         {
             UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);

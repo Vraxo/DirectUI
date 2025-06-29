@@ -64,7 +64,7 @@ public class MainView
         UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
             minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
 
-        InspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
+        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
 
         UI.EndResizableVPanel();
     }

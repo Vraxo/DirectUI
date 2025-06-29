@@ -7,7 +7,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void Label(string id, string text, ButtonStyle? style = null, Alignment? textAlignment = null)
+    public static void Label(string id, string text, Vector2? size = null, ButtonStyle? style = null, Alignment? textAlignment = null)
     {
         if (!IsContextValid() || string.IsNullOrEmpty(text))
         {
@@ -17,17 +17,30 @@ public static partial class UI
         ButtonStyle finalStyle = style ?? new();
         finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
 
-        Alignment finalAlignment = textAlignment 
+        Alignment finalAlignment = textAlignment
             ?? new(HAlignment.Left, VAlignment.Center);
 
         Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, finalStyle);
 
+        Vector2 finalSize;
+        if (size.HasValue)
+        {
+            finalSize = new Vector2(
+                size.Value.X > 0 ? size.Value.X : measuredSize.X,
+                size.Value.Y > 0 ? size.Value.Y : measuredSize.Y
+            );
+        }
+        else
+        {
+            finalSize = measuredSize;
+        }
+
         Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new(drawPos.X, drawPos.Y, measuredSize.X, measuredSize.Y);
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(measuredSize);
+            Context.Layout.AdvanceLayout(finalSize);
             return;
         }
 
@@ -40,7 +53,7 @@ public static partial class UI
             finalStyle,
             finalAlignment);
 
-        Context.Layout.AdvanceLayout(measuredSize);
+        Context.Layout.AdvanceLayout(finalSize);
     }
 
     private static void DrawLabelText(
@@ -53,18 +66,18 @@ public static partial class UI
         Alignment textAlignment)
     {
         ID2D1SolidColorBrush? textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
-        
+
         if (textBrush is null)
         {
             return;
         }
 
         UIResources.TextLayoutCacheKey layoutKey = new(text, style, new(bounds.Width, bounds.Height), textAlignment);
-        
+
         if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
         {
             IDWriteTextFormat? textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
-            
+
             if (textFormat is null)
             {
                 return;
@@ -89,13 +102,13 @@ public static partial class UI
         }
 
         float yOffsetCorrection = textAlignment.Vertical == VAlignment.Center
-            ? -1.5f 
+            ? -1.5f
             : 0f;
 
         renderTarget.DrawTextLayout(
             new(bounds.X, bounds.Y + yOffsetCorrection),
-            textLayout, 
-            textBrush, 
+            textLayout,
+            textBrush,
             DrawTextOptions.None);
     }
 }
