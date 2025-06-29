@@ -58,7 +58,7 @@ public class InputMapEditor
         UI.BeginVBoxContainer("input_map_vbox", paddedContentRect.TopLeft, 10);
         {
             // --- Scrollable list of actions and bindings ---
-            UI.BeginScrollableRegion("input_map_scroll", scrollableSize);
+            UI.BeginScrollableRegion("input_map_scroll", scrollableSize, out _);
             UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8);
             {
                 for (int i = 0; i < _actionNamesCache.Count; i++)
@@ -210,7 +210,7 @@ public class InputMapEditor
                         // Remove Binding Button
                         UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
                         UI.PushStyleColor(StyleColor.Button, new(0.5f, 0.2f, 0.2f, 1f));
-                        
+
                         if (UI.Button($"binding_remove_{actionName}_{j}", "x", size: new(24, 24)))
                         {
                             bindingToRemove = j;
@@ -231,8 +231,8 @@ public class InputMapEditor
                 // "Add Binding" button for this action
                 if (UI.Button($"add_binding_{actionName}", "Add Binding", size: new(100, 24)))
                 {
-                    bindings.Add(new() 
-                    { 
+                    bindings.Add(new()
+                    {
                         Type = BindingType.Keyboard,
                         KeyOrButton = "None"
                     });

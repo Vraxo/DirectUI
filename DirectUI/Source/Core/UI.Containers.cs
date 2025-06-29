@@ -54,9 +54,13 @@ public static partial class UI
         }
     }
 
-    public static void BeginScrollableRegion(string id, Vector2 size)
+    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth)
     {
-        if (!IsContextValid()) return;
+        if (!IsContextValid())
+        {
+            availableInnerWidth = size.X;
+            return;
+        }
 
         int intId = id.GetHashCode();
         Vector2 position = Context.Layout.GetCurrentPosition();
@@ -67,6 +71,12 @@ public static partial class UI
         scrollState.Position = position;
         scrollState.VisibleSize = size;
         scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
+
+        // Predict if a scrollbar will be needed based on the previous frame's content size.
+        // This is a common and effective pattern in immediate-mode UIs.
+        const float scrollbarThickness = 12f; // Must match the value in EndScrollableRegion
+        bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
+        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness : size.X;
 
         // Handle scroll input
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)

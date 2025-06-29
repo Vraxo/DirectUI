@@ -50,7 +50,7 @@ public class InspectorView
 
             var scrollableSize = new Vector2(availableContentWidth, scrollableHeight);
 
-            UI.BeginScrollableRegion("inspector_scroll", scrollableSize);
+            UI.BeginScrollableRegion("inspector_scroll", scrollableSize, out float innerContentWidth);
             {
                 // A VBox for the content inside the scroll region
                 UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
@@ -61,9 +61,8 @@ public class InspectorView
                     }
                     else
                     {
-                        // The scrollbar will take up some space, but for now we'll let content be clipped.
-                        // A more advanced scroll container would provide the inner content width.
-                        float innerContentWidth = availableContentWidth;
+                        // The innerContentWidth is provided by BeginScrollableRegion,
+                        // which accounts for the potential width of the scrollbar.
                         DrawNodeInfo(selectedNode, innerContentWidth);
                         DrawAllProperties(selectedNode, innerContentWidth);
                     }
