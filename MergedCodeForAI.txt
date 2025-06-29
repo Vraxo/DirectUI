@@ -5842,6 +5842,17 @@ public class TreeNode<T>
         Children.Add(child);
         return child;
     }
+
+    /// <summary>
+    /// Adds an existing TreeNode as a child of this node.
+    /// </summary>
+    /// <param name="child">The child node to add.</param>
+    /// <returns>The added child node.</returns>
+    public TreeNode<T> AddChild(TreeNode<T> child)
+    {
+        Children.Add(child);
+        return child;
+    }
 }
 </file>
 
@@ -6538,6 +6549,8 @@ public class BottomPanelView
 
 <file path="Views\InspectorView.cs">
 using System.Numerics;
+using System.Reflection;
+using Cherris;
 using Vortice.DirectWrite;
 
 namespace DirectUI;
@@ -6546,13 +6559,19 @@ public class InspectorView
 {
     private const float PanelPadding = 10f;
 
-    private ButtonStyle titleStyle = new()
+    private readonly ButtonStyle _titleStyle = new()
     {
         FontWeight = FontWeight.SemiBold,
         FontSize = 16f
     };
 
-    public void Draw(TreeNode<string>? selectedNode, float panelWidth)
+    private readonly ButtonStyle _propertyLabelStyle = new()
+    {
+        FontWeight = FontWeight.SemiBold,
+        FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
+    };
+
+    public void Draw(Node? selectedNode, float panelWidth)
     {
         float availableWidth = panelWidth - (PanelPadding * 2);
 
@@ -6560,7 +6579,7 @@ public class InspectorView
             "inspector_title",
             "Inspector",
             size: new(availableWidth, 0),
-            style: titleStyle,
+            style: _titleStyle,
             textAlignment: new(HAlignment.Center, VAlignment.Center)
         );
 
@@ -6570,42 +6589,74 @@ public class InspectorView
             return;
         }
 
-        // A VBox to layout property rows vertically.
-        UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 5f);
+        // --- Layout container for all properties ---
+        UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
         {
-            // --- Property Row for "Name" ---
-            // Use a 2-column grid for the label and the value editor.
-            float gridGap = 5f;
-            // GridContainer creates uniform columns. We calculate the width for each cell.
-            float cellWidth = (availableWidth - gridGap) / 2f;
+            // --- Node Type Display ---
+            UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
 
-            UI.BeginGridContainer(
-                id: $"grid_name_{selectedNode.GetHashCode()}",
-                position: UI.Context.Layout.GetCurrentPosition(),
-                availableSize: new Vector2(availableWidth, 24), // Height for one row.
-                numColumns: 2,
-                gap: new Vector2(gridGap, 0)
-            );
+            // --- Separator ---
+            Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
+            
+            UI.Context.RenderTarget.DrawLine(
+                linePos,
+                linePos + new Vector2(availableWidth, 0),
+                UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder), 
+                1f);
+
+            // --- Property Editors/Viewers ---
+            float gridGap = 8f;
+            float labelCellWidth = (availableWidth - gridGap) * 0.4f; // 40% for label
+            float valueCellWidth = (availableWidth - gridGap) * 0.6f; // 60% for value
+
+            // Get all public instance properties that can be read and are not indexers
+            var properties = selectedNode.GetType()
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+                .Where(p => p.CanRead && p.GetIndexParameters().Length == 0);
+
+            foreach (var prop in properties)
             {
-                // Column 1: Label
-                UI.Label(
-                    "name_label",
-                    "Name",
-                    size: new(cellWidth, 24), // Explicitly size the label to fit the cell.
-                    textAlignment: new(HAlignment.Left, VAlignment.Center)
+                // Skip some properties that aren't useful to display this way
+                if (prop.Name is "Parent" or "Children" or "AbsolutePath" or "ScaledSize")
+                    continue;
+
+                UI.BeginGridContainer(
+                    id: $"grid_prop_{selectedNode.Name}_{prop.Name}",
+                    position: UI.Context.Layout.GetCurrentPosition(),
+                    availableSize: new(availableWidth, 24),
+                    numColumns: 2,
+                    gap: new(gridGap, 0)
                 );
 
-                // Column 2: LineEdit
-                string nodeName = selectedNode.Text;
-                // The LineEdit must also be sized to fit its cell.
-                if (UI.LineEdit($"node_name_edit_{selectedNode.GetHashCode()}", ref nodeName, new(cellWidth, 24)))
+                try
                 {
-                    selectedNode.Text = nodeName;
-                }
-            }
-            UI.EndGridContainer();
+                    UI.Label(
+                        $"prop_label_{prop.Name}",
+                        prop.Name,
+                        size: new(labelCellWidth, 24),
+                        textAlignment: new(HAlignment.Left, VAlignment.Center)
+                    );
 
-            // Future properties can be added here as more grid containers...
+                    object? value = prop.GetValue(selectedNode, null);
+                    
+                    string valueString = value switch
+                    {
+                        Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
+                        bool b => b.ToString(),
+                        null => "null",
+                        _ => value.ToString() ?? "null",
+                    };
+
+                    UI.Button($"prop_value_{prop.Name}", valueString, size: new(valueCellWidth, 24), disabled: true);
+
+                }
+                catch (Exception ex)
+                {
+                    UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
+                }
+
+                UI.EndGridContainer();
+            }
         }
         UI.EndVBoxContainer();
     }
@@ -6777,52 +6828,85 @@ public class MenuBarView
 <file path="Views\SceneTreeView.cs">
 using System;
 using System.IO;
+using System.Linq;
+using System.Xml.Linq;
+using Cherris; // Reference the Cherris engine project
 
 namespace DirectUI;
 
 public class SceneTreeView
 {
-    private readonly TreeNode<string> _fileRoot;
+    private readonly TreeNode<Node> _uiTreeRoot;
     private readonly TreeStyle _treeStyle = new();
 
-    public TreeNode<string>? SelectedNode { get; private set; }
+    public Node? SelectedNode { get; private set; }
 
     public SceneTreeView()
     {
         try
         {
-            // A hardcoded path for demonstration purposes.
-            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
-            _fileRoot = File.Exists(scenePath)
-                ? SceneParser.Parse(scenePath)
-                : CreateDefaultTree("Scene file not found", scenePath);
+            // The path to the scene to load. This should eventually be user-configurable.
+            // Using a path from your provided file list as an example.
+            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
+
+            if (File.Exists(scenePath))
+            {
+                // Use the Cherris engine's PackedScene loader
+                var packedScene = new PackedScene(scenePath);
+                Node sceneRoot = packedScene.Instantiate<Node>(); // Instantiate the actual scene graph
+                _uiTreeRoot = ConvertToUITree(sceneRoot); // Create a UI representation
+            }
+            else
+            {
+                _uiTreeRoot = CreateDefaultTree("Scene file not found", scenePath);
+            }
         }
         catch (Exception ex)
         {
-            _fileRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
+            _uiTreeRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
         }
         SelectedNode = null;
+    }
+
+    /// <summary>
+    /// Recursively converts a Cherris.Node tree to a DirectUI.TreeNode tree.
+    /// The UserData of each UI node will be the actual Cherris.Node.
+    /// </summary>
+    private TreeNode<Node> ConvertToUITree(Node root)
+    {
+        // The UI TreeNode stores the actual Cherris.Node in its UserData property.
+        var uiRoot = new TreeNode<Node>(root.Name, root, root.Children.Any());
+        foreach (var child in root.Children)
+        {
+            uiRoot.AddChild(ConvertToUITree(child));
+        }
+        return uiRoot;
     }
 
     public void Draw()
     {
         UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
-        UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+        UI.Tree("file_tree", _uiTreeRoot, out var clickedNode, _treeStyle);
         if (clickedNode is not null)
         {
-            SelectedNode = clickedNode;
+            // When a node is clicked in the UI, we get the real Cherris.Node from its UserData.
+            SelectedNode = clickedNode.UserData;
         }
         UI.EndVBoxContainer();
     }
 
-    private static TreeNode<string> CreateDefaultTree(string reason, string path)
+    private static TreeNode<Node> CreateDefaultTree(string reason, string path)
     {
-        var root = new TreeNode<string>("Error", "Could not load scene", true);
-        root.AddChild(reason, "");
+        var errorNode = new Node { Name = reason };
+        var root = new TreeNode<Node>("Error", errorNode, true);
+
+        var reasonNode = new Node { Name = reason };
+        root.AddChild(reason, reasonNode);
 
         if (!string.IsNullOrEmpty(path))
         {
-            root.AddChild($"Path: {path}", "");
+            var pathNode = new Node { Name = $"Path: {path}" };
+            root.AddChild($"Path: {path}", pathNode);
         }
 
         return root;

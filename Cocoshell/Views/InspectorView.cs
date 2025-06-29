@@ -1,8 +1,6 @@
-﻿using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Reflection;
-using System.Xml.Linq;
-using Cherris; // Reference the Cherris engine project
+using Cherris;
 using Vortice.DirectWrite;
 
 namespace DirectUI;
@@ -48,8 +46,13 @@ public class InspectorView
             UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
 
             // --- Separator ---
-            var linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
-            UI.Context.RenderTarget.DrawLine(linePos, linePos + new Vector2(availableWidth, 0), UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder), 1f);
+            Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
+
+            UI.Context.RenderTarget.DrawLine(
+                linePos,
+                linePos + new Vector2(availableWidth, 0),
+                UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder),
+                1f);
 
             // --- Property Editors/Viewers ---
             float gridGap = 8f;
@@ -70,14 +73,13 @@ public class InspectorView
                 UI.BeginGridContainer(
                     id: $"grid_prop_{selectedNode.Name}_{prop.Name}",
                     position: UI.Context.Layout.GetCurrentPosition(),
-                    availableSize: new Vector2(availableWidth, 24),
+                    availableSize: new(availableWidth, 24),
                     numColumns: 2,
-                    gap: new Vector2(gridGap, 0)
+                    gap: new(gridGap, 0)
                 );
 
                 try
                 {
-                    // Column 1: Property Name Label
                     UI.Label(
                         $"prop_label_{prop.Name}",
                         prop.Name,
@@ -85,22 +87,31 @@ public class InspectorView
                         textAlignment: new(HAlignment.Left, VAlignment.Center)
                     );
 
-                    // Column 2: Property Value (as a simple label for now)
                     object? value = prop.GetValue(selectedNode, null);
-                    string valueString;
 
-                    // Custom formatting for common types
-                    switch (value)
+                    // Use Checkbox for writable boolean properties
+                    if (prop.PropertyType == typeof(bool) && prop.CanWrite)
                     {
-                        case Vector2 v: valueString = $"X:{v.X:F2}, Y:{v.Y:F2}"; break;
-                        case bool b: valueString = b.ToString(); break;
-                        case null: valueString = "null"; break;
-                        default: valueString = value.ToString() ?? "null"; break;
+                        bool isChecked = (bool)(value ?? false);
+                        // The label is in the first column, so pass empty string here.
+                        if (UI.Checkbox($"prop_value_edit_{prop.Name}", "", ref isChecked))
+                        {
+                            prop.SetValue(selectedNode, isChecked);
+                            // A more robust system would flag the scene as dirty
+                        }
                     }
+                    else // For all other properties (including readonly bools), display as text
+                    {
+                        string valueString = value switch
+                        {
+                            Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
+                            bool b => b.ToString(),
+                            null => "null",
+                            _ => value.ToString() ?? "null",
+                        };
 
-                    // A disabled button makes a good-looking, non-interactive label field
-                    UI.Button($"prop_value_{prop.Name}", valueString, size: new(valueCellWidth, 24), disabled: true);
-
+                        UI.Button($"prop_value_display_{prop.Name}", valueString, size: new(valueCellWidth, 24), disabled: true);
+                    }
                 }
                 catch (Exception ex)
                 {
