@@ -19,6 +19,16 @@ public class UIPersistentState
     private Action<UIContext>? _popupDrawCallback;
     private Rect _popupBounds;
 
+    // Staging area for results from the previous frame to be read in the current one.
+    private int _nextFramePopupResult;
+    private bool _nextFramePopupResultAvailable;
+    private int _nextFramePopupResultOwnerId;
+
+    public int PopupResult { get; private set; }
+    public bool PopupResultAvailable { get; private set; }
+    public int PopupResultOwnerId { get; private set; }
+
+
     public T GetOrCreateElement<T>(int id) where T : new()
     {
         if (uiElements.TryGetValue(id, out object? element) && element is T existingElement)
@@ -72,7 +82,16 @@ public class UIPersistentState
         captureAttemptedThisFrame = false;
         NonSliderElementClaimedPress = false;
 
-        // NOTE: Popup state is NOT reset here. It persists until explicitly closed.
+        // At the start of the frame, transfer the popup result from the previous frame
+        // to the current frame's readable state.
+        PopupResult = _nextFramePopupResult;
+        PopupResultAvailable = _nextFramePopupResultAvailable;
+        PopupResultOwnerId = _nextFramePopupResultOwnerId;
+
+        // Clear the "next frame" state, making it ready for this frame's popups to write to.
+        _nextFramePopupResult = 0;
+        _nextFramePopupResultAvailable = false;
+        _nextFramePopupResultOwnerId = 0;
     }
 
     // --- Popup Management ---
@@ -86,6 +105,14 @@ public class UIPersistentState
         _activePopupId = ownerId;
         _popupDrawCallback = drawCallback;
         _popupBounds = bounds;
+    }
+
+    public void SetPopupResult(int ownerId, int result)
+    {
+        // This sets the data that will become available at the start of the *next* frame.
+        _nextFramePopupResultOwnerId = ownerId;
+        _nextFramePopupResult = result;
+        _nextFramePopupResultAvailable = true;
     }
 
     public void ClearActivePopup()
