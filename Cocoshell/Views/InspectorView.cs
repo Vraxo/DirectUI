@@ -12,7 +12,7 @@ public class InspectorView
     private readonly ButtonStyle _titleStyle = new()
     {
         FontWeight = FontWeight.SemiBold,
-        FontSize = 16f
+        FontSize = 14f
     };
 
     private readonly ButtonStyle _propertyLabelStyle = new()

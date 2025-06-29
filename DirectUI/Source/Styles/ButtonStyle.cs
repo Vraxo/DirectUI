@@ -14,7 +14,7 @@ public class ButtonStyle : BoxStyle
 
     // Properties needed for creating IDWriteTextFormat
     public string FontName { get; set; } = "Segoe UI";
-    public float FontSize { get; set; } = 16.0f;
+    public float FontSize { get; set; } = 14.0f;
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
