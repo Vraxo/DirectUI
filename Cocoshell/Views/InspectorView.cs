@@ -33,6 +33,12 @@ public class InspectorView
         FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
     };
 
+    private class Vector2EditState
+    {
+        public string X { get; set; } = "0";
+        public string Y { get; set; } = "0";
+    }
+
     public void Draw(Node? selectedNode, float panelWidth, float panelHeight)
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
@@ -155,17 +161,87 @@ public class InspectorView
                 }
                 break;
 
-            default:
-                string valueString = value switch
+            case Vector2 v:
+                if (prop.CanWrite)
                 {
-                    Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
-                    _ => value?.ToString() ?? "null",
-                };
+                    DrawVector2Editor(node, prop, v, propId, editorWidth);
+                }
+                else
+                {
+                    UI.Button($"{propId}_display", $"X:{v.X:F2}, Y:{v.Y:F2}", size: new(editorWidth, 24), disabled: true);
+                }
+                break;
 
-                UI.Button($"{propId}_display", valueString, size: new(editorWidth, 24), disabled: true);
+            default:
+                string defaultString = value?.ToString() ?? "null";
+                UI.Button($"{propId}_display", defaultString, size: new(editorWidth, 24), disabled: true);
                 break;
         }
     }
+
+    private void DrawVector2Editor(Node node, PropertyInfo prop, Vector2 value, string baseId, float editorWidth)
+    {
+        string xId = $"{baseId}_X";
+        string yId = $"{baseId}_Y";
+        int xIntId = xId.GetHashCode();
+        int yIntId = yId.GetHashCode();
+
+        // The state must be unique per property on a specific node instance.
+        int stateId = HashCode.Combine(node.GetHashCode(), prop.Name.GetHashCode());
+        var editState = UI.State.GetOrCreateElement<Vector2EditState>(stateId);
+
+        bool isXFocused = UI.State.FocusedElementId == xIntId;
+        bool isYFocused = UI.State.FocusedElementId == yIntId;
+
+        // If not focused, update string from source vector to ensure it's in sync.
+        // Only update if parsed value differs significantly, to avoid disrupting user input on minor float variations.
+        if (!isXFocused)
+        {
+            if (!float.TryParse(editState.X, out var parsedX) || Math.Abs(parsedX - value.X) > 1e-4f)
+            {
+                editState.X = value.X.ToString("F3");
+            }
+        }
+        if (!isYFocused)
+        {
+            if (!float.TryParse(editState.Y, out var parsedY) || Math.Abs(parsedY - value.Y) > 1e-4f)
+            {
+                editState.Y = value.Y.ToString("F3");
+            }
+        }
+
+        UI.BeginHBoxContainer(baseId + "_hbox", UI.Context.Layout.GetCurrentPosition(), 5);
+        {
+            float lineEditWidth = Math.Max(0, (editorWidth - 5) / 2);
+            var lineEditSize = new Vector2(lineEditWidth, 24);
+
+            string localX = editState.X;
+            if (UI.LineEdit(xId, ref localX, lineEditSize))
+            {
+                editState.X = localX;
+                if (float.TryParse(editState.X, out var newX))
+                {
+                    prop.SetValue(node, new Vector2(newX, value.Y));
+                }
+            }
+
+            // Must re-get the value from the property, because Vector2 is a struct and
+            // the previous operation might have changed its X component.
+            var currentValue = (Vector2)prop.GetValue(node)!;
+
+            string localY = editState.Y;
+            if (UI.LineEdit(yId, ref localY, lineEditSize))
+            {
+                editState.Y = localY;
+                if (float.TryParse(editState.Y, out var newY))
+                {
+                    prop.SetValue(node, new Vector2(currentValue.X, newY));
+                }
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
 
     private static string SplitPascalCase(string input)
     {

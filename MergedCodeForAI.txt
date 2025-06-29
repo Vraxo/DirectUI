@@ -2029,9 +2029,13 @@ public static partial class UI
         }
     }
 
-    public static void BeginScrollableRegion(string id, Vector2 size)
+    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth)
     {
-        if (!IsContextValid()) return;
+        if (!IsContextValid())
+        {
+            availableInnerWidth = size.X;
+            return;
+        }
 
         int intId = id.GetHashCode();
         Vector2 position = Context.Layout.GetCurrentPosition();
@@ -2042,6 +2046,15 @@ public static partial class UI
         scrollState.Position = position;
         scrollState.VisibleSize = size;
         scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
+
+        // Predict if a scrollbar will be needed based on the previous frame's content size.
+        // This is a common and effective pattern in immediate-mode UIs.
+        const float scrollbarThickness = 12f; // Must match the value in EndScrollableRegion
+        const float scrollbarGap = 4f; // Add a small gap between content and scrollbar
+        bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
+        // If scrollbar is visible, reduce the available width by its thickness and a small gap.
+        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness - scrollbarGap : size.X;
+
 
         // Handle scroll input
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
@@ -6108,7 +6121,7 @@ public class InputMapEditor
         UI.BeginVBoxContainer("input_map_vbox", paddedContentRect.TopLeft, 10);
         {
             // --- Scrollable list of actions and bindings ---
-            UI.BeginScrollableRegion("input_map_scroll", scrollableSize);
+            UI.BeginScrollableRegion("input_map_scroll", scrollableSize, out _);
             UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8);
             {
                 for (int i = 0; i < _actionNamesCache.Count; i++)
@@ -6260,7 +6273,7 @@ public class InputMapEditor
                         // Remove Binding Button
                         UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
                         UI.PushStyleColor(StyleColor.Button, new(0.5f, 0.2f, 0.2f, 1f));
-                        
+
                         if (UI.Button($"binding_remove_{actionName}_{j}", "x", size: new(24, 24)))
                         {
                             bindingToRemove = j;
@@ -6281,8 +6294,8 @@ public class InputMapEditor
                 // "Add Binding" button for this action
                 if (UI.Button($"add_binding_{actionName}", "Add Binding", size: new(100, 24)))
                 {
-                    bindings.Add(new() 
-                    { 
+                    bindings.Add(new()
+                    {
                         Type = BindingType.Keyboard,
                         KeyOrButton = "None"
                     });
@@ -6671,6 +6684,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Text;
 using Cherris;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -6679,6 +6693,7 @@ namespace DirectUI;
 
 public class InspectorView
 {
+    private const float PanelGap = 10f; // Copied from MainView for internal layout
     private const float PanelPadding = 10f;
     private const float GridGap = 8f;
 
@@ -6699,22 +6714,44 @@ public class InspectorView
         FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
     };
 
-    public void Draw(Node? selectedNode, float panelWidth)
+    public void Draw(Node? selectedNode, float panelWidth, float panelHeight)
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
 
-        DrawHeader(availableContentWidth);
-
-        if (selectedNode is null)
+        // Use a VBox to manage the layout of the header and the scrollable area.
+        UI.BeginVBoxContainer("inspector_outer_vbox", UI.Context.Layout.GetCurrentPosition(), PanelGap);
         {
-            UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
-            return;
-        }
+            // --- Header ---
+            DrawHeader(availableContentWidth);
 
-        UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
-        {
-            DrawNodeInfo(selectedNode, availableContentWidth);
-            DrawAllProperties(selectedNode, availableContentWidth);
+            // --- Scrollable Area ---
+            // Calculate height available for the scroll region after the header and gap are accounted for.
+            Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
+            float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
+            if (scrollableHeight < 0) scrollableHeight = 0;
+
+            var scrollableSize = new Vector2(availableContentWidth, scrollableHeight);
+
+            UI.BeginScrollableRegion("inspector_scroll", scrollableSize, out float innerContentWidth);
+            {
+                // A VBox for the content inside the scroll region
+                UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                {
+                    if (selectedNode is null)
+                    {
+                        UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+                    }
+                    else
+                    {
+                        // The innerContentWidth is provided by BeginScrollableRegion,
+                        // which accounts for the potential width of the scrollbar.
+                        DrawNodeInfo(selectedNode, innerContentWidth);
+                        DrawAllProperties(selectedNode, innerContentWidth);
+                    }
+                }
+                UI.EndVBoxContainer();
+            }
+            UI.EndScrollableRegion();
         }
         UI.EndVBoxContainer();
     }
@@ -6818,7 +6855,7 @@ public class InspectorView
             return input;
         }
 
-        System.Text.StringBuilder result = new();
+        StringBuilder result = new();
 
         result.Append(input[0]);
 
@@ -6901,10 +6938,13 @@ public class MainView
         var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
         var padding = new Vector2(PanelPadding, PanelPadding);
 
-        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
-            minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
+        // Calculate the available content height inside the panel for the inspector view.
+        float panelContentHeight = UI.Context.RenderTarget.Size.Height - MenuBarHeight - (padding.Y * 2);
 
-        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
+        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
+            minWidth: 150, maxWidth: 400, padding: padding, gap: 0, panelStyle: panelStyle);
+
+        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
 
         UI.EndResizableVPanel();
     }
