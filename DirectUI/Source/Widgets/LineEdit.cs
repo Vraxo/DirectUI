@@ -206,7 +206,10 @@ internal class LineEdit
         if (textBrush == null || textLayout == null) return;
 
         var originalTransform = rt.Transform;
-        var translation = Matrix3x2.CreateTranslation(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y);
+
+        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
+        const float yOffsetCorrection = -1.5f;
+        var translation = Matrix3x2.CreateTranslation(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
         rt.Transform = translation * originalTransform;
 
         rt.DrawTextLayout(Vector2.Zero, textLayout, textBrush, DrawTextOptions.None);

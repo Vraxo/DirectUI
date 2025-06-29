@@ -198,6 +198,9 @@ public static partial class UI
             resources.textLayoutCache[layoutKey] = textLayout;
         }
 
-        renderTarget.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y), textLayout, textBrush, DrawTextOptions.None);
+        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
+        float yOffsetCorrection = (textAlignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
+
+        renderTarget.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection), textLayout, textBrush, DrawTextOptions.None);
     }
 }
