@@ -75,8 +75,11 @@ public static partial class UI
         // Predict if a scrollbar will be needed based on the previous frame's content size.
         // This is a common and effective pattern in immediate-mode UIs.
         const float scrollbarThickness = 12f; // Must match the value in EndScrollableRegion
+        const float scrollbarGap = 4f; // Add a small gap between content and scrollbar
         bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
-        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness : size.X;
+        // If scrollbar is visible, reduce the available width by its thickness and a small gap.
+        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness - scrollbarGap : size.X;
+
 
         // Handle scroll input
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)

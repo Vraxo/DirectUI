@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using System.Reflection;
+using System.Text;
 using Cherris;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -173,7 +174,7 @@ public class InspectorView
             return input;
         }
 
-        System.Text.StringBuilder result = new();
+        StringBuilder result = new();
 
         result.Append(input[0]);
 
