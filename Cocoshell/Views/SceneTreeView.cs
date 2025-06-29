@@ -1,51 +1,84 @@
 ﻿using System;
 using System.IO;
+using System.Linq;
+using System.Xml.Linq;
+using Cherris; // Reference the Cherris engine project
 
 namespace DirectUI;
 
 public class SceneTreeView
 {
-    private readonly TreeNode<string> _fileRoot;
+    private readonly TreeNode<Node> _uiTreeRoot;
     private readonly TreeStyle _treeStyle = new();
 
-    public TreeNode<string>? SelectedNode { get; private set; }
+    public Node? SelectedNode { get; private set; }
 
     public SceneTreeView()
     {
         try
         {
-            // A hardcoded path for demonstration purposes.
-            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Player.yaml";
-            _fileRoot = File.Exists(scenePath)
-                ? SceneParser.Parse(scenePath)
-                : CreateDefaultTree("Scene file not found", scenePath);
+            // The path to the scene to load. This should eventually be user-configurable.
+            // Using a path from your provided file list as an example.
+            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
+
+            if (File.Exists(scenePath))
+            {
+                // Use the Cherris engine's PackedScene loader
+                var packedScene = new PackedScene(scenePath);
+                Node sceneRoot = packedScene.Instantiate<Node>(); // Instantiate the actual scene graph
+                _uiTreeRoot = ConvertToUITree(sceneRoot); // Create a UI representation
+            }
+            else
+            {
+                _uiTreeRoot = CreateDefaultTree("Scene file not found", scenePath);
+            }
         }
         catch (Exception ex)
         {
-            _fileRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
+            _uiTreeRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
         }
         SelectedNode = null;
+    }
+
+    /// <summary>
+    /// Recursively converts a Cherris.Node tree to a DirectUI.TreeNode tree.
+    /// The UserData of each UI node will be the actual Cherris.Node.
+    /// </summary>
+    private TreeNode<Node> ConvertToUITree(Node root)
+    {
+        // The UI TreeNode stores the actual Cherris.Node in its UserData property.
+        var uiRoot = new TreeNode<Node>(root.Name, root, root.Children.Any());
+        foreach (var child in root.Children)
+        {
+            uiRoot.AddChild(ConvertToUITree(child));
+        }
+        return uiRoot;
     }
 
     public void Draw()
     {
         UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
-        UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
+        UI.Tree("file_tree", _uiTreeRoot, out var clickedNode, _treeStyle);
         if (clickedNode is not null)
         {
-            SelectedNode = clickedNode;
+            // When a node is clicked in the UI, we get the real Cherris.Node from its UserData.
+            SelectedNode = clickedNode.UserData;
         }
         UI.EndVBoxContainer();
     }
 
-    private static TreeNode<string> CreateDefaultTree(string reason, string path)
+    private static TreeNode<Node> CreateDefaultTree(string reason, string path)
     {
-        var root = new TreeNode<string>("Error", "Could not load scene", true);
-        root.AddChild(reason, "");
+        var errorNode = new Node { Name = reason };
+        var root = new TreeNode<Node>("Error", errorNode, true);
+
+        var reasonNode = new Node { Name = reason };
+        root.AddChild(reason, reasonNode);
 
         if (!string.IsNullOrEmpty(path))
         {
-            root.AddChild($"Path: {path}", "");
+            var pathNode = new Node { Name = $"Path: {path}" };
+            root.AddChild($"Path: {path}", pathNode);
         }
 
         return root;

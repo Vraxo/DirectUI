@@ -12,6 +12,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\Cherrisma\Cherris\Cherris.csproj" />
     <ProjectReference Include="..\DirectUI\DirectUI.csproj" />
   </ItemGroup>
 

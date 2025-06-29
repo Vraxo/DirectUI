@@ -33,4 +33,15 @@ public class TreeNode<T>
         Children.Add(child);
         return child;
     }
+
+    /// <summary>
+    /// Adds an existing TreeNode as a child of this node.
+    /// </summary>
+    /// <param name="child">The child node to add.</param>
+    /// <returns>The added child node.</returns>
+    public TreeNode<T> AddChild(TreeNode<T> child)
+    {
+        Children.Add(child);
+        return child;
+    }
 }
