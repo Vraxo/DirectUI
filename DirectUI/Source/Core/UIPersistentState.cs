@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -12,6 +13,11 @@ public class UIPersistentState
     // --- Persistent Element State ---
     private readonly Dictionary<int, object> uiElements = new();
     private readonly Dictionary<int, object?> _userData = new();
+
+    // --- Popup/Overlay State ---
+    private int _activePopupId;
+    private Action<UIContext>? _popupDrawCallback;
+    private Rect _popupBounds;
 
     public T GetOrCreateElement<T>(int id) where T : new()
     {
@@ -65,7 +71,30 @@ public class UIPersistentState
         InputCaptorId = 0;
         captureAttemptedThisFrame = false;
         NonSliderElementClaimedPress = false;
+
+        // NOTE: Popup state is NOT reset here. It persists until explicitly closed.
     }
+
+    // --- Popup Management ---
+    public bool IsPopupOpen => _activePopupId != 0;
+    public int ActivePopupId => _activePopupId;
+    public Rect PopupBounds => _popupBounds;
+    public Action<UIContext>? PopupDrawCallback => _popupDrawCallback;
+
+    public void SetActivePopup(int ownerId, Action<UIContext> drawCallback, Rect bounds)
+    {
+        _activePopupId = ownerId;
+        _popupDrawCallback = drawCallback;
+        _popupBounds = bounds;
+    }
+
+    public void ClearActivePopup()
+    {
+        _activePopupId = 0;
+        _popupDrawCallback = null;
+        _popupBounds = default;
+    }
+
 
     // --- Input Capture & Targeting ---
     public bool IsElementActive()
@@ -75,6 +104,11 @@ public class UIPersistentState
 
     public void SetPotentialInputTarget(int id)
     {
+        // Don't allow elements to become potential targets if a popup is open and the cursor is outside it.
+        if (IsPopupOpen && !_popupBounds.Contains(UI.Context.InputState.MousePosition))
+        {
+            return;
+        }
         PotentialInputTargetId = id;
     }
 

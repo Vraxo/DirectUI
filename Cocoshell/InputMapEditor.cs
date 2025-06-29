@@ -19,16 +19,7 @@ public class InputMapEditor
 
     // Caches
     private readonly List<string> _actionNamesCache = new();
-    private static readonly Dictionary<BindingType, string> s_bindingTypeStringCache = new();
-
-    static InputMapEditor()
-    {
-        // Pre-cache enum strings for performance.
-        foreach (BindingType val in Enum.GetValues(typeof(BindingType)))
-        {
-            s_bindingTypeStringCache[val] = val.ToString();
-        }
-    }
+    private static readonly string[] s_bindingTypeNames = Enum.GetNames(typeof(BindingType));
 
     public InputMapEditor(string inputMapPath)
     {
@@ -133,10 +124,11 @@ public class InputMapEditor
                     var binding = bindings[j];
                     UI.BeginHBoxContainer($"binding_hbox_{actionName}_{j}", UI.Context.Layout.GetCurrentPosition(), 5);
                     {
-                        // Binding Type Button
-                        if (UI.Button($"binding_type_{actionName}_{j}", s_bindingTypeStringCache[binding.Type], size: new Vector2(100, 24)))
+                        // Binding Type Combobox
+                        int selectedIndex = (int)binding.Type;
+                        if (UI.Combobox($"binding_type_{actionName}_{j}", ref selectedIndex, s_bindingTypeNames, new Vector2(100, 24)))
                         {
-                            binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
+                            binding.Type = (BindingType)selectedIndex;
                             _inputMapDirty = true;
                         }
 

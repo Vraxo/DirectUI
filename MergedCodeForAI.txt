@@ -1824,11 +1824,17 @@ public static partial class UI
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
         {
             var offset = scrollState.CurrentScrollOffset;
-            offset.Y -= Context.InputState.ScrollDelta * 20; // Adjust multiplier as needed
+            offset.Y -= Context.InputState.ScrollDelta * 20; // Apply scroll wheel input
             scrollState.CurrentScrollOffset = offset;
         }
 
-        // Begin the inner container for content layout, offset by the scroll position
+        // Clamp the offset *before* using it for layout. Use the content size from the *previous* frame for this.
+        float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
+        var clampedOffset = scrollState.CurrentScrollOffset;
+        clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
+        scrollState.CurrentScrollOffset = clampedOffset;
+
+        // Begin the inner container for content layout, offset by the now-clamped scroll position
         var contentVBoxId = HashCode.Combine(intId, "scroll_vbox");
         var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
         contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
@@ -1850,35 +1856,42 @@ public static partial class UI
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
         { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
 
-        // Finalize content size
+        // Finalize content size based on what was rendered inside the container.
+        // This new size will be used for clamping in the *next* frame.
         scrollState.ContentSize = new Vector2(scrollState.ContentVBox.MaxElementWidth, scrollState.ContentVBox.AccumulatedHeight);
 
-        // Clamp scroll offset based on final content size
-        float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
-        var offset = scrollState.CurrentScrollOffset;
-        offset.Y = Math.Clamp(offset.Y, 0, maxScrollY);
-        scrollState.CurrentScrollOffset = offset;
-
-        // Pop the main container and clip rect
+        // Pop the container and clip rect so the scrollbar can be drawn outside the content's clipped area.
         Context.Layout.PopContainer();
         Context.RenderTarget.PopAxisAlignedClip();
         Context.Layout.PopClipRect();
 
-        // Draw scrollbar if needed
+        // Draw scrollbar if needed. This will return a new, validated scroll offset.
         if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
         {
-            // The ID for the VSlider must be stable. We derive it from the scroll region's string ID.
-            string sliderIdString = scrollState.Id + "_scrollbar";
-            var sliderPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - 10, scrollState.Position.Y);
+            string scrollBarIdString = scrollState.Id + "_scrollbar";
+            float scrollbarThickness = 12f;
+            var scrollBarPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - scrollbarThickness, scrollState.Position.Y);
 
-            float scrollbarPos = VSlider(sliderIdString, scrollState.CurrentScrollOffset.Y, 0, maxScrollY,
-                new Vector2(10, scrollState.VisibleSize.Y), sliderPos);
+            // The VScrollBar handles all its own logic, including clamping the value against the new content size.
+            float newScrollY = VScrollBar(
+                id: scrollBarIdString,
+                currentScrollOffset: scrollState.CurrentScrollOffset.Y,
+                position: scrollBarPos,
+                trackHeight: scrollState.VisibleSize.Y,
+                contentHeight: scrollState.ContentSize.Y,
+                visibleHeight: scrollState.VisibleSize.Y,
+                thickness: scrollbarThickness);
 
-            offset = scrollState.CurrentScrollOffset;
-            offset.Y = scrollbarPos;
-            scrollState.CurrentScrollOffset = offset;
+            // Update the state with the value from the scrollbar for the next frame.
+            scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, newScrollY);
+        }
+        else
+        {
+            // If no scrollbar is needed, ensure the offset is zero.
+            scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, 0);
         }
 
+        // After everything, advance the main layout cursor by the size of the scroll region itself.
         Context.Layout.AdvanceLayout(scrollState.VisibleSize);
     }
 
@@ -2183,6 +2196,107 @@ public static partial class UI
 
         Context.Layout.AdvanceLayout(size);
         return textChanged;
+    }
+}
+</file>
+
+<file path="Core\UI.ScrollBar.cs">
+// Core/UI.ScrollBar.cs
+using System;
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    /// <summary>
+    /// Draws a vertical scrollbar and handles its interaction.
+    /// </summary>
+    /// <param name="id">A unique identifier for the scrollbar.</param>
+    /// <param name="currentScrollOffset">The current vertical scroll offset, which this control will modify.</param>
+    /// <param name="position">The top-left position where the scrollbar will be drawn.</param>
+    /// <param name="trackHeight">The total height of the scrollbar track.</param>
+    /// <param name="contentHeight">The total height of the content being scrolled.</param>
+    /// <param name="visibleHeight">The height of the visible portion of the content.</param>
+    /// <param name="thickness">The width of the scrollbar.</param>
+    /// <param name="theme">The style for the scrollbar's track.</param>
+    /// <param name="thumbTheme">The style for the scrollbar's draggable thumb.</param>
+    /// <returns>The new vertical scroll offset after user interaction.</returns>
+    public static float VScrollBar(
+        string id,
+        float currentScrollOffset,
+        Vector2 position,
+        float trackHeight,
+        float contentHeight,
+        float visibleHeight,
+        float thickness = 12f,
+        SliderStyle? theme = null,
+        ButtonStylePack? thumbTheme = null)
+    {
+        if (!IsContextValid()) return currentScrollOffset;
+
+        int intId = id.GetHashCode();
+        InternalScrollBarLogic scrollBarInstance = State.GetOrCreateElement<InternalScrollBarLogic>(intId);
+
+        // Configure instance
+        scrollBarInstance.Position = position;
+        scrollBarInstance.TrackLength = trackHeight;
+        scrollBarInstance.TrackThickness = thickness;
+        scrollBarInstance.IsVertical = true;
+        scrollBarInstance.ContentSize = contentHeight;
+        scrollBarInstance.VisibleSize = visibleHeight;
+        scrollBarInstance.Theme = theme ?? scrollBarInstance.Theme ?? new SliderStyle();
+        scrollBarInstance.ThumbTheme = thumbTheme ?? scrollBarInstance.ThumbTheme ?? new ButtonStylePack();
+
+        float newScrollOffset = scrollBarInstance.UpdateAndDraw(intId, currentScrollOffset);
+
+        // A scrollbar, being an overlay, does not advance the main layout cursor.
+
+        return newScrollOffset;
+    }
+
+    /// <summary>
+    /// Draws a horizontal scrollbar and handles its interaction.
+    /// </summary>
+    /// <param name="id">A unique identifier for the scrollbar.</param>
+    /// <param name="currentScrollOffset">The current horizontal scroll offset, which this control will modify.</param>
+    /// <param name="position">The top-left position where the scrollbar will be drawn.</param>
+    /// <param name="trackWidth">The total width of the scrollbar track.</param>
+    /// <param name="contentWidth">The total width of the content being scrolled.</param>
+    /// <param name="visibleWidth">The width of the visible portion of the content.</param>
+    /// <param name="thickness">The height of the scrollbar.</param>
+    /// <param name="theme">The style for the scrollbar's track.</param>
+    /// <param name="thumbTheme">The style for the scrollbar's draggable thumb.</param>
+    /// <returns>The new horizontal scroll offset after user interaction.</returns>
+    public static float HScrollBar(
+        string id,
+        float currentScrollOffset,
+        Vector2 position,
+        float trackWidth,
+        float contentWidth,
+        float visibleWidth,
+        float thickness = 12f,
+        SliderStyle? theme = null,
+        ButtonStylePack? thumbTheme = null)
+    {
+        if (!IsContextValid()) return currentScrollOffset;
+
+        int intId = id.GetHashCode();
+        InternalScrollBarLogic scrollBarInstance = State.GetOrCreateElement<InternalScrollBarLogic>(intId);
+
+        // Configure instance
+        scrollBarInstance.Position = position;
+        scrollBarInstance.TrackLength = trackWidth;
+        scrollBarInstance.TrackThickness = thickness;
+        scrollBarInstance.IsVertical = false;
+        scrollBarInstance.ContentSize = contentWidth;
+        scrollBarInstance.VisibleSize = visibleWidth;
+        scrollBarInstance.Theme = theme ?? scrollBarInstance.Theme ?? new SliderStyle();
+        scrollBarInstance.ThumbTheme = thumbTheme ?? scrollBarInstance.ThumbTheme ?? new ButtonStylePack();
+
+        float newScrollOffset = scrollBarInstance.UpdateAndDraw(intId, currentScrollOffset);
+
+        return newScrollOffset;
     }
 }
 </file>
@@ -4348,6 +4462,189 @@ internal class InternalHSliderLogic : InternalSliderLogic
         renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
         UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
         renderTarget.PopAxisAlignedClip();
+    }
+}
+</file>
+
+<file path="Widgets\InternalScrollBarLogic.cs">
+// Widgets/InternalScrollBarLogic.cs
+using System;
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+/// <summary>
+/// Internal class that encapsulates the state, logic, and drawing for a proportional scrollbar.
+/// </summary>
+internal class InternalScrollBarLogic
+{
+    // --- Configuration (set per-frame) ---
+    public Vector2 Position { get; set; }
+    public float TrackLength { get; set; }
+    public float TrackThickness { get; set; }
+    public bool IsVertical { get; set; }
+    public float ContentSize { get; set; }
+    public float VisibleSize { get; set; }
+    public SliderStyle Theme { get; set; } = new();
+    public ButtonStylePack ThumbTheme { get; set; } = new();
+
+    // --- Internal State ---
+    private int _id;
+    private bool _isThumbHovered;
+    private bool _isThumbPressed;
+    private bool _isFocused;
+    private float _dragStartMousePos;
+    private float _dragStartScrollOffset;
+
+    /// <summary>
+    /// The main update and draw entry point called by the public UI method.
+    /// </summary>
+    public float UpdateAndDraw(int id, float currentScrollOffset)
+    {
+        if (VisibleSize >= ContentSize) return 0; // No scrolling needed, offset must be 0.
+
+        _id = id;
+        var context = UI.Context;
+        var state = UI.State;
+        var input = context.InputState;
+
+        _isFocused = state.FocusedElementId == _id;
+        float newScrollOffset = HandleInput(input, currentScrollOffset);
+
+        _isThumbPressed = state.ActivelyPressedElementId == _id;
+        ThumbTheme.UpdateCurrentStyle(_isThumbHovered, _isThumbPressed, false, _isFocused);
+
+        if (context.RenderTarget != null)
+        {
+            Draw(context.RenderTarget, newScrollOffset);
+        }
+
+        return newScrollOffset;
+    }
+
+    private Rect GetTrackBounds()
+    {
+        return IsVertical
+            ? new Rect(Position.X, Position.Y, TrackThickness, TrackLength)
+            : new Rect(Position.X, Position.Y, TrackLength, TrackThickness);
+    }
+
+    private Rect GetThumbBounds(float currentScrollOffset, out float thumbLength)
+    {
+        thumbLength = 0;
+        if (VisibleSize >= ContentSize) return new Rect();
+
+        float viewRatio = VisibleSize / ContentSize;
+        thumbLength = TrackLength * viewRatio;
+        float minThumbLength = 20f; // Ensure thumb is always grabbable
+        thumbLength = Math.Max(minThumbLength, thumbLength);
+
+        float maxScrollOffset = ContentSize - VisibleSize;
+        float scrollableTrackLength = TrackLength - thumbLength;
+
+        if (scrollableTrackLength <= 0) return GetTrackBounds();
+
+        float scrollRatio = (maxScrollOffset > 0) ? currentScrollOffset / maxScrollOffset : 0;
+        float thumbOffsetInTrack = scrollableTrackLength * scrollRatio;
+
+        return IsVertical
+            ? new Rect(Position.X, Position.Y + thumbOffsetInTrack, TrackThickness, thumbLength)
+            : new Rect(Position.X + thumbOffsetInTrack, Position.Y, thumbLength, TrackThickness);
+    }
+
+    private float HandleInput(InputState input, float currentScrollOffset)
+    {
+        var state = UI.State;
+        var trackBounds = GetTrackBounds();
+        var thumbBounds = GetThumbBounds(currentScrollOffset, out float thumbLength);
+
+        _isThumbHovered = thumbBounds.Contains(input.MousePosition);
+        bool isTrackHovered = trackBounds.Contains(input.MousePosition);
+
+        if (_isThumbHovered || isTrackHovered)
+        {
+            state.SetPotentialInputTarget(_id);
+        }
+
+        _isThumbPressed = state.ActivelyPressedElementId == _id;
+
+        if (_isThumbPressed && !input.IsLeftMouseDown)
+        {
+            state.ClearActivePress(_id);
+            _isThumbPressed = false;
+        }
+
+        if (input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
+        {
+            state.SetButtonPotentialCaptorForFrame(_id);
+            state.SetFocus(_id);
+            _isThumbPressed = true;
+
+            if (_isThumbHovered)
+            {
+                _dragStartMousePos = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+                _dragStartScrollOffset = currentScrollOffset;
+            }
+            else // Clicked on track
+            {
+                float mousePosOnTrack = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+                float thumbStart = IsVertical ? thumbBounds.Y : thumbBounds.X;
+                float thumbEnd = thumbStart + thumbLength;
+
+                float pageAmount = VisibleSize;
+                if (mousePosOnTrack < thumbStart)
+                {
+                    return Math.Max(0, currentScrollOffset - pageAmount);
+                }
+                else if (mousePosOnTrack > thumbEnd)
+                {
+                    float maxScroll = ContentSize - VisibleSize;
+                    return Math.Min(maxScroll, currentScrollOffset + pageAmount);
+                }
+            }
+        }
+
+        if (_isThumbPressed && input.IsLeftMouseDown)
+        {
+            float maxScrollOffset = ContentSize - VisibleSize;
+            float scrollableTrackLength = TrackLength - thumbLength;
+            if (scrollableTrackLength <= 0) return currentScrollOffset;
+
+            float currentMousePos = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+            float mouseDelta = currentMousePos - _dragStartMousePos;
+
+            float scrollDelta = mouseDelta * (maxScrollOffset / scrollableTrackLength);
+
+            float newScrollOffset = _dragStartScrollOffset + scrollDelta;
+            return Math.Clamp(newScrollOffset, 0, maxScrollOffset);
+        }
+
+        return currentScrollOffset;
+    }
+
+    private void Draw(ID2D1RenderTarget rt, float currentScrollOffset)
+    {
+        // Draw Track
+        UI.Resources.DrawBoxStyleHelper(rt, Position,
+            IsVertical ? new Vector2(TrackThickness, TrackLength) : new Vector2(TrackLength, TrackThickness),
+            Theme.Background);
+
+        // Draw Thumb
+        var thumbBounds = GetThumbBounds(currentScrollOffset, out _);
+        if (thumbBounds.Width > 0 && thumbBounds.Height > 0)
+        {
+            var thumbStyle = new BoxStyle
+            {
+                FillColor = ThumbTheme.Current.FillColor,
+                BorderColor = ThumbTheme.Current.BorderColor,
+                BorderLength = ThumbTheme.Current.BorderLength,
+                Roundness = ThumbTheme.Current.Roundness
+            };
+            // BUG FIX: Convert Vortice.Mathematics.Rect.Size (a Size) to a System.Numerics.Vector2
+            UI.Resources.DrawBoxStyleHelper(rt, thumbBounds.TopLeft, new Vector2(thumbBounds.Width, thumbBounds.Height), thumbStyle);
+        }
     }
 }
 </file>
