@@ -1,6 +1,4 @@
-﻿// MODIFIED: Styles/BoxStyle.cs
-// Summary: Replaced BorderThickness with BorderLengthTop, BorderLengthRight, BorderLengthBottom, BorderLengthLeft. Added convenience setter BorderLength.
-using Vortice.Mathematics;
+﻿using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -25,5 +23,18 @@ public class BoxStyle
             BorderLengthBottom = value;
             BorderLengthLeft = value;
         }
+    }
+
+    public BoxStyle() { }
+
+    protected BoxStyle(BoxStyle other)
+    {
+        this.Roundness = other.Roundness;
+        this.FillColor = other.FillColor;
+        this.BorderColor = other.BorderColor;
+        this.BorderLengthTop = other.BorderLengthTop;
+        this.BorderLengthRight = other.BorderLengthRight;
+        this.BorderLengthBottom = other.BorderLengthBottom;
+        this.BorderLengthLeft = other.BorderLengthLeft;
     }
 }

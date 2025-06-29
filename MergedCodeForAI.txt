@@ -2279,7 +2279,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void Label(string id, string text, ButtonStyle? style = null, Alignment? textAlignment = null)
+    public static void Label(string id, string text, Vector2? size = null, ButtonStyle? style = null, Alignment? textAlignment = null)
     {
         if (!IsContextValid() || string.IsNullOrEmpty(text))
         {
@@ -2289,17 +2289,30 @@ public static partial class UI
         ButtonStyle finalStyle = style ?? new();
         finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
 
-        Alignment finalAlignment = textAlignment 
+        Alignment finalAlignment = textAlignment
             ?? new(HAlignment.Left, VAlignment.Center);
 
         Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, finalStyle);
 
+        Vector2 finalSize;
+        if (size.HasValue)
+        {
+            finalSize = new Vector2(
+                size.Value.X > 0 ? size.Value.X : measuredSize.X,
+                size.Value.Y > 0 ? size.Value.Y : measuredSize.Y
+            );
+        }
+        else
+        {
+            finalSize = measuredSize;
+        }
+
         Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new(drawPos.X, drawPos.Y, measuredSize.X, measuredSize.Y);
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(measuredSize);
+            Context.Layout.AdvanceLayout(finalSize);
             return;
         }
 
@@ -2312,7 +2325,7 @@ public static partial class UI
             finalStyle,
             finalAlignment);
 
-        Context.Layout.AdvanceLayout(measuredSize);
+        Context.Layout.AdvanceLayout(finalSize);
     }
 
     private static void DrawLabelText(
@@ -2325,18 +2338,18 @@ public static partial class UI
         Alignment textAlignment)
     {
         ID2D1SolidColorBrush? textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
-        
+
         if (textBrush is null)
         {
             return;
         }
 
         UIResources.TextLayoutCacheKey layoutKey = new(text, style, new(bounds.Width, bounds.Height), textAlignment);
-        
+
         if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
         {
             IDWriteTextFormat? textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
-            
+
             if (textFormat is null)
             {
                 return;
@@ -2361,13 +2374,13 @@ public static partial class UI
         }
 
         float yOffsetCorrection = textAlignment.Vertical == VAlignment.Center
-            ? -1.5f 
+            ? -1.5f
             : 0f;
 
         renderTarget.DrawTextLayout(
             new(bounds.X, bounds.Y + yOffsetCorrection),
-            textLayout, 
-            textBrush, 
+            textLayout,
+            textBrush,
             DrawTextOptions.None);
     }
 }
@@ -6477,31 +6490,35 @@ public class InspectorView
 {
     private const float PanelPadding = 10f;
 
-    public static void Draw(TreeNode<string>? selectedNode, float panelWidth)
+    private ButtonStyle titleStyle = new()
     {
-        ButtonStyle titleStyle = new()
-        {
-            FontWeight = FontWeight.SemiBold,
-            FontSize = 16f
-        };
+        FontWeight = FontWeight.SemiBold,
+        FontSize = 16f
+    };
 
-        UI.Label("inspector_title", "Inspector", style: titleStyle);
+    public void Draw(TreeNode<string>? selectedNode, float panelWidth)
+    {
+        float availableWidth = panelWidth - (PanelPadding * 2);
+        
+        UI.Label(
+            "inspector_title",
+            "Inspector",
+            size: new(availableWidth, 0),
+            style: titleStyle,
+            textAlignment: new(HAlignment.Center, VAlignment.Center)
+        );
 
         UI.Button("inspector_separator", "", disabled: true, size: new(0, 10));
 
-        if (selectedNode is null)
+        if (selectedNode is not null)
         {
-            return;
+            string nodeName = selectedNode.Text;
+            
+            if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
+            {
+                selectedNode.Text = nodeName;
+            }
         }
-
-        string nodeName = selectedNode.Text;
-        float availableWidth = panelWidth - (PanelPadding * 2);
-
-        if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
-        {
-            selectedNode.Text = nodeName;
-        }
-
         else
         {
             UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
@@ -6577,7 +6594,7 @@ public class MainView
         UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
             minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
 
-        InspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
+        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
 
         UI.EndResizableVPanel();
     }
@@ -6627,29 +6644,47 @@ public class MenuBarView
         UI.PushStyleColor(StyleColor.Text, new Color4(204 / 255f, 204 / 255f, 204 / 255f, 1f));
 
         UI.BeginHBoxContainer("menu_bar", new Vector2(5, 0), 0);
-        if (MenuBarButton("file_button", "File")) { /* File logic */ }
-        if (MenuBarButton("project_button", "Project"))
         {
-            openProjectWindowAction?.Invoke();
+            if (MenuBarButton("file_button", "File"))
+            {
+
+            }
+
+            if (MenuBarButton("project_button", "Project"))
+            {
+                openProjectWindowAction?.Invoke();
+            }
+
+            if (MenuBarButton("edit_button", "Edit"))
+            {
+
+            }
+
+            if (MenuBarButton("view_button", "View"))
+            {
+
+            }
+
+            if (MenuBarButton("help_button", "Help")) 
+            {
+
+            }
         }
-        if (MenuBarButton("edit_button", "Edit")) { /* Edit logic */ }
-        if (MenuBarButton("view_button", "View")) { /* View logic */ }
-        if (MenuBarButton("help_button", "Help")) { /* Help logic */ }
         UI.EndHBoxContainer();
 
         UI.PopStyleColor(4);
         UI.PopStyleVar(2);
     }
 
-    private bool MenuBarButton(string id, string text)
+    private static bool MenuBarButton(string id, string text)
     {
         return UI.Button(
             id,
             text,
-            size: new Vector2(0, MenuBarHeight),
+            size: new(0, MenuBarHeight),
             autoWidth: true,
-            textMargin: new Vector2(10, 0),
-            textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
+            textMargin: new(10, 0),
+            textAlignment: new(HAlignment.Center, VAlignment.Center));
     }
 }
 </file>

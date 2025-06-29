@@ -24,20 +24,17 @@ public class InspectorView
             textAlignment: new(HAlignment.Center, VAlignment.Center)
         );
 
-        UI.Button("inspector_separator", "", disabled: true, size: new(0, 10));
-
-        if (selectedNode is not null)
-        {
-            string nodeName = selectedNode.Text;
-            
-            if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
-            {
-                selectedNode.Text = nodeName;
-            }
-        }
-        else
+        if (selectedNode is null)
         {
             UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+            return;
+        }
+
+        string nodeName = selectedNode.Text;
+
+        if (UI.LineEdit("node_name_edit", ref nodeName, new(availableWidth, 24)))
+        {
+            selectedNode.Text = nodeName;
         }
     }
 }

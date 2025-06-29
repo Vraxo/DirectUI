@@ -18,4 +18,16 @@ public class ButtonStyle : BoxStyle
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
+
+    public ButtonStyle() { }
+
+    public ButtonStyle(ButtonStyle other) : base(other)
+    {
+        this.FontColor = other.FontColor;
+        this.FontName = other.FontName;
+        this.FontSize = other.FontSize;
+        this.FontWeight = other.FontWeight;
+        this.FontStyle = other.FontStyle;
+        this.FontStretch = other.FontStretch;
+    }
 }
