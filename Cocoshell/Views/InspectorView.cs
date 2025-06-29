@@ -1,13 +1,23 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
 using System.Reflection;
 using Cherris;
 using Vortice.DirectWrite;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
 public class InspectorView
 {
     private const float PanelPadding = 10f;
+    private const float GridGap = 8f;
+
+    private static readonly HashSet<string> s_ignoredProperties =
+    [
+        "Parent", "Children", "AbsolutePath", "ScaledSize"
+    ];
 
     private readonly ButtonStyle _titleStyle = new()
     {
@@ -23,15 +33,9 @@ public class InspectorView
 
     public void Draw(Node? selectedNode, float panelWidth)
     {
-        float availableWidth = panelWidth - (PanelPadding * 2);
+        float availableContentWidth = panelWidth - (PanelPadding * 2);
 
-        UI.Label(
-            "inspector_title",
-            "Inspector",
-            size: new(availableWidth, 0),
-            style: _titleStyle,
-            textAlignment: new(HAlignment.Center, VAlignment.Center)
-        );
+        DrawHeader(availableContentWidth);
 
         if (selectedNode is null)
         {
@@ -39,88 +43,103 @@ public class InspectorView
             return;
         }
 
-        // --- Layout container for all properties ---
         UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
         {
-            // --- Node Type Display ---
-            UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
+            DrawNodeInfo(selectedNode, availableContentWidth);
+            DrawAllProperties(selectedNode, availableContentWidth);
+        }
+        UI.EndVBoxContainer();
+    }
 
-            // --- Separator ---
-            Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
+    private void DrawHeader(float availableWidth)
+    {
+        UI.Label(
+            "inspector_title",
+            "Inspector",
+            size: new(availableWidth, 0),
+            style: _titleStyle,
+            textAlignment: new(HAlignment.Center, VAlignment.Center)
+        );
+    }
 
+    private void DrawNodeInfo(Node selectedNode, float availableWidth)
+    {
+        UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
+
+        Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
+        var lineBrush = UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder);
+        if (lineBrush != null)
+        {
             UI.Context.RenderTarget.DrawLine(
                 linePos,
                 linePos + new Vector2(availableWidth, 0),
-                UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder),
+                lineBrush,
                 1f);
-
-            // --- Property Editors/Viewers ---
-            float gridGap = 8f;
-            float labelCellWidth = (availableWidth - gridGap) * 0.4f; // 40% for label
-            float valueCellWidth = (availableWidth - gridGap) * 0.6f; // 60% for value
-
-            // Get all public instance properties that can be read and are not indexers
-            var properties = selectedNode.GetType()
-                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanRead && p.GetIndexParameters().Length == 0);
-
-            foreach (var prop in properties)
-            {
-                // Skip some properties that aren't useful to display this way
-                if (prop.Name is "Parent" or "Children" or "AbsolutePath" or "ScaledSize")
-                    continue;
-
-                UI.BeginGridContainer(
-                    id: $"grid_prop_{selectedNode.Name}_{prop.Name}",
-                    position: UI.Context.Layout.GetCurrentPosition(),
-                    availableSize: new(availableWidth, 24),
-                    numColumns: 2,
-                    gap: new(gridGap, 0)
-                );
-
-                try
-                {
-                    UI.Label(
-                        $"prop_label_{prop.Name}",
-                        prop.Name,
-                        size: new(labelCellWidth, 24),
-                        textAlignment: new(HAlignment.Left, VAlignment.Center)
-                    );
-
-                    object? value = prop.GetValue(selectedNode, null);
-
-                    // Use Checkbox for writable boolean properties
-                    if (prop.PropertyType == typeof(bool) && prop.CanWrite)
-                    {
-                        bool isChecked = (bool)(value ?? false);
-                        // The label is in the first column, so pass empty string here.
-                        if (UI.Checkbox($"prop_value_edit_{prop.Name}", "", ref isChecked))
-                        {
-                            prop.SetValue(selectedNode, isChecked);
-                            // A more robust system would flag the scene as dirty
-                        }
-                    }
-                    else // For all other properties (including readonly bools), display as text
-                    {
-                        string valueString = value switch
-                        {
-                            Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
-                            bool b => b.ToString(),
-                            null => "null",
-                            _ => value.ToString() ?? "null",
-                        };
-
-                        UI.Button($"prop_value_display_{prop.Name}", valueString, size: new(valueCellWidth, 24), disabled: true);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
-                }
-
-                UI.EndGridContainer();
-            }
         }
-        UI.EndVBoxContainer();
+    }
+
+    private void DrawAllProperties(Node selectedNode, float availableWidth)
+    {
+        var properties = selectedNode.GetType()
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.GetIndexParameters().Length == 0 && !s_ignoredProperties.Contains(p.Name));
+
+        foreach (var prop in properties)
+        {
+            DrawPropertyRow(selectedNode, prop, availableWidth);
+        }
+    }
+
+    private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
+    {
+        float labelCellWidth = (availableWidth - GridGap) * 0.4f;
+        float valueCellWidth = (availableWidth - GridGap) * 0.6f;
+        string gridId = $"grid_prop_{node.Name}_{prop.Name}";
+
+        UI.BeginGridContainer(gridId, UI.Context.Layout.GetCurrentPosition(), new(availableWidth, 24), 2, new(GridGap, 0));
+        try
+        {
+            UI.Label(
+                $"prop_label_{prop.Name}",
+                prop.Name,
+                size: new(labelCellWidth, 24),
+                textAlignment: new(HAlignment.Left, VAlignment.Center)
+            );
+
+            object? value = prop.GetValue(node, null);
+
+            DrawPropertyEditor(node, prop, value, valueCellWidth);
+        }
+        catch (Exception ex)
+        {
+            UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
+        }
+        UI.EndGridContainer();
+    }
+
+    private static void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
+    {
+        string propId = $"prop_value_{prop.Name}";
+
+        switch (value)
+        {
+            case bool b when prop.CanWrite:
+                bool isChecked = b;
+                if (UI.Checkbox(propId, "", ref isChecked))
+                {
+                    prop.SetValue(node, isChecked);
+                }
+                break;
+
+            default:
+                string valueString = value switch
+                {
+                    Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
+                    _ => value?.ToString() ?? "null",
+                };
+
+                UI.Button($"{propId}_display", valueString, size: new(editorWidth, 24), disabled: true);
+                break;
+        }
     }
 }

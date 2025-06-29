@@ -1,8 +1,4 @@
-﻿using System;
-using System.IO;
-using System.Linq;
-using System.Xml.Linq;
-using Cherris; // Reference the Cherris engine project
+﻿using Cherris;
 
 namespace DirectUI;
 
@@ -17,8 +13,6 @@ public class SceneTreeView
     {
         try
         {
-            // The path to the scene to load. This should eventually be user-configurable.
-            // Using a path from your provided file list as an example.
             string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
 
             if (File.Exists(scenePath))
@@ -40,10 +34,6 @@ public class SceneTreeView
         SelectedNode = null;
     }
 
-    /// <summary>
-    /// Recursively converts a Cherris.Node tree to a DirectUI.TreeNode tree.
-    /// The UserData of each UI node will be the actual Cherris.Node.
-    /// </summary>
     private TreeNode<Node> ConvertToUITree(Node root)
     {
         // The UI TreeNode stores the actual Cherris.Node in its UserData property.

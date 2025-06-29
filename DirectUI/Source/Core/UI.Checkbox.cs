@@ -11,11 +11,13 @@ public static partial class UI
 
         int intId = id.GetHashCode();
 
-        // --- Style and Sizing ---
-        // These could be replaced by a dedicated CheckboxStyle object in the future.
+        // --- Style and Sizing (UE5 Theme Adjustments) ---
         var boxSize = new Vector2(16, 16);
         var spacing = 5f;
-        var checkmarkColor = DefaultTheme.Accent;
+        // Checkmark is now pure white.
+        var checkmarkColor = Colors.White;
+        // Background is a specific dark grey.
+        var normalFillColor = new Color4(43 / 255f, 45 / 255f, 47 / 255f, 1.0f); // #2B2D2F
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
         var textStyle = new ButtonStyle { FontColor = textColor }; // Use ButtonStyle for font properties.
 
@@ -68,7 +70,8 @@ public static partial class UI
         }
         else
         {
-            boxStyle.FillColor = DefaultTheme.NormalFill;
+            // Use the specified dark grey for the normal background.
+            boxStyle.FillColor = normalFillColor;
             boxStyle.BorderColor = DefaultTheme.NormalBorder;
         }
 
@@ -84,6 +87,7 @@ public static partial class UI
         // Draw the checkmark if checked
         if (isChecked)
         {
+            // The checkmarkColor variable was changed above to pure white.
             var checkBrush = Resources.GetOrCreateBrush(rt, checkmarkColor);
             if (checkBrush != null)
             {
