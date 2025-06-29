@@ -73,6 +73,15 @@ internal class LineEdit
 
         // --- Focus Management & Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool isActive = uiState.ActivelyPressedElementId == intId;
+
+        // BUG FIX: Handle losing active press state on mouse up.
+        // Without this, the control would lock all other input after being clicked.
+        if (isActive && !input.IsLeftMouseDown)
+        {
+            uiState.ClearActivePress(intId);
+        }
+
         if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
         {
             uiState.SetFocus(intId);
