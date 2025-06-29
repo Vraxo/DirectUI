@@ -101,7 +101,7 @@ public class InspectorView
         {
             UI.Label(
                 $"prop_label_{prop.Name}",
-                prop.Name,
+                SplitPascalCase(prop.Name),
                 size: new(labelCellWidth, 24),
                 textAlignment: new(HAlignment.Left, VAlignment.Center)
             );
@@ -117,7 +117,7 @@ public class InspectorView
         UI.EndGridContainer();
     }
 
-    private static void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
+    private void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
         string propId = $"prop_value_{prop.Name}";
 
@@ -141,5 +141,29 @@ public class InspectorView
                 UI.Button($"{propId}_display", valueString, size: new(editorWidth, 24), disabled: true);
                 break;
         }
+    }
+
+    private static string SplitPascalCase(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return input;
+        }
+
+        System.Text.StringBuilder result = new();
+
+        result.Append(input[0]);
+
+        for (int i = 1; i < input.Length; i++)
+        {
+            if (char.IsUpper(input[i]))
+            {
+                result.Append(' ');
+            }
+
+            result.Append(input[i]);
+        }
+
+        return result.ToString();
     }
 }
