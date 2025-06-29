@@ -188,15 +188,23 @@ public class InputMapEditor
             if (UI.Button("add_new_action", "Add New Action", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 string newActionName;
-                do { newActionName = $"NewAction_{_newActionCounter++}"; } while (_inputMap.ContainsKey(newActionName));
-                _inputMap[newActionName] = new List<InputBinding>();
+                
+                do 
+                { 
+                    newActionName = $"NewAction_{_newActionCounter++}"; 
+                } 
+                while (_inputMap.ContainsKey(newActionName));
+                
+                _inputMap[newActionName] = [];
                 UpdateActionNamesCache();
                 _inputMapDirty = true;
             }
+            
             if (UI.Button("apply_changes", "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 SaveChanges();
             }
+
             if (UI.Button("revert_changes", "Revert", autoWidth: true, textMargin: new Vector2(10, 5)))
             {
                 RevertChanges();
@@ -217,16 +225,19 @@ public class InputMapEditor
         catch (Exception ex)
         {
             Console.WriteLine($"Failed to load input map: {ex.Message}");
-            return new Dictionary<string, List<InputBinding>>();
+            return [];
         }
     }
 
     private void UpdateActionNamesCache()
     {
         _actionNamesCache.Clear();
-        if (_inputMap != null)
+
+        if (_inputMap is null)
         {
-            _actionNamesCache.AddRange(_inputMap.Keys);
+            return;
         }
+
+        _actionNamesCache.AddRange(_inputMap.Keys);
     }
 }

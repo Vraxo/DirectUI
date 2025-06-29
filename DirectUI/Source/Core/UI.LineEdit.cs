@@ -32,11 +32,15 @@ public static partial class UI
             return false;
         }
 
+        // Get the stateless logic/drawing class instance
         var lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
+        // Get the state object for this specific line edit
+        var lineEditState = State.GetOrCreateElement<LineEditState>(HashCode.Combine(intId, "state"));
 
         bool textChanged = lineEditInstance.UpdateAndDraw(
             intId,
             ref text,
+            lineEditState, // Pass the state object to the logic class
             finalPosition,
             size,
             theme,
