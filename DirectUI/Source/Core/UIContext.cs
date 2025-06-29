@@ -11,6 +11,7 @@ public class UIContext
     public IDWriteFactory DWriteFactory { get; }
     public InputState InputState { get; }
     public UIResources Resources { get; }
+    public float DeltaTime { get; }
 
     // Layout and state management
     public UILayoutManager Layout { get; }
@@ -18,12 +19,13 @@ public class UIContext
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
 
-    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources)
+    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources, float deltaTime)
     {
         RenderTarget = renderTarget;
         DWriteFactory = dwriteFactory;
         InputState = inputState;
         Resources = resources;
+        DeltaTime = deltaTime;
         Layout = new UILayoutManager();
     }
 }

@@ -1,6 +1,7 @@
 ﻿// AppHost.cs
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Numerics;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
@@ -20,6 +21,8 @@ public class AppHost
     private readonly FpsCounter _fpsCounter;
     private readonly UIResources _uiResources;
     private readonly InputManager _inputManager;
+    private readonly Stopwatch _frameTimer = new();
+    private long _lastFrameTicks;
 
     private GraphicsDevice? _graphicsDevice;
     private IntPtr _hwnd;
@@ -34,6 +37,9 @@ public class AppHost
         _fpsCounter = new FpsCounter();
         _uiResources = new UIResources();
         _inputManager = new InputManager();
+
+        _frameTimer.Start();
+        _lastFrameTicks = _frameTimer.ElapsedTicks;
 
         // Initialize the FpsCounter once during construction.
         // The DWriteFactory is available from shared resources, which are initialized
@@ -94,6 +100,14 @@ public class AppHost
             }
         }
 
+        // Calculate delta time for the frame
+        long currentTicks = _frameTimer.ElapsedTicks;
+        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
+        _lastFrameTicks = currentTicks;
+
+        // Clamp delta time to avoid huge jumps (e.g., when debugging or window is moved)
+        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f); // Clamp to a minimum of 15 FPS
+
         _fpsCounter.Update(); // Update FPS counter once per render call.
 
         _graphicsDevice!.BeginDraw();
@@ -108,7 +122,7 @@ public class AppHost
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(rt, dwrite, inputState, _uiResources);
+            var uiContext = new UIContext(rt, dwrite, inputState, _uiResources, deltaTime);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);

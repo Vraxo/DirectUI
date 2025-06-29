@@ -103,7 +103,7 @@ internal class LineEdit
     {
         bool textChanged = false;
 
-        state.BlinkTimer += 0.016f; // Rough approximation of delta time
+        state.BlinkTimer += UI.Context.DeltaTime;
         if (state.BlinkTimer > 0.5f)
         {
             state.BlinkTimer = 0;

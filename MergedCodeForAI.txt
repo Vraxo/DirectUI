@@ -1376,6 +1376,15 @@ public abstract class Win32Window : IDisposable
 }
 </file>
 
+<file path="Containers\ComboboxState.cs">
+namespace DirectUI;
+
+internal class ComboboxState
+{
+    public bool IsOpen;
+}
+</file>
+
 <file path="Containers\GridContainerState.cs">
 using System.Numerics;
 
@@ -1749,6 +1758,52 @@ public static partial class UI
 }
 </file>
 
+<file path="Core\UI.ComboBox.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static bool Combobox(
+        string id,
+        ref int selectedIndex,
+        string[] items,
+        Vector2 size,
+        Vector2 position = default,
+        ButtonStylePack? theme = null,
+        bool disabled = false)
+    {
+        if (!IsContextValid())
+        {
+            return false;
+        }
+
+        int intId = id.GetHashCode();
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Culling check
+        if (!Context.Layout.IsRectVisible(new(drawPos.X, drawPos.Y, size.X, size.Y)))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return false;
+        }
+
+        var comboboxInstance = State.GetOrCreateElement<InternalComboboxLogic>(intId);
+        int newIndex = comboboxInstance.UpdateAndDraw(intId, selectedIndex, items, drawPos, size, theme, disabled);
+
+        bool valueChanged = newIndex != selectedIndex;
+        if (valueChanged)
+        {
+            selectedIndex = newIndex;
+        }
+
+        Context.Layout.AdvanceLayout(size);
+        return valueChanged;
+    }
+}
+</file>
+
 <file path="Core\UI.Containers.cs">
 // Core/UI.Containers.cs
 using System;
@@ -2104,11 +2159,13 @@ public static partial class UI
 
     public static void EndFrame()
     {
-        // If a click happened this frame but no UI element captured it, clear the focus.
-        if (Context.InputState.WasLeftMousePressedThisFrame && State.InputCaptorId == 0)
+        // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
+        if (Context.InputState.WasLeftMousePressedThisFrame && State.InputCaptorId == 0 && !State.IsPopupOpen)
         {
             State.SetFocus(0);
         }
+
+        HandlePopupLogic();
 
         if (Context.Layout.ContainerStackCount > 0)
         {
@@ -2126,6 +2183,28 @@ public static partial class UI
         Resources = null!;
         IsRendering = false;
     }
+
+    /// <summary>
+    /// Handles popup logic at the end of a frame, ensuring they are drawn last and closed correctly.
+    /// </summary>
+    private static void HandlePopupLogic()
+    {
+        if (!State.IsPopupOpen) return;
+
+        // If a mouse press occurred outside the popup's bounds, close the popup.
+        if (Context.InputState.WasLeftMousePressedThisFrame)
+        {
+            if (!State.PopupBounds.Contains(Context.InputState.MousePosition))
+            {
+                State.ClearActivePopup();
+                return; // Don't draw the popup since we just closed it.
+            }
+        }
+
+        // Execute the callback to draw the popup content.
+        State.PopupDrawCallback?.Invoke(Context);
+    }
+
 
     // --- Helper Methods ---
     private static bool IsContextValid()
@@ -3120,6 +3199,7 @@ public class UILayoutManager
 <file path="Core\UIPersistentState.cs">
 using System;
 using System.Collections.Generic;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -3132,6 +3212,21 @@ public class UIPersistentState
     // --- Persistent Element State ---
     private readonly Dictionary<int, object> uiElements = new();
     private readonly Dictionary<int, object?> _userData = new();
+
+    // --- Popup/Overlay State ---
+    private int _activePopupId;
+    private Action<UIContext>? _popupDrawCallback;
+    private Rect _popupBounds;
+
+    // Staging area for results from the previous frame to be read in the current one.
+    private int _nextFramePopupResult;
+    private bool _nextFramePopupResultAvailable;
+    private int _nextFramePopupResultOwnerId;
+
+    public int PopupResult { get; private set; }
+    public bool PopupResultAvailable { get; private set; }
+    public int PopupResultOwnerId { get; private set; }
+
 
     public T GetOrCreateElement<T>(int id) where T : new()
     {
@@ -3185,7 +3280,47 @@ public class UIPersistentState
         InputCaptorId = 0;
         captureAttemptedThisFrame = false;
         NonSliderElementClaimedPress = false;
+
+        // At the start of the frame, transfer the popup result from the previous frame
+        // to the current frame's readable state.
+        PopupResult = _nextFramePopupResult;
+        PopupResultAvailable = _nextFramePopupResultAvailable;
+        PopupResultOwnerId = _nextFramePopupResultOwnerId;
+
+        // Clear the "next frame" state, making it ready for this frame's popups to write to.
+        _nextFramePopupResult = 0;
+        _nextFramePopupResultAvailable = false;
+        _nextFramePopupResultOwnerId = 0;
     }
+
+    // --- Popup Management ---
+    public bool IsPopupOpen => _activePopupId != 0;
+    public int ActivePopupId => _activePopupId;
+    public Rect PopupBounds => _popupBounds;
+    public Action<UIContext>? PopupDrawCallback => _popupDrawCallback;
+
+    public void SetActivePopup(int ownerId, Action<UIContext> drawCallback, Rect bounds)
+    {
+        _activePopupId = ownerId;
+        _popupDrawCallback = drawCallback;
+        _popupBounds = bounds;
+    }
+
+    public void SetPopupResult(int ownerId, int result)
+    {
+        // This sets the data that will become available at the start of the *next* frame.
+        _nextFramePopupResultOwnerId = ownerId;
+        _nextFramePopupResult = result;
+        _nextFramePopupResultAvailable = true;
+    }
+
+    public void ClearActivePopup()
+    {
+        _activePopupId = 0;
+        _popupDrawCallback = null;
+        _popupBounds = default;
+    }
+
 
     // --- Input Capture & Targeting ---
     public bool IsElementActive()
@@ -3195,6 +3330,11 @@ public class UIPersistentState
 
     public void SetPotentialInputTarget(int id)
     {
+        // Don't allow elements to become potential targets if a popup is open and the cursor is outside it.
+        if (IsPopupOpen && !_popupBounds.Contains(UI.Context.InputState.MousePosition))
+        {
+            return;
+        }
         PotentialInputTargetId = id;
     }
 
@@ -4350,6 +4490,128 @@ public static class Button
 }
 </file>
 
+<file path="Widgets\InternalComboboxLogic.cs">
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+/// <summary>
+/// Provides the internal logic for the combobox widget, including managing popup state.
+/// </summary>
+internal class InternalComboboxLogic
+{
+    public int UpdateAndDraw(
+        int id,
+        int selectedIndex,
+        string[] items,
+        Vector2 position,
+        Vector2 size,
+        ButtonStylePack? theme,
+        bool disabled)
+    {
+        var context = UI.Context;
+        var state = UI.State;
+        var resources = UI.Resources;
+
+        int newSelectedIndex = selectedIndex;
+
+        // If a selection was made in the popup during the last frame's EndFrame,
+        // the result will be available now for us to consume.
+        if (state.PopupResultAvailable && state.PopupResultOwnerId == id)
+        {
+            newSelectedIndex = state.PopupResult;
+        }
+
+        var comboboxState = state.GetOrCreateElement<ComboboxState>(id);
+        var themeId = HashCode.Combine(id, "theme");
+        var finalTheme = theme ?? state.GetOrCreateElement<ButtonStylePack>(themeId);
+
+        // Sync local open state with global popup state
+        if (comboboxState.IsOpen && state.ActivePopupId != id)
+        {
+            comboboxState.IsOpen = false;
+        }
+
+        // The text on the button should reflect the potentially new index
+        string currentItemText = (newSelectedIndex >= 0 && newSelectedIndex < items.Length)
+            ? items[newSelectedIndex]
+            : string.Empty;
+
+        // Draw the main button
+        var bounds = new Rect(position.X, position.Y, size.X, size.Y);
+        bool clicked = UI.ButtonPrimitive(
+            id,
+            bounds,
+            currentItemText,
+            finalTheme,
+            disabled,
+            new Alignment(HAlignment.Left, VAlignment.Center),
+            Button.ActionMode.Release,
+            Button.ClickBehavior.Left,
+            new Vector2(5, 0)
+        );
+
+        if (clicked && !disabled)
+        {
+            if (comboboxState.IsOpen)
+            {
+                // If it was already open for us, clicking again closes it.
+                state.ClearActivePopup();
+                comboboxState.IsOpen = false;
+            }
+            else
+            {
+                // Request to open the popup.
+                // First, ensure any other popups are closed.
+                state.ClearActivePopup();
+
+                // Calculate popup properties
+                float popupY = position.Y + size.Y + 2;
+                float itemHeight = size.Y; // Items are same height as the button
+                float popupHeight = items.Length * itemHeight;
+                var popupBounds = new Rect(position.X, popupY, size.X, popupHeight);
+
+                // Define the draw callback for the popup, which runs at EndFrame
+                Action<UIContext> drawCallback = (ctx) =>
+                {
+                    // Draw popup background
+                    var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0f };
+                    resources.DrawBoxStyleHelper(ctx.RenderTarget, popupBounds.TopLeft, new Vector2(popupBounds.Width, popupBounds.Height), popupStyle);
+
+                    // Draw items
+                    for (int i = 0; i < items.Length; i++)
+                    {
+                        var itemBounds = new Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
+                        var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+                        itemTheme.Normal.FillColor = Colors.Transparent;
+                        itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+                        itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+                        int itemId = HashCode.Combine(id, "item", i);
+
+                        if (UI.ButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
+                        {
+                            // A selection was made. Post the result to be picked up next frame.
+                            state.SetPopupResult(id, i);
+
+                            // Close the popup.
+                            state.ClearActivePopup();
+                        }
+                    }
+                };
+
+                state.SetActivePopup(id, drawCallback, popupBounds);
+                comboboxState.IsOpen = true;
+            }
+        }
+
+        return newSelectedIndex;
+    }
+}
+</file>
+
 <file path="Widgets\InternalHSliderLogic.cs">
 using System;
 using System.Numerics;
@@ -5406,16 +5668,7 @@ public class InputMapEditor
 
     // Caches
     private readonly List<string> _actionNamesCache = new();
-    private static readonly Dictionary<BindingType, string> s_bindingTypeStringCache = new();
-
-    static InputMapEditor()
-    {
-        // Pre-cache enum strings for performance.
-        foreach (BindingType val in Enum.GetValues(typeof(BindingType)))
-        {
-            s_bindingTypeStringCache[val] = val.ToString();
-        }
-    }
+    private static readonly string[] s_bindingTypeNames = Enum.GetNames(typeof(BindingType));
 
     public InputMapEditor(string inputMapPath)
     {
@@ -5520,10 +5773,11 @@ public class InputMapEditor
                     var binding = bindings[j];
                     UI.BeginHBoxContainer($"binding_hbox_{actionName}_{j}", UI.Context.Layout.GetCurrentPosition(), 5);
                     {
-                        // Binding Type Button
-                        if (UI.Button($"binding_type_{actionName}_{j}", s_bindingTypeStringCache[binding.Type], size: new Vector2(100, 24)))
+                        // Binding Type Combobox
+                        int selectedIndex = (int)binding.Type;
+                        if (UI.Combobox($"binding_type_{actionName}_{j}", ref selectedIndex, s_bindingTypeNames, new Vector2(100, 24)))
                         {
-                            binding.Type = (BindingType)(((int)binding.Type + 1) % Enum.GetValues(typeof(BindingType)).Length);
+                            binding.Type = (BindingType)selectedIndex;
                             _inputMapDirty = true;
                         }
 
