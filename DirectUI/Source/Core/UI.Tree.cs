@@ -63,7 +63,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            if (ButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero))
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -78,7 +78,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
+        if (ButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset))
         {
             clickedNode = node;
         }

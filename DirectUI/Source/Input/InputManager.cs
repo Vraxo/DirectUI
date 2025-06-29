@@ -14,10 +14,12 @@ public class InputManager
     // Persistent state (held across frames)
     private Vector2 _currentMousePos = new(-1, -1);
     private bool _isLeftMouseButtonDown;
+    private bool _isRightMouseButtonDown;
     private readonly HashSet<Keys> _heldKeys = new();
 
     // Per-frame state (reset every frame)
     private bool _wasLeftMouseClickedThisFrame;
+    private bool _wasRightMouseClickedThisFrame;
     private float _scrollDeltaThisFrame;
     private readonly Queue<char> _typedCharsThisFrame = new();
     private readonly List<Keys> _pressedKeysThisFrame = new();
@@ -32,6 +34,8 @@ public class InputManager
             _currentMousePos,
             _wasLeftMouseClickedThisFrame,
             _isLeftMouseButtonDown,
+            _wasRightMouseClickedThisFrame,
+            _isRightMouseButtonDown,
             _scrollDeltaThisFrame,
             _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
             _pressedKeysThisFrame,
@@ -46,6 +50,7 @@ public class InputManager
     public void PrepareNextFrame()
     {
         _wasLeftMouseClickedThisFrame = false;
+        _wasRightMouseClickedThisFrame = false;
         _scrollDeltaThisFrame = 0f;
         _typedCharsThisFrame.Clear();
         _pressedKeysThisFrame.Clear();
@@ -71,6 +76,11 @@ public class InputManager
             _isLeftMouseButtonDown = true;
             _wasLeftMouseClickedThisFrame = true;
         }
+        else if (button == MouseButton.Right)
+        {
+            _isRightMouseButtonDown = true;
+            _wasRightMouseClickedThisFrame = true;
+        }
     }
 
     public void SetMouseUp(MouseButton button)
@@ -78,6 +88,10 @@ public class InputManager
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = false;
+        }
+        else if (button == MouseButton.Right)
+        {
+            _isRightMouseButtonDown = false;
         }
     }
 

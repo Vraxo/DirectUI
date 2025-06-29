@@ -11,6 +11,7 @@ public class UIPersistentState
 {
     // --- Persistent Element State ---
     private readonly Dictionary<int, object> uiElements = new();
+    private readonly Dictionary<int, object?> _userData = new();
 
     public T GetOrCreateElement<T>(int id) where T : new()
     {
@@ -22,6 +23,23 @@ public class UIPersistentState
         T newElement = new();
         uiElements[id] = newElement;
         return newElement;
+    }
+
+    public void SetUserData(int id, object? data)
+    {
+        if (data != null)
+        {
+            _userData[id] = data;
+        }
+        else
+        {
+            _userData.Remove(id);
+        }
+    }
+
+    public object? GetUserData(int id)
+    {
+        return _userData.TryGetValue(id, out var data) ? data : null;
     }
 
 

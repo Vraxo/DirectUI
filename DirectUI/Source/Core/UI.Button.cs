@@ -1,6 +1,4 @@
-﻿using System;
-using System.Numerics;
-using Vortice.Direct2D1;
+﻿using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -16,7 +14,8 @@ public static partial class UI
         bool disabled = false,
         bool autoWidth = false,
         Vector2? textMargin = null,
-        DirectUI.Button.ActionMode clickMode = DirectUI.Button.ActionMode.Release,
+        Button.ActionMode clickMode = DirectUI.Button.ActionMode.Release,
+        Button.ClickBehavior clickBehavior = DirectUI.Button.ClickBehavior.Left,
         Alignment? textAlignment = null,
         Vector2? textOffset = null,
         Vector2? origin = null,
@@ -25,34 +24,29 @@ public static partial class UI
         if (!IsContextValid()) return false;
 
         int intId = id.GetHashCode();
+        var finalTheme = theme ?? State.GetOrCreateElement<ButtonStylePack>(HashCode.Combine(intId, "theme"));
+        State.SetUserData(intId, userData);
+
         Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
         Vector2 finalOrigin = origin ?? Vector2.Zero;
 
-        // Culling Check
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
+        // Auto-width calculation must happen before culling.
+        if (autoWidth)
         {
-            Context.Layout.AdvanceLayout(finalSize); // Still advance layout cursor
-            return false;
+            var styleForMeasuring = finalTheme.Normal; // Measure against the normal style
+            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, styleForMeasuring);
+            Vector2 margin = textMargin ?? new Vector2(10, 5);
+            finalSize.X = measuredSize.X + margin.X * 2;
         }
 
-        Button buttonInstance = State.GetOrCreateElement<Button>(intId);
-        buttonInstance.Position = drawPos;
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
 
-        // Configure the button instance from parameters
-        buttonInstance.Text = text;
-        buttonInstance.Size = finalSize;
-        buttonInstance.Themes = theme ?? buttonInstance.Themes ?? new ButtonStylePack();
-        buttonInstance.Disabled = disabled;
-        buttonInstance.AutoWidth = autoWidth;
-        buttonInstance.TextMargin = textMargin ?? new Vector2(10, 5);
-        buttonInstance.LeftClickActionMode = clickMode;
-        buttonInstance.TextAlignment = textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
-        buttonInstance.TextOffset = textOffset ?? Vector2.Zero;
-        buttonInstance.Origin = finalOrigin;
-        buttonInstance.UserData = userData;
-
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(finalSize);
+            return false;
+        }
 
         bool pushedClip = false;
         if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is GridContainerState grid)
@@ -68,13 +62,24 @@ public static partial class UI
             }
         }
 
-        bool clicked = buttonInstance.Update(intId);
+        bool clicked = ButtonPrimitive(
+            intId,
+            widgetBounds,
+            text,
+            finalTheme,
+            disabled,
+            textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
+            clickMode,
+            clickBehavior,
+            textOffset ?? Vector2.Zero
+        );
+
         if (pushedClip && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();
         }
 
-        Context.Layout.AdvanceLayout(buttonInstance.Size);
+        Context.Layout.AdvanceLayout(finalSize);
         return clicked;
     }
 }

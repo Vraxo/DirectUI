@@ -201,6 +201,16 @@ public abstract class Win32Window : IDisposable
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
 
+            case NativeMethods.WM_RBUTTONDOWN:
+                NativeMethods.SetCapture(hWnd);
+                OnMouseDown(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_RBUTTONUP:
+                NativeMethods.ReleaseCapture();
+                OnMouseUp(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
             case NativeMethods.WM_MOUSEWHEEL:
                 short wheelDelta = NativeMethods.HiWord(wParam);
                 OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
