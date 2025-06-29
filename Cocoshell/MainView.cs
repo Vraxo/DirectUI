@@ -13,9 +13,10 @@ public class MainView
     // State for the main view's widgets
     private float _sliderValue = 0.5f;
     private float _leftPanelWidth = 250f;
-    private float _rightPanelWidth = 250f;
+    private float _rightPanelWidth = 300f;
     private float _bottomPanelHeight = 150f;
     private readonly TreeNode<string> _fileRoot;
+    private TreeNode<string>? _selectedNode; // Track the selected node
     private readonly TreeStyle _treeStyle = new();
 
     public MainView()
@@ -88,21 +89,42 @@ public class MainView
         {
             UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
             UI.Tree("file_tree", _fileRoot, out var clickedNode, _treeStyle);
-            if (clickedNode is not null) Console.WriteLine($"Tree Node Clicked: '{clickedNode.Text}', Path: {clickedNode.UserData}");
+            if (clickedNode is not null)
+            {
+                _selectedNode = clickedNode;
+            }
             UI.EndVBoxContainer();
         }
         UI.EndResizableVPanel();
 
-        // --- Right Panel (Properties) ---
+        // --- Right Panel (Inspector) ---
         UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, menuBarHeight,
             minWidth: 150, maxWidth: 400, padding: new Vector2(10, 10), gap: 10, panelStyle: panelStyle);
         {
-            UI.PushStyleVar(StyleVar.FrameRounding, 0.2f); // Rounded buttons in this panel
-            if (UI.Button("right_button_1", "Right Panel")) { /* ... */ }
-            if (UI.Button("right_button_2", "Another Button")) { /* ... */ }
-            UI.PopStyleVar();
+            UI.Button("inspector_title", "Inspector", disabled: true, autoWidth: true,
+                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center));
 
-            _sliderValue = UI.HSlider("my_slider", _sliderValue, 0f, 1f, new Vector2(200, 20));
+            // Vertical spacer
+            UI.Button("inspector_separator", "", disabled: true, size: new Vector2(0, 10));
+
+            if (_selectedNode != null)
+            {
+                // A property cannot be passed by ref. Copy it to a local variable,
+                // pass the local by ref, and then copy the result back to the property.
+                string nodeName = _selectedNode.Text;
+                float availableWidth = _rightPanelWidth - (10 * 2); // panel width minus padding on both sides
+                if (UI.LineEdit("node_name_edit", ref nodeName, new Vector2(availableWidth, 24)))
+                {
+                    // The text was changed, write it back to the node's property.
+                    _selectedNode.Text = nodeName;
+                }
+
+                // Future properties for the selected node would go here.
+            }
+            else
+            {
+                UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+            }
         }
         UI.EndResizableVPanel();
 

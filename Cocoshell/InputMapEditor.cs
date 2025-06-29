@@ -1,28 +1,17 @@
-﻿// InputMapEditor.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+﻿using System.Numerics;
 using Cocoshell.Input;
 using Vortice.Mathematics;
 
 namespace DirectUI;
 
-/// <summary>
-/// Encapsulates the state and drawing logic for the Input Map Editor tab.
-/// </summary>
 public class InputMapEditor
 {
-    // State
     private Dictionary<string, List<InputBinding>> _inputMap;
     private readonly string _inputMapPath;
     private bool _inputMapDirty = false;
     private int _newActionCounter = 1;
-
-    // State for the "press to bind" feature
     private (string ActionName, int BindingIndex)? _listeningForBinding;
     private bool _ignoreInputForOneFrame;
-
-    // Caches
     private readonly List<string> _actionNamesCache = new();
     private static readonly string[] s_bindingTypeNames = Enum.GetNames(typeof(BindingType));
 
@@ -33,7 +22,10 @@ public class InputMapEditor
         UpdateActionNamesCache();
     }
 
-    public bool IsDirty() => _inputMapDirty;
+    public bool IsDirty()
+    {
+        return _inputMapDirty;
+    }
 
     public void RevertChanges()
     {
@@ -217,8 +209,13 @@ public class InputMapEditor
 
                         // Remove Binding Button
                         UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
-                        UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
-                        if (UI.Button($"binding_remove_{actionName}_{j}", "x", size: new Vector2(24, 24))) bindingToRemove = j;
+                        UI.PushStyleColor(StyleColor.Button, new(0.5f, 0.2f, 0.2f, 1f));
+                        
+                        if (UI.Button($"binding_remove_{actionName}_{j}", "x", size: new(24, 24)))
+                        {
+                            bindingToRemove = j;
+                        }
+
                         UI.PopStyleColor();
                         UI.PopStyleVar();
                     }
@@ -232,9 +229,14 @@ public class InputMapEditor
                 }
 
                 // "Add Binding" button for this action
-                if (UI.Button($"add_binding_{actionName}", "Add Binding", size: new Vector2(100, 24)))
+                if (UI.Button($"add_binding_{actionName}", "Add Binding", size: new(100, 24)))
                 {
-                    bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
+                    bindings.Add(new() 
+                    { 
+                        Type = BindingType.Keyboard,
+                        KeyOrButton = "None"
+                    });
+
                     _inputMapDirty = true;
                 }
             }
@@ -269,12 +271,12 @@ public class InputMapEditor
                 _inputMapDirty = true;
             }
 
-            if (UI.Button("apply_changes", "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button("apply_changes", "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new(10, 5)))
             {
                 SaveChanges();
             }
 
-            if (UI.Button("revert_changes", "Revert", autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button("revert_changes", "Revert", autoWidth: true, textMargin: new(10, 5)))
             {
                 RevertChanges();
             }

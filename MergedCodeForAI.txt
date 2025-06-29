@@ -700,6 +700,7 @@ public enum MouseButton
 </file>
 
 <file path="NativeMethods.cs">
+// NativeMethods.cs
 using System;
 using System.Runtime.InteropServices;
 
@@ -745,6 +746,10 @@ internal static class NativeMethods
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_RBUTTONDOWN = 0x0204;
     public const int WM_RBUTTONUP = 0x0205;
+    public const int WM_MBUTTONDOWN = 0x0207;
+    public const int WM_MBUTTONUP = 0x0208;
+    public const int WM_XBUTTONDOWN = 0x020B;
+    public const int WM_XBUTTONUP = 0x020C;
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
     public const int WM_MOUSEWHEEL = 0x020A;
     public const int WM_QUIT = 0x0012;
@@ -961,6 +966,9 @@ internal static class SharedGraphicsResources
 </file>
 
 <file path="Win32Window.cs">
+// Win32Window.cs
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -1174,6 +1182,34 @@ public abstract class Win32Window : IDisposable
                 OnMouseUp(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
 
+            case NativeMethods.WM_MBUTTONDOWN:
+                NativeMethods.SetCapture(hWnd);
+                OnMouseDown(MouseButton.Middle, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_MBUTTONUP:
+                NativeMethods.ReleaseCapture();
+                OnMouseUp(MouseButton.Middle, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_XBUTTONDOWN:
+                {
+                    short xButton = NativeMethods.HiWord(wParam);
+                    var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+                    NativeMethods.SetCapture(hWnd);
+                    OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                    return IntPtr.Zero;
+                }
+
+            case NativeMethods.WM_XBUTTONUP:
+                {
+                    short xButton = NativeMethods.HiWord(wParam);
+                    var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+                    NativeMethods.ReleaseCapture();
+                    OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                    return IntPtr.Zero;
+                }
+
             case NativeMethods.WM_MOUSEWHEEL:
                 short wheelDelta = NativeMethods.HiWord(wParam);
                 OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
@@ -1296,7 +1332,7 @@ public abstract class Win32Window : IDisposable
 
     }
 
-    protected virtual void OnMouseUp(MouseButton button, int x, int y)
+protected virtual void OnMouseUp(MouseButton button, int x, int y)
     {
 
     }
@@ -3755,6 +3791,7 @@ public class InputManager
     private readonly Queue<char> _typedCharsThisFrame = new();
     private readonly List<Keys> _pressedKeysThisFrame = new();
     private readonly List<Keys> _releasedKeysThisFrame = new();
+    private readonly List<MouseButton> _pressedMouseButtonsThisFrame = new();
 
     /// <summary>
     /// Creates a snapshot of the current input state for the UI to process.
@@ -3771,7 +3808,8 @@ public class InputManager
             _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
             _pressedKeysThisFrame,
             _releasedKeysThisFrame,
-            _heldKeys
+            _heldKeys,
+            _pressedMouseButtonsThisFrame.ToList() // Create a copy for the readonly list
         );
     }
 
@@ -3786,6 +3824,7 @@ public class InputManager
         _typedCharsThisFrame.Clear();
         _pressedKeysThisFrame.Clear();
         _releasedKeysThisFrame.Clear();
+        _pressedMouseButtonsThisFrame.Clear();
     }
 
     // --- Raw Event Handlers ---
@@ -3802,6 +3841,8 @@ public class InputManager
 
     public void SetMouseDown(MouseButton button)
     {
+        _pressedMouseButtonsThisFrame.Add(button);
+
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = true;
@@ -3875,6 +3916,7 @@ public readonly struct InputState
     public readonly IReadOnlyList<Keys> PressedKeys; // Keys pressed down this frame
     public readonly IReadOnlyList<Keys> ReleasedKeys; // Keys released this frame
     public readonly IReadOnlyCollection<Keys> HeldKeys; // Keys currently held down
+    public readonly IReadOnlyList<MouseButton> PressedMouseButtons; // Mouse buttons pressed down this frame
 
     public InputState(
         Vector2 mousePosition,
@@ -3886,7 +3928,8 @@ public readonly struct InputState
         IReadOnlyList<char> typedCharacters,
         IReadOnlyList<Keys> pressedKeys,
         IReadOnlyList<Keys> releasedKeys,
-        IReadOnlyCollection<Keys> heldKeys)
+        IReadOnlyCollection<Keys> heldKeys,
+        IReadOnlyList<MouseButton> pressedMouseButtons)
     {
         MousePosition = mousePosition;
         WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
@@ -3898,6 +3941,7 @@ public readonly struct InputState
         PressedKeys = pressedKeys;
         ReleasedKeys = releasedKeys;
         HeldKeys = heldKeys;
+        PressedMouseButtons = pressedMouseButtons;
     }
 }
 </file>
@@ -5703,26 +5747,20 @@ public static class InputMapManager
 </file>
 
 <file path="InputMapEditor.cs">
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using Cocoshell.Input;
 using Vortice.Mathematics;
 
 namespace DirectUI;
 
-/// <summary>
-/// Encapsulates the state and drawing logic for the Input Map Editor tab.
-/// </summary>
 public class InputMapEditor
 {
-    // State
     private Dictionary<string, List<InputBinding>> _inputMap;
     private readonly string _inputMapPath;
     private bool _inputMapDirty = false;
     private int _newActionCounter = 1;
-
-    // Caches
+    private (string ActionName, int BindingIndex)? _listeningForBinding;
+    private bool _ignoreInputForOneFrame;
     private readonly List<string> _actionNamesCache = new();
     private static readonly string[] s_bindingTypeNames = Enum.GetNames(typeof(BindingType));
 
@@ -5733,7 +5771,10 @@ public class InputMapEditor
         UpdateActionNamesCache();
     }
 
-    public bool IsDirty() => _inputMapDirty;
+    public bool IsDirty()
+    {
+        return _inputMapDirty;
+    }
 
     public void RevertChanges()
     {
@@ -5750,6 +5791,9 @@ public class InputMapEditor
 
     public void Draw(UIContext context, Rect contentArea)
     {
+        // --- Input Listening Logic ---
+        HandleInputListening(context);
+
         var paddedContentRect = new Rect(
             contentArea.X + 10, contentArea.Y + 10,
             Math.Max(0, contentArea.Width - 20),
@@ -5764,11 +5808,8 @@ public class InputMapEditor
         {
             // --- Scrollable list of actions and bindings ---
             UI.BeginScrollableRegion("input_map_scroll", scrollableSize);
-            // FIX: Pass the current layout position to the inner VBox so it inherits the scroll offset.
-            // Previously, this was Vector2.Zero, which caused the content to ignore the scroll container.
-            UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8); // Inner VBox for item spacing
+            UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8);
             {
-                // Use a standard for-loop for safe removal from the cache during iteration
                 for (int i = 0; i < _actionNamesCache.Count; i++)
                 {
                     string actionName = _actionNamesCache[i];
@@ -5796,6 +5837,58 @@ public class InputMapEditor
         }
         UI.EndVBoxContainer();
     }
+
+    private void HandleInputListening(UIContext context)
+    {
+        if (_ignoreInputForOneFrame)
+        {
+            _ignoreInputForOneFrame = false;
+            return;
+        }
+
+        if (!_listeningForBinding.HasValue) return;
+
+        var (actionName, bindingIndex) = _listeningForBinding.Value;
+        var input = context.InputState;
+
+        // Ensure the binding still exists before trying to modify it
+        if (!_inputMap.TryGetValue(actionName, out var bindings) || bindingIndex >= bindings.Count)
+        {
+            _listeningForBinding = null;
+            return;
+        }
+
+        InputBinding targetBinding = bindings[bindingIndex];
+        bool inputWasBound = false;
+
+        // Check for Keyboard Input
+        if (input.PressedKeys.Count > 0)
+        {
+            targetBinding.Type = BindingType.Keyboard;
+            targetBinding.KeyOrButton = input.PressedKeys[0].ToString();
+            inputWasBound = true;
+        }
+        // Check for Mouse Input
+        else if (input.PressedMouseButtons.Count > 0)
+        {
+            targetBinding.Type = BindingType.MouseButton;
+            targetBinding.KeyOrButton = input.PressedMouseButtons[0].ToString();
+            inputWasBound = true;
+        }
+        // Check if user clicked somewhere else to cancel
+        else if (input.WasLeftMousePressedThisFrame || input.WasRightMousePressedThisFrame)
+        {
+            // This click didn't start a new binding listen, so it must be a cancel click.
+            _listeningForBinding = null;
+        }
+
+        if (inputWasBound)
+        {
+            _inputMapDirty = true;
+            _listeningForBinding = null; // Stop listening
+        }
+    }
+
 
     private string? DrawInputMapAction(string actionName, List<InputBinding> bindings)
     {
@@ -5837,18 +5930,41 @@ public class InputMapEditor
                             _inputMapDirty = true;
                         }
 
-                        // Key/Button Text Edit
-                        string tempKey = binding.KeyOrButton;
-                        if (UI.LineEdit($"binding_key_{actionName}_{j}", ref tempKey, new Vector2(120, 24)))
+                        // Button to display binding and enter listening mode
+                        string buttonText = binding.KeyOrButton;
+                        bool isThisOneListening = _listeningForBinding.HasValue &&
+                                                  _listeningForBinding.Value.ActionName == actionName &&
+                                                  _listeningForBinding.Value.BindingIndex == j;
+
+                        if (isThisOneListening)
                         {
-                            binding.KeyOrButton = tempKey;
-                            _inputMapDirty = true;
+                            buttonText = "Press a key...";
+                        }
+
+                        if (UI.Button($"binding_key_{actionName}_{j}", buttonText, new Vector2(150, 24)))
+                        {
+                            if (!isThisOneListening)
+                            {
+                                // Start listening for this binding
+                                _listeningForBinding = (actionName, j);
+                                _ignoreInputForOneFrame = true;
+                            }
+                            else
+                            {
+                                // If already listening, clicking again cancels
+                                _listeningForBinding = null;
+                            }
                         }
 
                         // Remove Binding Button
                         UI.PushStyleVar(StyleVar.FrameRounding, 0.5f);
-                        UI.PushStyleColor(StyleColor.Button, new Color4(0.5f, 0.2f, 0.2f, 1f));
-                        if (UI.Button($"binding_remove_{actionName}_{j}", "x", size: new Vector2(24, 24))) bindingToRemove = j;
+                        UI.PushStyleColor(StyleColor.Button, new(0.5f, 0.2f, 0.2f, 1f));
+                        
+                        if (UI.Button($"binding_remove_{actionName}_{j}", "x", size: new(24, 24)))
+                        {
+                            bindingToRemove = j;
+                        }
+
                         UI.PopStyleColor();
                         UI.PopStyleVar();
                     }
@@ -5862,9 +5978,14 @@ public class InputMapEditor
                 }
 
                 // "Add Binding" button for this action
-                if (UI.Button($"add_binding_{actionName}", "Add Binding", size: new Vector2(100, 24)))
+                if (UI.Button($"add_binding_{actionName}", "Add Binding", size: new(100, 24)))
                 {
-                    bindings.Add(new InputBinding { Type = BindingType.Keyboard, KeyOrButton = "None" });
+                    bindings.Add(new() 
+                    { 
+                        Type = BindingType.Keyboard,
+                        KeyOrButton = "None"
+                    });
+
                     _inputMapDirty = true;
                 }
             }
@@ -5899,12 +6020,12 @@ public class InputMapEditor
                 _inputMapDirty = true;
             }
 
-            if (UI.Button("apply_changes", "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button("apply_changes", "Apply Changes", disabled: !_inputMapDirty, autoWidth: true, textMargin: new(10, 5)))
             {
                 SaveChanges();
             }
 
-            if (UI.Button("revert_changes", "Revert", autoWidth: true, textMargin: new Vector2(10, 5)))
+            if (UI.Button("revert_changes", "Revert", autoWidth: true, textMargin: new(10, 5)))
             {
                 RevertChanges();
             }
