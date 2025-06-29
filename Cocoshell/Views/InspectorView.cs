@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Views/InspectorView.cs
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
@@ -59,22 +60,29 @@ public class InspectorView
 
             UI.BeginScrollableRegion("inspector_scroll", scrollableSize, out float innerContentWidth);
             {
-                // A VBox for the content inside the scroll region
-                UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                if (selectedNode is null)
                 {
-                    if (selectedNode is null)
+                    UI.BeginVBoxContainer("inspector_content_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                    UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+                    UI.EndVBoxContainer();
+                }
+                else
+                {
+                    // Draw the node type header and separator in their own container with no gap.
+                    // The separator itself provides the necessary padding.
+                    UI.BeginVBoxContainer("inspector_header_vbox", UI.Context.Layout.GetCurrentPosition(), 0f);
                     {
-                        UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
-                    }
-                    else
-                    {
-                        // The innerContentWidth is provided by BeginScrollableRegion,
-                        // which accounts for the potential width of the scrollbar.
                         DrawNodeInfo(selectedNode, innerContentWidth);
+                    }
+                    UI.EndVBoxContainer();
+
+                    // Draw the properties in a separate container with a standard gap.
+                    UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                    {
                         DrawAllProperties(selectedNode, innerContentWidth);
                     }
+                    UI.EndVBoxContainer();
                 }
-                UI.EndVBoxContainer();
             }
             UI.EndScrollableRegion();
         }
@@ -95,17 +103,8 @@ public class InspectorView
     private void DrawNodeInfo(Node selectedNode, float availableWidth)
     {
         UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
-
-        Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
-        var lineBrush = UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder);
-        if (lineBrush != null)
-        {
-            UI.Context.RenderTarget.DrawLine(
-                linePos,
-                linePos + new Vector2(availableWidth, 0),
-                lineBrush,
-                1f);
-        }
+        // Use the new Separator widget. Its verticalPadding creates the gap.
+        UI.Separator(availableWidth, thickness: 1f, verticalPadding: 4f);
     }
 
     private void DrawAllProperties(Node selectedNode, float availableWidth)

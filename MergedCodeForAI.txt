@@ -5588,6 +5588,15 @@ internal class LineEdit
 
         // --- Focus Management & Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool isActive = uiState.ActivelyPressedElementId == intId;
+
+        // BUG FIX: Handle losing active press state on mouse up.
+        // Without this, the control would lock all other input after being clicked.
+        if (isActive && !input.IsLeftMouseDown)
+        {
+            uiState.ClearActivePress(intId);
+        }
+
         if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
         {
             uiState.SetFocus(intId);
@@ -5651,7 +5660,7 @@ internal class LineEdit
 
         string textToDraw;
         ButtonStyle styleToDraw;
-        var drawPos = contentRect.TopLeft;
+        Vector2 drawPos = contentRect.TopLeft;
 
         if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
         {
@@ -5671,7 +5680,6 @@ internal class LineEdit
 
         if (uiState.FocusedElementId == intId && state.IsBlinkOn)
         {
-            // For caret color, we should use the normal text color, not placeholder color
             DrawCaret(textToDraw, state, size, finalTheme.Current, contentRect);
         }
 
@@ -5685,6 +5693,7 @@ internal class LineEdit
         bool textChanged = false;
 
         state.BlinkTimer += UI.Context.DeltaTime;
+        
         if (state.BlinkTimer > 0.5f)
         {
             state.BlinkTimer = 0;
@@ -5696,14 +5705,17 @@ internal class LineEdit
         if (input.TypedCharacters.Any())
         {
             PushUndoState(text, state);
+            
             foreach (char c in input.TypedCharacters)
             {
-                if (text.Length < maxLength)
+                if (text.Length >= maxLength)
                 {
-                    text = text.Insert(state.CaretPosition, c.ToString());
-                    state.CaretPosition++;
-                    textChanged = true;
+                    continue;
                 }
+
+                text = text.Insert(state.CaretPosition, c.ToString());
+                state.CaretPosition++;
+                textChanged = true;
             }
         }
 
@@ -5757,18 +5769,26 @@ internal class LineEdit
         return textChanged;
     }
 
-    private int FindPreviousWordStart(string text, int currentPos)
+    private static int FindPreviousWordStart(string text, int currentPos)
     {
-        if (currentPos == 0) return 0;
+        if (currentPos == 0)
+        {
+            return 0;
+        }
+
         int pos = currentPos - 1;
         while (pos > 0 && char.IsWhiteSpace(text[pos])) pos--;
         while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) pos--;
         return pos;
     }
 
-    private int FindNextWordEnd(string text, int currentPos)
+    private static int FindNextWordEnd(string text, int currentPos)
     {
-        if (currentPos >= text.Length) return text.Length;
+        if (currentPos >= text.Length)
+        {
+            return text.Length;
+        }
+
         int pos = currentPos;
         while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
         while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
@@ -5777,7 +5797,10 @@ internal class LineEdit
 
     private void DrawVisibleText(string fullText, LineEditState state, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
     {
-        if (string.IsNullOrEmpty(fullText)) return;
+        if (string.IsNullOrEmpty(fullText))
+        {
+            return;
+        }
 
         var context = UI.Context;
         var rt = context.RenderTarget;
@@ -5868,7 +5891,7 @@ internal class LineEdit
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
 
-    private void PushUndoState(string text, LineEditState state)
+    private static void PushUndoState(string text, LineEditState state)
     {
         var lastState = state.UndoStack.Count > 0 ? state.UndoStack.Peek() : default;
         if (state.UndoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == state.CaretPosition) return;
@@ -5878,7 +5901,7 @@ internal class LineEdit
         state.RedoStack.Clear();
     }
 
-    private void Undo(ref string text, LineEditState state)
+    private static void Undo(ref string text, LineEditState state)
     {
         if (state.UndoStack.Count == 0) return;
         state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
@@ -5888,7 +5911,7 @@ internal class LineEdit
         state.ScrollPixelOffset = lastState.ScrollPixelOffset;
     }
 
-    private void Redo(ref string text, LineEditState state)
+    private static void Redo(ref string text, LineEditState state)
     {
         if (state.RedoStack.Count == 0) return;
         state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
@@ -6714,6 +6737,12 @@ public class InspectorView
         FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
     };
 
+    private class Vector2EditState
+    {
+        public string X { get; set; } = "0";
+        public string Y { get; set; } = "0";
+    }
+
     public void Draw(Node? selectedNode, float panelWidth, float panelHeight)
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
@@ -6797,30 +6826,39 @@ public class InspectorView
 
     private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
     {
-        float labelCellWidth = (availableWidth - GridGap) * 0.4f;
-        float valueCellWidth = (availableWidth - GridGap) * 0.6f;
-        string gridId = $"grid_prop_{node.Name}_{prop.Name}";
+        float labelWidth = (availableWidth - GridGap) * 0.4f;
+        float editorWidth = (availableWidth - GridGap) * 0.6f;
+        string hboxId = $"hbox_prop_{node.Name}_{prop.Name}";
+        object? value;
 
-        UI.BeginGridContainer(gridId, UI.Context.Layout.GetCurrentPosition(), new(availableWidth, 24), 2, new(GridGap, 0));
+        try
+        {
+            value = prop.GetValue(node, null);
+        }
+        catch (Exception ex)
+        {
+            UI.Label($"prop_error_{prop.Name}", $"Error getting value: {ex.Message}");
+            return;
+        }
+
+        UI.BeginHBoxContainer(hboxId, UI.Context.Layout.GetCurrentPosition(), GridGap);
         try
         {
             UI.Label(
                 $"prop_label_{prop.Name}",
                 SplitPascalCase(prop.Name),
-                size: new(labelCellWidth, 24),
+                size: new(labelWidth, 24),
                 textAlignment: new(HAlignment.Left, VAlignment.Center)
             );
 
-            object? value = prop.GetValue(node, null);
-
-            DrawPropertyEditor(node, prop, value, valueCellWidth);
+            DrawPropertyEditor(node, prop, value, editorWidth);
         }
-        catch (Exception ex)
+        finally
         {
-            UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
+            UI.EndHBoxContainer();
         }
-        UI.EndGridContainer();
     }
+
 
     private void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
@@ -6836,17 +6874,87 @@ public class InspectorView
                 }
                 break;
 
-            default:
-                string valueString = value switch
+            case Vector2 v:
+                if (prop.CanWrite)
                 {
-                    Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
-                    _ => value?.ToString() ?? "null",
-                };
+                    DrawVector2Editor(node, prop, v, propId, editorWidth);
+                }
+                else
+                {
+                    UI.Button($"{propId}_display", $"X:{v.X:F2}, Y:{v.Y:F2}", size: new(editorWidth, 24), disabled: true);
+                }
+                break;
 
-                UI.Button($"{propId}_display", valueString, size: new(editorWidth, 24), disabled: true);
+            default:
+                string defaultString = value?.ToString() ?? "null";
+                UI.Button($"{propId}_display", defaultString, size: new(editorWidth, 24), disabled: true);
                 break;
         }
     }
+
+    private void DrawVector2Editor(Node node, PropertyInfo prop, Vector2 value, string baseId, float editorWidth)
+    {
+        string xId = $"{baseId}_X";
+        string yId = $"{baseId}_Y";
+        int xIntId = xId.GetHashCode();
+        int yIntId = yId.GetHashCode();
+
+        // The state must be unique per property on a specific node instance.
+        int stateId = HashCode.Combine(node.GetHashCode(), prop.Name.GetHashCode());
+        var editState = UI.State.GetOrCreateElement<Vector2EditState>(stateId);
+
+        bool isXFocused = UI.State.FocusedElementId == xIntId;
+        bool isYFocused = UI.State.FocusedElementId == yIntId;
+
+        // If not focused, update string from source vector to ensure it's in sync.
+        // Only update if parsed value differs significantly, to avoid disrupting user input on minor float variations.
+        if (!isXFocused)
+        {
+            if (!float.TryParse(editState.X, out var parsedX) || Math.Abs(parsedX - value.X) > 1e-4f)
+            {
+                editState.X = value.X.ToString("F3");
+            }
+        }
+        if (!isYFocused)
+        {
+            if (!float.TryParse(editState.Y, out var parsedY) || Math.Abs(parsedY - value.Y) > 1e-4f)
+            {
+                editState.Y = value.Y.ToString("F3");
+            }
+        }
+
+        UI.BeginHBoxContainer(baseId + "_hbox", UI.Context.Layout.GetCurrentPosition(), 5);
+        {
+            float lineEditWidth = Math.Max(0, (editorWidth - 5) / 2);
+            var lineEditSize = new Vector2(lineEditWidth, 24);
+
+            string localX = editState.X;
+            if (UI.LineEdit(xId, ref localX, lineEditSize))
+            {
+                editState.X = localX;
+                if (float.TryParse(editState.X, out var newX))
+                {
+                    prop.SetValue(node, new Vector2(newX, value.Y));
+                }
+            }
+
+            // Must re-get the value from the property, because Vector2 is a struct and
+            // the previous operation might have changed its X component.
+            var currentValue = (Vector2)prop.GetValue(node)!;
+
+            string localY = editState.Y;
+            if (UI.LineEdit(yId, ref localY, lineEditSize))
+            {
+                editState.Y = localY;
+                if (float.TryParse(editState.Y, out var newY))
+                {
+                    prop.SetValue(node, new Vector2(currentValue.X, newY));
+                }
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
 
     private static string SplitPascalCase(string input)
     {
