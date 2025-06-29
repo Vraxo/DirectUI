@@ -2,7 +2,7 @@
 
 namespace DirectUI;
 
-public class VBoxContainerState
+public class VBoxContainerState : ILayoutContainer
 {
     internal int Id { get; }
     internal Vector2 StartPosition { get; set; }
@@ -15,5 +15,24 @@ public class VBoxContainerState
     internal VBoxContainerState(int id)
     {
         Id = id;
+    }
+
+    public Vector2 GetCurrentPosition() => CurrentPosition;
+
+    public void Advance(Vector2 elementSize)
+    {
+        if (elementSize.X > MaxElementWidth)
+        {
+            MaxElementWidth = elementSize.X;
+        }
+
+        AccumulatedHeight += elementSize.Y;
+        if (ElementCount > 0)
+        {
+            AccumulatedHeight += Gap;
+        }
+        float advanceY = elementSize.Y + Gap;
+        CurrentPosition = new Vector2(CurrentPosition.X, CurrentPosition.Y + advanceY);
+        ElementCount++;
     }
 }

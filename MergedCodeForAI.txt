@@ -729,6 +729,8 @@ internal static class NativeMethods
     public const int WM_SYSKEYUP = 0x0105;
     public const int WM_LBUTTONDOWN = 0x0201;
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
+    public const int WM_RBUTTONDOWN = 0x0204;
+    public const int WM_RBUTTONUP = 0x0205;
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
     public const int WM_MOUSEWHEEL = 0x020A;
     public const int WM_QUIT = 0x0012;
@@ -1146,6 +1148,16 @@ public abstract class Win32Window : IDisposable
             case NativeMethods.WM_LBUTTONUP:
                 NativeMethods.ReleaseCapture();
                 OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_RBUTTONDOWN:
+                NativeMethods.SetCapture(hWnd);
+                OnMouseDown(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_RBUTTONUP:
+                NativeMethods.ReleaseCapture();
+                OnMouseUp(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
 
             case NativeMethods.WM_MOUSEWHEEL:
@@ -1580,9 +1592,7 @@ public class VBoxContainerState
 </file>
 
 <file path="Core\UI.Button.cs">
-using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -1598,7 +1608,8 @@ public static partial class UI
         bool disabled = false,
         bool autoWidth = false,
         Vector2? textMargin = null,
-        DirectUI.Button.ActionMode clickMode = DirectUI.Button.ActionMode.Release,
+        Button.ActionMode clickMode = DirectUI.Button.ActionMode.Release,
+        Button.ClickBehavior clickBehavior = DirectUI.Button.ClickBehavior.Left,
         Alignment? textAlignment = null,
         Vector2? textOffset = null,
         Vector2? origin = null,
@@ -1607,34 +1618,29 @@ public static partial class UI
         if (!IsContextValid()) return false;
 
         int intId = id.GetHashCode();
+        var finalTheme = theme ?? State.GetOrCreateElement<ButtonStylePack>(HashCode.Combine(intId, "theme"));
+        State.SetUserData(intId, userData);
+
         Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
         Vector2 finalOrigin = origin ?? Vector2.Zero;
 
-        // Culling Check
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
+        // Auto-width calculation must happen before culling.
+        if (autoWidth)
         {
-            Context.Layout.AdvanceLayout(finalSize); // Still advance layout cursor
-            return false;
+            var styleForMeasuring = finalTheme.Normal; // Measure against the normal style
+            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, styleForMeasuring);
+            Vector2 margin = textMargin ?? new Vector2(10, 5);
+            finalSize.X = measuredSize.X + margin.X * 2;
         }
 
-        Button buttonInstance = State.GetOrCreateElement<Button>(intId);
-        buttonInstance.Position = drawPos;
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
 
-        // Configure the button instance from parameters
-        buttonInstance.Text = text;
-        buttonInstance.Size = finalSize;
-        buttonInstance.Themes = theme ?? buttonInstance.Themes ?? new ButtonStylePack();
-        buttonInstance.Disabled = disabled;
-        buttonInstance.AutoWidth = autoWidth;
-        buttonInstance.TextMargin = textMargin ?? new Vector2(10, 5);
-        buttonInstance.LeftClickActionMode = clickMode;
-        buttonInstance.TextAlignment = textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center);
-        buttonInstance.TextOffset = textOffset ?? Vector2.Zero;
-        buttonInstance.Origin = finalOrigin;
-        buttonInstance.UserData = userData;
-
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(finalSize);
+            return false;
+        }
 
         bool pushedClip = false;
         if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is GridContainerState grid)
@@ -1650,13 +1656,24 @@ public static partial class UI
             }
         }
 
-        bool clicked = buttonInstance.Update(intId);
+        bool clicked = ButtonPrimitive(
+            intId,
+            widgetBounds,
+            text,
+            finalTheme,
+            disabled,
+            textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
+            clickMode,
+            clickBehavior,
+            textOffset ?? Vector2.Zero
+        );
+
         if (pushedClip && Context.RenderTarget is not null)
         {
             Context.RenderTarget.PopAxisAlignedClip();
         }
 
-        Context.Layout.AdvanceLayout(buttonInstance.Size);
+        Context.Layout.AdvanceLayout(finalSize);
         return clicked;
     }
 }
@@ -2221,75 +2238,198 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    internal static bool StatelessButton(int id, Rect bounds, string text, ButtonStylePack stylePack, Alignment textAlignment, DirectUI.Button.ActionMode clickActionMode, bool autoWidth = false, Vector2? textMargin = null, Vector2 textOffset = default)
+    /// <summary>
+    /// The core, stateless primitive for drawing and interacting with a button.
+    /// This is the single source of truth for all button-like controls.
+    /// </summary>
+    internal static bool ButtonPrimitive(
+        int id,
+        Rect bounds,
+        string text,
+        ButtonStylePack theme,
+        bool disabled,
+        Alignment textAlignment,
+        DirectUI.Button.ActionMode clickMode,
+        DirectUI.Button.ClickBehavior clickBehavior,
+        Vector2 textOffset)
     {
-        InputState input = Context.InputState;
-        var renderTarget = Context.RenderTarget;
-        var dwriteFactory = Context.DWriteFactory;
+        var context = Context;
+        var state = State;
+        var resources = Resources;
+        var renderTarget = context.RenderTarget;
+        var dwriteFactory = context.DWriteFactory;
+        var input = context.InputState;
 
-        Vector2 finalSize = new(bounds.Width, bounds.Height);
-        if (autoWidth)
+        // --- State Calculation ---
+        bool isFocused = !disabled && state.FocusedElementId == id;
+        bool isHovering = !disabled && bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        if (isHovering)
         {
-            Vector2 measuredSize = Resources.MeasureText(dwriteFactory, text, stylePack.Normal);
-            Vector2 margin = textMargin ?? new Vector2(10, 5);
-            finalSize.X = measuredSize.X + margin.X * 2;
+            state.SetPotentialInputTarget(id);
         }
-        Rect finalBounds = new(bounds.X, bounds.Y, finalSize.X, finalSize.Y);
 
-        bool isHovering = finalBounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool isPressed = State.ActivelyPressedElementId == id;
-        bool isFocused = State.FocusedElementId == id;
+        // --- Click Detection ---
         bool wasClickedThisFrame = false;
+        bool isPressed = state.ActivelyPressedElementId == id;
 
-        if (isHovering) State.SetPotentialInputTarget(id);
+        bool primaryActionPressedThisFrame = (clickBehavior is DirectUI.Button.ClickBehavior.Left or DirectUI.Button.ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
+        bool secondaryActionPressedThisFrame = (clickBehavior is DirectUI.Button.ClickBehavior.Right or DirectUI.Button.ClickBehavior.Both) && input.WasRightMousePressedThisFrame;
+        bool anyActionPressedThisFrame = primaryActionPressedThisFrame || secondaryActionPressedThisFrame;
 
-        if (!input.IsLeftMouseDown && isPressed)
+        bool primaryActionHeld = (clickBehavior is DirectUI.Button.ClickBehavior.Left or DirectUI.Button.ClickBehavior.Both) && input.IsLeftMouseDown;
+        bool secondaryActionHeld = (clickBehavior is DirectUI.Button.ClickBehavior.Right or DirectUI.Button.ClickBehavior.Both) && input.IsRightMouseDown;
+        bool anyActionHeld = primaryActionHeld || secondaryActionHeld;
+
+
+        if (!anyActionHeld && isPressed)
         {
-            if (isHovering && clickActionMode == DirectUI.Button.ActionMode.Release) wasClickedThisFrame = true;
-            State.ClearActivePress(id);
+            if (isHovering && clickMode == DirectUI.Button.ActionMode.Release)
+            {
+                wasClickedThisFrame = true;
+            }
+            state.ClearActivePress(id);
             isPressed = false;
         }
 
-        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == id && !State.DragInProgressFromPreviousFrame)
+        if (anyActionPressedThisFrame)
         {
-            State.SetButtonPotentialCaptorForFrame(id);
-            State.SetFocus(id);
-            isPressed = true;
-        }
-
-        if (!wasClickedThisFrame && clickActionMode == DirectUI.Button.ActionMode.Press && State.InputCaptorId == id) wasClickedThisFrame = true;
-
-        stylePack.UpdateCurrentStyle(isHovering, isPressed, false, isFocused);
-        ButtonStyle currentStyle = stylePack.Current;
-        Resources.DrawBoxStyleHelper(renderTarget, new(finalBounds.X, finalBounds.Y), new(finalBounds.Width, finalBounds.Height), currentStyle);
-
-        var textBrush = Resources.GetOrCreateBrush(renderTarget, currentStyle.FontColor);
-        var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
-        if (textBrush is not null && textFormat is not null && !string.IsNullOrEmpty(text))
-        {
-            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, new(finalBounds.Width, finalBounds.Height), textAlignment);
-            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+            if (isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
             {
-                textLayout = dwriteFactory.CreateTextLayout(text, textFormat, finalBounds.Width, finalBounds.Height);
-                textLayout.TextAlignment = textAlignment.Horizontal switch
-                {
-                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                    _ => Vortice.DirectWrite.TextAlignment.Leading
-                };
-                textLayout.ParagraphAlignment = textAlignment.Vertical switch
-                {
-                    VAlignment.Top => ParagraphAlignment.Near,
-                    VAlignment.Center => ParagraphAlignment.Center,
-                    VAlignment.Bottom => ParagraphAlignment.Far,
-                    _ => ParagraphAlignment.Near
-                };
-                Resources.textLayoutCache[layoutKey] = textLayout;
+                state.SetButtonPotentialCaptorForFrame(id);
+                state.SetFocus(id);
+                isPressed = true;
             }
-            renderTarget.DrawTextLayout(new Vector2(finalBounds.X + textOffset.X, finalBounds.Y + textOffset.Y), textLayout, textBrush, DrawTextOptions.None);
         }
+
+        if (!wasClickedThisFrame && clickMode == DirectUI.Button.ActionMode.Press && state.InputCaptorId == id)
+        {
+            wasClickedThisFrame = true;
+        }
+
+        // --- Style Resolution ---
+        ButtonStyle currentStyle = ResolveButtonStyle(theme, isHovering, isPressed, disabled, isFocused);
+
+        // --- Drawing ---
+        if (bounds.Width > 0 && bounds.Height > 0)
+        {
+            // Draw Background
+            resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
+
+            // Draw Text
+            DrawButtonText(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
+        }
+
         return wasClickedThisFrame;
+    }
+
+    /// <summary>
+    /// Resolves the final ButtonStyle for the current frame by applying interaction state and style stack overrides.
+    /// </summary>
+    private static ButtonStyle ResolveButtonStyle(ButtonStylePack theme, bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
+    {
+        // Determine base style from interaction state
+        theme.UpdateCurrentStyle(isHovering, isPressed, isDisabled, isFocused);
+        ButtonStyle baseStyle = theme.Current;
+
+        // Create a temporary, modifiable copy for this frame to apply style stack overrides
+        var finalStyle = new ButtonStyle
+        {
+            FillColor = baseStyle.FillColor,
+            BorderColor = baseStyle.BorderColor,
+            FontColor = baseStyle.FontColor,
+            BorderLengthTop = baseStyle.BorderLengthTop,
+            BorderLengthRight = baseStyle.BorderLengthRight,
+            BorderLengthBottom = baseStyle.BorderLengthBottom,
+            BorderLengthLeft = baseStyle.BorderLengthLeft,
+            Roundness = baseStyle.Roundness,
+            FontName = baseStyle.FontName,
+            FontSize = baseStyle.FontSize,
+            FontWeight = baseStyle.FontWeight,
+            FontStyle = baseStyle.FontStyle,
+            FontStretch = baseStyle.FontStretch
+        };
+
+        // Override with values from the style stack if they exist
+        if (isDisabled)
+        {
+            finalStyle.FillColor = GetStyleColor(StyleColor.ButtonDisabled, finalStyle.FillColor);
+            finalStyle.BorderColor = GetStyleColor(StyleColor.BorderDisabled, finalStyle.BorderColor);
+            finalStyle.FontColor = GetStyleColor(StyleColor.TextDisabled, finalStyle.FontColor);
+        }
+        else if (isPressed)
+        {
+            finalStyle.FillColor = GetStyleColor(StyleColor.ButtonPressed, finalStyle.FillColor);
+            finalStyle.BorderColor = GetStyleColor(StyleColor.BorderPressed, finalStyle.BorderColor);
+        }
+        else if (isHovering)
+        {
+            finalStyle.FillColor = GetStyleColor(StyleColor.ButtonHovered, finalStyle.FillColor);
+            finalStyle.BorderColor = GetStyleColor(StyleColor.BorderHovered, finalStyle.BorderColor);
+        }
+        else if (isFocused)
+        {
+            finalStyle.BorderColor = GetStyleColor(StyleColor.BorderFocused, finalStyle.BorderColor);
+        }
+        else // Normal
+        {
+            finalStyle.FillColor = GetStyleColor(StyleColor.Button, finalStyle.FillColor);
+            finalStyle.BorderColor = GetStyleColor(StyleColor.Border, finalStyle.BorderColor);
+        }
+
+        if (!isDisabled)
+        {
+            finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
+        }
+
+        finalStyle.Roundness = GetStyleVar(StyleVar.FrameRounding, finalStyle.Roundness);
+        finalStyle.BorderLength = GetStyleVar(StyleVar.FrameBorderSize, finalStyle.BorderLength);
+
+        return finalStyle;
+    }
+
+    /// <summary>
+    /// Draws the text for a button, using the central text layout cache.
+    /// </summary>
+    private static void DrawButtonText(
+        ID2D1RenderTarget renderTarget,
+        IDWriteFactory dwriteFactory,
+        UIResources resources,
+        Rect bounds,
+        string text,
+        ButtonStyle style,
+        Alignment textAlignment,
+        Vector2 textOffset)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
+        if (textBrush is null) return;
+
+        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(bounds.Width, bounds.Height), textAlignment);
+        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        {
+            var textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
+            if (textFormat is null) return;
+
+            textLayout = dwriteFactory.CreateTextLayout(text, textFormat, bounds.Width, bounds.Height);
+            textLayout.TextAlignment = textAlignment.Horizontal switch
+            {
+                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                _ => Vortice.DirectWrite.TextAlignment.Leading
+            };
+            textLayout.ParagraphAlignment = textAlignment.Vertical switch
+            {
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
+            };
+            resources.textLayoutCache[layoutKey] = textLayout;
+        }
+
+        renderTarget.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y), textLayout, textBrush, DrawTextOptions.None);
     }
 }
 </file>
@@ -2584,7 +2724,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (StatelessButton(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release))
+            if (ButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero))
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -2599,7 +2739,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (StatelessButton(labelId, labelBounds, node.Text, labelStyle, labelTextAlignment, DirectUI.Button.ActionMode.Press, textOffset: labelOffset))
+        if (ButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset))
         {
             clickedNode = node;
         }
@@ -2889,6 +3029,7 @@ public class UIPersistentState
 {
     // --- Persistent Element State ---
     private readonly Dictionary<int, object> uiElements = new();
+    private readonly Dictionary<int, object?> _userData = new();
 
     public T GetOrCreateElement<T>(int id) where T : new()
     {
@@ -2900,6 +3041,23 @@ public class UIPersistentState
         T newElement = new();
         uiElements[id] = newElement;
         return newElement;
+    }
+
+    public void SetUserData(int id, object? data)
+    {
+        if (data != null)
+        {
+            _userData[id] = data;
+        }
+        else
+        {
+            _userData.Remove(id);
+        }
+    }
+
+    public object? GetUserData(int id)
+    {
+        return _userData.TryGetValue(id, out var data) ? data : null;
     }
 
 
@@ -3326,10 +3484,12 @@ public class InputManager
     // Persistent state (held across frames)
     private Vector2 _currentMousePos = new(-1, -1);
     private bool _isLeftMouseButtonDown;
+    private bool _isRightMouseButtonDown;
     private readonly HashSet<Keys> _heldKeys = new();
 
     // Per-frame state (reset every frame)
     private bool _wasLeftMouseClickedThisFrame;
+    private bool _wasRightMouseClickedThisFrame;
     private float _scrollDeltaThisFrame;
     private readonly Queue<char> _typedCharsThisFrame = new();
     private readonly List<Keys> _pressedKeysThisFrame = new();
@@ -3344,6 +3504,8 @@ public class InputManager
             _currentMousePos,
             _wasLeftMouseClickedThisFrame,
             _isLeftMouseButtonDown,
+            _wasRightMouseClickedThisFrame,
+            _isRightMouseButtonDown,
             _scrollDeltaThisFrame,
             _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
             _pressedKeysThisFrame,
@@ -3358,6 +3520,7 @@ public class InputManager
     public void PrepareNextFrame()
     {
         _wasLeftMouseClickedThisFrame = false;
+        _wasRightMouseClickedThisFrame = false;
         _scrollDeltaThisFrame = 0f;
         _typedCharsThisFrame.Clear();
         _pressedKeysThisFrame.Clear();
@@ -3383,6 +3546,11 @@ public class InputManager
             _isLeftMouseButtonDown = true;
             _wasLeftMouseClickedThisFrame = true;
         }
+        else if (button == MouseButton.Right)
+        {
+            _isRightMouseButtonDown = true;
+            _wasRightMouseClickedThisFrame = true;
+        }
     }
 
     public void SetMouseUp(MouseButton button)
@@ -3390,6 +3558,10 @@ public class InputManager
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = false;
+        }
+        else if (button == MouseButton.Right)
+        {
+            _isRightMouseButtonDown = false;
         }
     }
 
@@ -3435,6 +3607,8 @@ public readonly struct InputState
     public readonly Vector2 MousePosition;
     public readonly bool WasLeftMousePressedThisFrame; // True if the left button went down this frame
     public readonly bool IsLeftMouseDown; // True if the left button is currently held down
+    public readonly bool WasRightMousePressedThisFrame; // True if the right button went down this frame
+    public readonly bool IsRightMouseDown; // True if the right button is currently held down
     public readonly float ScrollDelta; // Mouse wheel scroll amount this frame
     public readonly IReadOnlyList<char> TypedCharacters; // Characters typed this frame
     public readonly IReadOnlyList<Keys> PressedKeys; // Keys pressed down this frame
@@ -3445,6 +3619,8 @@ public readonly struct InputState
         Vector2 mousePosition,
         bool wasLeftMousePressedThisFrame,
         bool isLeftMouseDown,
+        bool wasRightMousePressedThisFrame,
+        bool isRightMouseDown,
         float scrollDelta,
         IReadOnlyList<char> typedCharacters,
         IReadOnlyList<Keys> pressedKeys,
@@ -3454,6 +3630,8 @@ public readonly struct InputState
         MousePosition = mousePosition;
         WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
         IsLeftMouseDown = isLeftMouseDown;
+        WasRightMousePressedThisFrame = wasRightMousePressedThisFrame;
+        IsRightMouseDown = isRightMouseDown;
         ScrollDelta = scrollDelta;
         TypedCharacters = typedCharacters;
         PressedKeys = pressedKeys;
@@ -4063,299 +4241,10 @@ public class TreeStyle
 <file path="Widgets\Button.cs">
 namespace DirectUI;
 
-using System;
-using System.Numerics;
-using Vortice.DirectWrite;
-using Vortice.Mathematics;
-using Vortice.Direct2D1;
-using SharpGen.Runtime;
-
-public class Button
+public static class Button
 {
     public enum ActionMode { Release, Press }
     public enum ClickBehavior { Left, Right, Both }
-
-    // --- Properties ---
-    public Vector2 Position { get; set; } = Vector2.Zero;
-    public Vector2 Size { get; set; } = new(84, 28);
-    public Vector2 Origin { get; set; } = Vector2.Zero;
-    public string Text { get; set; } = "";
-    public Vector2 TextOffset { get; set; } = Vector2.Zero;
-    public Alignment TextAlignment { get; set; } = new(HAlignment.Center, VAlignment.Center);
-    public ButtonStylePack Themes { get; set; } = new();
-    public ActionMode LeftClickActionMode { get; set; } = ActionMode.Release;
-    public bool AutoWidth { get; set; } = false;
-    public Vector2 TextMargin { get; set; } = new(10, 5);
-    public ClickBehavior Behavior { get; set; } = Button.ClickBehavior.Left;
-    public bool Disabled { get; set; } = false;
-    public object? UserData { get; set; } = null;
-
-    public bool IsHovering { get; internal set; } = false;
-    public bool IsFocused { get; internal set; } = false;
-
-    // --- Internal Stateful Cache ---
-    private IDWriteTextLayout? _cachedTextLayout;
-    private UIResources.TextLayoutCacheKey _cachedLayoutKey;
-
-    public Rect GlobalBounds
-    {
-        get
-        {
-            float x = Position.X - Origin.X;
-            float y = Position.Y - Origin.Y;
-            float width = Math.Max(0, Size.X);
-            float height = Math.Max(0, Size.Y);
-            Rect calculatedBounds = new(x, y, width, height);
-
-            return calculatedBounds;
-        }
-    }
-
-    private bool isPressed = false;
-
-
-    internal bool Update(int intId)
-    {
-        var context = UI.Context;
-        var state = UI.State;
-        var resources = UI.Resources;
-
-        var renderTarget = context.RenderTarget;
-        var dwriteFactory = context.DWriteFactory;
-        var input = context.InputState;
-
-        if (renderTarget is null || dwriteFactory is null)
-        {
-            return false;
-        }
-
-        IsFocused = state.FocusedElementId == intId;
-
-        PerformAutoWidth(dwriteFactory);
-
-        bool wasClickedThisFrame = false;
-        isPressed = false;
-
-        if (Disabled)
-        {
-            IsHovering = false;
-            if (state.ActivelyPressedElementId == intId)
-            {
-                state.ClearActivePress(intId);
-            }
-        }
-        else
-        {
-            Rect bounds = GlobalBounds;
-            IsHovering = bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-
-            if (IsHovering)
-            {
-                state.SetPotentialInputTarget(intId);
-            }
-
-            bool primaryActionHeld = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.IsLeftMouseDown;
-            bool primaryActionPressedThisFrame = (Behavior is ClickBehavior.Left or ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
-
-            if (!primaryActionHeld && state.ActivelyPressedElementId == intId)
-            {
-                if (IsHovering && LeftClickActionMode is ActionMode.Release)
-                {
-                    wasClickedThisFrame = true;
-                }
-                state.ClearActivePress(intId);
-            }
-
-            if (primaryActionPressedThisFrame)
-            {
-                if (IsHovering && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
-                {
-                    state.SetButtonPotentialCaptorForFrame(intId);
-                    state.SetFocus(intId);
-                }
-            }
-            isPressed = (state.ActivelyPressedElementId == intId);
-        }
-
-        UpdateStyle();
-
-        try
-        {
-            Rect currentBounds = GlobalBounds;
-            if (currentBounds.Width > 0 && currentBounds.Height > 0)
-            {
-                DrawBackground(renderTarget);
-                DrawText(renderTarget, dwriteFactory);
-            }
-        }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
-        {
-            Console.WriteLine($"Render target needs recreation during Button draw: {ex.Message}");
-            resources.CleanupResources();
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error drawing button {intId}: {ex}");
-            return false;
-        }
-
-        if (!wasClickedThisFrame && LeftClickActionMode is ActionMode.Press && state.InputCaptorId == intId)
-        {
-            wasClickedThisFrame = true;
-        }
-
-        return wasClickedThisFrame;
-    }
-
-    internal void UpdateStyle()
-    {
-        if (Themes is null) return;
-
-        // Determine base style from interaction state
-        ButtonStyle baseStyle;
-        if (Disabled) baseStyle = Themes.Disabled;
-        else if (isPressed) baseStyle = Themes.Pressed;
-        else if (IsHovering) baseStyle = Themes.Hover;
-        else if (IsFocused) baseStyle = Themes.Focused;
-        else baseStyle = Themes.Normal;
-
-        // Create a temporary, modifiable copy for this frame
-        var currentStyle = new ButtonStyle
-        {
-            FillColor = baseStyle.FillColor,
-            BorderColor = baseStyle.BorderColor,
-            FontColor = baseStyle.FontColor,
-            BorderLengthTop = baseStyle.BorderLengthTop,
-            BorderLengthRight = baseStyle.BorderLengthRight,
-            BorderLengthBottom = baseStyle.BorderLengthBottom,
-            BorderLengthLeft = baseStyle.BorderLengthLeft,
-            Roundness = baseStyle.Roundness,
-            FontName = baseStyle.FontName,
-            FontSize = baseStyle.FontSize,
-            FontWeight = baseStyle.FontWeight,
-            FontStyle = baseStyle.FontStyle,
-            FontStretch = baseStyle.FontStretch
-        };
-
-        // Override with values from the style stack if they exist
-        if (Disabled)
-        {
-            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonDisabled, currentStyle.FillColor);
-            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderDisabled, currentStyle.BorderColor);
-            currentStyle.FontColor = UI.GetStyleColor(StyleColor.TextDisabled, currentStyle.FontColor);
-        }
-        else if (isPressed)
-        {
-            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonPressed, currentStyle.FillColor);
-            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderPressed, currentStyle.BorderColor);
-        }
-        else if (IsHovering)
-        {
-            currentStyle.FillColor = UI.GetStyleColor(StyleColor.ButtonHovered, currentStyle.FillColor);
-            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderHovered, currentStyle.BorderColor);
-        }
-        else if (IsFocused)
-        {
-            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.BorderFocused, currentStyle.BorderColor);
-        }
-        else // Normal
-        {
-            currentStyle.FillColor = UI.GetStyleColor(StyleColor.Button, currentStyle.FillColor);
-            currentStyle.BorderColor = UI.GetStyleColor(StyleColor.Border, currentStyle.BorderColor);
-        }
-
-        // Apply general text color override if not disabled
-        if (!Disabled)
-        {
-            currentStyle.FontColor = UI.GetStyleColor(StyleColor.Text, currentStyle.FontColor);
-        }
-
-        currentStyle.Roundness = UI.GetStyleVar(StyleVar.FrameRounding, currentStyle.Roundness);
-        currentStyle.BorderLength = UI.GetStyleVar(StyleVar.FrameBorderSize, currentStyle.BorderLength);
-
-        // Finally, assign the computed style to the pack's Current property
-        Themes.Current = currentStyle;
-    }
-
-    internal void PerformAutoWidth(IDWriteFactory dwriteFactory)
-    {
-        if (!AutoWidth || dwriteFactory is null || Themes is null)
-        {
-            return;
-        }
-
-        Vector2 textSize = UI.Resources.MeasureText(dwriteFactory, Text, Themes.Normal);
-        float desiredWidth = textSize.X + TextMargin.X * 2;
-
-        if (desiredWidth > 0 && Math.Abs(Size.X - desiredWidth) > 0.1f)
-        {
-            Size = new Vector2(desiredWidth, Size.Y);
-        }
-    }
-
-    private void DrawBackground(ID2D1RenderTarget renderTarget)
-    {
-        Rect bounds = GlobalBounds;
-        ButtonStyle? style = Themes?.Current;
-        if (style is null || bounds.Width <= 0 || bounds.Height <= 0) return;
-
-        UI.Resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), style);
-    }
-
-    private void DrawText(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory)
-    {
-        if (string.IsNullOrEmpty(Text)) return;
-        ButtonStyle? style = Themes?.Current;
-        if (style is null) return;
-
-        ID2D1SolidColorBrush textBrush = UI.Resources.GetOrCreateBrush(renderTarget, style.FontColor);
-        if (textBrush is null) return;
-
-        Rect bounds = GlobalBounds;
-        if (bounds.Width <= 0 || bounds.Height <= 0) return;
-
-        try
-        {
-            var newLayoutKey = new UIResources.TextLayoutCacheKey(Text, style, new Vector2(bounds.Width, bounds.Height), TextAlignment);
-            if (_cachedTextLayout == null || !newLayoutKey.Equals(_cachedLayoutKey))
-            {
-                IDWriteTextFormat? textFormat = UI.Resources.GetOrCreateTextFormat(dwriteFactory, style);
-                if (textFormat is null) return;
-
-                _cachedTextLayout?.Dispose();
-                _cachedTextLayout = dwriteFactory.CreateTextLayout(Text, textFormat, bounds.Width, bounds.Height);
-                _cachedTextLayout.TextAlignment = TextAlignment.Horizontal switch
-                {
-                    HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                    HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                    HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                    _ => Vortice.DirectWrite.TextAlignment.Leading
-                };
-                _cachedTextLayout.ParagraphAlignment = TextAlignment.Vertical switch
-                {
-                    VAlignment.Top => ParagraphAlignment.Near,
-                    VAlignment.Center => ParagraphAlignment.Center,
-                    VAlignment.Bottom => ParagraphAlignment.Far,
-                    _ => ParagraphAlignment.Near
-                };
-                _cachedLayoutKey = newLayoutKey;
-            }
-
-            var textOrigin = new Vector2(bounds.X + TextOffset.X, bounds.Y + TextOffset.Y);
-            renderTarget.DrawTextLayout(textOrigin, _cachedTextLayout, textBrush, DrawTextOptions.None);
-        }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
-        {
-            Console.WriteLine($"Button Text Draw failed (RecreateTarget): {ex.Message}.");
-            _cachedTextLayout?.Dispose();
-            _cachedTextLayout = null;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error drawing button text: {ex.Message}");
-        }
-    }
 }
 </file>
 
@@ -5062,26 +4951,20 @@ internal class LineEdit
 </file>
 
 <file path="Widgets\LineEditState.cs">
-// Widgets/LineEditState.cs
 using System.Collections.Generic;
 
 namespace DirectUI;
 
-// Record for undo/redo functionality
 internal record struct LineEditUndoRecord(string Text, int CaretPosition, float ScrollPixelOffset);
 
-// State object for an immediate-mode LineEdit control
 internal class LineEditState
 {
-    // Caret and view state
     internal int CaretPosition;
     internal float ScrollPixelOffset;
 
-    // Blinking caret state
     internal float BlinkTimer;
     internal bool IsBlinkOn = true;
 
-    // Undo/Redo state
     internal readonly Stack<LineEditUndoRecord> UndoStack = new();
     internal readonly Stack<LineEditUndoRecord> RedoStack = new();
     internal const int HistoryLimit = 50;

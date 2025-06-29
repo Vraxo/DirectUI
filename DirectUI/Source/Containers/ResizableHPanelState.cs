@@ -1,6 +1,8 @@
-﻿namespace DirectUI;
+﻿using System.Numerics;
 
-internal class ResizableHPanelState
+namespace DirectUI;
+
+internal class ResizableHPanelState : ILayoutContainer
 {
     internal int Id { get; }
     internal HBoxContainerState InnerHBox { get; }
@@ -12,4 +14,8 @@ internal class ResizableHPanelState
         InnerHBox = innerHBox;
         ClipRectWasPushed = clipPushed;
     }
+
+    public Vector2 GetCurrentPosition() => InnerHBox.GetCurrentPosition();
+
+    public void Advance(Vector2 elementSize) => InnerHBox.Advance(elementSize);
 }

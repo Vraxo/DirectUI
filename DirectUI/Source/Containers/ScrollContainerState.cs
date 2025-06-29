@@ -2,7 +2,7 @@
 
 namespace DirectUI;
 
-public class ScrollContainerState
+public class ScrollContainerState : ILayoutContainer
 {
     // State managed by the UI system
     internal Vector2 CurrentScrollOffset { get; set; }
@@ -17,4 +17,8 @@ public class ScrollContainerState
 
     // Public parameterless constructor required for GetOrCreateElement
     public ScrollContainerState() { }
+
+    public Vector2 GetCurrentPosition() => ContentVBox.GetCurrentPosition();
+
+    public void Advance(Vector2 elementSize) => ContentVBox.Advance(elementSize);
 }

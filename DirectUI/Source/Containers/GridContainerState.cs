@@ -2,7 +2,7 @@
 
 namespace DirectUI;
 
-internal class GridContainerState
+internal class GridContainerState : ILayoutContainer
 {
     internal int Id { get; }
     internal Vector2 StartPosition { get; } // Top-left corner of the grid area
@@ -89,4 +89,8 @@ internal class GridContainerState
         float finalHeight = AccumulatedHeight + CurrentRowMaxHeight;
         return new Vector2(AccumulatedWidth, finalHeight);
     }
+
+    public Vector2 GetCurrentPosition() => CurrentDrawPosition;
+
+    public void Advance(Vector2 elementSize) => MoveToNextCell(elementSize);
 }
