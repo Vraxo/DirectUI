@@ -1,4 +1,5 @@
-﻿using System;
+﻿// InputMapEditor.cs
+using System;
 using System.Collections.Generic;
 using System.Numerics;
 using Cocoshell.Input;
@@ -16,6 +17,10 @@ public class InputMapEditor
     private readonly string _inputMapPath;
     private bool _inputMapDirty = false;
     private int _newActionCounter = 1;
+
+    // State for the "press to bind" feature
+    private (string ActionName, int BindingIndex)? _listeningForBinding;
+    private bool _ignoreInputForOneFrame;
 
     // Caches
     private readonly List<string> _actionNamesCache = new();
@@ -45,6 +50,9 @@ public class InputMapEditor
 
     public void Draw(UIContext context, Rect contentArea)
     {
+        // --- Input Listening Logic ---
+        HandleInputListening(context);
+
         var paddedContentRect = new Rect(
             contentArea.X + 10, contentArea.Y + 10,
             Math.Max(0, contentArea.Width - 20),
@@ -59,11 +67,8 @@ public class InputMapEditor
         {
             // --- Scrollable list of actions and bindings ---
             UI.BeginScrollableRegion("input_map_scroll", scrollableSize);
-            // FIX: Pass the current layout position to the inner VBox so it inherits the scroll offset.
-            // Previously, this was Vector2.Zero, which caused the content to ignore the scroll container.
-            UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8); // Inner VBox for item spacing
+            UI.BeginVBoxContainer("input_map_scroll_content", UI.Context.Layout.GetCurrentPosition(), 8);
             {
-                // Use a standard for-loop for safe removal from the cache during iteration
                 for (int i = 0; i < _actionNamesCache.Count; i++)
                 {
                     string actionName = _actionNamesCache[i];
@@ -91,6 +96,58 @@ public class InputMapEditor
         }
         UI.EndVBoxContainer();
     }
+
+    private void HandleInputListening(UIContext context)
+    {
+        if (_ignoreInputForOneFrame)
+        {
+            _ignoreInputForOneFrame = false;
+            return;
+        }
+
+        if (!_listeningForBinding.HasValue) return;
+
+        var (actionName, bindingIndex) = _listeningForBinding.Value;
+        var input = context.InputState;
+
+        // Ensure the binding still exists before trying to modify it
+        if (!_inputMap.TryGetValue(actionName, out var bindings) || bindingIndex >= bindings.Count)
+        {
+            _listeningForBinding = null;
+            return;
+        }
+
+        InputBinding targetBinding = bindings[bindingIndex];
+        bool inputWasBound = false;
+
+        // Check for Keyboard Input
+        if (input.PressedKeys.Count > 0)
+        {
+            targetBinding.Type = BindingType.Keyboard;
+            targetBinding.KeyOrButton = input.PressedKeys[0].ToString();
+            inputWasBound = true;
+        }
+        // Check for Mouse Input
+        else if (input.PressedMouseButtons.Count > 0)
+        {
+            targetBinding.Type = BindingType.MouseButton;
+            targetBinding.KeyOrButton = input.PressedMouseButtons[0].ToString();
+            inputWasBound = true;
+        }
+        // Check if user clicked somewhere else to cancel
+        else if (input.WasLeftMousePressedThisFrame || input.WasRightMousePressedThisFrame)
+        {
+            // This click didn't start a new binding listen, so it must be a cancel click.
+            _listeningForBinding = null;
+        }
+
+        if (inputWasBound)
+        {
+            _inputMapDirty = true;
+            _listeningForBinding = null; // Stop listening
+        }
+    }
+
 
     private string? DrawInputMapAction(string actionName, List<InputBinding> bindings)
     {
@@ -132,12 +189,30 @@ public class InputMapEditor
                             _inputMapDirty = true;
                         }
 
-                        // Key/Button Text Edit
-                        string tempKey = binding.KeyOrButton;
-                        if (UI.LineEdit($"binding_key_{actionName}_{j}", ref tempKey, new Vector2(120, 24)))
+                        // Button to display binding and enter listening mode
+                        string buttonText = binding.KeyOrButton;
+                        bool isThisOneListening = _listeningForBinding.HasValue &&
+                                                  _listeningForBinding.Value.ActionName == actionName &&
+                                                  _listeningForBinding.Value.BindingIndex == j;
+
+                        if (isThisOneListening)
                         {
-                            binding.KeyOrButton = tempKey;
-                            _inputMapDirty = true;
+                            buttonText = "Press a key...";
+                        }
+
+                        if (UI.Button($"binding_key_{actionName}_{j}", buttonText, new Vector2(150, 24)))
+                        {
+                            if (!isThisOneListening)
+                            {
+                                // Start listening for this binding
+                                _listeningForBinding = (actionName, j);
+                                _ignoreInputForOneFrame = true;
+                            }
+                            else
+                            {
+                                // If already listening, clicking again cancels
+                                _listeningForBinding = null;
+                            }
                         }
 
                         // Remove Binding Button

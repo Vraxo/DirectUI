@@ -1,4 +1,7 @@
-﻿using System.Diagnostics;
+﻿// Win32Window.cs
+using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 
 namespace DirectUI;
@@ -211,6 +214,34 @@ public abstract class Win32Window : IDisposable
                 OnMouseUp(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
                 return IntPtr.Zero;
 
+            case NativeMethods.WM_MBUTTONDOWN:
+                NativeMethods.SetCapture(hWnd);
+                OnMouseDown(MouseButton.Middle, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_MBUTTONUP:
+                NativeMethods.ReleaseCapture();
+                OnMouseUp(MouseButton.Middle, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                return IntPtr.Zero;
+
+            case NativeMethods.WM_XBUTTONDOWN:
+                {
+                    short xButton = NativeMethods.HiWord(wParam);
+                    var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+                    NativeMethods.SetCapture(hWnd);
+                    OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                    return IntPtr.Zero;
+                }
+
+            case NativeMethods.WM_XBUTTONUP:
+                {
+                    short xButton = NativeMethods.HiWord(wParam);
+                    var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+                    NativeMethods.ReleaseCapture();
+                    OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+                    return IntPtr.Zero;
+                }
+
             case NativeMethods.WM_MOUSEWHEEL:
                 short wheelDelta = NativeMethods.HiWord(wParam);
                 OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
@@ -333,7 +364,7 @@ public abstract class Win32Window : IDisposable
 
     }
 
-    protected virtual void OnMouseUp(MouseButton button, int x, int y)
+protected virtual void OnMouseUp(MouseButton button, int x, int y)
     {
 
     }

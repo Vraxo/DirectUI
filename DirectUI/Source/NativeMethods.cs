@@ -1,4 +1,5 @@
-﻿using System;
+﻿// NativeMethods.cs
+using System;
 using System.Runtime.InteropServices;
 
 // No changes needed here if it was correct from the previous step.
@@ -43,6 +44,10 @@ internal static class NativeMethods
     public const int WM_LBUTTONUP = 0x0202; // Ensure this exists
     public const int WM_RBUTTONDOWN = 0x0204;
     public const int WM_RBUTTONUP = 0x0205;
+    public const int WM_MBUTTONDOWN = 0x0207;
+    public const int WM_MBUTTONUP = 0x0208;
+    public const int WM_XBUTTONDOWN = 0x020B;
+    public const int WM_XBUTTONUP = 0x020C;
     public const int WM_MOUSEMOVE = 0x0200; // Ensure this exists
     public const int WM_MOUSEWHEEL = 0x020A;
     public const int WM_QUIT = 0x0012;

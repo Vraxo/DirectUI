@@ -24,6 +24,7 @@ public class InputManager
     private readonly Queue<char> _typedCharsThisFrame = new();
     private readonly List<Keys> _pressedKeysThisFrame = new();
     private readonly List<Keys> _releasedKeysThisFrame = new();
+    private readonly List<MouseButton> _pressedMouseButtonsThisFrame = new();
 
     /// <summary>
     /// Creates a snapshot of the current input state for the UI to process.
@@ -40,7 +41,8 @@ public class InputManager
             _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
             _pressedKeysThisFrame,
             _releasedKeysThisFrame,
-            _heldKeys
+            _heldKeys,
+            _pressedMouseButtonsThisFrame.ToList() // Create a copy for the readonly list
         );
     }
 
@@ -55,6 +57,7 @@ public class InputManager
         _typedCharsThisFrame.Clear();
         _pressedKeysThisFrame.Clear();
         _releasedKeysThisFrame.Clear();
+        _pressedMouseButtonsThisFrame.Clear();
     }
 
     // --- Raw Event Handlers ---
@@ -71,6 +74,8 @@ public class InputManager
 
     public void SetMouseDown(MouseButton button)
     {
+        _pressedMouseButtonsThisFrame.Add(button);
+
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = true;

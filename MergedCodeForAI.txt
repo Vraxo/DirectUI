@@ -5207,6 +5207,7 @@ using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
+using SharpGen.Runtime;
 
 namespace DirectUI;
 
@@ -5244,27 +5245,60 @@ internal class LineEdit
         var input = context.InputState;
 
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
-
-        bool isFocused = uiState.FocusedElementId == intId;
         bool textChanged = false;
 
-        // --- Focus Management ---
+        // --- Focus Management & Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
         {
             uiState.SetFocus(intId);
             uiState.SetPotentialCaptorForFrame(intId); // Claim the press
-            isFocused = true;
+
+            // --- BEGIN: Caret positioning logic on click ---
+            // We need to temporarily calculate drawing info here for hit-testing.
+            // This is the only place we need to do this, as keyboard input moves the caret programmatically.
+            finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
+            var styleForHitTest = finalTheme.Current;
+            var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
+            var contentRectForHitTest = new Rect(
+                bounds.X + textMargin.X,
+                bounds.Y + textMargin.Y,
+                Math.Max(0, bounds.Width - textMargin.X * 2),
+                Math.Max(0, bounds.Height - textMargin.Y * 2)
+            );
+
+            var textLayout = GetTextLayout(textForHitTest, size, styleForHitTest, float.MaxValue);
+            if (textLayout != null)
+            {
+                float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
+                float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
+
+                textLayout.HitTestPoint(relativeClickX, relativeClickY, out RawBool isTrailingHit, out RawBool isInside, out var hitTestMetrics);
+
+                int newCaretPos = (int)hitTestMetrics.TextPosition;
+                if (isTrailingHit)
+                {
+                    newCaretPos++;
+                }
+
+                state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
+
+                // Reset blink and update scroll to show caret.
+                state.IsBlinkOn = true;
+                state.BlinkTimer = 0;
+                UpdateView(text, state, size, textMargin);
+            }
+            // --- END: Caret positioning logic on click ---
         }
 
         // --- Input Processing ---
-        if (isFocused && !disabled)
+        if (uiState.FocusedElementId == intId && !disabled)
         {
             textChanged = ProcessInput(ref text, state, size, maxLength, textMargin, input);
         }
 
         // --- Drawing ---
-        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, isFocused);
+        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, uiState.FocusedElementId == intId);
         resources.DrawBoxStyleHelper(context.RenderTarget, position, size, finalTheme.Current);
 
         // Define content area and clip to it
@@ -5280,7 +5314,7 @@ internal class LineEdit
         var styleToDraw = finalTheme.Current;
         var drawPos = contentRect.TopLeft;
 
-        if (string.IsNullOrEmpty(text) && !isFocused)
+        if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
         {
             DrawVisibleText(placeholderText, state, size, finalTheme.Disabled, drawPos);
         }
@@ -5289,7 +5323,7 @@ internal class LineEdit
             DrawVisibleText(textToDraw, state, size, styleToDraw, drawPos);
         }
 
-        if (isFocused && state.IsBlinkOn)
+        if (uiState.FocusedElementId == intId && state.IsBlinkOn)
         {
             DrawCaret(textToDraw, state, size, styleToDraw, contentRect);
         }

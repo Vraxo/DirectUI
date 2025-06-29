@@ -17,6 +17,7 @@ public readonly struct InputState
     public readonly IReadOnlyList<Keys> PressedKeys; // Keys pressed down this frame
     public readonly IReadOnlyList<Keys> ReleasedKeys; // Keys released this frame
     public readonly IReadOnlyCollection<Keys> HeldKeys; // Keys currently held down
+    public readonly IReadOnlyList<MouseButton> PressedMouseButtons; // Mouse buttons pressed down this frame
 
     public InputState(
         Vector2 mousePosition,
@@ -28,7 +29,8 @@ public readonly struct InputState
         IReadOnlyList<char> typedCharacters,
         IReadOnlyList<Keys> pressedKeys,
         IReadOnlyList<Keys> releasedKeys,
-        IReadOnlyCollection<Keys> heldKeys)
+        IReadOnlyCollection<Keys> heldKeys,
+        IReadOnlyList<MouseButton> pressedMouseButtons)
     {
         MousePosition = mousePosition;
         WasLeftMousePressedThisFrame = wasLeftMousePressedThisFrame;
@@ -40,5 +42,6 @@ public readonly struct InputState
         PressedKeys = pressedKeys;
         ReleasedKeys = releasedKeys;
         HeldKeys = heldKeys;
+        PressedMouseButtons = pressedMouseButtons;
     }
 }
