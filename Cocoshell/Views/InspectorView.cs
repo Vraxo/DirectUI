@@ -11,6 +11,7 @@ namespace DirectUI;
 
 public class InspectorView
 {
+    private const float PanelGap = 10f; // Copied from MainView for internal layout
     private const float PanelPadding = 10f;
     private const float GridGap = 8f;
 
@@ -31,22 +32,45 @@ public class InspectorView
         FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
     };
 
-    public void Draw(Node? selectedNode, float panelWidth)
+    public void Draw(Node? selectedNode, float panelWidth, float panelHeight)
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
 
-        DrawHeader(availableContentWidth);
-
-        if (selectedNode is null)
+        // Use a VBox to manage the layout of the header and the scrollable area.
+        UI.BeginVBoxContainer("inspector_outer_vbox", UI.Context.Layout.GetCurrentPosition(), PanelGap);
         {
-            UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
-            return;
-        }
+            // --- Header ---
+            DrawHeader(availableContentWidth);
 
-        UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
-        {
-            DrawNodeInfo(selectedNode, availableContentWidth);
-            DrawAllProperties(selectedNode, availableContentWidth);
+            // --- Scrollable Area ---
+            // Calculate height available for the scroll region after the header and gap are accounted for.
+            Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
+            float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
+            if (scrollableHeight < 0) scrollableHeight = 0;
+
+            var scrollableSize = new Vector2(availableContentWidth, scrollableHeight);
+
+            UI.BeginScrollableRegion("inspector_scroll", scrollableSize);
+            {
+                // A VBox for the content inside the scroll region
+                UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                {
+                    if (selectedNode is null)
+                    {
+                        UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+                    }
+                    else
+                    {
+                        // The scrollbar will take up some space, but for now we'll let content be clipped.
+                        // A more advanced scroll container would provide the inner content width.
+                        float innerContentWidth = availableContentWidth;
+                        DrawNodeInfo(selectedNode, innerContentWidth);
+                        DrawAllProperties(selectedNode, innerContentWidth);
+                    }
+                }
+                UI.EndVBoxContainer();
+            }
+            UI.EndScrollableRegion();
         }
         UI.EndVBoxContainer();
     }

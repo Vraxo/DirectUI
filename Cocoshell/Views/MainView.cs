@@ -61,10 +61,13 @@ public class MainView
         var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
         var padding = new Vector2(PanelPadding, PanelPadding);
 
-        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
-            minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
+        // Calculate the available content height inside the panel for the inspector view.
+        float panelContentHeight = UI.Context.RenderTarget.Size.Height - MenuBarHeight - (padding.Y * 2);
 
-        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth);
+        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
+            minWidth: 150, maxWidth: 400, padding: padding, gap: 0, panelStyle: panelStyle);
+
+        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
 
         UI.EndResizableVPanel();
     }

@@ -1822,11 +1822,13 @@ public static partial class UI
 
         int intId = id.GetHashCode();
 
-        // --- Style and Sizing ---
-        // These could be replaced by a dedicated CheckboxStyle object in the future.
+        // --- Style and Sizing (UE5 Theme Adjustments) ---
         var boxSize = new Vector2(16, 16);
         var spacing = 5f;
-        var checkmarkColor = DefaultTheme.Accent;
+        // Checkmark is now pure white.
+        var checkmarkColor = Colors.White;
+        // Background is a specific dark grey.
+        var normalFillColor = new Color4(43 / 255f, 45 / 255f, 47 / 255f, 1.0f); // #2B2D2F
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
         var textStyle = new ButtonStyle { FontColor = textColor }; // Use ButtonStyle for font properties.
 
@@ -1879,7 +1881,8 @@ public static partial class UI
         }
         else
         {
-            boxStyle.FillColor = DefaultTheme.NormalFill;
+            // Use the specified dark grey for the normal background.
+            boxStyle.FillColor = normalFillColor;
             boxStyle.BorderColor = DefaultTheme.NormalBorder;
         }
 
@@ -1895,6 +1898,7 @@ public static partial class UI
         // Draw the checkmark if checked
         if (isChecked)
         {
+            // The checkmarkColor variable was changed above to pure white.
             var checkBrush = Resources.GetOrCreateBrush(rt, checkmarkColor);
             if (checkBrush != null)
             {
@@ -4397,7 +4401,7 @@ public class ButtonStyle : BoxStyle
 
     // Properties needed for creating IDWriteTextFormat
     public string FontName { get; set; } = "Segoe UI";
-    public float FontSize { get; set; } = 16.0f;
+    public float FontSize { get; set; } = 14.0f;
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
@@ -6662,21 +6666,31 @@ public class BottomPanelView
 </file>
 
 <file path="Views\InspectorView.cs">
+using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using Cherris;
 using Vortice.DirectWrite;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
 public class InspectorView
 {
     private const float PanelPadding = 10f;
+    private const float GridGap = 8f;
+
+    private static readonly HashSet<string> s_ignoredProperties =
+    [
+        "Parent", "Children", "AbsolutePath", "ScaledSize"
+    ];
 
     private readonly ButtonStyle _titleStyle = new()
     {
         FontWeight = FontWeight.SemiBold,
-        FontSize = 16f
+        FontSize = 14f
     };
 
     private readonly ButtonStyle _propertyLabelStyle = new()
@@ -6687,15 +6701,9 @@ public class InspectorView
 
     public void Draw(Node? selectedNode, float panelWidth)
     {
-        float availableWidth = panelWidth - (PanelPadding * 2);
+        float availableContentWidth = panelWidth - (PanelPadding * 2);
 
-        UI.Label(
-            "inspector_title",
-            "Inspector",
-            size: new(availableWidth, 0),
-            style: _titleStyle,
-            textAlignment: new(HAlignment.Center, VAlignment.Center)
-        );
+        DrawHeader(availableContentWidth);
 
         if (selectedNode is null)
         {
@@ -6703,89 +6711,128 @@ public class InspectorView
             return;
         }
 
-        // --- Layout container for all properties ---
         UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
         {
-            // --- Node Type Display ---
-            UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
+            DrawNodeInfo(selectedNode, availableContentWidth);
+            DrawAllProperties(selectedNode, availableContentWidth);
+        }
+        UI.EndVBoxContainer();
+    }
 
-            // --- Separator ---
-            Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
+    private void DrawHeader(float availableWidth)
+    {
+        UI.Label(
+            "inspector_title",
+            "Inspector",
+            size: new(availableWidth, 0),
+            style: _titleStyle,
+            textAlignment: new(HAlignment.Center, VAlignment.Center)
+        );
+    }
 
+    private void DrawNodeInfo(Node selectedNode, float availableWidth)
+    {
+        UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
+
+        Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
+        var lineBrush = UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder);
+        if (lineBrush != null)
+        {
             UI.Context.RenderTarget.DrawLine(
                 linePos,
                 linePos + new Vector2(availableWidth, 0),
-                UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder),
+                lineBrush,
                 1f);
-
-            // --- Property Editors/Viewers ---
-            float gridGap = 8f;
-            float labelCellWidth = (availableWidth - gridGap) * 0.4f; // 40% for label
-            float valueCellWidth = (availableWidth - gridGap) * 0.6f; // 60% for value
-
-            // Get all public instance properties that can be read and are not indexers
-            var properties = selectedNode.GetType()
-                .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-                .Where(p => p.CanRead && p.GetIndexParameters().Length == 0);
-
-            foreach (var prop in properties)
-            {
-                // Skip some properties that aren't useful to display this way
-                if (prop.Name is "Parent" or "Children" or "AbsolutePath" or "ScaledSize")
-                    continue;
-
-                UI.BeginGridContainer(
-                    id: $"grid_prop_{selectedNode.Name}_{prop.Name}",
-                    position: UI.Context.Layout.GetCurrentPosition(),
-                    availableSize: new(availableWidth, 24),
-                    numColumns: 2,
-                    gap: new(gridGap, 0)
-                );
-
-                try
-                {
-                    UI.Label(
-                        $"prop_label_{prop.Name}",
-                        prop.Name,
-                        size: new(labelCellWidth, 24),
-                        textAlignment: new(HAlignment.Left, VAlignment.Center)
-                    );
-
-                    object? value = prop.GetValue(selectedNode, null);
-
-                    // Use Checkbox for writable boolean properties
-                    if (prop.PropertyType == typeof(bool) && prop.CanWrite)
-                    {
-                        bool isChecked = (bool)(value ?? false);
-                        // The label is in the first column, so pass empty string here.
-                        if (UI.Checkbox($"prop_value_edit_{prop.Name}", "", ref isChecked))
-                        {
-                            prop.SetValue(selectedNode, isChecked);
-                            // A more robust system would flag the scene as dirty
-                        }
-                    }
-                    else // For all other properties (including readonly bools), display as text
-                    {
-                        string valueString = value switch
-                        {
-                            Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
-                            bool b => b.ToString(),
-                            null => "null",
-                            _ => value.ToString() ?? "null",
-                        };
-
-                        UI.Button($"prop_value_display_{prop.Name}", valueString, size: new(valueCellWidth, 24), disabled: true);
-                    }
-                }
-                catch (Exception ex)
-                {
-                    UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
-                }
-
-                UI.EndGridContainer();
-            }
         }
-        UI.EndVBoxContainer();
+    }
+
+    private void DrawAllProperties(Node selectedNode, float availableWidth)
+    {
+        var properties = selectedNode.GetType()
+            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
+            .Where(p => p.CanRead && p.GetIndexParameters().Length == 0 && !s_ignoredProperties.Contains(p.Name));
+
+        foreach (var prop in properties)
+        {
+            DrawPropertyRow(selectedNode, prop, availableWidth);
+        }
+    }
+
+    private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
+    {
+        float labelCellWidth = (availableWidth - GridGap) * 0.4f;
+        float valueCellWidth = (availableWidth - GridGap) * 0.6f;
+        string gridId = $"grid_prop_{node.Name}_{prop.Name}";
+
+        UI.BeginGridContainer(gridId, UI.Context.Layout.GetCurrentPosition(), new(availableWidth, 24), 2, new(GridGap, 0));
+        try
+        {
+            UI.Label(
+                $"prop_label_{prop.Name}",
+                SplitPascalCase(prop.Name),
+                size: new(labelCellWidth, 24),
+                textAlignment: new(HAlignment.Left, VAlignment.Center)
+            );
+
+            object? value = prop.GetValue(node, null);
+
+            DrawPropertyEditor(node, prop, value, valueCellWidth);
+        }
+        catch (Exception ex)
+        {
+            UI.Label($"prop_error_{prop.Name}", $"Error: {ex.Message}");
+        }
+        UI.EndGridContainer();
+    }
+
+    private void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
+    {
+        string propId = $"prop_value_{prop.Name}";
+
+        switch (value)
+        {
+            case bool b when prop.CanWrite:
+                bool isChecked = b;
+                if (UI.Checkbox(propId, "", ref isChecked))
+                {
+                    prop.SetValue(node, isChecked);
+                }
+                break;
+
+            default:
+                string valueString = value switch
+                {
+                    Vector2 v => $"X:{v.X:F2}, Y:{v.Y:F2}",
+                    _ => value?.ToString() ?? "null",
+                };
+
+                UI.Button($"{propId}_display", valueString, size: new(editorWidth, 24), disabled: true);
+                break;
+        }
+    }
+
+    private static string SplitPascalCase(string input)
+    {
+        if (string.IsNullOrEmpty(input))
+        {
+            return input;
+        }
+
+        System.Text.StringBuilder result = new();
+
+        result.Append(input[0]);
+
+        for (int i = 1; i < input.Length; i++)
+        {
+            if (char.IsUpper(input[i]))
+            {
+                result.Append(' ');
+            }
+
+            result.Append(input[i]);
+        }
+
+        return result.ToString();
     }
 }
 </file>
@@ -6953,11 +7000,7 @@ public class MenuBarView
 </file>
 
 <file path="Views\SceneTreeView.cs">
-using System;
-using System.IO;
-using System.Linq;
-using System.Xml.Linq;
-using Cherris; // Reference the Cherris engine project
+using Cherris;
 
 namespace DirectUI;
 
@@ -6972,8 +7015,6 @@ public class SceneTreeView
     {
         try
         {
-            // The path to the scene to load. This should eventually be user-configurable.
-            // Using a path from your provided file list as an example.
             string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
 
             if (File.Exists(scenePath))
@@ -6995,10 +7036,6 @@ public class SceneTreeView
         SelectedNode = null;
     }
 
-    /// <summary>
-    /// Recursively converts a Cherris.Node tree to a DirectUI.TreeNode tree.
-    /// The UserData of each UI node will be the actual Cherris.Node.
-    /// </summary>
     private TreeNode<Node> ConvertToUITree(Node root)
     {
         // The UI TreeNode stores the actual Cherris.Node in its UserData property.
