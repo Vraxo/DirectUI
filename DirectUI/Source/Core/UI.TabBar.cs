@@ -57,8 +57,8 @@ public static partial class UI
                 tabTheme,
                 disabled: false,
                 textAlignment: new Alignment(HAlignment.Center, VAlignment.Center),
-                clickMode: Button.ActionMode.Release,
-                clickBehavior: Button.ClickBehavior.Left,
+                clickMode: DirectUI.Button.ActionMode.Release,
+                clickBehavior: DirectUI.Button.ClickBehavior.Left,
                 textOffset: Vector2.Zero,
                 isActive: i == activeIndex
             );

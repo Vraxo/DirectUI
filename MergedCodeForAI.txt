@@ -1785,7 +1785,7 @@ public static partial class UI
             }
         }
 
-        bool clicked = ButtonPrimitive(
+        bool clicked = DrawButtonPrimitive(
             intId,
             widgetBounds,
             text,
@@ -1794,7 +1794,8 @@ public static partial class UI
             textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
             clickMode,
             clickBehavior,
-            textOffset ?? Vector2.Zero
+            textOffset ?? Vector2.Zero,
+            isActive: false
         );
 
         if (pushedClip && Context.RenderTarget is not null)
@@ -1917,7 +1918,7 @@ public static partial class UI
         {
             var labelPos = new Vector2(boxRect.Right + spacing, drawPos.Y);
             var labelBounds = new Rect(labelPos.X, labelPos.Y, labelSize.X, totalSize.Y);
-            DrawLabelText(rt, Context.DWriteFactory, Resources, labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            DrawTextPrimitive(rt, Context.DWriteFactory, Resources, labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
         }
 
         Context.Layout.AdvanceLayout(totalSize);
@@ -2447,72 +2448,17 @@ public static partial class UI
             return;
         }
 
-        DrawLabelText(
+        (
             Context.RenderTarget,
             Context.DWriteFactory,
             Resources,
             widgetBounds,
             text,
             finalStyle,
-            finalAlignment);
+            finalAlignment,
+            Vector2.Zero);
 
         Context.Layout.AdvanceLayout(finalSize);
-    }
-
-    private static void DrawLabelText(
-        ID2D1RenderTarget renderTarget,
-        IDWriteFactory dwriteFactory,
-        UIResources resources,
-        Rect bounds,
-        string text,
-        ButtonStyle style,
-        Alignment textAlignment)
-    {
-        ID2D1SolidColorBrush? textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
-
-        if (textBrush is null)
-        {
-            return;
-        }
-
-        UIResources.TextLayoutCacheKey layoutKey = new(text, style, new(bounds.Width, bounds.Height), textAlignment);
-
-        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-        {
-            IDWriteTextFormat? textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
-
-            if (textFormat is null)
-            {
-                return;
-            }
-
-            textLayout = dwriteFactory.CreateTextLayout(text, textFormat, bounds.Width, bounds.Height);
-            textLayout.TextAlignment = textAlignment.Horizontal switch
-            {
-                HAlignment.Left => TextAlignment.Leading,
-                HAlignment.Center => TextAlignment.Center,
-                HAlignment.Right => TextAlignment.Trailing,
-                _ => TextAlignment.Leading
-            };
-            textLayout.ParagraphAlignment = textAlignment.Vertical switch
-            {
-                VAlignment.Top => ParagraphAlignment.Near,
-                VAlignment.Center => ParagraphAlignment.Center,
-                VAlignment.Bottom => ParagraphAlignment.Far,
-                _ => ParagraphAlignment.Near
-            };
-            resources.textLayoutCache[layoutKey] = textLayout;
-        }
-
-        float yOffsetCorrection = textAlignment.Vertical == VAlignment.Center
-            ? -1.5f
-            : 0f;
-
-        renderTarget.DrawTextLayout(
-            new(bounds.X, bounds.Y + yOffsetCorrection),
-            textLayout,
-            textBrush,
-            DrawTextOptions.None);
     }
 }
 </file>
@@ -2848,7 +2794,7 @@ public static partial class UI
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    internal static bool ButtonPrimitive(
+    internal static bool DrawButtonPrimitive(
         int id,
         Rect bounds,
         string text,
@@ -2857,7 +2803,8 @@ public static partial class UI
         Alignment textAlignment,
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
-        Vector2 textOffset)
+        Vector2 textOffset,
+        bool isActive = false)
     {
         var context = Context;
         var state = State;
@@ -2913,7 +2860,7 @@ public static partial class UI
         }
 
         // --- Style Resolution ---
-        ButtonStyle currentStyle = ResolveButtonStyle(theme, isHovering, isPressed, disabled, isFocused);
+        ButtonStyle currentStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
 
         // --- Drawing ---
         if (bounds.Width > 0 && bounds.Height > 0)
@@ -2922,7 +2869,7 @@ public static partial class UI
             resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
 
             // Draw Text
-            DrawButtonText(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
+            DrawTextPrimitive(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
         }
 
         return wasClickedThisFrame;
@@ -2931,10 +2878,10 @@ public static partial class UI
     /// <summary>
     /// Resolves the final ButtonStyle for the current frame by applying interaction state and style stack overrides.
     /// </summary>
-    private static ButtonStyle ResolveButtonStyle(ButtonStylePack theme, bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
+    internal static ButtonStyle ResolveButtonStylePrimitive(ButtonStylePack theme, bool isHovering, bool isPressed, bool isDisabled, bool isFocused, bool isActive)
     {
         // Determine base style from interaction state
-        theme.UpdateCurrentStyle(isHovering, isPressed, isDisabled, isFocused);
+        theme.UpdateCurrentStyle(isHovering, isPressed, isDisabled, isFocused, isActive);
         ButtonStyle baseStyle = theme.Current;
 
         // Create a temporary, modifiable copy for this frame to apply style stack overrides
@@ -2967,16 +2914,16 @@ public static partial class UI
             finalStyle.FillColor = GetStyleColor(StyleColor.ButtonPressed, finalStyle.FillColor);
             finalStyle.BorderColor = GetStyleColor(StyleColor.BorderPressed, finalStyle.BorderColor);
         }
-        else if (isHovering)
+        else if (isHovering && !isActive) // Don't apply button hover if it's an active tab/button
         {
             finalStyle.FillColor = GetStyleColor(StyleColor.ButtonHovered, finalStyle.FillColor);
             finalStyle.BorderColor = GetStyleColor(StyleColor.BorderHovered, finalStyle.BorderColor);
         }
-        else if (isFocused)
+        else if (isFocused && !isActive) // Don't apply focus border if it's an active tab/button
         {
             finalStyle.BorderColor = GetStyleColor(StyleColor.BorderFocused, finalStyle.BorderColor);
         }
-        else // Normal
+        else if (!isActive) // Normal
         {
             finalStyle.FillColor = GetStyleColor(StyleColor.Button, finalStyle.FillColor);
             finalStyle.BorderColor = GetStyleColor(StyleColor.Border, finalStyle.BorderColor);
@@ -2994,9 +2941,9 @@ public static partial class UI
     }
 
     /// <summary>
-    /// Draws the text for a button, using the central text layout cache.
+    /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
-    private static void DrawButtonText(
+    internal static void DrawTextPrimitive(
         ID2D1RenderTarget renderTarget,
         IDWriteFactory dwriteFactory,
         UIResources resources,
@@ -3155,67 +3102,13 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    private static bool TabButtonPrimitive(int id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
-    {
-        if (!IsContextValid()) return false;
-
-        var intId = id;
-        var position = Context.Layout.GetCurrentPosition();
-        Rect bounds = new(position.X, position.Y, size.X, size.Y);
-
-        InputState input = Context.InputState;
-        bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool wasClicked = false;
-
-        if (isHovering) State.SetPotentialInputTarget(intId);
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == intId)
-        {
-            wasClicked = true;
-        }
-
-        theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
-        var currentStyle = theme.Current;
-
-        var rt = Context.RenderTarget;
-        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
-
-        var textBrush = Resources.GetOrCreateBrush(rt, currentStyle.FontColor);
-        if (textBrush is not null && !string.IsNullOrEmpty(text))
-        {
-            var dwriteFactory = Context.DWriteFactory;
-            var textAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
-
-            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, size, textAlignment);
-            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-            {
-                var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
-                if (textFormat is not null)
-                {
-                    textLayout = dwriteFactory.CreateTextLayout(text, textFormat, size.X, size.Y);
-                    textLayout.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
-                    textLayout.ParagraphAlignment = ParagraphAlignment.Center;
-                    Resources.textLayoutCache[layoutKey] = textLayout;
-                }
-            }
-
-            if (textLayout is not null)
-            {
-                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush, DrawTextOptions.None);
-            }
-        }
-
-        Context.Layout.AdvanceLayout(size);
-        return wasClicked;
-    }
-
-    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, ButtonStylePack? theme = null)
     {
         if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
 
         int intId = id.GetHashCode();
         var themeId = HashCode.Combine(intId, "theme_default");
-        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(themeId);
+        var tabTheme = theme ?? State.GetOrCreateElement<ButtonStylePack>(themeId);
         var state = State.GetOrCreateElement<TabBarState>(intId);
 
         const float textMarginX = 15f;
@@ -3249,18 +3142,27 @@ public static partial class UI
         for (int i = 0; i < tabLabels.Length; i++)
         {
             var buttonId = HashCode.Combine(intId, i);
-            bool wasClicked = TabButtonPrimitive(
+            var position = Context.Layout.GetCurrentPosition();
+            var bounds = new Rect(position.X, position.Y, tabSize.X, tabSize.Y);
+
+            bool wasClicked = DrawButtonPrimitive(
                 buttonId,
+                bounds,
                 tabLabels[i],
-                tabSize,
-                i == activeIndex,
                 tabTheme,
-                false
+                disabled: false,
+                textAlignment: new Alignment(HAlignment.Center, VAlignment.Center),
+                clickMode: Button.ActionMode.Release,
+                clickBehavior: Button.ClickBehavior.Left,
+                textOffset: Vector2.Zero,
+                isActive: i == activeIndex
             );
+
             if (wasClicked)
             {
                 activeIndex = i;
             }
+            Context.Layout.AdvanceLayout(tabSize);
         }
         EndHBoxContainer();
     }
@@ -3333,7 +3235,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (ButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero))
+            if (ButtonInternal(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false))
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -3348,7 +3250,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (ButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset))
+        if (ButtonInternal(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false))
         {
             clickedNode = node;
         }
@@ -4494,6 +4396,8 @@ public sealed class ButtonStylePack
     public ButtonStyle Pressed { get; set; } = new();
     public ButtonStyle Disabled { get; set; } = new();
     public ButtonStyle Focused { get; set; } = new();
+    public ButtonStyle Active { get; set; } = new();
+    public ButtonStyle ActiveHover { get; set; } = new();
 
     public ButtonStylePack()
     {
@@ -4511,10 +4415,22 @@ public sealed class ButtonStylePack
         Focused.BorderColor = DefaultTheme.FocusBorder;
         Focused.BorderLength = 1;
 
+        // Styles for 'Active' state, taken from the old TabStylePack
+        var panelBg = new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f);
+        Active.FillColor = panelBg;
+        Active.BorderColor = DefaultTheme.HoverBorder;
+        Active.BorderLengthTop = 1f; Active.BorderLengthLeft = 1f; Active.BorderLengthRight = 1f; Active.BorderLengthBottom = 0f;
+        Active.Roundness = 0f;
+
+        ActiveHover.FillColor = panelBg;
+        ActiveHover.BorderColor = DefaultTheme.AccentBorder;
+        ActiveHover.BorderLengthTop = 1f; ActiveHover.BorderLengthLeft = 1f; ActiveHover.BorderLengthRight = 1f; ActiveHover.BorderLengthBottom = 0f;
+        ActiveHover.Roundness = 0f;
+
         Current = Normal;
     }
 
-    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
+    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused, bool isActive = false)
     {
         if (isDisabled)
         {
@@ -4523,6 +4439,10 @@ public sealed class ButtonStylePack
         else if (isPressed)
         {
             Current = Pressed;
+        }
+        else if (isActive)
+        {
+            Current = isHovering ? ActiveHover : Active;
         }
         else if (isHovering)
         {
@@ -4538,7 +4458,7 @@ public sealed class ButtonStylePack
         }
     }
 
-    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled, Focused];
+    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled, Focused, Active, ActiveHover];
 
     public string FontName
     {
@@ -4575,15 +4495,7 @@ public sealed class ButtonStylePack
         set => SetAll(s => s.Roundness = value);
     }
 
-    // Updated setter
     public float BorderLength
-    {
-        set => SetAll(s => s.BorderLength = value);
-    }
-
-    // Obsolete - kept for backward compatibility or remove if breaking change is ok
-    [Obsolete("Use BorderLength instead.")]
-    public float BorderThickness
     {
         set => SetAll(s => s.BorderLength = value);
     }
@@ -4604,10 +4516,6 @@ public sealed class ButtonStylePack
         {
             setter(style);
         }
-        // Update Current directly after modifying the source styles
-        // No need to call setter(Current) separately if UpdateCurrentStyle is called later.
-        // If UpdateCurrentStyle might not be called, uncommenting setter(Current) ensures immediate consistency.
-        // setter(Current);
     }
 }
 </file>

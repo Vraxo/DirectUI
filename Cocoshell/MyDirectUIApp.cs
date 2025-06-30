@@ -81,7 +81,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             BorderLengthTop = 1f,
             Roundness = 0f
         };
-        // BUG FIX: Convert Vortice.Mathematics.Size to System.Numerics.Vector2
+        // BUG FIX: Convert Vortice.Mathematics.Rect.Size to System.Numerics.Vector2
         UI.Resources.DrawBoxStyleHelper(rt, contentArea.TopLeft, new Vector2(contentArea.Width, contentArea.Height), panelStyle);
 
         // --- Draw Active Tab Content ---

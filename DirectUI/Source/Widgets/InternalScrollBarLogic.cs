@@ -173,7 +173,7 @@ internal class InternalScrollBarLogic
                 BorderLength = ThumbTheme.Current.BorderLength,
                 Roundness = ThumbTheme.Current.Roundness
             };
-            // BUG FIX: Convert Vortice.Mathematics.Rect.Size (a Size) to a System.Numerics.Vector2
+            // BUG FIX: Convert Vortice.Mathematics.Rect.Size to a System.Numerics.Vector2
             UI.Resources.DrawBoxStyleHelper(rt, thumbBounds.TopLeft, new Vector2(thumbBounds.Width, thumbBounds.Height), thumbStyle);
         }
     }
