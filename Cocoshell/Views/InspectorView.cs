@@ -12,11 +12,6 @@ public class InspectorView
     private const float PanelPadding = 10f;
     private const float GridGap = 8f;
 
-    private static readonly HashSet<string> s_ignoredProperties =
-    [
-        "Parent", "Children", "AbsolutePath", "ScaledSize"
-    ];
-
     private readonly ButtonStyle _titleStyle = new()
     {
         FontWeight = FontWeight.SemiBold,
@@ -45,7 +40,7 @@ public class InspectorView
 
             Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
             float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
-            
+
             if (scrollableHeight < 0)
             {
                 scrollableHeight = 0;
@@ -102,7 +97,9 @@ public class InspectorView
     {
         IEnumerable<PropertyInfo> properties = selectedNode.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead && p.GetIndexParameters().Length == 0 && !s_ignoredProperties.Contains(p.Name));
+            .Where(p => p.CanRead &&
+                        p.GetIndexParameters().Length == 0 &&
+                        !p.IsDefined(typeof(HideFromInspectorAttribute), false));
 
         foreach (PropertyInfo prop in properties)
         {
@@ -128,7 +125,7 @@ public class InspectorView
         }
 
         UI.BeginHBoxContainer(hboxId, UI.Context.Layout.GetCurrentPosition(), GridGap);
-        
+
         try
         {
             UI.Label(
@@ -212,7 +209,7 @@ public class InspectorView
             var lineEditSize = new Vector2(lineEditWidth, 24);
 
             string localX = editState.X;
-            
+
             if (UI.LineEdit(xId, ref localX, lineEditSize))
             {
                 editState.X = localX;
@@ -225,11 +222,11 @@ public class InspectorView
             var currentValue = (Vector2)prop.GetValue(node)!;
 
             string localY = editState.Y;
-            
+
             if (UI.LineEdit(yId, ref localY, lineEditSize))
             {
                 editState.Y = localY;
-                
+
                 if (float.TryParse(editState.Y, out var newY))
                 {
                     prop.SetValue(node, new Vector2(currentValue.X, newY));

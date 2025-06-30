@@ -2448,7 +2448,7 @@ public static partial class UI
             return;
         }
 
-        (
+        DrawTextPrimitive(
             Context.RenderTarget,
             Context.DWriteFactory,
             Resources,
@@ -3152,8 +3152,8 @@ public static partial class UI
                 tabTheme,
                 disabled: false,
                 textAlignment: new Alignment(HAlignment.Center, VAlignment.Center),
-                clickMode: Button.ActionMode.Release,
-                clickBehavior: Button.ClickBehavior.Left,
+                clickMode: DirectUI.Button.ActionMode.Release,
+                clickBehavior: DirectUI.Button.ClickBehavior.Left,
                 textOffset: Vector2.Zero,
                 isActive: i == activeIndex
             );
@@ -3235,7 +3235,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (ButtonInternal(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false))
+            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false))
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -3250,7 +3250,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (ButtonInternal(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false))
+        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false))
         {
             clickedNode = node;
         }
@@ -4828,7 +4828,7 @@ internal class InternalComboboxLogic
 
         // Draw the main button
         var bounds = new Rect(position.X, position.Y, size.X, size.Y);
-        bool clicked = UI.ButtonPrimitive(
+        bool clicked = UI.DrawButtonPrimitive(
             id,
             bounds,
             currentItemText,
@@ -4878,7 +4878,7 @@ internal class InternalComboboxLogic
 
                         int itemId = HashCode.Combine(id, "item", i);
 
-                        if (UI.ButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
+                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
                         {
                             // A selection was made. Post the result to be picked up next frame.
                             state.SetPopupResult(id, i);
@@ -5191,7 +5191,7 @@ internal class InternalScrollBarLogic
                 BorderLength = ThumbTheme.Current.BorderLength,
                 Roundness = ThumbTheme.Current.Roundness
             };
-            // BUG FIX: Convert Vortice.Mathematics.Rect.Size (a Size) to a System.Numerics.Vector2
+            // BUG FIX: Convert Vortice.Mathematics.Rect.Size to a System.Numerics.Vector2
             UI.Resources.DrawBoxStyleHelper(rt, thumbBounds.TopLeft, new Vector2(thumbBounds.Width, thumbBounds.Height), thumbStyle);
         }
     }
@@ -6437,7 +6437,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             BorderLengthTop = 1f,
             Roundness = 0f
         };
-        // BUG FIX: Convert Vortice.Mathematics.Size to System.Numerics.Vector2
+        // BUG FIX: Convert Vortice.Mathematics.Rect.Size to System.Numerics.Vector2
         UI.Resources.DrawBoxStyleHelper(rt, contentArea.TopLeft, new Vector2(contentArea.Width, contentArea.Height), panelStyle);
 
         // --- Draw Active Tab Content ---
