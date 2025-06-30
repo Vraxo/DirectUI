@@ -9,7 +9,10 @@ namespace DirectUI;
 
 public class BottomPanelView
 {
-    private readonly string _basePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res";
+    private readonly string _rootPath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res";
+    private string _currentPath;
+    private string? _pathToNavigateTo; // Used to defer navigation until after drawing
+
     private readonly List<string> _directories;
     private readonly List<string> _files;
     private string? _errorMessage;
@@ -17,6 +20,7 @@ public class BottomPanelView
     private readonly ButtonStylePack _folderIconStyle;
     private readonly ButtonStylePack _fileIconStyle;
     private readonly ButtonStyle _labelStyle;
+    private readonly ButtonStyle _pathLabelStyle;
 
     public BottomPanelView()
     {
@@ -36,71 +40,113 @@ public class BottomPanelView
             FontSize = 12f
         };
 
+        _pathLabelStyle = new ButtonStyle
+        {
+            FontColor = new Color4(0.7f, 0.7f, 0.7f, 1f),
+            FontSize = 12f
+        };
+
         _directories = new List<string>();
         _files = new List<string>();
+        _currentPath = _rootPath;
 
         LoadDirectoryContents();
     }
 
     private void LoadDirectoryContents()
     {
+        _directories.Clear();
+        _files.Clear();
+        _errorMessage = null;
+
         try
         {
-            if (Directory.Exists(_basePath))
+            if (Directory.Exists(_currentPath))
             {
-                _directories.AddRange(Directory.GetDirectories(_basePath).Select(Path.GetFileName).Where(s => s is not null)!);
-                _files.AddRange(Directory.GetFiles(_basePath).Select(Path.GetFileName).Where(s => s is not null)!);
-                _directories.Sort(StringComparer.OrdinalIgnoreCase);
+                // Add an "up" directory if we're not at the root
+                var parentDir = Directory.GetParent(_currentPath);
+                if (parentDir != null && parentDir.FullName.Length >= _rootPath.Length && _rootPath != _currentPath)
+                {
+                    _directories.Add("..");
+                }
+
+                _directories.AddRange(Directory.GetDirectories(_currentPath).Select(Path.GetFileName).Where(s => s is not null)!);
+                _files.AddRange(Directory.GetFiles(_currentPath).Select(Path.GetFileName).Where(s => s is not null)!);
+
+                // Keep ".." at the top, sort the rest
+                var sortedDirs = _directories.Where(d => d != "..").OrderBy(d => d, StringComparer.OrdinalIgnoreCase).ToList();
+                _directories.RemoveAll(d => d != "..");
+                _directories.AddRange(sortedDirs);
+
                 _files.Sort(StringComparer.OrdinalIgnoreCase);
             }
             else
             {
-                _errorMessage = $"Path not found: {_basePath}";
+                _errorMessage = $"Path not found: {_currentPath}";
             }
         }
         catch (Exception ex)
         {
-            _errorMessage = $"Error accessing path '{_basePath}': {ex.Message}";
+            _errorMessage = $"Error accessing path '{_currentPath}': {ex.Message}";
         }
     }
 
     public void Draw()
     {
+        _pathToNavigateTo = null; // Reset deferred action at the start of the frame
+
         var contentArea = UI.Context.Layout.GetCurrentClipRect();
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
         {
             return;
         }
 
+        UI.BeginVBoxContainer("bottom_panel_main_vbox", UI.Context.Layout.GetCurrentPosition(), 5);
+
+        // Display current path
+        UI.Label("current_path_label", _currentPath, style: _pathLabelStyle);
+
         if (!string.IsNullOrEmpty(_errorMessage))
         {
             UI.Label("bottom_panel_error", _errorMessage);
-            return;
         }
-
-        var scrollableSize = new Vector2(contentArea.Width, contentArea.Height);
-        UI.BeginScrollableRegion("bottom_panel_scroll", scrollableSize, out float innerWidth);
+        else
         {
-            var gridStartPosition = UI.Context.Layout.GetCurrentPosition();
-            var gridAvailableSize = new Vector2(innerWidth, 10000);
-            var gridGap = new Vector2(16, 16);
-            int numColumns = Math.Max(1, (int)(innerWidth / 90));
-
-            UI.BeginGridContainer("bottom_panel_grid", gridStartPosition, gridAvailableSize, numColumns, gridGap);
+            var scrollableSize = new Vector2(contentArea.Width, Math.Max(0, contentArea.Height - 30));
+            UI.BeginScrollableRegion("bottom_panel_scroll", scrollableSize, out float innerWidth);
             {
-                foreach (var dirName in _directories)
-                {
-                    DrawFileSystemEntry(dirName, true);
-                }
+                var gridStartPosition = UI.Context.Layout.GetCurrentPosition();
+                var gridAvailableSize = new Vector2(innerWidth, 10000);
+                var gridGap = new Vector2(16, 16);
+                int numColumns = Math.Max(1, (int)(innerWidth / 90));
 
-                foreach (var fileName in _files)
+                UI.BeginGridContainer("bottom_panel_grid", gridStartPosition, gridAvailableSize, numColumns, gridGap);
                 {
-                    DrawFileSystemEntry(fileName, false);
+                    foreach (var dirName in _directories)
+                    {
+                        DrawFileSystemEntry(dirName, true);
+                    }
+
+                    foreach (var fileName in _files)
+                    {
+                        DrawFileSystemEntry(fileName, false);
+                    }
                 }
+                UI.EndGridContainer();
             }
-            UI.EndGridContainer();
+            UI.EndScrollableRegion();
         }
-        UI.EndScrollableRegion();
+
+        // --- Deferred Action ---
+        // After all drawing loops are complete, check if navigation was requested.
+        // This prevents modifying the collection while it's being enumerated.
+        if (_pathToNavigateTo != null)
+        {
+            _currentPath = _pathToNavigateTo;
+            LoadDirectoryContents();
+        }
+
+        UI.EndVBoxContainer();
     }
 
     private void DrawFileSystemEntry(string name, bool isDirectory)
@@ -111,12 +157,27 @@ public class BottomPanelView
 
         UI.BeginVBoxContainer(id + "_vbox", UI.Context.Layout.GetCurrentPosition(), 4);
         {
-            string iconText = isDirectory ? "D" : "F";
+            string iconText = isDirectory ? (name == ".." ? ".." : "D") : "F";
             var style = isDirectory ? _folderIconStyle : _fileIconStyle;
 
             if (UI.Button(id + "_icon", iconText, size: iconSize, theme: style))
             {
-                // Future: Handle click (e.g., navigate into directory)
+                if (isDirectory)
+                {
+                    if (name == "..")
+                    {
+                        var parentDir = Directory.GetParent(_currentPath);
+                        if (parentDir != null && parentDir.FullName.Length >= _rootPath.Length)
+                        {
+                            _pathToNavigateTo = parentDir.FullName; // Defer navigation
+                        }
+                    }
+                    else
+                    {
+                        _pathToNavigateTo = Path.Combine(_currentPath, name); // Defer navigation
+                    }
+                }
+                // Future: Handle file click (e.g., open file inspector)
             }
 
             UI.Label(
