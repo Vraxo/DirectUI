@@ -80,7 +80,7 @@ public class MainView
         UI.BeginResizableHPanel("bottom_panel", ref _bottomPanelHeight, _leftPanelWidth, _rightPanelWidth, MenuBarHeight,
             minHeight: 50, maxHeight: 300, padding: padding, gap: PanelGap, panelStyle: panelStyle);
 
-        BottomPanelView.Draw();
+        _bottomPanelView.Draw();
 
         UI.EndResizableHPanel();
     }
