@@ -2538,29 +2538,29 @@ public static partial class UI
         bool disabled = false,
         Vector2? textMargin = null)
     {
-        if (!IsContextValid()) return false;
-
-        int intId = id.GetHashCode();
-        var finalPosition = Context.Layout.ApplyLayout(position);
-        var finalMargin = textMargin ?? new Vector2(4, 2);
-
-        // Culling Check
-        Rect widgetBounds = new Rect(finalPosition.X, finalPosition.Y, size.X, size.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
+        if (!IsContextValid())
         {
-            Context.Layout.AdvanceLayout(size); // Still advance layout cursor
             return false;
         }
 
-        // Get the stateless logic/drawing class instance
-        var lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
-        // Get the state object for this specific line edit
+        int intId = id.GetHashCode();
+        Vector2 finalPosition = Context.Layout.ApplyLayout(position);
+        Vector2 finalMargin = textMargin ?? new(4, 2);
+        Rect widgetBounds = new(finalPosition.X, finalPosition.Y, size.X, size.Y);
+        
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return false;
+        }
+
+        LineEdit lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
         var lineEditState = State.GetOrCreateElement<LineEditState>(HashCode.Combine(intId, "state"));
 
         bool textChanged = lineEditInstance.UpdateAndDraw(
             intId,
             ref text,
-            lineEditState, // Pass the state object to the logic class
+            lineEditState,
             finalPosition,
             size,
             theme,
@@ -2674,6 +2674,51 @@ public static partial class UI
         float newScrollOffset = scrollBarInstance.UpdateAndDraw(intId, currentScrollOffset);
 
         return newScrollOffset;
+    }
+}
+</file>
+
+<file path="Core\UI.Separator.cs">
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void Separator(float width, float thickness = 1f, float verticalPadding = 4f, Color4? color = null)
+    {
+        if (!IsContextValid())
+        {
+            return;
+        }
+
+        Color4 finalColor = color ?? DefaultTheme.NormalBorder;
+        float totalHeight = thickness + (verticalPadding * 2);
+        Vector2 size = new(width, totalHeight);
+
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, size.X, size.Y);
+
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        float lineY = drawPos.Y + verticalPadding + (thickness * 0.5f);
+        Vector2 lineStart = new(drawPos.X, lineY);
+        Vector2 lineEnd = new(drawPos.X + width, lineY);
+
+        ID2D1SolidColorBrush brush = Resources.GetOrCreateBrush(Context.RenderTarget, finalColor);
+        
+        if (brush != null)
+        {
+            Context.RenderTarget.DrawLine(lineStart, lineEnd, brush, thickness);
+        }
+
+        Context.Layout.AdvanceLayout(size);
     }
 }
 </file>
@@ -6702,21 +6747,17 @@ public class BottomPanelView
 </file>
 
 <file path="Views\InspectorView.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
 using System.Text;
 using Cherris;
 using Vortice.DirectWrite;
-using Vortice.Mathematics;
 
 namespace DirectUI;
 
 public class InspectorView
 {
-    private const float PanelGap = 10f; // Copied from MainView for internal layout
+    private const float PanelGap = 10f;
     private const float PanelPadding = 10f;
     private const float GridGap = 8f;
 
@@ -6747,38 +6788,42 @@ public class InspectorView
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
 
-        // Use a VBox to manage the layout of the header and the scrollable area.
         UI.BeginVBoxContainer("inspector_outer_vbox", UI.Context.Layout.GetCurrentPosition(), PanelGap);
         {
-            // --- Header ---
             DrawHeader(availableContentWidth);
 
-            // --- Scrollable Area ---
-            // Calculate height available for the scroll region after the header and gap are accounted for.
             Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
             float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
-            if (scrollableHeight < 0) scrollableHeight = 0;
+            
+            if (scrollableHeight < 0)
+            {
+                scrollableHeight = 0;
+            }
 
-            var scrollableSize = new Vector2(availableContentWidth, scrollableHeight);
+            Vector2 scrollableSize = new(availableContentWidth, scrollableHeight);
 
             UI.BeginScrollableRegion("inspector_scroll", scrollableSize, out float innerContentWidth);
             {
-                // A VBox for the content inside the scroll region
-                UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                if (selectedNode is null)
                 {
-                    if (selectedNode is null)
+                    UI.BeginVBoxContainer("inspector_content_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                    UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
+                    UI.EndVBoxContainer();
+                }
+                else
+                {
+                    UI.BeginVBoxContainer("inspector_header_vbox", UI.Context.Layout.GetCurrentPosition(), 0f);
                     {
-                        UI.Button("no_selection_label", "No node selected.", disabled: true, autoWidth: true);
-                    }
-                    else
-                    {
-                        // The innerContentWidth is provided by BeginScrollableRegion,
-                        // which accounts for the potential width of the scrollbar.
                         DrawNodeInfo(selectedNode, innerContentWidth);
+                    }
+                    UI.EndVBoxContainer();
+
+                    UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
+                    {
                         DrawAllProperties(selectedNode, innerContentWidth);
                     }
+                    UI.EndVBoxContainer();
                 }
-                UI.EndVBoxContainer();
             }
             UI.EndScrollableRegion();
         }
@@ -6799,32 +6844,22 @@ public class InspectorView
     private void DrawNodeInfo(Node selectedNode, float availableWidth)
     {
         UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
-
-        Vector2 linePos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, -4);
-        var lineBrush = UI.Resources.GetOrCreateBrush(UI.Context.RenderTarget, DefaultTheme.NormalBorder);
-        if (lineBrush != null)
-        {
-            UI.Context.RenderTarget.DrawLine(
-                linePos,
-                linePos + new Vector2(availableWidth, 0),
-                lineBrush,
-                1f);
-        }
+        UI.Separator(availableWidth, thickness: 1f, verticalPadding: 4f);
     }
 
-    private void DrawAllProperties(Node selectedNode, float availableWidth)
+    private static void DrawAllProperties(Node selectedNode, float availableWidth)
     {
-        var properties = selectedNode.GetType()
+        IEnumerable<PropertyInfo> properties = selectedNode.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.GetIndexParameters().Length == 0 && !s_ignoredProperties.Contains(p.Name));
 
-        foreach (var prop in properties)
+        foreach (PropertyInfo prop in properties)
         {
             DrawPropertyRow(selectedNode, prop, availableWidth);
         }
     }
 
-    private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
+    private static void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
     {
         float labelWidth = (availableWidth - GridGap) * 0.4f;
         float editorWidth = (availableWidth - GridGap) * 0.6f;
@@ -6842,6 +6877,7 @@ public class InspectorView
         }
 
         UI.BeginHBoxContainer(hboxId, UI.Context.Layout.GetCurrentPosition(), GridGap);
+        
         try
         {
             UI.Label(
@@ -6859,8 +6895,7 @@ public class InspectorView
         }
     }
 
-
-    private void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
+    private static void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
         string propId = $"prop_value_{prop.Name}";
 
@@ -6892,32 +6927,29 @@ public class InspectorView
         }
     }
 
-    private void DrawVector2Editor(Node node, PropertyInfo prop, Vector2 value, string baseId, float editorWidth)
+    private static void DrawVector2Editor(Node node, PropertyInfo prop, Vector2 value, string baseId, float editorWidth)
     {
         string xId = $"{baseId}_X";
         string yId = $"{baseId}_Y";
         int xIntId = xId.GetHashCode();
         int yIntId = yId.GetHashCode();
 
-        // The state must be unique per property on a specific node instance.
         int stateId = HashCode.Combine(node.GetHashCode(), prop.Name.GetHashCode());
         var editState = UI.State.GetOrCreateElement<Vector2EditState>(stateId);
 
         bool isXFocused = UI.State.FocusedElementId == xIntId;
         bool isYFocused = UI.State.FocusedElementId == yIntId;
 
-        // If not focused, update string from source vector to ensure it's in sync.
-        // Only update if parsed value differs significantly, to avoid disrupting user input on minor float variations.
         if (!isXFocused)
         {
-            if (!float.TryParse(editState.X, out var parsedX) || Math.Abs(parsedX - value.X) > 1e-4f)
+            if (!float.TryParse(editState.X, out var parsedX) || float.Abs(parsedX - value.X) > 1e-4f)
             {
                 editState.X = value.X.ToString("F3");
             }
         }
         if (!isYFocused)
         {
-            if (!float.TryParse(editState.Y, out var parsedY) || Math.Abs(parsedY - value.Y) > 1e-4f)
+            if (!float.TryParse(editState.Y, out var parsedY) || float.Abs(parsedY - value.Y) > 1e-4f)
             {
                 editState.Y = value.Y.ToString("F3");
             }
@@ -6929,6 +6961,7 @@ public class InspectorView
             var lineEditSize = new Vector2(lineEditWidth, 24);
 
             string localX = editState.X;
+            
             if (UI.LineEdit(xId, ref localX, lineEditSize))
             {
                 editState.X = localX;
@@ -6938,23 +6971,23 @@ public class InspectorView
                 }
             }
 
-            // Must re-get the value from the property, because Vector2 is a struct and
-            // the previous operation might have changed its X component.
             var currentValue = (Vector2)prop.GetValue(node)!;
 
             string localY = editState.Y;
+            
             if (UI.LineEdit(yId, ref localY, lineEditSize))
             {
                 editState.Y = localY;
+                
                 if (float.TryParse(editState.Y, out var newY))
                 {
                     prop.SetValue(node, new Vector2(currentValue.X, newY));
                 }
             }
         }
+
         UI.EndHBoxContainer();
     }
-
 
     private static string SplitPascalCase(string input)
     {

@@ -18,29 +18,29 @@ public static partial class UI
         bool disabled = false,
         Vector2? textMargin = null)
     {
-        if (!IsContextValid()) return false;
-
-        int intId = id.GetHashCode();
-        var finalPosition = Context.Layout.ApplyLayout(position);
-        var finalMargin = textMargin ?? new Vector2(4, 2);
-
-        // Culling Check
-        Rect widgetBounds = new Rect(finalPosition.X, finalPosition.Y, size.X, size.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
+        if (!IsContextValid())
         {
-            Context.Layout.AdvanceLayout(size); // Still advance layout cursor
             return false;
         }
 
-        // Get the stateless logic/drawing class instance
-        var lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
-        // Get the state object for this specific line edit
+        int intId = id.GetHashCode();
+        Vector2 finalPosition = Context.Layout.ApplyLayout(position);
+        Vector2 finalMargin = textMargin ?? new(4, 2);
+        Rect widgetBounds = new(finalPosition.X, finalPosition.Y, size.X, size.Y);
+        
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return false;
+        }
+
+        LineEdit lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
         var lineEditState = State.GetOrCreateElement<LineEditState>(HashCode.Combine(intId, "state"));
 
         bool textChanged = lineEditInstance.UpdateAndDraw(
             intId,
             ref text,
-            lineEditState, // Pass the state object to the logic class
+            lineEditState,
             finalPosition,
             size,
             theme,

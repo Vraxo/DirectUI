@@ -7,67 +7,13 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    private static bool TabButtonPrimitive(int id, string text, Vector2 size, bool isActive, TabStylePack theme, bool disabled)
-    {
-        if (!IsContextValid()) return false;
-
-        var intId = id;
-        var position = Context.Layout.GetCurrentPosition();
-        Rect bounds = new(position.X, position.Y, size.X, size.Y);
-
-        InputState input = Context.InputState;
-        bool isHovering = !disabled && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool wasClicked = false;
-
-        if (isHovering) State.SetPotentialInputTarget(intId);
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && State.PotentialInputTargetId == intId)
-        {
-            wasClicked = true;
-        }
-
-        theme.UpdateCurrentStyle(isHovering, isActive, disabled, false);
-        var currentStyle = theme.Current;
-
-        var rt = Context.RenderTarget;
-        Resources.DrawBoxStyleHelper(rt, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
-
-        var textBrush = Resources.GetOrCreateBrush(rt, currentStyle.FontColor);
-        if (textBrush is not null && !string.IsNullOrEmpty(text))
-        {
-            var dwriteFactory = Context.DWriteFactory;
-            var textAlignment = new Alignment(HAlignment.Center, VAlignment.Center);
-
-            var layoutKey = new UIResources.TextLayoutCacheKey(text, currentStyle, size, textAlignment);
-            if (!Resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-            {
-                var textFormat = Resources.GetOrCreateTextFormat(dwriteFactory, currentStyle);
-                if (textFormat is not null)
-                {
-                    textLayout = dwriteFactory.CreateTextLayout(text, textFormat, size.X, size.Y);
-                    textLayout.TextAlignment = Vortice.DirectWrite.TextAlignment.Center;
-                    textLayout.ParagraphAlignment = ParagraphAlignment.Center;
-                    Resources.textLayoutCache[layoutKey] = textLayout;
-                }
-            }
-
-            if (textLayout is not null)
-            {
-                rt.DrawTextLayout(new Vector2(bounds.X, bounds.Y), textLayout, textBrush, DrawTextOptions.None);
-            }
-        }
-
-        Context.Layout.AdvanceLayout(size);
-        return wasClicked;
-    }
-
-    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, TabStylePack? theme = null)
+    public static void TabBar(string id, string[] tabLabels, ref int activeIndex, ButtonStylePack? theme = null)
     {
         if (!IsContextValid() || tabLabels is null || tabLabels.Length == 0) return;
 
         int intId = id.GetHashCode();
         var themeId = HashCode.Combine(intId, "theme_default");
-        var tabTheme = theme ?? State.GetOrCreateElement<TabStylePack>(themeId);
+        var tabTheme = theme ?? State.GetOrCreateElement<ButtonStylePack>(themeId);
         var state = State.GetOrCreateElement<TabBarState>(intId);
 
         const float textMarginX = 15f;
@@ -101,18 +47,27 @@ public static partial class UI
         for (int i = 0; i < tabLabels.Length; i++)
         {
             var buttonId = HashCode.Combine(intId, i);
-            bool wasClicked = TabButtonPrimitive(
+            var position = Context.Layout.GetCurrentPosition();
+            var bounds = new Rect(position.X, position.Y, tabSize.X, tabSize.Y);
+
+            bool wasClicked = DrawButtonPrimitive(
                 buttonId,
+                bounds,
                 tabLabels[i],
-                tabSize,
-                i == activeIndex,
                 tabTheme,
-                false
+                disabled: false,
+                textAlignment: new Alignment(HAlignment.Center, VAlignment.Center),
+                clickMode: Button.ActionMode.Release,
+                clickBehavior: Button.ClickBehavior.Left,
+                textOffset: Vector2.Zero,
+                isActive: i == activeIndex
             );
+
             if (wasClicked)
             {
                 activeIndex = i;
             }
+            Context.Layout.AdvanceLayout(tabSize);
         }
         EndHBoxContainer();
     }

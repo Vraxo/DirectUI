@@ -1,19 +1,14 @@
-﻿// Views/InspectorView.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using System.Reflection;
 using System.Text;
 using Cherris;
 using Vortice.DirectWrite;
-using Vortice.Mathematics;
 
 namespace DirectUI;
 
 public class InspectorView
 {
-    private const float PanelGap = 10f; // Copied from MainView for internal layout
+    private const float PanelGap = 10f;
     private const float PanelPadding = 10f;
     private const float GridGap = 8f;
 
@@ -44,19 +39,19 @@ public class InspectorView
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
 
-        // Use a VBox to manage the layout of the header and the scrollable area.
         UI.BeginVBoxContainer("inspector_outer_vbox", UI.Context.Layout.GetCurrentPosition(), PanelGap);
         {
-            // --- Header ---
             DrawHeader(availableContentWidth);
 
-            // --- Scrollable Area ---
-            // Calculate height available for the scroll region after the header and gap are accounted for.
             Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
             float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
-            if (scrollableHeight < 0) scrollableHeight = 0;
+            
+            if (scrollableHeight < 0)
+            {
+                scrollableHeight = 0;
+            }
 
-            var scrollableSize = new Vector2(availableContentWidth, scrollableHeight);
+            Vector2 scrollableSize = new(availableContentWidth, scrollableHeight);
 
             UI.BeginScrollableRegion("inspector_scroll", scrollableSize, out float innerContentWidth);
             {
@@ -68,15 +63,12 @@ public class InspectorView
                 }
                 else
                 {
-                    // Draw the node type header and separator in their own container with no gap.
-                    // The separator itself provides the necessary padding.
                     UI.BeginVBoxContainer("inspector_header_vbox", UI.Context.Layout.GetCurrentPosition(), 0f);
                     {
                         DrawNodeInfo(selectedNode, innerContentWidth);
                     }
                     UI.EndVBoxContainer();
 
-                    // Draw the properties in a separate container with a standard gap.
                     UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
                     {
                         DrawAllProperties(selectedNode, innerContentWidth);
@@ -103,23 +95,22 @@ public class InspectorView
     private void DrawNodeInfo(Node selectedNode, float availableWidth)
     {
         UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
-        // Use the new Separator widget. Its verticalPadding creates the gap.
         UI.Separator(availableWidth, thickness: 1f, verticalPadding: 4f);
     }
 
-    private void DrawAllProperties(Node selectedNode, float availableWidth)
+    private static void DrawAllProperties(Node selectedNode, float availableWidth)
     {
-        var properties = selectedNode.GetType()
+        IEnumerable<PropertyInfo> properties = selectedNode.GetType()
             .GetProperties(BindingFlags.Public | BindingFlags.Instance)
             .Where(p => p.CanRead && p.GetIndexParameters().Length == 0 && !s_ignoredProperties.Contains(p.Name));
 
-        foreach (var prop in properties)
+        foreach (PropertyInfo prop in properties)
         {
             DrawPropertyRow(selectedNode, prop, availableWidth);
         }
     }
 
-    private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
+    private static void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
     {
         float labelWidth = (availableWidth - GridGap) * 0.4f;
         float editorWidth = (availableWidth - GridGap) * 0.6f;
@@ -137,6 +128,7 @@ public class InspectorView
         }
 
         UI.BeginHBoxContainer(hboxId, UI.Context.Layout.GetCurrentPosition(), GridGap);
+        
         try
         {
             UI.Label(
@@ -154,8 +146,7 @@ public class InspectorView
         }
     }
 
-
-    private void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
+    private static void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
         string propId = $"prop_value_{prop.Name}";
 
@@ -187,32 +178,29 @@ public class InspectorView
         }
     }
 
-    private void DrawVector2Editor(Node node, PropertyInfo prop, Vector2 value, string baseId, float editorWidth)
+    private static void DrawVector2Editor(Node node, PropertyInfo prop, Vector2 value, string baseId, float editorWidth)
     {
         string xId = $"{baseId}_X";
         string yId = $"{baseId}_Y";
         int xIntId = xId.GetHashCode();
         int yIntId = yId.GetHashCode();
 
-        // The state must be unique per property on a specific node instance.
         int stateId = HashCode.Combine(node.GetHashCode(), prop.Name.GetHashCode());
         var editState = UI.State.GetOrCreateElement<Vector2EditState>(stateId);
 
         bool isXFocused = UI.State.FocusedElementId == xIntId;
         bool isYFocused = UI.State.FocusedElementId == yIntId;
 
-        // If not focused, update string from source vector to ensure it's in sync.
-        // Only update if parsed value differs significantly, to avoid disrupting user input on minor float variations.
         if (!isXFocused)
         {
-            if (!float.TryParse(editState.X, out var parsedX) || Math.Abs(parsedX - value.X) > 1e-4f)
+            if (!float.TryParse(editState.X, out var parsedX) || float.Abs(parsedX - value.X) > 1e-4f)
             {
                 editState.X = value.X.ToString("F3");
             }
         }
         if (!isYFocused)
         {
-            if (!float.TryParse(editState.Y, out var parsedY) || Math.Abs(parsedY - value.Y) > 1e-4f)
+            if (!float.TryParse(editState.Y, out var parsedY) || float.Abs(parsedY - value.Y) > 1e-4f)
             {
                 editState.Y = value.Y.ToString("F3");
             }
@@ -224,6 +212,7 @@ public class InspectorView
             var lineEditSize = new Vector2(lineEditWidth, 24);
 
             string localX = editState.X;
+            
             if (UI.LineEdit(xId, ref localX, lineEditSize))
             {
                 editState.X = localX;
@@ -233,23 +222,23 @@ public class InspectorView
                 }
             }
 
-            // Must re-get the value from the property, because Vector2 is a struct and
-            // the previous operation might have changed its X component.
             var currentValue = (Vector2)prop.GetValue(node)!;
 
             string localY = editState.Y;
+            
             if (UI.LineEdit(yId, ref localY, lineEditSize))
             {
                 editState.Y = localY;
+                
                 if (float.TryParse(editState.Y, out var newY))
                 {
                     prop.SetValue(node, new Vector2(currentValue.X, newY));
                 }
             }
         }
+
         UI.EndHBoxContainer();
     }
-
 
     private static string SplitPascalCase(string input)
     {

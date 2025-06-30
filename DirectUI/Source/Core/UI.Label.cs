@@ -44,71 +44,16 @@ public static partial class UI
             return;
         }
 
-        DrawLabelText(
+        DrawTextPrimitive(
             Context.RenderTarget,
             Context.DWriteFactory,
             Resources,
             widgetBounds,
             text,
             finalStyle,
-            finalAlignment);
+            finalAlignment,
+            Vector2.Zero);
 
         Context.Layout.AdvanceLayout(finalSize);
-    }
-
-    private static void DrawLabelText(
-        ID2D1RenderTarget renderTarget,
-        IDWriteFactory dwriteFactory,
-        UIResources resources,
-        Rect bounds,
-        string text,
-        ButtonStyle style,
-        Alignment textAlignment)
-    {
-        ID2D1SolidColorBrush? textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
-
-        if (textBrush is null)
-        {
-            return;
-        }
-
-        UIResources.TextLayoutCacheKey layoutKey = new(text, style, new(bounds.Width, bounds.Height), textAlignment);
-
-        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-        {
-            IDWriteTextFormat? textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
-
-            if (textFormat is null)
-            {
-                return;
-            }
-
-            textLayout = dwriteFactory.CreateTextLayout(text, textFormat, bounds.Width, bounds.Height);
-            textLayout.TextAlignment = textAlignment.Horizontal switch
-            {
-                HAlignment.Left => TextAlignment.Leading,
-                HAlignment.Center => TextAlignment.Center,
-                HAlignment.Right => TextAlignment.Trailing,
-                _ => TextAlignment.Leading
-            };
-            textLayout.ParagraphAlignment = textAlignment.Vertical switch
-            {
-                VAlignment.Top => ParagraphAlignment.Near,
-                VAlignment.Center => ParagraphAlignment.Center,
-                VAlignment.Bottom => ParagraphAlignment.Far,
-                _ => ParagraphAlignment.Near
-            };
-            resources.textLayoutCache[layoutKey] = textLayout;
-        }
-
-        float yOffsetCorrection = textAlignment.Vertical == VAlignment.Center
-            ? -1.5f
-            : 0f;
-
-        renderTarget.DrawTextLayout(
-            new(bounds.X, bounds.Y + yOffsetCorrection),
-            textLayout,
-            textBrush,
-            DrawTextOptions.None);
     }
 }

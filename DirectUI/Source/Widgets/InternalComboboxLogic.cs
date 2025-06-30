@@ -48,7 +48,7 @@ internal class InternalComboboxLogic
 
         // Draw the main button
         var bounds = new Rect(position.X, position.Y, size.X, size.Y);
-        bool clicked = UI.ButtonPrimitive(
+        bool clicked = UI.ButtonInternal(
             id,
             bounds,
             currentItemText,
@@ -98,7 +98,7 @@ internal class InternalComboboxLogic
 
                         int itemId = HashCode.Combine(id, "item", i);
 
-                        if (UI.ButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
+                        if (UI.ButtonInternal(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
                         {
                             // A selection was made. Post the result to be picked up next frame.
                             state.SetPopupResult(id, i);

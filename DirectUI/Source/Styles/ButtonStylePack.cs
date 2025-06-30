@@ -13,6 +13,8 @@ public sealed class ButtonStylePack
     public ButtonStyle Pressed { get; set; } = new();
     public ButtonStyle Disabled { get; set; } = new();
     public ButtonStyle Focused { get; set; } = new();
+    public ButtonStyle Active { get; set; } = new();
+    public ButtonStyle ActiveHover { get; set; } = new();
 
     public ButtonStylePack()
     {
@@ -30,10 +32,22 @@ public sealed class ButtonStylePack
         Focused.BorderColor = DefaultTheme.FocusBorder;
         Focused.BorderLength = 1;
 
+        // Styles for 'Active' state, taken from the old TabStylePack
+        var panelBg = new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f);
+        Active.FillColor = panelBg;
+        Active.BorderColor = DefaultTheme.HoverBorder;
+        Active.BorderLengthTop = 1f; Active.BorderLengthLeft = 1f; Active.BorderLengthRight = 1f; Active.BorderLengthBottom = 0f;
+        Active.Roundness = 0f;
+
+        ActiveHover.FillColor = panelBg;
+        ActiveHover.BorderColor = DefaultTheme.AccentBorder;
+        ActiveHover.BorderLengthTop = 1f; ActiveHover.BorderLengthLeft = 1f; ActiveHover.BorderLengthRight = 1f; ActiveHover.BorderLengthBottom = 0f;
+        ActiveHover.Roundness = 0f;
+
         Current = Normal;
     }
 
-    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
+    public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused, bool isActive = false)
     {
         if (isDisabled)
         {
@@ -42,6 +56,10 @@ public sealed class ButtonStylePack
         else if (isPressed)
         {
             Current = Pressed;
+        }
+        else if (isActive)
+        {
+            Current = isHovering ? ActiveHover : Active;
         }
         else if (isHovering)
         {
@@ -57,7 +75,7 @@ public sealed class ButtonStylePack
         }
     }
 
-    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled, Focused];
+    private IEnumerable<ButtonStyle> AllStyles => [Normal, Hover, Pressed, Disabled, Focused, Active, ActiveHover];
 
     public string FontName
     {
@@ -94,15 +112,7 @@ public sealed class ButtonStylePack
         set => SetAll(s => s.Roundness = value);
     }
 
-    // Updated setter
     public float BorderLength
-    {
-        set => SetAll(s => s.BorderLength = value);
-    }
-
-    // Obsolete - kept for backward compatibility or remove if breaking change is ok
-    [Obsolete("Use BorderLength instead.")]
-    public float BorderThickness
     {
         set => SetAll(s => s.BorderLength = value);
     }
@@ -123,9 +133,5 @@ public sealed class ButtonStylePack
         {
             setter(style);
         }
-        // Update Current directly after modifying the source styles
-        // No need to call setter(Current) separately if UpdateCurrentStyle is called later.
-        // If UpdateCurrentStyle might not be called, uncommenting setter(Current) ensures immediate consistency.
-        // setter(Current);
     }
 }

@@ -62,7 +62,7 @@ public static partial class UI
             }
         }
 
-        bool clicked = ButtonPrimitive(
+        bool clicked = DrawButtonPrimitive(
             intId,
             widgetBounds,
             text,
@@ -71,7 +71,8 @@ public static partial class UI
             textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
             clickMode,
             clickBehavior,
-            textOffset ?? Vector2.Zero
+            textOffset ?? Vector2.Zero,
+            isActive: false
         );
 
         if (pushedClip && Context.RenderTarget is not null)
