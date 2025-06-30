@@ -106,7 +106,7 @@ public static partial class UI
         {
             var labelPos = new Vector2(boxRect.Right + spacing, drawPos.Y);
             var labelBounds = new Rect(labelPos.X, labelPos.Y, labelSize.X, totalSize.Y);
-            DrawLabelText(rt, Context.DWriteFactory, Resources, labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            DrawTextPrimitive(rt, Context.DWriteFactory, Resources, labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
         }
 
         Context.Layout.AdvanceLayout(totalSize);
