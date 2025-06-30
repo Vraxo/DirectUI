@@ -11,7 +11,7 @@ public static partial class UI
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    internal static bool DrawButtonPrimitive(
+    internal static bool ButtonPrimitive(
         int id,
         Rect bounds,
         string text,
@@ -20,8 +20,7 @@ public static partial class UI
         Alignment textAlignment,
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
-        Vector2 textOffset,
-        bool isActive = false)
+        Vector2 textOffset)
     {
         var context = Context;
         var state = State;
@@ -77,7 +76,7 @@ public static partial class UI
         }
 
         // --- Style Resolution ---
-        ButtonStyle currentStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle currentStyle = ResolveButtonStyle(theme, isHovering, isPressed, disabled, isFocused);
 
         // --- Drawing ---
         if (bounds.Width > 0 && bounds.Height > 0)
@@ -86,7 +85,7 @@ public static partial class UI
             resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
 
             // Draw Text
-            DrawTextPrimitive(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
+            DrawButtonText(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
         }
 
         return wasClickedThisFrame;
@@ -95,10 +94,10 @@ public static partial class UI
     /// <summary>
     /// Resolves the final ButtonStyle for the current frame by applying interaction state and style stack overrides.
     /// </summary>
-    internal static ButtonStyle ResolveButtonStylePrimitive(ButtonStylePack theme, bool isHovering, bool isPressed, bool isDisabled, bool isFocused, bool isActive)
+    private static ButtonStyle ResolveButtonStyle(ButtonStylePack theme, bool isHovering, bool isPressed, bool isDisabled, bool isFocused)
     {
         // Determine base style from interaction state
-        theme.UpdateCurrentStyle(isHovering, isPressed, isDisabled, isFocused, isActive);
+        theme.UpdateCurrentStyle(isHovering, isPressed, isDisabled, isFocused);
         ButtonStyle baseStyle = theme.Current;
 
         // Create a temporary, modifiable copy for this frame to apply style stack overrides
@@ -131,16 +130,16 @@ public static partial class UI
             finalStyle.FillColor = GetStyleColor(StyleColor.ButtonPressed, finalStyle.FillColor);
             finalStyle.BorderColor = GetStyleColor(StyleColor.BorderPressed, finalStyle.BorderColor);
         }
-        else if (isHovering && !isActive) // Don't apply button hover if it's an active tab/button
+        else if (isHovering)
         {
             finalStyle.FillColor = GetStyleColor(StyleColor.ButtonHovered, finalStyle.FillColor);
             finalStyle.BorderColor = GetStyleColor(StyleColor.BorderHovered, finalStyle.BorderColor);
         }
-        else if (isFocused && !isActive) // Don't apply focus border if it's an active tab/button
+        else if (isFocused)
         {
             finalStyle.BorderColor = GetStyleColor(StyleColor.BorderFocused, finalStyle.BorderColor);
         }
-        else if (!isActive) // Normal
+        else // Normal
         {
             finalStyle.FillColor = GetStyleColor(StyleColor.Button, finalStyle.FillColor);
             finalStyle.BorderColor = GetStyleColor(StyleColor.Border, finalStyle.BorderColor);
@@ -158,9 +157,9 @@ public static partial class UI
     }
 
     /// <summary>
-    /// The single, unified primitive for drawing cached text within a bounding box.
+    /// Draws the text for a button, using the central text layout cache.
     /// </summary>
-    internal static void DrawTextPrimitive(
+    private static void DrawButtonText(
         ID2D1RenderTarget renderTarget,
         IDWriteFactory dwriteFactory,
         UIResources resources,
