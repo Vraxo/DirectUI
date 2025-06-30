@@ -20,7 +20,8 @@ public class InspectorView
 
     private readonly ButtonStyle _propertyLabelStyle = new()
     {
-        FontWeight = FontWeight.SemiBold,
+        FontSize = 13f,
+        FontWeight = FontWeight.Normal,
         FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
     };
 
@@ -33,13 +34,17 @@ public class InspectorView
     public void Draw(Node? selectedNode, float panelWidth, float panelHeight)
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
+        var startPos = UI.Context.Layout.GetCurrentPosition();
 
-        UI.BeginVBoxContainer("inspector_outer_vbox", UI.Context.Layout.GetCurrentPosition(), PanelGap);
+        UI.BeginVBoxContainer("inspector_outer_vbox", startPos, PanelGap);
         {
             DrawHeader(availableContentWidth);
+            UI.Separator(availableContentWidth, thickness: 1f, verticalPadding: 4f);
 
-            Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
-            float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
+            var currentPos = UI.Context.Layout.GetCurrentPosition();
+            var heightUsed = currentPos.Y - startPos.Y;
+            var scrollableHeight = panelHeight - heightUsed;
+
 
             if (scrollableHeight < 0)
             {
@@ -58,12 +63,6 @@ public class InspectorView
                 }
                 else
                 {
-                    UI.BeginVBoxContainer("inspector_header_vbox", UI.Context.Layout.GetCurrentPosition(), 0f);
-                    {
-                        DrawNodeInfo(selectedNode, innerContentWidth);
-                    }
-                    UI.EndVBoxContainer();
-
                     UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
                     {
                         DrawAllProperties(selectedNode, innerContentWidth);
@@ -87,27 +86,56 @@ public class InspectorView
         );
     }
 
-    private void DrawNodeInfo(Node selectedNode, float availableWidth)
+    private void DrawAllProperties(Node selectedNode, float availableWidth)
     {
-        UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
-        UI.Separator(availableWidth, thickness: 1f, verticalPadding: 4f);
-    }
+        Type? currentType = selectedNode.GetType();
+        bool isFirstGroup = true;
 
-    private static void DrawAllProperties(Node selectedNode, float availableWidth)
-    {
-        IEnumerable<PropertyInfo> properties = selectedNode.GetType()
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead &&
-                        p.GetIndexParameters().Length == 0 &&
-                        !p.IsDefined(typeof(HideFromInspectorAttribute), false));
-
-        foreach (PropertyInfo prop in properties)
+        var classHeaderStyle = new ButtonStyle
         {
-            DrawPropertyRow(selectedNode, prop, availableWidth);
+            FontWeight = FontWeight.Bold,
+            FontSize = 13f
+        };
+
+        while (currentType != null && typeof(Node).IsAssignableFrom(currentType))
+        {
+            var properties = currentType
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(p => p.CanRead &&
+                            p.GetIndexParameters().Length == 0 &&
+                            !p.IsDefined(typeof(HideFromInspectorAttribute), false))
+                .ToList();
+
+            if (properties.Any())
+            {
+                if (!isFirstGroup)
+                {
+                    // Add separator BEFORE the group, but not for the first one.
+                    UI.Separator(availableWidth, thickness: 1f, verticalPadding: 8f);
+                }
+
+                UI.Label(
+                    $"header_{currentType.Name}",
+                    currentType.Name,
+                    style: classHeaderStyle,
+                    size: new(availableWidth, 0),
+                    textAlignment: new Alignment(HAlignment.Center, VAlignment.Center)
+                );
+
+
+                foreach (var prop in properties)
+                {
+                    DrawPropertyRow(selectedNode, prop, availableWidth);
+                }
+
+                isFirstGroup = false;
+            }
+
+            currentType = currentType.BaseType;
         }
     }
 
-    private static void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
+    private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
     {
         float labelWidth = (availableWidth - GridGap) * 0.4f;
         float editorWidth = (availableWidth - GridGap) * 0.6f;
@@ -132,6 +160,7 @@ public class InspectorView
                 $"prop_label_{prop.Name}",
                 SplitPascalCase(prop.Name),
                 size: new(labelWidth, 24),
+                style: _propertyLabelStyle,
                 textAlignment: new(HAlignment.Left, VAlignment.Center)
             );
 
@@ -151,7 +180,7 @@ public class InspectorView
         {
             case bool b when prop.CanWrite:
                 bool isChecked = b;
-                if (UI.Checkbox(propId, "", ref isChecked))
+                if (UI.Checkbox(propId, "", ref isChecked, size: new Vector2(0, 24)))
                 {
                     prop.SetValue(node, isChecked);
                 }

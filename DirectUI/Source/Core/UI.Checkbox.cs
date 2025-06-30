@@ -5,7 +5,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool Checkbox(string id, string label, ref bool isChecked, bool disabled = false)
+    public static bool Checkbox(string id, string label, ref bool isChecked, bool disabled = false, Vector2? size = null)
     {
         if (!IsContextValid()) return false;
 
@@ -22,7 +22,14 @@ public static partial class UI
         var textStyle = new ButtonStyle { FontColor = textColor }; // Use ButtonStyle for font properties.
 
         var labelSize = string.IsNullOrEmpty(label) ? Vector2.Zero : Resources.MeasureText(Context.DWriteFactory, label, textStyle);
-        var totalSize = new Vector2(boxSize.X + (labelSize.X > 0 ? spacing + labelSize.X : 0), Math.Max(boxSize.Y, labelSize.Y));
+
+        var contentWidth = boxSize.X + (labelSize.X > 0 ? spacing + labelSize.X : 0);
+        var contentHeight = Math.Max(boxSize.Y, labelSize.Y);
+
+        var finalWidgetHeight = size?.Y > 0 ? size.Value.Y : contentHeight;
+        var finalWidgetWidth = size?.X > 0 ? size.Value.X : contentWidth;
+        var totalSize = new Vector2(finalWidgetWidth, finalWidgetHeight);
+
         var drawPos = Context.Layout.GetCurrentPosition();
 
         var widgetBounds = new Rect(drawPos.X, drawPos.Y, totalSize.X, totalSize.Y);
@@ -53,7 +60,11 @@ public static partial class UI
 
         // --- Drawing ---
         var rt = Context.RenderTarget;
-        float boxY = drawPos.Y + (totalSize.Y - boxSize.Y) / 2; // Vertically center the box
+        // This calculation centers the box inside the widget's total height.
+        // A small vertical adjustment is added to compensate for font metrics in DrawTextPrimitive,
+        // ensuring the checkbox and text align perfectly.
+        const float yOffsetCorrection = -1.5f;
+        float boxY = drawPos.Y + (totalSize.Y - boxSize.Y) / 2 + yOffsetCorrection;
         var boxRect = new Rect(drawPos.X, boxY, boxSize.X, boxSize.Y);
 
         // Draw the box frame
