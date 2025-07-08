@@ -1,5 +1,6 @@
 ﻿using DirectUI;
 using System;
+using Raylib_cs; // Added for Raylib
 
 namespace Cocoshell;
 
@@ -8,30 +9,61 @@ public class Program
     [STAThread] // Important for COM (Direct2D) and Win32 APIs
     static void Main(string[] args)
     {
-        Console.WriteLine("Starting Refactored Direct2D Application...");
+        Console.WriteLine("Starting Refactored Direct2D/Raylib Application...");
 
-        // Use 'using' to ensure Dispose is called automatically
-        using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
+        bool useRaylib = true; // Set to true to test Raylib backend
+
+        if (useRaylib)
         {
-            try
+            Console.WriteLine("Using Raylib Backend.");
+
+            // For Raylib, the main loop is driven directly by Program.cs
+            // and Raylib-cs's window management.
+            // MyDirectUIApp (when configured for Raylib) will handle Raylib window creation and input.
+            using (var app = new MyDirectUIApp("My Refactored Raylib App", 1024, 768))
             {
-                // Create the main window, which registers itself with the Application manager.
-                // The static constructor in Application will ensure resources are ready.
-                if (appWindow.Create())
+                // app.Create() will internally call the correct Initialize for Raylib.
+                if (app.Create())
                 {
-                    // Run the central message loop that processes all windows.
-                    // This will also handle cleanup when the loop exits.
-                    Application.Run();
+                    // The primary application loop for Raylib.
+                    // This loop runs as long as the Raylib window should not close.
+                    while (!Raylib.WindowShouldClose())
+                    {
+                        // MyDirectUIApp.FrameUpdate for Raylib backend
+                        // handles input processing and calls AppHost.Render().
+                        // It also sets Application.s_isRunning to false if Raylib.WindowShouldClose() is true.
+                        app.FrameUpdate();
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Failed to initialize Raylib application.");
+                }
+            } // app.Dispose() is called here implicitly, triggering cleanup
+        }
+        else
+        {
+            Console.WriteLine("Using Direct2D Backend.");
+
+            // Original Direct2D flow, using Win32 window and message loop.
+            using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
+            {
+                try
+                {
+                    // Create the main window, which registers itself with the Application manager.
+                    if (appWindow.Create())
+                    {
+                        // Run the central Win32 message loop that processes all windows.
+                        Application.Run();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Unhandled exception in Run: {ex}");
-                // Log exception, show message box, etc.
-            }
-        } // appWindow.Dispose() is called here, which triggers its window closure
+        }
 
         Console.WriteLine("Application finished.");
-        // Console.ReadKey(); // Optional: Keep console open after exit
     }
 }

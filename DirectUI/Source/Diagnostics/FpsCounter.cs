@@ -1,7 +1,7 @@
-﻿using System;
+﻿// DirectUI/Diagnostics/FpsCounter.cs
+using System;
 using System.Diagnostics;
 using DirectUI.Core;
-using Vortice.Direct2D1; // Still used for DrawTextOptions enum
 using Vortice.Mathematics;
 using Vortice.DirectWrite;
 using System.Numerics; // Still used for TextAlignment and ParagraphAlignment enums
@@ -26,7 +26,7 @@ public class FpsCounter
     // DirectUI Service references
     private ITextService? _textService;
     private IRenderer? _renderer;
-    private ITextLayout? _fpsTextLayout; // Cached layout
+    // Removed ITextLayout? _fpsTextLayout; // No longer cached here for drawing
 
     public void Initialize(ITextService textService, IRenderer renderer)
     {
@@ -63,8 +63,8 @@ public class FpsCounter
     public void Cleanup()
     {
         _timer.Stop();
-        _fpsTextLayout?.Dispose();
-        _fpsTextLayout = null;
+        // Removed _fpsTextLayout?.Dispose();
+        // Removed _fpsTextLayout = null;
     }
 
     /// <summary>
@@ -88,9 +88,7 @@ public class FpsCounter
             _frameCountSinceUpdate = 0;
             _lastUpdateTimeTicks = elapsedTicks;
 
-            // Invalidate the cached text layout so it's recreated with the new FPS value
-            _fpsTextLayout?.Dispose();
-            _fpsTextLayout = null;
+            // No longer invalidate the cached text layout here, as renderer handles its own caching.
         }
     }
 
@@ -103,24 +101,19 @@ public class FpsCounter
 
         string fpsText = $"FPS: {_currentFps:F1}";
 
-        // Lazily create the text layout
-        if (_fpsTextLayout == null)
+        // The FpsCounter no longer needs to create/cache an ITextLayout for drawing.
+        // It simply provides the text and style, and the renderer draws it.
+        var style = new ButtonStyle
         {
-            var style = new ButtonStyle
-            {
-                FontName = _fontName,
-                FontSize = _fontSize,
-                FontWeight = FontWeight.Normal,
-                FontStyle = FontStyle.Normal,
-                FontStretch = FontStretch.Normal,
-                FontColor = _textColor
-            };
-            // Use a large max size as FPS counter typically won't wrap
-            _fpsTextLayout = _textService.GetTextLayout(fpsText, style, new Vector2(float.MaxValue, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-        }
-
-        if (_fpsTextLayout is null) return;
-
-        _renderer.DrawTextLayout(new Vector2(5f, 5f), _fpsTextLayout, _textColor);
+            FontName = _fontName,
+            FontSize = _fontSize,
+            FontWeight = FontWeight.Normal,
+            FontStyle = FontStyle.Normal,
+            FontStretch = FontStretch.Normal,
+            FontColor = _textColor
+        };
+        // Use a large max size as FPS counter typically won't wrap
+        // The IRenderer.DrawText method requires a maxSize and alignment for its internal layout logic.
+        _renderer.DrawText(new Vector2(5f, 5f), fpsText, style, new Alignment(HAlignment.Left, VAlignment.Top), new Vector2(150f, 30f), _textColor);
     }
 }

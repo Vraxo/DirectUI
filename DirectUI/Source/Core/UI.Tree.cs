@@ -30,25 +30,22 @@ public static partial class UI
 
         var startLayoutPos = Context.Layout.GetCurrentPosition();
 
-        // Use renderer's GetOrCreateBrush and DrawLine
-        if (renderer.GetOrCreateBrush(style.LineColor) is not null) // Check if brush can be created/is valid
+        // Draw indent lines
+        int i = 0;
+        foreach (var shouldDrawLine in treeState.IndentLineState)
         {
-            int i = 0;
-            foreach (var shouldDrawLine in treeState.IndentLineState)
+            if (shouldDrawLine)
             {
-                if (shouldDrawLine)
-                {
-                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
-                    renderer.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), style.LineColor, 1.0f);
-                }
-                i++;
+                float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
+                renderer.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), style.LineColor, 1.0f);
             }
-            if (treeState.IndentLineState.Count > 0)
-            {
-                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
-                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
-                renderer.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), style.LineColor, 1.0f);
-            }
+            i++;
+        }
+        if (treeState.IndentLineState.Count > 0)
+        {
+            float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
+            float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
+            renderer.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), style.LineColor, 1.0f);
         }
 
         float indentSize = treeState.IndentLineState.Count * style.Indent;

@@ -1,7 +1,7 @@
 ﻿// DirectUI/Core/IRenderer.cs
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using Vortice.Direct2D1; // Required for AntialiasMode
 
 namespace DirectUI.Core;
 
@@ -27,9 +27,9 @@ public interface IRenderer
     void DrawBox(Rect rect, BoxStyle style);
 
     /// <summary>
-    /// Draws a pre-formatted text layout.
+    /// Draws text. The renderer is responsible for its own text layout and caching.
     /// </summary>
-    void DrawTextLayout(Vector2 origin, ITextLayout textLayout, Color4 color);
+    void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color);
 
     /// <summary>
     /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
@@ -40,10 +40,4 @@ public interface IRenderer
     /// Pops the last clipping rectangle from the stack.
     /// </summary>
     void PopClipRect();
-
-    /// <summary>
-    /// Gets or creates a cached solid color brush for the given color.
-    /// </summary>
-    /// <returns>A solid color brush, or null if creation failed.</returns>
-    ID2D1SolidColorBrush? GetOrCreateBrush(Color4 color);
 }

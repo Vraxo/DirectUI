@@ -100,17 +100,13 @@ public static partial class UI
         if (isChecked)
         {
             // The checkmarkColor variable was changed above to pure white.
-            var checkBrush = renderer.GetOrCreateBrush(checkmarkColor);
-            if (checkBrush != null)
-            {
-                // A simple checkmark drawn as two lines
-                float pad = boxSize.X * 0.25f;
-                var p1 = new Vector2(boxRect.Left + pad, boxRect.Top + boxSize.Y * 0.5f);
-                var p2 = new Vector2(boxRect.Left + boxSize.X * 0.45f, boxRect.Bottom - pad);
-                var p3 = new Vector2(boxRect.Right - pad, boxRect.Top + pad);
-                renderer.DrawLine(p1, p2, checkmarkColor, 2.0f);
-                renderer.DrawLine(p2, p3, checkmarkColor, 2.0f);
-            }
+            // A simple checkmark drawn as two lines
+            float pad = boxSize.X * 0.25f;
+            var p1 = new Vector2(boxRect.Left + pad, boxRect.Top + boxSize.Y * 0.5f);
+            var p2 = new Vector2(boxRect.Left + boxSize.X * 0.45f, boxRect.Bottom - pad);
+            var p3 = new Vector2(boxRect.Right - pad, boxRect.Top + pad);
+            renderer.DrawLine(p1, p2, checkmarkColor, 2.0f);
+            renderer.DrawLine(p2, p3, checkmarkColor, 2.0f);
         }
 
         // Draw the label

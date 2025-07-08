@@ -5,6 +5,7 @@ using System.Numerics;
 using DirectUI.Core;
 using SharpGen.Runtime;
 using Vortice.Direct2D1;
+using Vortice.DirectWrite; // Added for IDWriteFactory and TextFormat/ParagraphAlignment
 using Vortice.Mathematics;
 using System.Drawing; // Added for RectangleF
 
@@ -12,18 +13,70 @@ namespace DirectUI.Backends;
 
 /// <summary>
 /// A rendering backend that uses Direct2D to implement the IRenderer interface.
-/// It manages its own cache of Direct2D brushes.
+/// It manages its own cache of Direct2D brushes and text layouts.
 /// </summary>
 public class Direct2DRenderer : IRenderer
 {
     private readonly ID2D1RenderTarget _renderTarget;
+    private readonly IDWriteFactory _dwriteFactory; // Added DirectWrite factory
     private readonly Dictionary<Color4, ID2D1SolidColorBrush> _brushCache = new();
+
+    // Internal text layout cache for DrawText method
+    private readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> _textLayoutCache = new();
+    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new(); // Added text format cache
+
+    // Internal cache key for text layouts (similar to UIResources.TextLayoutCacheKey)
+    private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
+    {
+        public readonly string Text;
+        public readonly FontKey FontKey;
+        public readonly Vector2 MaxSize;
+        public readonly HAlignment HAlign;
+        public readonly VAlignment VAlign;
+
+        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+        {
+            Text = text;
+            FontKey = new FontKey(style);
+            MaxSize = maxSize;
+            HAlign = alignment.Horizontal;
+            VAlign = alignment.Vertical;
+        }
+
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
+    private readonly struct FontKey : IEquatable<FontKey>
+    {
+        public readonly string FontName;
+        public readonly float FontSize;
+        public readonly FontWeight FontWeight;
+        public readonly FontStyle FontStyle;
+        public readonly FontStretch FontStretch;
+
+        public FontKey(ButtonStyle style)
+        {
+            FontName = style.FontName;
+            FontSize = style.FontSize;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontStretch = style.FontStretch;
+        }
+
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
 
     public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
 
-    public Direct2DRenderer(ID2D1RenderTarget renderTarget)
+    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory) // Added dwriteFactory
     {
         _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
+        _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
     }
 
     public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
@@ -63,7 +116,6 @@ public class Direct2DRenderer : IRenderer
             {
                 if (hasVisibleBorder)
                 {
-                    // Convert Vortice.Mathematics.Rect to System.Drawing.RectangleF
                     System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
                     _renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), borderBrush);
                 }
@@ -79,13 +131,11 @@ public class Direct2DRenderer : IRenderer
                         float avgBorderY = (borderTop + borderBottom) * 0.5f;
                         float innerRadiusX = Math.Max(0f, radius - avgBorderX);
                         float innerRadiusY = Math.Max(0f, radius - avgBorderY);
-                        // Convert Vortice.Mathematics.Rect to System.Drawing.RectangleF
                         System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
                         _renderTarget.FillRoundedRectangle(new RoundedRectangle(fillRectF, innerRadiusX, innerRadiusY), fillBrush);
                     }
                     else if (!hasVisibleBorder && fillBrush is not null)
                     {
-                        // Convert Vortice.Mathematics.Rect to System.Drawing.RectangleF
                         System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
                         _renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), fillBrush);
                     }
@@ -114,13 +164,41 @@ public class Direct2DRenderer : IRenderer
         }
     }
 
-    public void DrawTextLayout(Vector2 origin, ITextLayout textLayout, Color4 color)
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
     {
-        if (textLayout is not DirectWriteTextLayout dwLayout) return;
+        if (string.IsNullOrEmpty(text)) return;
 
-        var brush = GetOrCreateBrush(color);
-        if (brush is null) return;
-        _renderTarget.DrawTextLayout(origin, dwLayout.DWriteLayout, brush, Vortice.Direct2D1.DrawTextOptions.None);
+        var textBrush = GetOrCreateBrush(color);
+        if (textBrush is null) return;
+
+        var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
+        if (!_textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        {
+            var textFormat = GetOrCreateTextFormat(style);
+            if (textFormat is null) return;
+
+            textLayout = _dwriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
+            textLayout.TextAlignment = alignment.Horizontal switch
+            {
+                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                _ => Vortice.DirectWrite.TextAlignment.Leading
+            };
+            textLayout.ParagraphAlignment = alignment.Vertical switch
+            {
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
+            };
+            _textLayoutCache[layoutKey] = textLayout;
+        }
+
+        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
+        float yOffsetCorrection = (alignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
+
+        _renderTarget.DrawTextLayout(new Vector2(origin.X, origin.Y + yOffsetCorrection), textLayout, textBrush, Vortice.Direct2D1.DrawTextOptions.None);
     }
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
@@ -140,9 +218,21 @@ public class Direct2DRenderer : IRenderer
             pair.Value?.Dispose();
         }
         _brushCache.Clear();
+
+        foreach (var pair in _textLayoutCache)
+        {
+            pair.Value?.Dispose();
+        }
+        _textLayoutCache.Clear();
+
+        foreach (var pair in _textFormatCache) // Dispose text formats
+        {
+            pair.Value?.Dispose();
+        }
+        _textFormatCache.Clear();
     }
 
-    public ID2D1SolidColorBrush? GetOrCreateBrush(Color4 color)
+    private ID2D1SolidColorBrush? GetOrCreateBrush(Color4 color)
     {
         if (_renderTarget is null)
         {
@@ -175,12 +265,34 @@ public class Direct2DRenderer : IRenderer
         catch (SharpGenException ex) when (ex.ResultCode.Code == Vortice.Direct2D1.ResultCode.RecreateTarget.Code)
         {
             Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed.");
-            // Don't re-throw, allow graceful failure. The calling code should handle the null.
             return null;
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error creating brush for color {color}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
+    {
+        if (_dwriteFactory is null) return null;
+
+        var key = new FontKey(style);
+        if (_textFormatCache.TryGetValue(key, out var format)) // Use the member field
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = _dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
+            if (newFormat is not null) { _textFormatCache[key] = newFormat; } // Add to the member field
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
             return null;
         }
     }

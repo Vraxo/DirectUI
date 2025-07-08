@@ -20,6 +20,7 @@ public abstract class Win32Window : IDisposable
     private GCHandle _gcHandle;
 
     public IntPtr Handle => _hwnd;
+    public string Title => _windowTitle;
     public int Width { get; protected set; }
     public int Height { get; protected set; }
     protected IntPtr OwnerHandle { get; private set; } = IntPtr.Zero;
@@ -364,7 +365,7 @@ public abstract class Win32Window : IDisposable
 
     }
 
-protected virtual void OnMouseUp(MouseButton button, int x, int y)
+    protected virtual void OnMouseUp(MouseButton button, int x, int y)
     {
 
     }

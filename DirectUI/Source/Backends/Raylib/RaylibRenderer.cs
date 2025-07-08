@@ -1,0 +1,183 @@
+﻿// DirectUI/Backends/Raylib/RaylibRenderer.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.Mathematics;
+using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
+using Raylib_cs; // Raylib specific library
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A rendering backend that uses Raylib to implement the IRenderer interface.
+/// </summary>
+public class RaylibRenderer : IRenderer
+{
+    private readonly Stack<Rectangle> _clipRectStack = new();
+
+    public Vector2 RenderTargetSize
+    {
+        get { return new Vector2(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()); }
+    }
+
+    public RaylibRenderer()
+    {
+        // Raylib is typically initialized externally (e.g., in Program.cs or AppHost)
+        // No Raylib-specific initialization needed here in the constructor.
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    {
+        // Raylib draws lines with thickness 1 by default, or you can use DrawLineEx for thicker lines
+        // Mapping DirectUI Color4 to Raylib_cs.Color
+        var rlColor = new Raylib_cs.Color(
+            (byte)(color.R * 255),
+            (byte)(color.G * 255),
+            (byte)(color.B * 255),
+            (byte)(color.A * 255)
+        );
+        Raylib.DrawLineEx(p1, p2, strokeWidth, rlColor);
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        // Mapping DirectUI Color4 to Raylib_cs.Color
+        var fillColor = new Raylib_cs.Color(
+            (byte)(style.FillColor.R * 255),
+            (byte)(style.FillColor.G * 255),
+            (byte)(style.FillColor.B * 255),
+            (byte)(style.FillColor.A * 255)
+        );
+        var borderColor = new Raylib_cs.Color(
+            (byte)(style.BorderColor.R * 255),
+            (byte)(style.BorderColor.G * 255),
+            (byte)(style.BorderColor.B * 255),
+            (byte)(style.BorderColor.A * 255)
+        );
+
+        Raylib_cs.Rectangle rlRect = new Raylib_cs.Rectangle(rect.X, rect.Y, rect.Width, rect.Height);
+
+        // Fill
+        if (style.FillColor.A > 0)
+        {
+            if (style.Roundness > 0)
+            {
+                // Raylib's DrawRectangleRounded takes normalized roundness (0 to 1)
+                Raylib.DrawRectangleRounded(rlRect, style.Roundness, 0, fillColor);
+            }
+            else
+            {
+                Raylib.DrawRectangleRec(rlRect, fillColor);
+            }
+        }
+
+        // Border (simplified for uniform border lengths for now)
+        float borderThickness = Math.Max(style.BorderLengthTop, style.BorderLengthRight); // Take max for simplicity
+        borderThickness = Math.Max(borderThickness, style.BorderLengthBottom);
+        borderThickness = Math.Max(borderThickness, style.BorderLengthLeft);
+
+        if (style.BorderColor.A > 0 && borderThickness > 0)
+        {
+            if (style.Roundness > 0)
+            {
+                Raylib.DrawRectangleRoundedLinesEx(rlRect, style.Roundness, 0, borderThickness, borderColor);
+            }
+            else
+            {
+                Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
+            }
+        }
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        // Mapping DirectUI Color4 to Raylib_cs.Color
+        var rlColor = new Raylib_cs.Color(
+            (byte)(color.R * 255),
+            (byte)(color.G * 255),
+            (byte)(color.B * 255),
+            (byte)(color.A * 255)
+        );
+
+        // Load font on demand (consider caching this externally or internally with FontKey)
+        // For simplicity, using a default font or a very basic approach for now.
+        // A robust solution would involve pre-loading fonts by style.FontName
+        // and caching Raylib.Font objects.
+        Font rlFont = Raylib.GetFontDefault(); // Use default font for simplicity
+
+        // Raylib's MeasureTextEx needs a font object
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f); // Default spacing is 1/10th of font size
+
+        Vector2 textDrawPos = origin;
+
+        // Apply alignment based on maxSize and measuredSize
+        // This logic is similar to what a text layout engine would do.
+        if (maxSize.X > 0 && measuredSize.X < maxSize.X)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += (maxSize.X - measuredSize.X);
+                    break;
+            }
+        }
+        if (maxSize.Y > 0 && measuredSize.Y < maxSize.Y)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
+                    break;
+            }
+        }
+
+        // Raylib DrawTextEx takes position, text, font, font size, spacing, tint
+        Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        // Raylib has BeginScissorMode / EndScissorMode
+        // Note: Raylib's scissor mode is typically integer-based.
+        // Also, it's global, so nesting requires careful management.
+        // We simulate a stack by saving and restoring.
+        _clipRectStack.Push(new Raylib_cs.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height));
+        Raylib.BeginScissorMode((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+    }
+
+    public void PopClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            _clipRectStack.Pop();
+            if (_clipRectStack.Count > 0)
+            {
+                // Re-apply the previous clip rect
+                var prevRect = _clipRectStack.Peek();
+                Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
+            }
+            else
+            {
+                // If stack is empty, end scissor mode entirely
+                Raylib.EndScissorMode();
+            }
+        }
+    }
+
+    // Raylib specific cleanup (if any resources like fonts were loaded dynamically)
+    public void Cleanup()
+    {
+        // No Raylib-specific font objects to dispose that are loaded here per layout.
+        // If fonts were loaded with LoadFontEx, they would need UnloadFont.
+        _clipRectStack.Clear();
+    }
+}

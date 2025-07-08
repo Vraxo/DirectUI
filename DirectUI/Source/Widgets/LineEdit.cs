@@ -285,7 +285,8 @@ internal class LineEdit
         var renderer = context.Renderer;
         var textService = context.TextService;
 
-        // Use ITextService to get the text layout
+        // The LineEdit widget uses ITextLayout for hit-testing and caret position calculations.
+        // Even though IRenderer now takes raw text for drawing, ITextLayout is still relevant for widget logic.
         var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
 
         if (textLayout is null) return;
@@ -294,10 +295,10 @@ internal class LineEdit
         const float yOffsetCorrection = -1.5f;
 
         // Calculate the drawing origin by applying scroll offset directly.
-        // The renderer's DrawTextLayout method should handle the final placement based on this origin.
         Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
 
-        renderer.DrawTextLayout(drawOrigin, textLayout, style.FontColor);
+        // Renderer's DrawText method now takes full text parameters.
+        renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
     }
 
     private void DrawCaret(string text, LineEditState state, Vector2 size, ButtonStyle style, Rect contentRect)

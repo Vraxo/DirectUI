@@ -3,14 +3,15 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
-using DirectUI.Backends;
-using DirectUI.Core;
+using DirectUI.Backends; // Added Raylib namespace
+using DirectUI.Core; // For IRenderer, ITextService
 using DirectUI.Diagnostics;
 using DirectUI.Input;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
+using Raylib_cs; // Added for Raylib backend
 
 namespace DirectUI;
 
@@ -27,21 +28,23 @@ public class AppHost
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
 
-    private GraphicsDevice? _graphicsDevice;
-    private IntPtr _hwnd;
+    private GraphicsDevice? _graphicsDevice; // Only used for D2D backend
+    private IntPtr _hwnd; // Only used for D2D backend
 
     private IRenderer? _renderer;
     private ITextService? _textService;
+    private readonly bool _useRaylibBackend; // Flag to choose backend
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
 
-    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
+    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor, bool useRaylibBackend = false)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _inputManager = new InputManager();
+        _useRaylibBackend = useRaylibBackend;
 
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
@@ -49,32 +52,50 @@ public class AppHost
 
     public bool Initialize(IntPtr hwnd, SizeI clientSize)
     {
-        _hwnd = hwnd;
-        if (_graphicsDevice?.IsInitialized ?? false) return true;
-        if (_hwnd == IntPtr.Zero) return false;
+        _hwnd = hwnd; // Only relevant for D2D backend
 
-        _graphicsDevice ??= new GraphicsDevice();
-
-        if (!_graphicsDevice.Initialize(_hwnd, clientSize))
+        if (_useRaylibBackend)
         {
-            return false;
+            // Raylib initialization is usually done once globally (e.g. in Program.cs).
+            // This AppHost simply creates the renderer/text service.
+            _renderer = new RaylibRenderer();
+            _textService = new RaylibTextService();
+        }
+        else // Direct2D Backend
+        {
+            if (_graphicsDevice?.IsInitialized ?? false) return true;
+            if (_hwnd == IntPtr.Zero) return false;
+
+            _graphicsDevice ??= new GraphicsDevice();
+
+            if (!_graphicsDevice.Initialize(_hwnd, clientSize))
+            {
+                return false;
+            }
+
+            // Initialize backend services using the concrete D2D and DWrite factories
+            if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+            {
+                _renderer = new Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory); // Pass DWriteFactory
+                _textService = new DirectWriteTextService(_graphicsDevice.DWriteFactory);
+            }
+            else
+            {
+                Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for D2D backend initialization.");
+                return false;
+            }
         }
 
-        // Initialize backend services using the concrete D2D and DWrite factories
-        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        // Initialize the FpsCounter using the selected backend services
+        if (_textService != null && _renderer != null)
         {
-            _renderer = new Direct2DRenderer(_graphicsDevice.RenderTarget);
-            _textService = new DirectWriteTextService(_graphicsDevice.DWriteFactory);
-
-            // Initialize the FpsCounter once during construction.
             _fpsCounter.Initialize(_textService, _renderer);
         }
         else
         {
-            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for backend initialization.");
+            Console.WriteLine("CRITICAL: Renderer or TextService was not available for FpsCounter initialization.");
             return false;
         }
-
         return true;
     }
 
@@ -83,18 +104,27 @@ public class AppHost
         _fpsCounter.Cleanup();
         _textService?.Cleanup();
         (_renderer as Direct2DRenderer)?.Cleanup(); // Specific cleanup for Direct2DRenderer
+        (_renderer as RaylibRenderer)?.Cleanup(); // Specific cleanup for RaylibRenderer (if any needed in future)
         _graphicsDevice?.Cleanup();
     }
 
     public void Resize(SizeI newSize)
     {
-        if (_graphicsDevice?.IsInitialized ?? false)
+        if (_useRaylibBackend)
         {
-            _graphicsDevice.Resize(newSize);
+            // Raylib window resizing is typically handled externally,
+            // but the renderer's RenderTargetSize will adapt.
         }
-        else if (_hwnd != IntPtr.Zero)
+        else // Direct2D Backend
         {
-            Initialize(_hwnd, GetClientRectSizeForHost());
+            if (_graphicsDevice?.IsInitialized ?? false)
+            {
+                _graphicsDevice.Resize(newSize);
+            }
+            else if (_hwnd != IntPtr.Zero)
+            {
+                Initialize(_hwnd, GetClientRectSizeForHost());
+            }
         }
     }
 
@@ -104,13 +134,22 @@ public class AppHost
         // is created and painted synchronously inside another window's render loop.
         if (UI.IsRendering) return;
 
-        if (!(_graphicsDevice?.IsInitialized ?? false) || _renderer is null || _textService is null)
+        // Ensure backend services are initialized
+        if (_renderer is null || _textService is null)
         {
-            if (!Initialize(_hwnd, GetClientRectSizeForHost()))
+            if (_useRaylibBackend)
             {
-                // On failure, still need to prepare the input manager for the next attempt.
-                _inputManager.PrepareNextFrame();
-                return;
+                // For Raylib, AppHost doesn't create the window, so we can't get its size here.
+                // Assuming Raylib.IsWindowReady() is true and window is sized externally.
+                Initialize(IntPtr.Zero, new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()));
+            }
+            else
+            {
+                if (!Initialize(_hwnd, GetClientRectSizeForHost()))
+                {
+                    _inputManager.PrepareNextFrame();
+                    return;
+                }
             }
         }
 
@@ -124,12 +163,24 @@ public class AppHost
 
         _fpsCounter.Update(); // Update FPS counter once per render call.
 
-        _graphicsDevice!.BeginDraw();
+        // Begin drawing for the chosen backend
+        if (_useRaylibBackend)
+        {
+            Raylib.BeginDrawing();
+            Raylib.ClearBackground(new Raylib_cs.Color(
+                (byte)(_backgroundColor.R * 255),
+                (byte)(_backgroundColor.G * 255),
+                (byte)(_backgroundColor.B * 255),
+                (byte)(_backgroundColor.A * 255)
+            ));
+        }
+        else // Direct2D Backend
+        {
+            _graphicsDevice!.BeginDraw();
+        }
 
         try
         {
-            _graphicsDevice.RenderTarget!.Clear(_backgroundColor); // Clear the actual D2D render target
-
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
@@ -140,7 +191,7 @@ public class AppHost
 
             if (ShowFpsCounter)
             {
-                _fpsCounter.Draw(); // FpsCounter now uses its own internal renderer ref
+                _fpsCounter.Draw();
             }
 
             UI.EndFrame();
@@ -148,12 +199,22 @@ public class AppHost
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            _graphicsDevice.Cleanup();
+            if (!_useRaylibBackend)
+            {
+                _graphicsDevice?.Cleanup();
+            }
         }
         finally
         {
-            _graphicsDevice.EndDraw();
-            // Prepare the input manager for the next frame.
+            // End drawing for the chosen backend
+            if (_useRaylibBackend)
+            {
+                Raylib.EndDrawing();
+            }
+            else // Direct2D Backend
+            {
+                _graphicsDevice?.EndDraw();
+            }
             _inputManager.PrepareNextFrame();
         }
     }

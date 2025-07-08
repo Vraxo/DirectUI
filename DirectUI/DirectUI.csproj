@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Raylib-cs" Version="7.0.1" />
     <PackageReference Include="Vortice.Direct2D1" Version="3.6.2" />
     <PackageReference Include="Vortice.DXGI" Version="3.6.2" />
     <PackageReference Include="Vortice.Mathematics" Version="1.9.3" />

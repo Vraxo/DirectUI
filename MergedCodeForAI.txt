@@ -18,10 +18,15 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using DirectUI.Backends; // Added Raylib namespace
+using DirectUI.Core; // For IRenderer, ITextService
 using DirectUI.Diagnostics;
 using DirectUI.Input;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
+using Raylib_cs; // Added for Raylib backend
 
 namespace DirectUI;
 
@@ -34,68 +39,107 @@ public class AppHost
     private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
-    private readonly UIResources _uiResources;
     private readonly InputManager _inputManager;
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
 
-    private GraphicsDevice? _graphicsDevice;
-    private IntPtr _hwnd;
+    private GraphicsDevice? _graphicsDevice; // Only used for D2D backend
+    private IntPtr _hwnd; // Only used for D2D backend
+
+    private IRenderer? _renderer;
+    private ITextService? _textService;
+    private readonly bool _useRaylibBackend; // Flag to choose backend
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
 
-    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor)
+    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor, bool useRaylibBackend = false)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
-        _uiResources = new UIResources();
         _inputManager = new InputManager();
+        _useRaylibBackend = useRaylibBackend;
 
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
-
-        // Initialize the FpsCounter once during construction.
-        // The DWriteFactory is available from shared resources, which are initialized
-        // by the Application's static constructor before any AppHost is created.
-        if (SharedGraphicsResources.DWriteFactory != null)
-        {
-            _fpsCounter.Initialize(SharedGraphicsResources.DWriteFactory);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: DWriteFactory was not available for FpsCounter initialization.");
-        }
     }
 
     public bool Initialize(IntPtr hwnd, SizeI clientSize)
     {
-        _hwnd = hwnd;
-        if (_graphicsDevice?.IsInitialized ?? false) return true;
-        if (_hwnd == IntPtr.Zero) return false;
+        _hwnd = hwnd; // Only relevant for D2D backend
 
-        _graphicsDevice ??= new GraphicsDevice();
+        if (_useRaylibBackend)
+        {
+            // Raylib initialization is usually done once globally (e.g. in Program.cs).
+            // This AppHost simply creates the renderer/text service.
+            _renderer = new RaylibRenderer();
+            _textService = new RaylibTextService();
+        }
+        else // Direct2D Backend
+        {
+            if (_graphicsDevice?.IsInitialized ?? false) return true;
+            if (_hwnd == IntPtr.Zero) return false;
 
-        return _graphicsDevice.Initialize(_hwnd, clientSize);
+            _graphicsDevice ??= new GraphicsDevice();
+
+            if (!_graphicsDevice.Initialize(_hwnd, clientSize))
+            {
+                return false;
+            }
+
+            // Initialize backend services using the concrete D2D and DWrite factories
+            if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+            {
+                _renderer = new Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory); // Pass DWriteFactory
+                _textService = new DirectWriteTextService(_graphicsDevice.DWriteFactory);
+            }
+            else
+            {
+                Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for D2D backend initialization.");
+                return false;
+            }
+        }
+
+        // Initialize the FpsCounter using the selected backend services
+        if (_textService != null && _renderer != null)
+        {
+            _fpsCounter.Initialize(_textService, _renderer);
+        }
+        else
+        {
+            Console.WriteLine("CRITICAL: Renderer or TextService was not available for FpsCounter initialization.");
+            return false;
+        }
+        return true;
     }
 
     public void Cleanup()
     {
         _fpsCounter.Cleanup();
-        _uiResources.CleanupResources();
+        _textService?.Cleanup();
+        (_renderer as Direct2DRenderer)?.Cleanup(); // Specific cleanup for Direct2DRenderer
+        (_renderer as RaylibRenderer)?.Cleanup(); // Specific cleanup for RaylibRenderer (if any needed in future)
         _graphicsDevice?.Cleanup();
     }
 
     public void Resize(SizeI newSize)
     {
-        if (_graphicsDevice?.IsInitialized ?? false)
+        if (_useRaylibBackend)
         {
-            _graphicsDevice.Resize(newSize);
+            // Raylib window resizing is typically handled externally,
+            // but the renderer's RenderTargetSize will adapt.
         }
-        else if (_hwnd != IntPtr.Zero)
+        else // Direct2D Backend
         {
-            Initialize(_hwnd, GetClientRectSizeForHost());
+            if (_graphicsDevice?.IsInitialized ?? false)
+            {
+                _graphicsDevice.Resize(newSize);
+            }
+            else if (_hwnd != IntPtr.Zero)
+            {
+                Initialize(_hwnd, GetClientRectSizeForHost());
+            }
         }
     }
 
@@ -105,13 +149,22 @@ public class AppHost
         // is created and painted synchronously inside another window's render loop.
         if (UI.IsRendering) return;
 
-        if (!(_graphicsDevice?.IsInitialized ?? false))
+        // Ensure backend services are initialized
+        if (_renderer is null || _textService is null)
         {
-            if (!Initialize(_hwnd, GetClientRectSizeForHost()))
+            if (_useRaylibBackend)
             {
-                // On failure, still need to prepare the input manager for the next attempt.
-                _inputManager.PrepareNextFrame();
-                return;
+                // For Raylib, AppHost doesn't create the window, so we can't get its size here.
+                // Assuming Raylib.IsWindowReady() is true and window is sized externally.
+                Initialize(IntPtr.Zero, new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()));
+            }
+            else
+            {
+                if (!Initialize(_hwnd, GetClientRectSizeForHost()))
+                {
+                    _inputManager.PrepareNextFrame();
+                    return;
+                }
             }
         }
 
@@ -125,26 +178,35 @@ public class AppHost
 
         _fpsCounter.Update(); // Update FPS counter once per render call.
 
-        _graphicsDevice!.BeginDraw();
-
-        var rt = _graphicsDevice.RenderTarget!;
-        var dwrite = _graphicsDevice.DWriteFactory!;
+        // Begin drawing for the chosen backend
+        if (_useRaylibBackend)
+        {
+            Raylib.BeginDrawing();
+            Raylib.ClearBackground(new Raylib_cs.Color(
+                (byte)(_backgroundColor.R * 255),
+                (byte)(_backgroundColor.G * 255),
+                (byte)(_backgroundColor.B * 255),
+                (byte)(_backgroundColor.A * 255)
+            ));
+        }
+        else // Direct2D Backend
+        {
+            _graphicsDevice!.BeginDraw();
+        }
 
         try
         {
-            rt.Clear(_backgroundColor);
-
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(rt, dwrite, inputState, _uiResources, deltaTime);
+            var uiContext = new UIContext(_renderer!, _textService!, inputState, deltaTime);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);
 
             if (ShowFpsCounter)
             {
-                _fpsCounter.Draw(rt);
+                _fpsCounter.Draw();
             }
 
             UI.EndFrame();
@@ -152,12 +214,22 @@ public class AppHost
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            _graphicsDevice.Cleanup();
+            if (!_useRaylibBackend)
+            {
+                _graphicsDevice?.Cleanup();
+            }
         }
         finally
         {
-            _graphicsDevice.EndDraw();
-            // Prepare the input manager for the next frame.
+            // End drawing for the chosen backend
+            if (_useRaylibBackend)
+            {
+                Raylib.EndDrawing();
+            }
+            else // Direct2D Backend
+            {
+                _graphicsDevice?.EndDraw();
+            }
             _inputManager.PrepareNextFrame();
         }
     }
@@ -410,25 +482,6 @@ public abstract class Direct2DAppWindow : Win32Window
             Console.WriteLine($"GetClientRect failed. Falling back to stored size: {baseWidth}x{baseHeight}");
         }
         return new SizeI(baseWidth, baseHeight);
-    }
-}
-</file>
-
-<file path="DrawingContext.cs">
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
-
-namespace DirectUI;
-
-public readonly struct DrawingContext
-{
-    public readonly ID2D1HwndRenderTarget RenderTarget;
-    public readonly IDWriteFactory DWriteFactory;
-
-    public DrawingContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory)
-    {
-        RenderTarget = renderTarget;
-        DWriteFactory = dwriteFactory;
     }
 }
 </file>
@@ -1426,393 +1479,6 @@ protected virtual void OnMouseUp(MouseButton button, int x, int y)
 }
 </file>
 
-<file path="Backends\Direct2DRenderer.cs">
-// DirectUI/Backends/Direct2DRenderer.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using DirectUI.Core;
-using SharpGen.Runtime;
-using Vortice.Direct2D1;
-using Vortice.Mathematics;
-
-namespace DirectUI.Backends;
-
-/// <summary>
-/// A rendering backend that uses Direct2D to implement the IRenderer interface.
-/// It manages its own cache of Direct2D brushes.
-/// </summary>
-public class Direct2DRenderer : IRenderer
-{
-    private readonly ID2D1RenderTarget _renderTarget;
-    private readonly Dictionary<Color4, ID2D1SolidColorBrush> _brushCache = new();
-
-    public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
-
-    public Direct2DRenderer(ID2D1RenderTarget renderTarget)
-    {
-        _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
-    }
-
-    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
-    {
-        var brush = GetOrCreateBrush(color);
-        if (brush is null) return;
-        _renderTarget.DrawLine(p1, p2, brush, strokeWidth);
-    }
-
-    public void DrawBox(Rect rect, BoxStyle style)
-    {
-        if (_renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
-
-        var pos = rect.TopLeft;
-        var size = new Vector2(rect.Width, rect.Height);
-
-        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor);
-        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
-
-        float borderTop = Math.Max(0f, style.BorderLengthTop);
-        float borderRight = Math.Max(0f, style.BorderLengthRight);
-        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
-        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
-
-        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
-
-        if (!hasVisibleFill && !hasVisibleBorder) return;
-
-        if (style.Roundness > 0.0f)
-        {
-            float maxRadius = Math.Min(rect.Width * 0.5f, rect.Height * 0.5f);
-            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
-
-            if (float.IsFinite(radius) && radius >= 0)
-            {
-                if (hasVisibleBorder)
-                {
-                    _renderTarget.FillRoundedRectangle(new RoundedRectangle(rect, radius, radius), borderBrush);
-                }
-                if (hasVisibleFill)
-                {
-                    float fillX = pos.X + borderLeft;
-                    float fillY = pos.Y + borderTop;
-                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-                    if (fillWidth > 0 && fillHeight > 0)
-                    {
-                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
-                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
-                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
-                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
-                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), innerRadiusX, innerRadiusY), fillBrush);
-                    }
-                    else if (!hasVisibleBorder && fillBrush is not null)
-                    {
-                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(rect, radius, radius), fillBrush);
-                    }
-                }
-                return;
-            }
-        }
-        if (hasVisibleBorder && borderBrush is not null)
-        {
-            _renderTarget.FillRectangle(rect, borderBrush);
-        }
-        if (hasVisibleFill)
-        {
-            float fillX = pos.X + borderLeft;
-            float fillY = pos.Y + borderTop;
-            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-            if (fillWidth > 0 && fillHeight > 0)
-            {
-                _renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
-            }
-            else if (!hasVisibleBorder && fillBrush is not null)
-            {
-                _renderTarget.FillRectangle(rect, fillBrush);
-            }
-        }
-    }
-
-    public void DrawTextLayout(Vector2 origin, ITextLayout textLayout, Color4 color)
-    {
-        if (textLayout is not DirectWriteTextLayout dwLayout) return;
-
-        var brush = GetOrCreateBrush(color);
-        if (brush is null) return;
-        _renderTarget.DrawTextLayout(origin, dwLayout.DWriteLayout, brush, DrawTextOptions.None);
-    }
-
-    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
-    {
-        _renderTarget.PushAxisAlignedClip(rect, antialiasMode);
-    }
-
-    public void PopClipRect()
-    {
-        _renderTarget.PopAxisAlignedClip();
-    }
-
-    public void Cleanup()
-    {
-        foreach (var pair in _brushCache)
-        {
-            pair.Value?.Dispose();
-        }
-        _brushCache.Clear();
-    }
-
-    private ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
-    {
-        if (_renderTarget is null)
-        {
-            Console.WriteLine("Error: GetOrCreateBrush called with no active render target.");
-            return null!;
-        }
-
-        if (_brushCache.TryGetValue(color, out var brush) && brush is not null)
-        {
-            return brush;
-        }
-
-        if (brush is null && _brushCache.ContainsKey(color))
-        {
-            _brushCache.Remove(color);
-        }
-
-        try
-        {
-            brush = _renderTarget.CreateSolidColorBrush(color);
-            if (brush is not null)
-            {
-                _brushCache[color] = brush;
-                return brush;
-            }
-
-            Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}");
-            return null!;
-        }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
-        {
-            Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed.");
-            // Don't re-throw, allow graceful failure. The calling code should handle the null.
-            return null!;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error creating brush for color {color}: {ex.Message}");
-            return null!;
-        }
-    }
-}
-</file>
-
-<file path="Backends\DirectWriteTextLayout.cs">
-// DirectUI/Backends/DirectWriteTextLayout.cs
-using System;
-using System.Numerics;
-using DirectUI.Core;
-using Vortice.DirectWrite;
-using SharpGen.Runtime;
-
-namespace DirectUI.Backends;
-
-/// <summary>
-/// A DirectWrite-specific implementation of the ITextLayout interface.
-/// This class wraps an IDWriteTextLayout object. It is internal to the backend.
-/// </summary>
-internal class DirectWriteTextLayout : ITextLayout
-{
-    public IDWriteTextLayout DWriteLayout { get; }
-
-    public Vector2 Size { get; }
-    public string Text { get; }
-
-    public DirectWriteTextLayout(IDWriteTextLayout dwriteLayout)
-    {
-        DWriteLayout = dwriteLayout;
-        Size = new Vector2(dwriteLayout.Metrics.WidthIncludingTrailingWhitespace, dwriteLayout.Metrics.Height);
-        Text = dwriteLayout.Text;
-    }
-
-    public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
-    {
-        DWriteLayout.HitTestTextPosition((uint)textPosition, isTrailingHit, out float x, out float y, out var metrics);
-        return new TextHitTestMetrics(new Vector2(x, y), new Vector2(metrics.Width, metrics.Height));
-    }
-
-    public TextHitTestResult HitTestPoint(Vector2 point)
-    {
-        DWriteLayout.HitTestPoint(point.X, point.Y, out RawBool isTrailingHit, out RawBool isInside, out var hitTestMetrics);
-
-        var metrics = new TextHitTestMetrics(
-            new Vector2(hitTestMetrics.Left, hitTestMetrics.Top),
-            new Vector2(hitTestMetrics.Width, hitTestMetrics.Height)
-        );
-
-        return new TextHitTestResult(
-            (int)hitTestMetrics.TextPosition,
-            isTrailingHit,
-            isInside,
-            metrics
-        );
-    }
-
-    public void Dispose()
-    {
-        DWriteLayout.Dispose();
-        GC.SuppressFinalize(this);
-    }
-
-    ~DirectWriteTextLayout()
-    {
-        Dispose();
-    }
-}
-</file>
-
-<file path="Backends\DirectWriteTextService.cs">
-// DirectUI/Backends/DirectWriteTextService.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using DirectUI.Core;
-using Vortice.DirectWrite;
-using Vortice.Mathematics;
-
-namespace DirectUI.Backends;
-
-/// <summary>
-/// An implementation of ITextService that uses DirectWrite.
-/// It manages caches for text formats, layouts, and measured sizes.
-/// </summary>
-public class DirectWriteTextService : ITextService
-{
-    private readonly IDWriteFactory _dwriteFactory;
-    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new();
-    private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
-    private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
-
-    // Internal cache key structs
-    internal readonly struct FontKey(ButtonStyle style) : IEquatable<FontKey>
-    {
-        private readonly string FontName = style.FontName;
-        private readonly float FontSize = style.FontSize;
-        private readonly FontWeight FontWeight = style.FontWeight;
-        private readonly FontStyle FontStyle = style.FontStyle;
-        private readonly FontStretch FontStretch = style.FontStretch;
-        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
-        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
-    }
-
-    internal readonly struct TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment) : IEquatable<TextLayoutCacheKey>
-    {
-        private readonly string Text = text;
-        private readonly FontKey FontKey = new(style);
-        private readonly Vector2 MaxSize = maxSize;
-        private readonly HAlignment HAlign = alignment.Horizontal;
-        private readonly VAlignment VAlign = alignment.Vertical;
-        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
-        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
-    }
-
-    public DirectWriteTextService(IDWriteFactory dwriteFactory)
-    {
-        _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
-    }
-
-    public Vector2 MeasureText(string text, ButtonStyle style)
-    {
-        if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
-
-        var fontKey = new FontKey(style);
-        var cacheKey = (text, fontKey);
-        if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
-
-        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
-        if (textFormat is null)
-        {
-            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
-            return Vector2.Zero;
-        }
-
-        using var textLayout = _dwriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
-        TextMetrics textMetrics = textLayout.Metrics;
-        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
-        _textSizeCache[cacheKey] = measuredSize;
-        return measuredSize;
-    }
-
-    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
-    {
-        var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
-        if (_textLayoutCache.TryGetValue(layoutKey, out var cachedLayout))
-        {
-            return cachedLayout;
-        }
-
-        var textFormat = GetOrCreateTextFormat(style);
-        if (textFormat is null) return null!;
-
-        var dwriteLayout = _dwriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
-        dwriteLayout.TextAlignment = alignment.Horizontal switch
-        {
-            HAlignment.Left => TextAlignment.Leading,
-            HAlignment.Center => TextAlignment.Center,
-            HAlignment.Right => TextAlignment.Trailing,
-            _ => TextAlignment.Leading
-        };
-        dwriteLayout.ParagraphAlignment = alignment.Vertical switch
-        {
-            VAlignment.Top => ParagraphAlignment.Near,
-            VAlignment.Center => ParagraphAlignment.Center,
-            VAlignment.Bottom => ParagraphAlignment.Far,
-            _ => ParagraphAlignment.Near
-        };
-
-        var newLayout = new DirectWriteTextLayout(dwriteLayout);
-        _textLayoutCache[layoutKey] = newLayout;
-        return newLayout;
-    }
-
-    private IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
-    {
-        var key = new FontKey(style);
-        if (_textFormatCache.TryGetValue(key, out var format))
-        {
-            return format;
-        }
-
-        try
-        {
-            var newFormat = _dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (newFormat is not null)
-            {
-                _textFormatCache[key] = newFormat;
-            }
-            return newFormat;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
-            return null;
-        }
-    }
-
-    public void Cleanup()
-    {
-        foreach (var pair in _textFormatCache) { pair.Value?.Dispose(); }
-        _textFormatCache.Clear();
-        foreach (var pair in _textLayoutCache) { pair.Value?.Dispose(); }
-        _textLayoutCache.Clear();
-        _textSizeCache.Clear();
-    }
-}
-</file>
-
 <file path="Containers\ComboboxState.cs">
 namespace DirectUI;
 
@@ -2110,9 +1776,8 @@ public interface ILayoutContainer
 <file path="Core\IRenderer.cs">
 // DirectUI/Core/IRenderer.cs
 using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
 using Vortice.Mathematics;
+using Vortice.Direct2D1; // Required for AntialiasMode
 
 namespace DirectUI.Core;
 
@@ -2122,6 +1787,11 @@ namespace DirectUI.Core;
 /// </summary>
 public interface IRenderer
 {
+    /// <summary>
+    /// Gets the current size of the render target.
+    /// </summary>
+    Vector2 RenderTargetSize { get; }
+
     /// <summary>
     /// Draws a line between two points.
     /// </summary>
@@ -2133,13 +1803,9 @@ public interface IRenderer
     void DrawBox(Rect rect, BoxStyle style);
 
     /// <summary>
-    /// Draws a pre-formatted text layout.
+    /// Draws text. The renderer is responsible for its own text layout and caching.
     /// </summary>
-    /// <remarks>
-    /// This is currently coupled to DirectWrite's layout object. A future refactoring
-    /// could replace this with a backend-agnostic text representation.
-    /// </remarks>
-    void DrawTextLayout(Vector2 origin, IDWriteTextLayout textLayout, Color4 color);
+    void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color);
 
     /// <summary>
     /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
@@ -2196,7 +1862,6 @@ public interface ITextLayout : IDisposable
 <file path="Core\ITextService.cs">
 // DirectUI/Core/ITextService.cs
 using System.Numerics;
-using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
 namespace DirectUI.Core;
@@ -2216,6 +1881,11 @@ public interface ITextService
     /// Creates or retrieves a cached, fully formatted text layout object.
     /// </summary>
     ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment);
+
+    /// <summary>
+    /// Cleans up any cached resources managed by the text service.
+    /// </summary>
+    void Cleanup();
 }
 </file>
 
@@ -2272,7 +1942,7 @@ public readonly record struct TextHitTestResult(
 <file path="Core\UI.Button.cs">
 using System.Numerics;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
+using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
 
 namespace DirectUI;
 
@@ -2306,7 +1976,7 @@ public static partial class UI
         if (autoWidth)
         {
             var styleForMeasuring = finalTheme.Normal; // Measure against the normal style
-            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, styleForMeasuring);
+            Vector2 measuredSize = Context.TextService.MeasureText(text, styleForMeasuring);
             Vector2 margin = textMargin ?? new Vector2(10, 5);
             finalSize.X = measuredSize.X + margin.X * 2;
         }
@@ -2327,9 +1997,9 @@ public static partial class UI
             float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
             float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
             Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
+            if (cellClipRect.Width > 0 && cellClipRect.Height > 0)
             {
-                Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased);
+                Context.Renderer.PushClipRect(cellClipRect, D2D.AntialiasMode.Aliased);
                 pushedClip = true;
             }
         }
@@ -2347,9 +2017,9 @@ public static partial class UI
             isActive: false
         );
 
-        if (pushedClip && Context.RenderTarget is not null)
+        if (pushedClip)
         {
-            Context.RenderTarget.PopAxisAlignedClip();
+            Context.Renderer.PopClipRect();
         }
 
         Context.Layout.AdvanceLayout(finalSize);
@@ -2361,6 +2031,7 @@ public static partial class UI
 <file path="Core\UI.Checkbox.cs">
 using System.Numerics;
 using Vortice.Mathematics;
+using Vortice.Direct2D1; // Still needed for AntialiasMode enum
 
 namespace DirectUI;
 
@@ -2382,7 +2053,7 @@ public static partial class UI
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
         var textStyle = new ButtonStyle { FontColor = textColor }; // Use ButtonStyle for font properties.
 
-        var labelSize = string.IsNullOrEmpty(label) ? Vector2.Zero : Resources.MeasureText(Context.DWriteFactory, label, textStyle);
+        var labelSize = string.IsNullOrEmpty(label) ? Vector2.Zero : Context.TextService.MeasureText(label, textStyle);
 
         var contentWidth = boxSize.X + (labelSize.X > 0 ? spacing + labelSize.X : 0);
         var contentHeight = Math.Max(boxSize.Y, labelSize.Y);
@@ -2420,7 +2091,7 @@ public static partial class UI
         }
 
         // --- Drawing ---
-        var rt = Context.RenderTarget;
+        var renderer = Context.Renderer;
         // This calculation centers the box inside the widget's total height.
         // A small vertical adjustment is added to compensate for font metrics in DrawTextPrimitive,
         // ensuring the checkbox and text align perfectly.
@@ -2454,13 +2125,13 @@ public static partial class UI
         boxStyle.Roundness = 0.2f;
         boxStyle.BorderLength = 1f;
 
-        Resources.DrawBoxStyleHelper(rt, boxRect.TopLeft, new Vector2(boxRect.Width, boxRect.Height), boxStyle);
+        renderer.DrawBox(boxRect, boxStyle);
 
         // Draw the checkmark if checked
         if (isChecked)
         {
             // The checkmarkColor variable was changed above to pure white.
-            var checkBrush = Resources.GetOrCreateBrush(rt, checkmarkColor);
+            var checkBrush = renderer.GetOrCreateBrush(checkmarkColor);
             if (checkBrush != null)
             {
                 // A simple checkmark drawn as two lines
@@ -2468,8 +2139,8 @@ public static partial class UI
                 var p1 = new Vector2(boxRect.Left + pad, boxRect.Top + boxSize.Y * 0.5f);
                 var p2 = new Vector2(boxRect.Left + boxSize.X * 0.45f, boxRect.Bottom - pad);
                 var p3 = new Vector2(boxRect.Right - pad, boxRect.Top + pad);
-                rt.DrawLine(p1, p2, checkBrush, 2.0f);
-                rt.DrawLine(p2, p3, checkBrush, 2.0f);
+                renderer.DrawLine(p1, p2, checkmarkColor, 2.0f);
+                renderer.DrawLine(p2, p3, checkmarkColor, 2.0f);
             }
         }
 
@@ -2478,7 +2149,7 @@ public static partial class UI
         {
             var labelPos = new Vector2(boxRect.Right + spacing, drawPos.Y);
             var labelBounds = new Rect(labelPos.X, labelPos.Y, labelSize.X, totalSize.Y);
-            DrawTextPrimitive(rt, Context.DWriteFactory, Resources, labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
+            DrawTextPrimitive(labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
         }
 
         Context.Layout.AdvanceLayout(totalSize);
@@ -2537,7 +2208,6 @@ public static partial class UI
 // Core/UI.Containers.cs
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -2643,7 +2313,7 @@ public static partial class UI
         scrollState.ContentVBox = contentVBox;
 
         Context.Layout.PushClipRect(regionBounds);
-        Context.RenderTarget.PushAxisAlignedClip(regionBounds, D2D.AntialiasMode.Aliased);
+        Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
 
         Context.Layout.PushContainer(scrollState);
     }
@@ -2659,7 +2329,7 @@ public static partial class UI
 
         // Pop the container and clip rect so the scrollbar can be drawn outside the content's clipped area.
         Context.Layout.PopContainer();
-        Context.RenderTarget.PopAxisAlignedClip();
+        Context.Renderer.PopClipRect();
         Context.Layout.PopClipRect();
 
         // Draw scrollbar if needed. This will return a new, validated scroll offset.
@@ -2711,9 +2381,9 @@ public static partial class UI
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
         var input = Context.InputState;
-        var renderTarget = Context.RenderTarget;
-        var windowWidth = renderTarget.Size.Width;
-        var windowHeight = renderTarget.Size.Height;
+        var renderer = Context.Renderer;
+        var windowWidth = renderer.RenderTargetSize.X;
+        var windowHeight = renderer.RenderTargetSize.Y;
         var availableHeight = windowHeight - topOffset;
 
         if (!disabled)
@@ -2740,7 +2410,7 @@ public static partial class UI
         Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), finalPanelStyle);
+            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
         }
 
         Vector2 contentStartPosition = new Vector2(finalPanelX + finalPadding.X, topOffset + finalPadding.Y);
@@ -2748,7 +2418,7 @@ public static partial class UI
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
-            renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
             Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
@@ -2770,10 +2440,10 @@ public static partial class UI
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizablePanelState state)
         { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
-        if (state.ClipRectWasPushed && Context.RenderTarget is not null)
+        if (state.ClipRectWasPushed)
         {
             Context.Layout.PopClipRect(); // For culling
-            Context.RenderTarget.PopAxisAlignedClip();
+            Context.Renderer.PopClipRect();
         }
         Context.Layout.PopContainer();
     }
@@ -2798,9 +2468,9 @@ public static partial class UI
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
         var input = Context.InputState;
-        var renderTarget = Context.RenderTarget;
-        var windowWidth = renderTarget.Size.Width;
-        var windowHeight = renderTarget.Size.Height;
+        var renderer = Context.Renderer;
+        var windowWidth = renderer.RenderTargetSize.X;
+        var windowHeight = renderer.RenderTargetSize.Y;
         var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
         var maxAllowedHeight = windowHeight - topOffset;
         var effectiveMaxHeight = Math.Min(maxHeight, maxAllowedHeight);
@@ -2830,7 +2500,7 @@ public static partial class UI
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), finalPanelStyle);
+            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
         }
 
         Vector2 contentStartPosition = new Vector2(reservedLeftSpace + finalPadding.X, finalPanelY + finalPadding.Y);
@@ -2838,7 +2508,7 @@ public static partial class UI
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
-            renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
             Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
@@ -2860,10 +2530,10 @@ public static partial class UI
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizableHPanelState state)
         { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
-        if (state.ClipRectWasPushed && Context.RenderTarget is not null)
+        if (state.ClipRectWasPushed)
         {
             Context.Layout.PopClipRect(); // For culling
-            Context.RenderTarget.PopAxisAlignedClip();
+            Context.Renderer.PopClipRect();
         }
         Context.Layout.PopContainer();
     }
@@ -2881,16 +2551,17 @@ public static partial class UI
     // --- Core Components ---
     public static UIContext Context { get; private set; } = null!;
     public static UIPersistentState State { get; private set; } = null!;
-    public static UIResources Resources { get; private set; } = null!;
-    public static bool IsRendering { get; private set; } = false;
-
+    public static bool IsRendering
+    {
+        get; private set;
+    } = false;
+    
     // --- Frame Management ---
     public static void BeginFrame(UIContext context)
     {
         IsRendering = true;
 
         Context = context;
-        Resources = context.Resources; // Set the active resources for this frame
         State ??= new UIPersistentState();
 
         State.ResetFrameState(context.InputState);
@@ -2922,7 +2593,6 @@ public static partial class UI
 
         // It's important that IsRendering is set to false AFTER the context is cleared.
         Context = null!;
-        Resources = null!;
         IsRendering = false;
     }
 
@@ -2951,7 +2621,7 @@ public static partial class UI
     // --- Helper Methods ---
     private static bool IsContextValid()
     {
-        if (Context?.RenderTarget is null || Context?.DWriteFactory is null || Resources is null)
+        if (Context?.Renderer is null || Context?.TextService is null)
         {
             Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid.");
             return false;
@@ -2963,8 +2633,6 @@ public static partial class UI
 
 <file path="Core\UI.Label.cs">
 using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -2984,7 +2652,7 @@ public static partial class UI
         Alignment finalAlignment = textAlignment
             ?? new(HAlignment.Left, VAlignment.Center);
 
-        Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, finalStyle);
+        Vector2 measuredSize = Context.TextService.MeasureText(text, finalStyle);
 
         Vector2 finalSize;
         if (size.HasValue)
@@ -3009,9 +2677,6 @@ public static partial class UI
         }
 
         DrawTextPrimitive(
-            Context.RenderTarget,
-            Context.DWriteFactory,
-            Resources,
             widgetBounds,
             text,
             finalStyle,
@@ -3053,7 +2718,7 @@ public static partial class UI
         Vector2 finalPosition = Context.Layout.ApplyLayout(position);
         Vector2 finalMargin = textMargin ?? new(4, 2);
         Rect widgetBounds = new(finalPosition.X, finalPosition.Y, size.X, size.Y);
-        
+
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
             Context.Layout.AdvanceLayout(size);
@@ -3186,7 +2851,6 @@ public static partial class UI
 
 <file path="Core\UI.Separator.cs">
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -3217,11 +2881,12 @@ public static partial class UI
         Vector2 lineStart = new(drawPos.X, lineY);
         Vector2 lineEnd = new(drawPos.X + width, lineY);
 
-        ID2D1SolidColorBrush brush = Resources.GetOrCreateBrush(Context.RenderTarget, finalColor);
-        
+        // Use the renderer to get a brush and draw the line
+        var brush = Context.Renderer.GetOrCreateBrush(finalColor);
+
         if (brush != null)
         {
-            Context.RenderTarget.DrawLine(lineStart, lineEnd, brush, thickness);
+            Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
         }
 
         Context.Layout.AdvanceLayout(size);
@@ -3342,8 +3007,7 @@ public static partial class UI
 
 <file path="Core\UI.StatelessWidgets.cs">
 using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -3368,9 +3032,8 @@ public static partial class UI
     {
         var context = Context;
         var state = State;
-        var resources = Resources;
-        var renderTarget = context.RenderTarget;
-        var dwriteFactory = context.DWriteFactory;
+        var renderer = context.Renderer;
+        var textService = context.TextService;
         var input = context.InputState;
 
         // --- State Calculation ---
@@ -3426,10 +3089,10 @@ public static partial class UI
         if (bounds.Width > 0 && bounds.Height > 0)
         {
             // Draw Background
-            resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
+            renderer.DrawBox(bounds, currentStyle);
 
             // Draw Text
-            DrawTextPrimitive(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
+            DrawTextPrimitive(bounds, text, currentStyle, textAlignment, textOffset);
         }
 
         return wasClickedThisFrame;
@@ -3504,9 +3167,6 @@ public static partial class UI
     /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
     internal static void DrawTextPrimitive(
-        ID2D1RenderTarget renderTarget,
-        IDWriteFactory dwriteFactory,
-        UIResources resources,
         Rect bounds,
         string text,
         ButtonStyle style,
@@ -3515,37 +3175,16 @@ public static partial class UI
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        var textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
-        if (textBrush is null) return;
-
-        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(bounds.Width, bounds.Height), textAlignment);
-        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-        {
-            var textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
-            if (textFormat is null) return;
-
-            textLayout = dwriteFactory.CreateTextLayout(text, textFormat, bounds.Width, bounds.Height);
-            textLayout.TextAlignment = textAlignment.Horizontal switch
-            {
-                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                _ => Vortice.DirectWrite.TextAlignment.Leading
-            };
-            textLayout.ParagraphAlignment = textAlignment.Vertical switch
-            {
-                VAlignment.Top => ParagraphAlignment.Near,
-                VAlignment.Center => ParagraphAlignment.Center,
-                VAlignment.Bottom => ParagraphAlignment.Far,
-                _ => ParagraphAlignment.Near
-            };
-            resources.textLayoutCache[layoutKey] = textLayout;
-        }
+        var renderer = Context.Renderer;
 
         // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         float yOffsetCorrection = (textAlignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
 
-        renderTarget.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection), textLayout, textBrush, DrawTextOptions.None);
+        // Calculate drawing origin
+        Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection);
+
+        // Call the new backend-agnostic DrawText method on the renderer
+        renderer.DrawText(drawOrigin, text, style, textAlignment, new Vector2(bounds.Width, bounds.Height), style.FontColor);
     }
 }
 </file>
@@ -3654,8 +3293,6 @@ public static partial class UI
 
 <file path="Core\UI.TabBar.cs">
 using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -3681,7 +3318,8 @@ public static partial class UI
             var styleForMeasuring = tabTheme.Normal;
             foreach (var label in tabLabels)
             {
-                Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
+                // Use ITextService to measure text
+                Vector2 measuredSize = Context.TextService.MeasureText(label, styleForMeasuring);
                 if (measuredSize.X > maxWidth)
                 {
                     maxWidth = measuredSize.X;
@@ -3758,11 +3396,12 @@ public static partial class UI
         if (Context.treeStateStack.Count == 0) return;
         var treeState = Context.treeStateStack.Peek();
         var style = treeState.Style;
-        var renderTarget = Context.RenderTarget;
+        var renderer = Context.Renderer;
 
         var startLayoutPos = Context.Layout.GetCurrentPosition();
-        var brush = Resources.GetOrCreateBrush(renderTarget, style.LineColor);
-        if (brush is not null)
+
+        // Use renderer's GetOrCreateBrush and DrawLine
+        if (renderer.GetOrCreateBrush(style.LineColor) is not null) // Check if brush can be created/is valid
         {
             int i = 0;
             foreach (var shouldDrawLine in treeState.IndentLineState)
@@ -3770,7 +3409,7 @@ public static partial class UI
                 if (shouldDrawLine)
                 {
                     float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
-                    renderTarget.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), brush, 1.0f);
+                    renderer.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), style.LineColor, 1.0f);
                 }
                 i++;
             }
@@ -3778,7 +3417,7 @@ public static partial class UI
             {
                 float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
                 float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
-                renderTarget.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), brush, 1.0f);
+                renderer.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), style.LineColor, 1.0f);
             }
         }
 
@@ -3806,7 +3445,8 @@ public static partial class UI
         var labelStyle = style.NodeLabelStyle;
         var labelTextAlignment = new Alignment(HAlignment.Left, VAlignment.Center);
         float labelMargin = 4;
-        var labelSize = Resources.MeasureText(Context.DWriteFactory, node.Text, labelStyle.Normal);
+        // Use ITextService to measure text
+        var labelSize = Context.TextService.MeasureText(node.Text, labelStyle.Normal);
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
@@ -3836,8 +3476,6 @@ public static partial class UI
 // Core/UIContext.cs
 using System.Collections.Generic;
 using DirectUI.Core;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
 
 namespace DirectUI;
 
@@ -4179,238 +3817,14 @@ public class UIPersistentState
 }
 </file>
 
-<file path="Core\UIResources.cs">
-using SharpGen.Runtime;
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
-using Vortice.Mathematics;
-
-namespace DirectUI;
-
-/// <summary>
-/// Manages the creation, caching, and cleanup of shareable graphics resources
-/// like brushes and text formats to avoid recreating them every frame.
-/// This is now an instance class, with one instance per AppHost/window.
-/// </summary>
-public class UIResources
-{
-    // --- Font Caching Key ---
-    internal readonly struct FontKey : IEquatable<FontKey>
-    {
-        public readonly string FontName;
-        public readonly float FontSize;
-        public readonly FontWeight FontWeight;
-        public readonly FontStyle FontStyle;
-        public readonly FontStretch FontStretch;
-
-        public FontKey(ButtonStyle style)
-        {
-            FontName = style.FontName;
-            FontSize = style.FontSize;
-            FontWeight = style.FontWeight;
-            FontStyle = style.FontStyle;
-            FontStretch = style.FontStretch;
-        }
-
-        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
-        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
-    }
-
-    // --- Text Layout Caching Key ---
-    internal readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
-    {
-        public readonly string Text;
-        public readonly FontKey FontKey;
-        public readonly Vector2 MaxSize;
-        public readonly HAlignment HAlign;
-        public readonly VAlignment VAlign;
-
-        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
-        {
-            Text = text;
-            FontKey = new FontKey(style);
-            MaxSize = maxSize;
-            HAlign = alignment.Horizontal;
-            VAlign = alignment.Vertical;
-        }
-
-        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
-        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
-    }
-
-    // --- Caches ---
-    private readonly Dictionary<Color4, ID2D1SolidColorBrush> brushCache = new();
-    private readonly Dictionary<FontKey, IDWriteTextFormat> textFormatCache = new();
-    private readonly Dictionary<(string, FontKey), Vector2> textSizeCache = new();
-    internal readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> textLayoutCache = new();
-
-    // --- Brush and Font Cache ---
-    public ID2D1SolidColorBrush GetOrCreateBrush(ID2D1RenderTarget renderTarget, Color4 color)
-    {
-        if (renderTarget is null) { Console.WriteLine("Error: GetOrCreateBrush called with no active render target."); return null!; }
-        if (brushCache.TryGetValue(color, out ID2D1SolidColorBrush? brush) && brush is not null) { return brush; }
-        else if (brush is null && brushCache.ContainsKey(color)) { brushCache.Remove(color); }
-        try
-        {
-            brush = renderTarget.CreateSolidColorBrush(color);
-            if (brush is not null) { brushCache[color] = brush; return brush; }
-            else { Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}"); return null!; }
-        }
-        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code) { Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed."); return null!; }
-        catch (Exception ex) { Console.WriteLine($"Error creating brush for color {color}: {ex.Message}"); return null!; }
-    }
-
-    public IDWriteTextFormat? GetOrCreateTextFormat(IDWriteFactory dwriteFactory, ButtonStyle style)
-    {
-        if (dwriteFactory is null) return null;
-
-        var key = new FontKey(style);
-        if (textFormatCache.TryGetValue(key, out var format))
-        {
-            return format;
-        }
-
-        try
-        {
-            var newFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (newFormat is not null) { textFormatCache[key] = newFormat; }
-            return newFormat;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
-            return null;
-        }
-    }
-
-    public Vector2 MeasureText(IDWriteFactory dwriteFactory, string text, ButtonStyle style)
-    {
-        if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
-
-        var fontKey = new FontKey(style);
-        var cacheKey = (text, fontKey);
-        if (textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
-
-        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(dwriteFactory, style);
-        if (textFormat is null) { Console.WriteLine("Warning: Failed to create/get TextFormat for measurement."); return Vector2.Zero; }
-
-        using var textLayout = dwriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
-        TextMetrics textMetrics = textLayout.Metrics;
-        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
-        textSizeCache[cacheKey] = measuredSize;
-        return measuredSize;
-    }
-
-    public void DrawBoxStyleHelper(ID2D1RenderTarget renderTarget, Vector2 pos, Vector2 size, BoxStyle style)
-    {
-        if (renderTarget is null || style is null || size.X <= 0 || size.Y <= 0) return;
-
-        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(renderTarget, style.FillColor);
-        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(renderTarget, style.BorderColor);
-
-        float borderTop = Math.Max(0f, style.BorderLengthTop);
-        float borderRight = Math.Max(0f, style.BorderLengthRight);
-        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
-        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
-
-        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
-        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
-
-        if (!hasVisibleFill && !hasVisibleBorder) return;
-
-        if (style.Roundness > 0.0f)
-        {
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
-            float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
-            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
-
-            if (float.IsFinite(radius) && radius >= 0)
-            {
-                if (hasVisibleBorder)
-                {
-                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                    renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), borderBrush);
-                }
-                if (hasVisibleFill)
-                {
-                    float fillX = pos.X + borderLeft;
-                    float fillY = pos.Y + borderTop;
-                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-                    if (fillWidth > 0 && fillHeight > 0)
-                    {
-                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
-                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
-                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
-                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
-                        System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
-                        renderTarget.FillRoundedRectangle(new RoundedRectangle(fillRectF, innerRadiusX, innerRadiusY), fillBrush);
-                    }
-                    else if (!hasVisibleBorder && fillBrush is not null)
-                    {
-                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                        renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), fillBrush);
-                    }
-                }
-                return;
-            }
-        }
-        if (hasVisibleBorder && borderBrush is not null)
-        {
-            renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), borderBrush);
-        }
-        if (hasVisibleFill)
-        {
-            float fillX = pos.X + borderLeft;
-            float fillY = pos.Y + borderTop;
-            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
-            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
-            if (fillWidth > 0 && fillHeight > 0)
-            {
-                renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
-            }
-            else if (!hasVisibleBorder && fillBrush is not null)
-            {
-                renderTarget.FillRectangle(new Rect(pos.X, pos.Y, size.X, size.Y), fillBrush);
-            }
-        }
-    }
-
-    public void CleanupResources()
-    {
-        Console.WriteLine("UI Resource Cleanup: Disposing cached resources...");
-        int brushCount = brushCache.Count;
-        foreach (var pair in brushCache) { pair.Value?.Dispose(); }
-        brushCache.Clear();
-
-        int formatCount = textFormatCache.Count;
-        foreach (var pair in textFormatCache) { pair.Value?.Dispose(); }
-        textFormatCache.Clear();
-
-        int layoutCount = textLayoutCache.Count;
-        foreach (var pair in textLayoutCache) { pair.Value?.Dispose(); }
-        textLayoutCache.Clear();
-
-        int sizeCacheCount = textSizeCache.Count;
-        textSizeCache.Clear();
-
-        Console.WriteLine($"UI Resource Cleanup finished. Disposed {brushCount} brushes, {formatCount} text formats, and {layoutCount} text layouts. Cleared {sizeCacheCount} size cache entries.");
-    }
-}
-</file>
-
 <file path="Diagnostics\FpsCounter.cs">
+// DirectUI/Diagnostics/FpsCounter.cs
 using System;
 using System.Diagnostics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+using DirectUI.Core;
 using Vortice.Mathematics;
-using DW = Vortice.DirectWrite;
+using Vortice.DirectWrite;
+using System.Numerics; // Still used for TextAlignment and ParagraphAlignment enums
 
 namespace DirectUI.Diagnostics;
 
@@ -4429,23 +3843,20 @@ public class FpsCounter
     private float _currentFps = 0.0f;
     private long _updateIntervalInStopwatchTicks;
 
-    // Direct2D Resources (Device-Independent only)
-    private IDWriteTextFormat? _textFormat;
+    // DirectUI Service references
+    private ITextService? _textService;
+    private IRenderer? _renderer;
+    // Removed ITextLayout? _fpsTextLayout; // No longer cached here for drawing
 
-    public void Initialize(IDWriteFactory dwriteFactory)
+    public void Initialize(ITextService textService, IRenderer renderer)
     {
-        ArgumentNullException.ThrowIfNull(dwriteFactory);
+        _textService = textService ?? throw new ArgumentNullException(nameof(textService));
+        _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
 
         Cleanup(); // Ensure any old resources are released
 
         try
         {
-            _textFormat = dwriteFactory.CreateTextFormat(_fontName, null, FontWeight.Normal, FontStyle.Normal, FontStretch.Normal, _fontSize, "en-us");
-            _textFormat.TextAlignment = DW.TextAlignment.Leading;
-            _textFormat.ParagraphAlignment = ParagraphAlignment.Near;
-
-            Console.WriteLine("Created FPS text format resource.");
-
             // Calculate the update interval based on the Stopwatch's actual frequency.
             if (Stopwatch.IsHighResolution)
             {
@@ -4464,7 +3875,7 @@ public class FpsCounter
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to create FPS counter text format: {ex.Message}");
+            Console.WriteLine($"Warning: Failed to initialize FPS counter: {ex.Message}");
             Cleanup(); // Clean up partial resources on failure
         }
     }
@@ -4472,8 +3883,8 @@ public class FpsCounter
     public void Cleanup()
     {
         _timer.Stop();
-        _textFormat?.Dispose();
-        _textFormat = null;
+        // Removed _fpsTextLayout?.Dispose();
+        // Removed _fpsTextLayout = null;
     }
 
     /// <summary>
@@ -4496,25 +3907,34 @@ public class FpsCounter
             _currentFps = (secondsElapsed > 0.001f) ? (_frameCountSinceUpdate / secondsElapsed) : 0.0f;
             _frameCountSinceUpdate = 0;
             _lastUpdateTimeTicks = elapsedTicks;
+
+            // No longer invalidate the cached text layout here, as renderer handles its own caching.
         }
     }
 
-    public void Draw(ID2D1RenderTarget renderTarget)
+    public void Draw()
     {
-        if (_textFormat is null || UI.Resources is null)
-        {
-            return;
-        }
-
-        var textBrush = UI.Resources.GetOrCreateBrush(renderTarget, _textColor);
-        if (textBrush is null)
+        if (_textService is null || _renderer is null)
         {
             return;
         }
 
         string fpsText = $"FPS: {_currentFps:F1}";
-        var layoutRect = new Rect(5f, 5f, 150f, 30f);
-        renderTarget.DrawText(fpsText, _textFormat, layoutRect, textBrush);
+
+        // The FpsCounter no longer needs to create/cache an ITextLayout for drawing.
+        // It simply provides the text and style, and the renderer draws it.
+        var style = new ButtonStyle
+        {
+            FontName = _fontName,
+            FontSize = _fontSize,
+            FontWeight = FontWeight.Normal,
+            FontStyle = FontStyle.Normal,
+            FontStretch = FontStretch.Normal,
+            FontColor = _textColor
+        };
+        // Use a large max size as FPS counter typically won't wrap
+        // The IRenderer.DrawText method requires a maxSize and alignment for its internal layout logic.
+        _renderer.DrawText(new Vector2(5f, 5f), fpsText, style, new Alignment(HAlignment.Left, VAlignment.Top), new Vector2(150f, 30f), _textColor);
     }
 }
 </file>
@@ -4525,6 +3945,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using Raylib_cs; // Added for Raylib backend
 
 namespace DirectUI.Input;
 
@@ -4647,6 +4068,133 @@ public class InputManager
             _releasedKeysThisFrame.Add(key);
             _heldKeys.Remove(key);
         }
+    }
+
+    /// <summary>
+    /// Processes Raylib-specific input events and updates the internal state.
+    /// This method should be called once per frame when using the Raylib backend.
+    /// </summary>
+    public void ProcessRaylibInput()
+    {
+        // Mouse position
+        Vector2 mousePos = Raylib.GetMousePosition();
+        SetMousePosition((int)mousePos.X, (int)mousePos.Y);
+
+        // Mouse buttons
+        if (Raylib.IsMouseButtonPressed(Raylib_cs.MouseButton.Left)) SetMouseDown(MouseButton.Left);
+        if (Raylib.IsMouseButtonReleased(Raylib_cs.MouseButton.Left)) SetMouseUp(MouseButton.Left);
+        if (Raylib.IsMouseButtonPressed(Raylib_cs.MouseButton.Right)) SetMouseDown(MouseButton.Right);
+        if (Raylib.IsMouseButtonReleased(Raylib_cs.MouseButton.Right)) SetMouseUp(MouseButton.Right);
+        if (Raylib.IsMouseButtonPressed(Raylib_cs.MouseButton.Middle)) SetMouseDown(MouseButton.Middle);
+        if (Raylib.IsMouseButtonReleased(Raylib_cs.MouseButton.Middle)) SetMouseUp(MouseButton.Middle);
+
+        // Mouse wheel
+        float wheelMove = Raylib.GetMouseWheelMove();
+        if (wheelMove != 0) AddMouseWheelDelta(wheelMove);
+
+        // Keyboard keys
+        foreach (KeyboardKey rlKey in Enum.GetValues(typeof(KeyboardKey)))
+        {
+            if (rlKey == KeyboardKey.Null) continue; // Skip NULL key
+
+            Keys mappedKey = MapRaylibKeyToDirectUIKey(rlKey);
+            if (mappedKey == Keys.Unknown) continue;
+
+            if (Raylib.IsKeyPressed(rlKey)) AddKeyPressed(mappedKey);
+            if (Raylib.IsKeyReleased(rlKey)) AddKeyReleased(mappedKey);
+        }
+
+        // Character input
+        int charValue = Raylib.GetCharPressed();
+        while (charValue > 0)
+        {
+            AddCharacterInput((char)charValue);
+            charValue = Raylib.GetCharPressed();
+        }
+    }
+
+    /// <summary>
+    /// Maps a Raylib KeyboardKey enum to a DirectUI Keys enum.
+    /// This is an internal utility for the Raylib backend.
+    /// </summary>
+    private static Keys MapRaylibKeyToDirectUIKey(KeyboardKey rlKey)
+    {
+        // Updated to use PascalCase enum members without the KEY_ prefix
+        return rlKey switch
+        {
+            KeyboardKey.Backspace => Keys.Backspace,
+            KeyboardKey.Tab => Keys.Tab,
+            KeyboardKey.Enter => Keys.Enter,
+            KeyboardKey.LeftShift => Keys.Shift,
+            KeyboardKey.RightShift => Keys.Shift,
+            KeyboardKey.LeftControl => Keys.Control,
+            KeyboardKey.RightControl => Keys.Control,
+            KeyboardKey.LeftAlt => Keys.Alt,
+            KeyboardKey.RightAlt => Keys.Alt,
+            KeyboardKey.Pause => Keys.Pause,
+            KeyboardKey.CapsLock => Keys.CapsLock,
+            KeyboardKey.Escape => Keys.Escape,
+            KeyboardKey.Space => Keys.Space,
+            KeyboardKey.PageUp => Keys.PageUp,
+            KeyboardKey.PageDown => Keys.PageDown,
+            KeyboardKey.End => Keys.End,
+            KeyboardKey.Home => Keys.Home,
+            KeyboardKey.Left => Keys.LeftArrow,
+            KeyboardKey.Up => Keys.UpArrow,
+            KeyboardKey.Right => Keys.RightArrow,
+            KeyboardKey.Down => Keys.DownArrow,
+            KeyboardKey.Insert => Keys.Insert,
+            KeyboardKey.Delete => Keys.Delete,
+            KeyboardKey.Zero => Keys.D0,
+            KeyboardKey.One => Keys.D1,
+            KeyboardKey.Two => Keys.D2,
+            KeyboardKey.Three => Keys.D3,
+            KeyboardKey.Four => Keys.D4,
+            KeyboardKey.Five => Keys.D5,
+            KeyboardKey.Six => Keys.D6,
+            KeyboardKey.Seven => Keys.D7,
+            KeyboardKey.Eight => Keys.D8,
+            KeyboardKey.Nine => Keys.D9,
+            KeyboardKey.A => Keys.A,
+            KeyboardKey.B => Keys.B,
+            KeyboardKey.C => Keys.C,
+            KeyboardKey.D => Keys.D,
+            KeyboardKey.E => Keys.E,
+            KeyboardKey.F => Keys.F,
+            KeyboardKey.G => Keys.G,
+            KeyboardKey.H => Keys.H,
+            KeyboardKey.I => Keys.I,
+            KeyboardKey.J => Keys.J,
+            KeyboardKey.K => Keys.K,
+            KeyboardKey.L => Keys.L,
+            KeyboardKey.M => Keys.M,
+            KeyboardKey.N => Keys.N,
+            KeyboardKey.O => Keys.O,
+            KeyboardKey.P => Keys.P,
+            KeyboardKey.Q => Keys.Q,
+            KeyboardKey.R => Keys.R,
+            KeyboardKey.S => Keys.S,
+            KeyboardKey.T => Keys.T,
+            KeyboardKey.U => Keys.U,
+            KeyboardKey.V => Keys.V,
+            KeyboardKey.W => Keys.W,
+            KeyboardKey.X => Keys.X,
+            KeyboardKey.Y => Keys.Y,
+            KeyboardKey.Z => Keys.Z,
+            KeyboardKey.F1 => Keys.F1,
+            KeyboardKey.F2 => Keys.F2,
+            KeyboardKey.F3 => Keys.F3,
+            KeyboardKey.F4 => Keys.F4,
+            KeyboardKey.F5 => Keys.F5,
+            KeyboardKey.F6 => Keys.F6,
+            KeyboardKey.F7 => Keys.F7,
+            KeyboardKey.F8 => Keys.F8,
+            KeyboardKey.F9 => Keys.F9,
+            KeyboardKey.F10 => Keys.F10,
+            KeyboardKey.F11 => Keys.F11,
+            KeyboardKey.F12 => Keys.F12,
+            _ => Keys.Unknown,
+        };
     }
 }
 </file>
@@ -5360,7 +4908,7 @@ internal class InternalComboboxLogic
     {
         var context = UI.Context;
         var state = UI.State;
-        var resources = UI.Resources;
+        var renderer = context.Renderer; // Get the renderer from the context
 
         int newSelectedIndex = selectedIndex;
 
@@ -5423,9 +4971,9 @@ internal class InternalComboboxLogic
                 // Define the draw callback for the popup, which runs at EndFrame
                 Action<UIContext> drawCallback = (ctx) =>
                 {
-                    // Draw popup background
+                    // Draw popup background using the renderer
                     var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0f };
-                    resources.DrawBoxStyleHelper(ctx.RenderTarget, popupBounds.TopLeft, new Vector2(popupBounds.Width, popupBounds.Height), popupStyle);
+                    ctx.Renderer.DrawBox(popupBounds, popupStyle);
 
                     // Draw items
                     for (int i = 0; i < items.Length; i++)
@@ -5464,7 +5012,6 @@ internal class InternalComboboxLogic
 using System;
 using System.Numerics;
 using DirectUI.Core;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -5572,7 +5119,8 @@ internal class InternalHSliderLogic : InternalSliderLogic
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
 
         renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
-        renderer.DrawBox(new Rect(trackPosition, Size), Theme.Foreground);
+        // Changed to explicitly pass float components for Rect constructor
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
         renderer.PopClipRect();
     }
 }
@@ -5582,8 +5130,8 @@ internal class InternalHSliderLogic : InternalSliderLogic
 // Widgets/InternalScrollBarLogic.cs
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using DirectUI.Core; // Ensure this is present for IRenderer
 
 namespace DirectUI;
 
@@ -5621,6 +5169,7 @@ internal class InternalScrollBarLogic
         var context = UI.Context;
         var state = UI.State;
         var input = context.InputState;
+        var renderer = context.Renderer;
 
         _isFocused = state.FocusedElementId == _id;
         float newScrollOffset = HandleInput(input, currentScrollOffset);
@@ -5628,9 +5177,9 @@ internal class InternalScrollBarLogic
         _isThumbPressed = state.ActivelyPressedElementId == _id;
         ThumbTheme.UpdateCurrentStyle(_isThumbHovered, _isThumbPressed, false, _isFocused);
 
-        if (context.RenderTarget != null)
+        if (renderer != null) // Check if renderer is available
         {
-            Draw(context.RenderTarget, newScrollOffset);
+            Draw(renderer, newScrollOffset); // Pass the renderer instance
         }
 
         return newScrollOffset;
@@ -5736,12 +5285,10 @@ internal class InternalScrollBarLogic
         return currentScrollOffset;
     }
 
-    private void Draw(ID2D1RenderTarget rt, float currentScrollOffset)
+    private void Draw(IRenderer renderer, float currentScrollOffset) // Changed ID2D1RenderTarget to IRenderer
     {
         // Draw Track
-        UI.Resources.DrawBoxStyleHelper(rt, Position,
-            IsVertical ? new Vector2(TrackThickness, TrackLength) : new Vector2(TrackLength, TrackThickness),
-            Theme.Background);
+        renderer.DrawBox(GetTrackBounds(), Theme.Background);
 
         // Draw Thumb
         var thumbBounds = GetThumbBounds(currentScrollOffset, out _);
@@ -5754,8 +5301,8 @@ internal class InternalScrollBarLogic
                 BorderLength = ThumbTheme.Current.BorderLength,
                 Roundness = ThumbTheme.Current.Roundness
             };
-            // BUG FIX: Convert Vortice.Mathematics.Rect.Size to a System.Numerics.Vector2
-            UI.Resources.DrawBoxStyleHelper(rt, thumbBounds.TopLeft, new Vector2(thumbBounds.Width, thumbBounds.Height), thumbStyle);
+            // Convert Vortice.Mathematics.Rect to System.Numerics.Vector2 for size
+            renderer.DrawBox(new Rect(thumbBounds.X, thumbBounds.Y, thumbBounds.Width, thumbBounds.Height), thumbStyle);
         }
     }
 }
@@ -5764,8 +5311,8 @@ internal class InternalScrollBarLogic
 <file path="Widgets\InternalSliderLogic.cs">
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -5805,7 +5352,7 @@ internal abstract class InternalSliderLogic
     protected abstract float HandleInput(InputState input, float currentValue);
     protected abstract float ConvertPositionToValue(float position);
     protected abstract Vector2 CalculateGrabberPosition(float currentValue);
-    protected abstract void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue);
+    protected abstract void DrawForeground(IRenderer renderer, float currentValue);
 
 
     // --- Common Logic ---
@@ -5813,6 +5360,7 @@ internal abstract class InternalSliderLogic
     {
         var context = UI.Context;
         var state = UI.State;
+        var renderer = context.Renderer;
 
         GlobalIntId = id;
         isFocused = state.FocusedElementId == GlobalIntId;
@@ -5844,17 +5392,17 @@ internal abstract class InternalSliderLogic
 
         UpdateGrabberThemeStyle();
 
-        if (context.RenderTarget is null)
+        if (renderer is null)
         {
-            Console.WriteLine("Error: RenderTarget is null during Slider UpdateAndDraw.");
+            Console.WriteLine("Error: Renderer is null during Slider UpdateAndDraw.");
             return newValue;
         }
 
         try
         {
-            DrawBackground(context.RenderTarget);
-            DrawForeground(context.RenderTarget, newValue);
-            DrawGrabber(context.RenderTarget, newValue);
+            DrawBackground(renderer);
+            DrawForeground(renderer, newValue);
+            DrawGrabber(renderer, newValue);
         }
         catch (SharpGen.Runtime.SharpGenException ex) when (ex.ResultCode.Code == Vortice.Direct2D1.ResultCode.RecreateTarget.Code)
         {
@@ -5899,15 +5447,17 @@ internal abstract class InternalSliderLogic
 
 
     // --- Drawing Methods ---
-    protected void DrawBackground(ID2D1RenderTarget renderTarget)
+    protected void DrawBackground(IRenderer renderer)
     {
-        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
+        // Explicitly pass X, Y, Width, Height components to Rect constructor
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Background);
     }
 
-    protected void DrawGrabber(ID2D1RenderTarget renderTarget, float currentValue)
+    protected void DrawGrabber(IRenderer renderer, float currentValue)
     {
         Vector2 grabberPos = CalculateGrabberPosition(currentValue);
-        UI.Resources.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
+        // Explicitly pass X, Y, Width, Height components to Rect constructor
+        renderer.DrawBox(new Rect(grabberPos.X, grabberPos.Y, GrabberSize.X, GrabberSize.Y), GrabberTheme.Current);
     }
 }
 </file>
@@ -5915,9 +5465,9 @@ internal abstract class InternalSliderLogic
 <file path="Widgets\InternalVSlider.cs">
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
+using DirectUI.Core; // Added for IRenderer
+using D2D = Vortice.Direct2D1; // Added this using directive
 
 namespace DirectUI;
 
@@ -6010,10 +5560,10 @@ internal class InternalVSliderLogic : InternalSliderLogic
         yPos = Math.Clamp(yPos, minY, maxY);
         return new Vector2(xPos, yPos);
     }
-    protected override void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue)
+    protected override void DrawForeground(IRenderer renderer, float currentValue)
     {
         float valueRange = MaxValue - MinValue;
-        if (valueRange <= 0 || renderTarget is null) return;
+        if (valueRange <= 0 || renderer is null) return;
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0.0f;
         float foregroundHeight = Size.Y * normalizedValue;
@@ -6021,9 +5571,9 @@ internal class InternalVSliderLogic : InternalSliderLogic
         Rect clipRect;
         if (Direction == VSliderDirection.BottomToTop) { clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight); }
-        renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
-        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
-        renderTarget.PopAxisAlignedClip();
+        renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
+        renderer.PopClipRect();
     }
 }
 </file>
@@ -6034,11 +5584,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+using DirectUI.Core;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
-using SharpGen.Runtime;
+using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
+using Vortice.DirectWrite; // Still used for WordWrapping, TextAlignment, ParagraphAlignment
 
 namespace DirectUI;
 
@@ -6046,12 +5595,6 @@ namespace DirectUI;
 // All persistent state is managed in a separate LineEditState object.
 internal class LineEdit
 {
-    // === CACHED RENDERING RESOURCES (transient, not persistent state) ===
-    private IDWriteTextLayout? _cachedTextLayout;
-    private string _cachedText = " "; // Use a non-null, non-empty default
-    private ButtonStyle? _cachedStyle;
-    private float _cachedMaxWidth = -1;
-
     // === MAIN UPDATE & DRAW METHOD ===
     public bool UpdateAndDraw(
         int intId,
@@ -6069,11 +5612,12 @@ internal class LineEdit
     {
         var context = UI.Context;
         var uiState = UI.State;
-        var resources = UI.Resources;
+        var renderer = context.Renderer;
+        var textService = context.TextService;
+        var input = context.InputState;
 
         var themeId = HashCode.Combine(intId, "theme");
         var finalTheme = theme ?? uiState.GetOrCreateElement<ButtonStylePack>(themeId);
-        var input = context.InputState;
 
         // If no specific theme was provided, configure the default one for a LineEdit look.
         if (theme is null)
@@ -6131,16 +5675,17 @@ internal class LineEdit
                 Math.Max(0, bounds.Height - textMargin.Y * 2)
             );
 
-            var textLayout = GetTextLayout(textForHitTest, size, styleForHitTest, float.MaxValue);
+            // Use ITextService to get the text layout
+            var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
             if (textLayout != null)
             {
                 float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
                 float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
 
-                textLayout.HitTestPoint(relativeClickX, relativeClickY, out RawBool isTrailingHit, out RawBool isInside, out var hitTestMetrics);
+                var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
 
-                int newCaretPos = (int)hitTestMetrics.TextPosition;
-                if (isTrailingHit)
+                int newCaretPos = hitTestResult.TextPosition;
+                if (hitTestResult.IsTrailingHit)
                 {
                     newCaretPos++;
                 }
@@ -6163,7 +5708,7 @@ internal class LineEdit
 
         // --- Drawing ---
         finalTheme.UpdateCurrentStyle(isHovering, false, disabled, uiState.FocusedElementId == intId);
-        resources.DrawBoxStyleHelper(context.RenderTarget, position, size, finalTheme.Current);
+        renderer.DrawBox(bounds, finalTheme.Current);
 
         // Define content area and clip to it
         Rect contentRect = new Rect(
@@ -6172,11 +5717,10 @@ internal class LineEdit
             Math.Max(0, bounds.Width - textMargin.X * 2),
             Math.Max(0, bounds.Height - textMargin.Y * 2)
         );
-        context.RenderTarget.PushAxisAlignedClip(contentRect, D2D.AntialiasMode.PerPrimitive);
+        renderer.PushClipRect(contentRect, D2D.AntialiasMode.PerPrimitive);
 
         string textToDraw;
         ButtonStyle styleToDraw;
-        Vector2 drawPos = contentRect.TopLeft;
 
         if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
         {
@@ -6192,14 +5736,14 @@ internal class LineEdit
             styleToDraw = finalTheme.Current;
         }
 
-        DrawVisibleText(textToDraw, state, size, styleToDraw, drawPos);
+        DrawVisibleText(textToDraw, state, size, styleToDraw, contentRect.TopLeft);
 
         if (uiState.FocusedElementId == intId && state.IsBlinkOn)
         {
             DrawCaret(textToDraw, state, size, finalTheme.Current, contentRect);
         }
 
-        context.RenderTarget.PopAxisAlignedClip();
+        renderer.PopClipRect();
 
         return textChanged;
     }
@@ -6209,7 +5753,7 @@ internal class LineEdit
         bool textChanged = false;
 
         state.BlinkTimer += UI.Context.DeltaTime;
-        
+
         if (state.BlinkTimer > 0.5f)
         {
             state.BlinkTimer = 0;
@@ -6221,7 +5765,7 @@ internal class LineEdit
         if (input.TypedCharacters.Any())
         {
             PushUndoState(text, state);
-            
+
             foreach (char c in input.TypedCharacters)
             {
                 if (text.Length >= maxLength)
@@ -6319,68 +5863,48 @@ internal class LineEdit
         }
 
         var context = UI.Context;
-        var rt = context.RenderTarget;
-        var textBrush = UI.Resources.GetOrCreateBrush(rt, style.FontColor);
-        var textLayout = GetTextLayout(fullText, size, style, float.MaxValue);
+        var renderer = context.Renderer;
+        var textService = context.TextService;
 
-        if (textBrush == null || textLayout == null) return;
+        // The LineEdit widget uses ITextLayout for hit-testing and caret position calculations.
+        // Even though IRenderer now takes raw text for drawing, ITextLayout is still relevant for widget logic.
+        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
 
-        var originalTransform = rt.Transform;
+        if (textLayout is null) return;
 
         // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         const float yOffsetCorrection = -1.5f;
-        var translation = Matrix3x2.CreateTranslation(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
-        rt.Transform = translation * originalTransform;
 
-        rt.DrawTextLayout(Vector2.Zero, textLayout, textBrush, DrawTextOptions.None);
+        // Calculate the drawing origin by applying scroll offset directly.
+        Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
 
-        rt.Transform = originalTransform;
+        // Renderer's DrawText method now takes full text parameters.
+        renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
     }
 
     private void DrawCaret(string text, LineEditState state, Vector2 size, ButtonStyle style, Rect contentRect)
     {
-        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
+        var textService = UI.Context.TextService;
+        var renderer = UI.Context.Renderer;
+
+        // Use ITextService to get the text layout
+        var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout == null) return;
 
-        textLayout.HitTestTextPosition((uint)state.CaretPosition, false, out _, out _, out var hitTestMetrics);
-        float caretX = contentRect.Left + hitTestMetrics.Left - state.ScrollPixelOffset;
+        // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
+        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
+
+        float caretX = contentRect.Left + hitTestMetrics.Point.X - state.ScrollPixelOffset;
         Rect caretRect = new Rect(caretX, contentRect.Top, 1, contentRect.Height);
 
-        var context = UI.Context;
-        var caretBrush = UI.Resources.GetOrCreateBrush(context.RenderTarget, style.FontColor);
-        if (caretBrush != null)
-        {
-            context.RenderTarget.FillRectangle(caretRect, caretBrush);
-        }
+        renderer.DrawBox(caretRect, new BoxStyle { FillColor = style.FontColor, Roundness = 0f, BorderLength = 0f });
     }
 
-    private IDWriteTextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
+    private ITextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
     {
-        var dwrite = UI.Context.DWriteFactory;
-
-        // Check if cached layout is still valid
-        if (_cachedTextLayout != null && _cachedText == text && _cachedStyle == style && _cachedMaxWidth == maxWidth)
-        {
-            return _cachedTextLayout;
-        }
-
-        // If not, create a new one
-        var textFormat = UI.Resources.GetOrCreateTextFormat(dwrite, style);
-        if (textFormat == null) return null;
-
-        textFormat.WordWrapping = WordWrapping.NoWrap;
-        textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
-        textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-
-        _cachedTextLayout?.Dispose();
-        _cachedTextLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, size.Y);
-
-        // Update cache state
-        _cachedText = text;
-        _cachedStyle = style;
-        _cachedMaxWidth = maxWidth;
-
-        return _cachedTextLayout;
+        // LineEdit needs to re-layout text based on user input, so it requests a fresh layout from the service.
+        // The ITextService handles the caching internally for performance.
+        return UI.Context.TextService.GetTextLayout(text, style, new(maxWidth, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
     }
 
     private void UpdateView(string text, LineEditState state, Vector2 size, Vector2 textMargin)
@@ -6388,11 +5912,11 @@ internal class LineEdit
         float availableWidth = size.X - textMargin.X * 2;
         var style = new ButtonStyle(); // A default style is fine for measuring
 
-        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
+        var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout == null) return;
 
-        textLayout.HitTestTextPosition((uint)state.CaretPosition, false, out _, out _, out var hitTestMetrics);
-        float caretAbsoluteX = hitTestMetrics.Left;
+        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
+        float caretAbsoluteX = hitTestMetrics.Point.X;
 
         if (caretAbsoluteX - state.ScrollPixelOffset > availableWidth)
         {
@@ -6403,7 +5927,7 @@ internal class LineEdit
             state.ScrollPixelOffset = caretAbsoluteX;
         }
 
-        float maxScroll = Math.Max(0, textLayout.Metrics.WidthIncludingTrailingWhitespace - availableWidth);
+        float maxScroll = Math.Max(0, textLayout.Size.X - availableWidth);
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
 
@@ -6522,6 +6046,889 @@ public class TreeNode<T>
     {
         Children.Add(child);
         return child;
+    }
+}
+</file>
+
+<file path="Backends\Direct2D\Direct2DRenderer.cs">
+// DirectUI/Backends/Direct2DRenderer.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using SharpGen.Runtime;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite; // Added for IDWriteFactory and TextFormat/ParagraphAlignment
+using Vortice.Mathematics;
+using System.Drawing; // Added for RectangleF
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A rendering backend that uses Direct2D to implement the IRenderer interface.
+/// It manages its own cache of Direct2D brushes and text layouts.
+/// </summary>
+public class Direct2DRenderer : IRenderer
+{
+    private readonly ID2D1RenderTarget _renderTarget;
+    private readonly IDWriteFactory _dwriteFactory; // Added DirectWrite factory
+    private readonly Dictionary<Color4, ID2D1SolidColorBrush> _brushCache = new();
+
+    // Internal text layout cache for DrawText method
+    private readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> _textLayoutCache = new();
+    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new(); // Added text format cache
+
+    // Internal cache key for text layouts (similar to UIResources.TextLayoutCacheKey)
+    private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
+    {
+        public readonly string Text;
+        public readonly FontKey FontKey;
+        public readonly Vector2 MaxSize;
+        public readonly HAlignment HAlign;
+        public readonly VAlignment VAlign;
+
+        public TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+        {
+            Text = text;
+            FontKey = new FontKey(style);
+            MaxSize = maxSize;
+            HAlign = alignment.Horizontal;
+            VAlign = alignment.Vertical;
+        }
+
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
+    private readonly struct FontKey : IEquatable<FontKey>
+    {
+        public readonly string FontName;
+        public readonly float FontSize;
+        public readonly FontWeight FontWeight;
+        public readonly FontStyle FontStyle;
+        public readonly FontStretch FontStretch;
+
+        public FontKey(ButtonStyle style)
+        {
+            FontName = style.FontName;
+            FontSize = style.FontSize;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontStretch = style.FontStretch;
+        }
+
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
+
+    public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
+
+    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory) // Added dwriteFactory
+    {
+        _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
+        _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    {
+        var brush = GetOrCreateBrush(color);
+        if (brush is null) return;
+        _renderTarget.DrawLine(p1, p2, brush, strokeWidth);
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        if (_renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
+
+        var pos = rect.TopLeft;
+        var size = new Vector2(rect.Width, rect.Height);
+
+        ID2D1SolidColorBrush? fillBrush = GetOrCreateBrush(style.FillColor);
+        ID2D1SolidColorBrush? borderBrush = GetOrCreateBrush(style.BorderColor);
+
+        float borderTop = Math.Max(0f, style.BorderLengthTop);
+        float borderRight = Math.Max(0f, style.BorderLengthRight);
+        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
+        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
+
+        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
+
+        if (!hasVisibleFill && !hasVisibleBorder) return;
+
+        if (style.Roundness > 0.0f)
+        {
+            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+            float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
+            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+
+            if (float.IsFinite(radius) && radius >= 0)
+            {
+                if (hasVisibleBorder)
+                {
+                    System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                    _renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), borderBrush);
+                }
+                if (hasVisibleFill)
+                {
+                    float fillX = pos.X + borderLeft;
+                    float fillY = pos.Y + borderTop;
+                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+                    if (fillWidth > 0 && fillHeight > 0)
+                    {
+                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
+                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
+                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
+                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
+                        System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
+                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(fillRectF, innerRadiusX, innerRadiusY), fillBrush);
+                    }
+                    else if (!hasVisibleBorder && fillBrush is not null)
+                    {
+                        System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
+                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), fillBrush);
+                    }
+                }
+                return;
+            }
+        }
+        if (hasVisibleBorder && borderBrush is not null)
+        {
+            _renderTarget.FillRectangle(rect, borderBrush);
+        }
+        if (hasVisibleFill)
+        {
+            float fillX = pos.X + borderLeft;
+            float fillY = pos.Y + borderTop;
+            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+            if (fillWidth > 0 && fillHeight > 0)
+            {
+                _renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+            }
+            else if (!hasVisibleBorder && fillBrush is not null)
+            {
+                _renderTarget.FillRectangle(rect, fillBrush);
+            }
+        }
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var textBrush = GetOrCreateBrush(color);
+        if (textBrush is null) return;
+
+        var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
+        if (!_textLayoutCache.TryGetValue(layoutKey, out var textLayout))
+        {
+            var textFormat = GetOrCreateTextFormat(style);
+            if (textFormat is null) return;
+
+            textLayout = _dwriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
+            textLayout.TextAlignment = alignment.Horizontal switch
+            {
+                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
+                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
+                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
+                _ => Vortice.DirectWrite.TextAlignment.Leading
+            };
+            textLayout.ParagraphAlignment = alignment.Vertical switch
+            {
+                VAlignment.Top => ParagraphAlignment.Near,
+                VAlignment.Center => ParagraphAlignment.Center,
+                VAlignment.Bottom => ParagraphAlignment.Far,
+                _ => ParagraphAlignment.Near
+            };
+            _textLayoutCache[layoutKey] = textLayout;
+        }
+
+        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
+        float yOffsetCorrection = (alignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
+
+        _renderTarget.DrawTextLayout(new Vector2(origin.X, origin.Y + yOffsetCorrection), textLayout, textBrush, Vortice.Direct2D1.DrawTextOptions.None);
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        _renderTarget.PushAxisAlignedClip(rect, antialiasMode);
+    }
+
+    public void PopClipRect()
+    {
+        _renderTarget.PopAxisAlignedClip();
+    }
+
+    public void Cleanup()
+    {
+        foreach (var pair in _brushCache)
+        {
+            pair.Value?.Dispose();
+        }
+        _brushCache.Clear();
+
+        foreach (var pair in _textLayoutCache)
+        {
+            pair.Value?.Dispose();
+        }
+        _textLayoutCache.Clear();
+
+        foreach (var pair in _textFormatCache) // Dispose text formats
+        {
+            pair.Value?.Dispose();
+        }
+        _textFormatCache.Clear();
+    }
+
+    private ID2D1SolidColorBrush? GetOrCreateBrush(Color4 color)
+    {
+        if (_renderTarget is null)
+        {
+            Console.WriteLine("Error: GetOrCreateBrush called with no active render target.");
+            return null;
+        }
+
+        if (_brushCache.TryGetValue(color, out var brush) && brush is not null)
+        {
+            return brush;
+        }
+
+        if (brush is null && _brushCache.ContainsKey(color))
+        {
+            _brushCache.Remove(color);
+        }
+
+        try
+        {
+            brush = _renderTarget.CreateSolidColorBrush(color);
+            if (brush is not null)
+            {
+                _brushCache[color] = brush;
+                return brush;
+            }
+
+            Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}");
+            return null;
+        }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == Vortice.Direct2D1.ResultCode.RecreateTarget.Code)
+        {
+            Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed.");
+            return null;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating brush for color {color}: {ex.Message}");
+            return null;
+        }
+    }
+
+    private IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
+    {
+        if (_dwriteFactory is null) return null;
+
+        var key = new FontKey(style);
+        if (_textFormatCache.TryGetValue(key, out var format)) // Use the member field
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = _dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
+            if (newFormat is not null) { _textFormatCache[key] = newFormat; } // Add to the member field
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
+            return null;
+        }
+    }
+}
+</file>
+
+<file path="Backends\Direct2D\DirectWriteTextLayout.cs">
+// DirectUI/Backends/DirectWriteTextLayout.cs
+using System;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.DirectWrite;
+using SharpGen.Runtime;
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A DirectWrite-specific implementation of the ITextLayout interface.
+/// This class wraps an IDWriteTextLayout object. It is internal to the backend.
+/// </summary>
+internal class DirectWriteTextLayout : ITextLayout
+{
+    public IDWriteTextLayout DWriteLayout { get; }
+
+    public Vector2 Size { get; }
+    public string Text { get; }
+
+    public DirectWriteTextLayout(IDWriteTextLayout dwriteLayout, string text) // Added 'string text' parameter
+    {
+        DWriteLayout = dwriteLayout;
+        Size = new Vector2(dwriteLayout.Metrics.WidthIncludingTrailingWhitespace, dwriteLayout.Metrics.Height);
+        Text = text; // Assign the provided text
+    }
+
+    public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
+    {
+        DWriteLayout.HitTestTextPosition((uint)textPosition, isTrailingHit, out float x, out float y, out var metrics);
+        return new TextHitTestMetrics(new Vector2(x, y), new Vector2(metrics.Width, metrics.Height));
+    }
+
+    public TextHitTestResult HitTestPoint(Vector2 point)
+    {
+        DWriteLayout.HitTestPoint(point.X, point.Y, out RawBool isTrailingHit, out RawBool isInside, out var hitTestMetrics);
+
+        var metrics = new TextHitTestMetrics(
+            new Vector2(hitTestMetrics.Left, hitTestMetrics.Top),
+            new Vector2(hitTestMetrics.Width, hitTestMetrics.Height)
+        );
+
+        return new TextHitTestResult(
+            (int)hitTestMetrics.TextPosition,
+            isTrailingHit,
+            isInside,
+            metrics
+        );
+    }
+
+    public void Dispose()
+    {
+        DWriteLayout.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    ~DirectWriteTextLayout()
+    {
+        Dispose();
+    }
+}
+</file>
+
+<file path="Backends\Direct2D\DirectWriteTextService.cs">
+// DirectUI/Backends/DirectWriteTextService.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// An implementation of ITextService that uses DirectWrite.
+/// It manages caches for text formats, layouts, and measured sizes.
+/// </summary>
+public class DirectWriteTextService : ITextService
+{
+    private readonly IDWriteFactory _dwriteFactory;
+    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new();
+    private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
+    private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
+
+    // Internal cache key structs
+    internal readonly struct FontKey(ButtonStyle style) : IEquatable<FontKey>
+    {
+        private readonly string FontName = style.FontName;
+        private readonly float FontSize = style.FontSize;
+        private readonly FontWeight FontWeight = style.FontWeight;
+        private readonly FontStyle FontStyle = style.FontStyle;
+        private readonly FontStretch FontStretch = style.FontStretch;
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
+    internal readonly struct TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment) : IEquatable<TextLayoutCacheKey>
+    {
+        private readonly string Text = text;
+        private readonly FontKey FontKey = new(style);
+        private readonly Vector2 MaxSize = maxSize;
+        private readonly HAlignment HAlign = alignment.Horizontal;
+        private readonly VAlignment VAlign = alignment.Vertical;
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
+    public DirectWriteTextService(IDWriteFactory dwriteFactory)
+    {
+        _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
+    }
+
+    public Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
+
+        var fontKey = new FontKey(style);
+        var cacheKey = (text, fontKey);
+        if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
+
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
+        if (textFormat is null)
+        {
+            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
+            return Vector2.Zero;
+        }
+
+        using var textLayout = _dwriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+        TextMetrics textMetrics = textLayout.Metrics;
+        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+        _textSizeCache[cacheKey] = measuredSize;
+        return measuredSize;
+    }
+
+    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+    {
+        var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
+        if (_textLayoutCache.TryGetValue(layoutKey, out var cachedLayout))
+        {
+            return cachedLayout;
+        }
+
+        var textFormat = GetOrCreateTextFormat(style);
+        if (textFormat is null) return null!; // Should ideally return a null object or throw.
+
+        var dwriteLayout = _dwriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
+        dwriteLayout.TextAlignment = alignment.Horizontal switch
+        {
+            HAlignment.Left => TextAlignment.Leading,
+            HAlignment.Center => TextAlignment.Center,
+            HAlignment.Right => TextAlignment.Trailing,
+            _ => TextAlignment.Leading
+        };
+        dwriteLayout.ParagraphAlignment = alignment.Vertical switch
+        {
+            VAlignment.Top => ParagraphAlignment.Near,
+            VAlignment.Center => ParagraphAlignment.Center,
+            VAlignment.Bottom => ParagraphAlignment.Far,
+            _ => ParagraphAlignment.Near
+        };
+
+        var newLayout = new DirectWriteTextLayout(dwriteLayout, text); // Passed 'text' as the second argument
+        _textLayoutCache[layoutKey] = newLayout;
+        return newLayout;
+    }
+
+    private IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
+    {
+        var key = new FontKey(style);
+        if (_textFormatCache.TryGetValue(key, out var format))
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = _dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
+            if (newFormat is not null)
+            {
+                _textFormatCache[key] = newFormat;
+            }
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public void Cleanup()
+    {
+        Console.WriteLine("DirectWriteTextService Cleanup: Disposing cached resources...");
+        foreach (var pair in _textFormatCache) { pair.Value?.Dispose(); }
+        _textFormatCache.Clear();
+        foreach (var pair in _textLayoutCache) { pair.Value?.Dispose(); }
+        _textLayoutCache.Clear();
+        _textSizeCache.Clear();
+        Console.WriteLine("DirectWriteTextService Cleanup finished.");
+    }
+}
+</file>
+
+<file path="Backends\Raylib\RaylibRenderer.cs">
+// DirectUI/Backends/Raylib/RaylibRenderer.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.Mathematics;
+using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
+using Raylib_cs; // Raylib specific library
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A rendering backend that uses Raylib to implement the IRenderer interface.
+/// </summary>
+public class RaylibRenderer : IRenderer
+{
+    private readonly Stack<Rectangle> _clipRectStack = new();
+
+    public Vector2 RenderTargetSize
+    {
+        get { return new Vector2(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()); }
+    }
+
+    public RaylibRenderer()
+    {
+        // Raylib is typically initialized externally (e.g., in Program.cs or AppHost)
+        // No Raylib-specific initialization needed here in the constructor.
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    {
+        // Raylib draws lines with thickness 1 by default, or you can use DrawLineEx for thicker lines
+        // Mapping DirectUI Color4 to Raylib_cs.Color
+        var rlColor = new Raylib_cs.Color(
+            (byte)(color.R * 255),
+            (byte)(color.G * 255),
+            (byte)(color.B * 255),
+            (byte)(color.A * 255)
+        );
+        Raylib.DrawLineEx(p1, p2, strokeWidth, rlColor);
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        // Mapping DirectUI Color4 to Raylib_cs.Color
+        var fillColor = new Raylib_cs.Color(
+            (byte)(style.FillColor.R * 255),
+            (byte)(style.FillColor.G * 255),
+            (byte)(style.FillColor.B * 255),
+            (byte)(style.FillColor.A * 255)
+        );
+        var borderColor = new Raylib_cs.Color(
+            (byte)(style.BorderColor.R * 255),
+            (byte)(style.BorderColor.G * 255),
+            (byte)(style.BorderColor.B * 255),
+            (byte)(style.BorderColor.A * 255)
+        );
+
+        Raylib_cs.Rectangle rlRect = new Raylib_cs.Rectangle(rect.X, rect.Y, rect.Width, rect.Height);
+
+        // Fill
+        if (style.FillColor.A > 0)
+        {
+            if (style.Roundness > 0)
+            {
+                // Raylib's DrawRectangleRounded takes normalized roundness (0 to 1)
+                Raylib.DrawRectangleRounded(rlRect, style.Roundness, 0, fillColor);
+            }
+            else
+            {
+                Raylib.DrawRectangleRec(rlRect, fillColor);
+            }
+        }
+
+        // Border (simplified for uniform border lengths for now)
+        float borderThickness = Math.Max(style.BorderLengthTop, style.BorderLengthRight); // Take max for simplicity
+        borderThickness = Math.Max(borderThickness, style.BorderLengthBottom);
+        borderThickness = Math.Max(borderThickness, style.BorderLengthLeft);
+
+        if (style.BorderColor.A > 0 && borderThickness > 0)
+        {
+            if (style.Roundness > 0)
+            {
+                Raylib.DrawRectangleRoundedLines(rlRect, style.Roundness, 0, borderThickness, borderColor);
+            }
+            else
+            {
+                Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
+            }
+        }
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        // Mapping DirectUI Color4 to Raylib_cs.Color
+        var rlColor = new Raylib_cs.Color(
+            (byte)(color.R * 255),
+            (byte)(color.G * 255),
+            (byte)(color.B * 255),
+            (byte)(color.A * 255)
+        );
+
+        // Load font on demand (consider caching this externally or internally with FontKey)
+        // For simplicity, using a default font or a very basic approach for now.
+        // A robust solution would involve pre-loading fonts by style.FontName
+        // and caching Raylib.Font objects.
+        Font rlFont = Raylib.GetFontDefault(); // Use default font for simplicity
+
+        // Raylib's MeasureTextEx needs a font object
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f); // Default spacing is 1/10th of font size
+
+        Vector2 textDrawPos = origin;
+
+        // Apply alignment based on maxSize and measuredSize
+        // This logic is similar to what a text layout engine would do.
+        if (maxSize.X > 0 && measuredSize.X < maxSize.X)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += (maxSize.X - measuredSize.X);
+                    break;
+            }
+        }
+        if (maxSize.Y > 0 && measuredSize.Y < maxSize.Y)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
+                    break;
+            }
+        }
+
+        // Raylib DrawTextEx takes position, text, font, font size, spacing, tint
+        Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        // Raylib has BeginScissorMode / EndScissorMode
+        // Note: Raylib's scissor mode is typically integer-based.
+        // Also, it's global, so nesting requires careful management.
+        // We simulate a stack by saving and restoring.
+        _clipRectStack.Push(new Raylib_cs.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height));
+        Raylib.BeginScissorMode((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+    }
+
+    public void PopClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            _clipRectStack.Pop();
+            if (_clipRectStack.Count > 0)
+            {
+                // Re-apply the previous clip rect
+                var prevRect = _clipRectStack.Peek();
+                Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
+            }
+            else
+            {
+                // If stack is empty, end scissor mode entirely
+                Raylib.EndScissorMode();
+            }
+        }
+    }
+
+    // Raylib specific cleanup (if any resources like fonts were loaded dynamically)
+    public void Cleanup()
+    {
+        // No Raylib-specific font objects to dispose that are loaded here per layout.
+        // If fonts were loaded with LoadFontEx, they would need UnloadFont.
+        _clipRectStack.Clear();
+    }
+}
+</file>
+
+<file path="Backends\Raylib\RaylibTextLayout.cs">
+// DirectUI/Backends/Raylib/RaylibTextLayout.cs
+using System;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.Mathematics; // For Color4, Rect
+using Raylib_cs; // Raylib specific library
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A Raylib-specific implementation of the ITextLayout interface.
+/// This class stores text and provides approximate metrics.
+/// </summary>
+internal class RaylibTextLayout : ITextLayout
+{
+    public Vector2 Size { get; }
+    public string Text { get; }
+
+    private readonly ButtonStyle _style;
+    private readonly Font _raylibFont; // For consistency, though Raylib text operations often use default font
+
+    public RaylibTextLayout(string text, ButtonStyle style)
+    {
+        Text = text;
+        _style = style;
+        _raylibFont = Raylib.GetFontDefault(); // Using default Raylib font for now
+
+        // Raylib.MeasureTextEx needs a font object.
+        // For simplicity, spacing is approximated as 1/10th of font size, typical for Raylib's default.
+        Size = Raylib.MeasureTextEx(_raylibFont, text, style.FontSize, style.FontSize / 10f);
+    }
+
+    public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
+    {
+        // Raylib doesn't provide fine-grained text metrics per character easily.
+        // This is a rough approximation based on overall text width.
+        if (string.IsNullOrEmpty(Text)) return new TextHitTestMetrics(Vector2.Zero, Vector2.Zero);
+
+        float approxCharWidth = Size.X / Text.Length;
+        float x = textPosition * approxCharWidth;
+        float width = approxCharWidth;
+
+        // Adjust x if it's a trailing hit, to measure the position AFTER the character
+        if (isTrailingHit) x += approxCharWidth;
+
+        // Clamp to prevent out-of-bounds positions
+        x = Math.Clamp(x, 0, Size.X);
+
+        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(width, Size.Y));
+    }
+
+    public TextHitTestResult HitTestPoint(Vector2 point)
+    {
+        // This is a rough approximation for hit testing in Raylib
+        if (string.IsNullOrEmpty(Text))
+        {
+            return new TextHitTestResult(0, false, false, new TextHitTestMetrics(Vector2.Zero, Vector2.Zero));
+        }
+
+        bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
+
+        float approxCharWidth = (Text.Length > 0) ? Size.X / Text.Length : 0;
+        int textPosition = 0;
+        bool isTrailingHit = false;
+
+        if (approxCharWidth > 0)
+        {
+            textPosition = (int)(point.X / approxCharWidth);
+            isTrailingHit = (point.X % approxCharWidth) > (approxCharWidth / 2f);
+        }
+
+        // Caret position can be one past the last character (i.e., at the end of the string).
+        textPosition = Math.Clamp(textPosition, 0, Text.Length);
+        if (isTrailingHit && textPosition < Text.Length) // If it's a trailing hit and not at the very end
+        {
+            textPosition++;
+        }
+        textPosition = Math.Clamp(textPosition, 0, Text.Length); // Final clamp
+
+        // Recalculate metrics for the specific hit position
+        float hitMetricX = (textPosition == 0) ? 0 : (textPosition * approxCharWidth);
+        if (isTrailingHit && textPosition > 0) hitMetricX -= approxCharWidth; // Adjust if hit is trailing edge
+
+        return new TextHitTestResult(textPosition, isTrailingHit, isInside,
+            new TextHitTestMetrics(new Vector2(hitMetricX, 0), new Vector2(approxCharWidth, Size.Y)));
+    }
+
+    public void Dispose()
+    {
+        // No Raylib-specific font objects to dispose that are loaded here per layout.
+        // If fonts were loaded with LoadFontEx, they would need UnloadFont.
+    }
+}
+</file>
+
+<file path="Backends\Raylib\RaylibTextService.cs">
+// DirectUI/Backends/Raylib/RaylibTextService.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.Mathematics; // For Color4, Rect
+using Raylib_cs; // Raylib specific library
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// An implementation of ITextService that uses Raylib.
+/// It manages caches for text layouts.
+/// </summary>
+public class RaylibTextService : ITextService
+{
+    private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
+    private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
+
+    // Internal cache key structs (re-defined or referenced from a common place)
+    internal readonly struct FontKey(ButtonStyle style) : IEquatable<FontKey>
+    {
+        private readonly string FontName = style.FontName;
+        private readonly float FontSize = style.FontSize;
+        private readonly Vortice.DirectWrite.FontWeight FontWeight = style.FontWeight;
+        private readonly Vortice.DirectWrite.FontStyle FontStyle = style.FontStyle;
+        private readonly Vortice.DirectWrite.FontStretch FontStretch = style.FontStretch;
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
+    internal readonly struct TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment) : IEquatable<TextLayoutCacheKey>
+    {
+        private readonly string Text = text;
+        private readonly FontKey FontKey = new(style);
+        private readonly Vector2 MaxSize = maxSize;
+        private readonly HAlignment HAlign = alignment.Horizontal;
+        private readonly VAlignment VAlign = alignment.Vertical;
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
+    public RaylibTextService()
+    {
+        // No specific Raylib font factory initialization needed here
+    }
+
+    public Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
+
+        var fontKey = new FontKey(style);
+        var cacheKey = (text, fontKey);
+        if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
+
+        // Use Raylib's MeasureTextEx with default font for simplicity
+        // For robustness, you'd load/cache fonts by name (style.FontName).
+        Font rlFont = Raylib.GetFontDefault();
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
+        _textSizeCache[cacheKey] = measuredSize;
+        return measuredSize;
+    }
+
+    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+    {
+        // Raylib does not have advanced text layout objects like DirectWrite.
+        // The ITextLayout implementation for Raylib will be simpler, primarily for size and basic hit-testing.
+        var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
+        if (_textLayoutCache.TryGetValue(layoutKey, out var cachedLayout))
+        {
+            return cachedLayout;
+        }
+
+        var newLayout = new RaylibTextLayout(text, style); // Create a Raylib-specific ITextLayout
+        _textLayoutCache[layoutKey] = newLayout;
+        return newLayout;
+    }
+
+    public void Cleanup()
+    {
+        Console.WriteLine("RaylibTextService Cleanup: Clearing cached resources...");
+        foreach (var pair in _textLayoutCache) { pair.Value?.Dispose(); } // Dispose the ITextLayout instances
+        _textLayoutCache.Clear();
+        _textSizeCache.Clear();
+        Console.WriteLine("RaylibTextService Cleanup finished.");
     }
 }
 </file>
@@ -6921,6 +7328,7 @@ public class InputMapEditor
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
+using Raylib_cs; // Added for Raylib
 
 namespace DirectUI;
 
@@ -6929,7 +7337,7 @@ namespace DirectUI;
 /// managing the window, hosting the rendering engine (AppHost), and orchestrating
 /// the different views and modal dialogs.
 /// </summary>
-public class MyDirectUIApp : Direct2DAppWindow
+public class MyDirectUIApp : Direct2DAppWindow // This class name might be misleading if we use Raylib
 {
     // View models for different parts of the UI
     private readonly MainView _mainView;
@@ -6941,6 +7349,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     private int _projectWindowActiveTab = 0;
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
+    // Flag to control which backend is used
+    private readonly bool _useRaylibBackend = true; // Set to true to test Raylib backend
+
     public MyDirectUIApp(string title, int width, int height) : base(title, width, height)
     {
         _mainView = new MainView();
@@ -6950,14 +7361,94 @@ public class MyDirectUIApp : Direct2DAppWindow
         _inputMapEditor = new InputMapEditor(inputMapPath);
     }
 
+    // Override Initialize and Cleanup in Win32Window base if using Raylib
+    // For Raylib, we won't actually create a Win32 window directly.
+    // The AppHost will handle the Raylib window management.
+    protected override bool Initialize()
+    {
+        if (_useRaylibBackend)
+        {
+            // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
+            // We just need to initialize AppHost.
+            Console.WriteLine("Initializing with Raylib backend...");
+            Raylib.InitWindow(Width, Height, Title);
+            Raylib.SetTargetFPS(60); // Control FPS for Raylib
+
+            // AppHost expects an IntPtr HWND even for Raylib.
+            // It will ignore it if _useRaylibBackend is true.
+            _appHost = CreateAppHost();
+            return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
+        }
+        else
+        {
+            Console.WriteLine("Direct2DAppWindow initializing...");
+            _appHost = CreateAppHost();
+            return _appHost.Initialize(Handle, GetClientRectSize());
+        }
+    }
+
+    protected override void Cleanup()
+    {
+        if (_useRaylibBackend)
+        {
+            Console.WriteLine("RaylibAppWindow cleaning up its resources...");
+            _appHost?.Cleanup();
+            _appHost = null;
+            Raylib.CloseWindow(); // Close the Raylib window
+        }
+        else
+        {
+            Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
+            _appHost?.Cleanup();
+            _appHost = null;
+        }
+    }
+
+    // For Raylib, the main loop in Program.cs handles drawing, not OnPaint messages.
+    // OnPaint will only be called for D2D backend.
+    protected override void OnPaint()
+    {
+        if (!_useRaylibBackend)
+        {
+            _appHost?.Render();
+        }
+    }
+
+    public override void FrameUpdate()
+    {
+        if (_useRaylibBackend)
+        {
+            // For Raylib, Raylib.WindowShouldClose() is the equivalent of WM_QUIT.
+            if (Raylib.WindowShouldClose())
+            {
+                Application.Exit(); // Signal main loop to exit
+                return;
+            }
+
+            // Manually process input and render loop for Raylib
+            // Input is managed by Raylib directly, so we need to pump it into AppHost's InputManager.
+            _appHost?.Input.ProcessRaylibInput(); // Call the new method to update input state
+            _appHost?.Render(); // Render the UI for this frame
+        }
+        else
+        {
+            // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
+            Invalidate();
+        }
+    }
+
     protected override AppHost CreateAppHost()
     {
         var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        return new AppHost(DrawUI, backgroundColor);
+        return new AppHost(DrawUI, backgroundColor, _useRaylibBackend); // Pass the backend flag
     }
 
+    // For Raylib, AppHost's InputManager directly processes Raylib events.
+    // Therefore, Win32Window's OnKeyDown/Move/Up/etc. methods should only call base
+    // if using the D2D backend. Otherwise, they are irrelevant.
     protected override void OnKeyDown(Keys key)
     {
+        if (!_useRaylibBackend) base.OnKeyDown(key);
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -6965,7 +7456,36 @@ public class MyDirectUIApp : Direct2DAppWindow
                 _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
             }
         }
-        base.OnKeyDown(key); // Important: ensures input is registered and default keys (ESC) work
+    }
+
+    protected override void OnMouseMove(int x, int y)
+    {
+        if (!_useRaylibBackend) base.OnMouseMove(x, y);
+    }
+
+    protected override void OnMouseDown(MouseButton button, int x, int y)
+    {
+        if (!_useRaylibBackend) base.OnMouseDown(button, x, y);
+    }
+
+    protected override void OnMouseUp(MouseButton button, int x, int y)
+    {
+        if (!_useRaylibBackend) base.OnMouseUp(button, x, y);
+    }
+
+    protected override void OnMouseWheel(float delta)
+    {
+        if (!_useRaylibBackend) base.OnMouseWheel(delta);
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        if (!_useRaylibBackend) base.OnKeyUp(key);
+    }
+
+    protected override void OnChar(char c)
+    {
+        if (!_useRaylibBackend) base.OnChar(c);
     }
 
     /// <summary>
@@ -7029,6 +7549,15 @@ public class MyDirectUIApp : Direct2DAppWindow
     {
         if (_isProjectWindowOpen) return;
 
+        // For Raylib backend, modal windows are not handled by Win32Window directly.
+        // Implementing true modal behavior (disabling owner window, blocking loop) would
+        // require a different approach or a Raylib-specific modal window class.
+        if (_useRaylibBackend)
+        {
+            Console.WriteLine("Modal windows are not yet implemented for Raylib backend.");
+            return;
+        }
+
         _projectWindow = new ModalWindow(this, "Project Settings", 600, 400, DrawProjectWindowUI);
         if (_projectWindow.CreateAsModal())
         {
@@ -7044,6 +7573,8 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     private void ManageModalWindowState()
     {
+        if (_useRaylibBackend) return; // Modal window management is D2D-specific
+
         if (_projectWindow == null) return;
 
         // If the OS window handle is gone (e.g., user clicked the 'X' button),
@@ -7073,6 +7604,7 @@ public class MyDirectUIApp : Direct2DAppWindow
 <file path="Program.cs">
 using DirectUI;
 using System;
+using Raylib_cs; // Added for Raylib
 
 namespace Cocoshell;
 
@@ -7081,31 +7613,62 @@ public class Program
     [STAThread] // Important for COM (Direct2D) and Win32 APIs
     static void Main(string[] args)
     {
-        Console.WriteLine("Starting Refactored Direct2D Application...");
+        Console.WriteLine("Starting Refactored Direct2D/Raylib Application...");
 
-        // Use 'using' to ensure Dispose is called automatically
-        using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
+        bool useRaylib = true; // Set to true to test Raylib backend
+
+        if (useRaylib)
         {
-            try
+            Console.WriteLine("Using Raylib Backend.");
+
+            // For Raylib, the main loop is driven directly by Program.cs
+            // and Raylib-cs's window management.
+            // MyDirectUIApp (when configured for Raylib) will handle Raylib window creation and input.
+            using (var app = new MyDirectUIApp("My Refactored Raylib App", 1024, 768))
             {
-                // Create the main window, which registers itself with the Application manager.
-                // The static constructor in Application will ensure resources are ready.
-                if (appWindow.Create())
+                // App.Initialize() will create the Raylib window.
+                if (app.Initialize())
                 {
-                    // Run the central message loop that processes all windows.
-                    // This will also handle cleanup when the loop exits.
-                    Application.Run();
+                    // The primary application loop for Raylib.
+                    // This loop runs as long as the Raylib window should not close.
+                    while (!Raylib.WindowShouldClose())
+                    {
+                        // MyDirectUIApp.FrameUpdate for Raylib backend
+                        // handles input processing and calls AppHost.Render().
+                        // It also sets Application.s_isRunning to false if Raylib.WindowShouldClose() is true.
+                        app.FrameUpdate();
+                    }
+                }
+                else
+                {
+                    Console.WriteLine("Failed to initialize Raylib application.");
+                }
+            } // app.Dispose() is called here implicitly, triggering cleanup
+        }
+        else
+        {
+            Console.WriteLine("Using Direct2D Backend.");
+
+            // Original Direct2D flow, using Win32 window and message loop.
+            using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
+            {
+                try
+                {
+                    // Create the main window, which registers itself with the Application manager.
+                    if (appWindow.Create())
+                    {
+                        // Run the central Win32 message loop that processes all windows.
+                        Application.Run();
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
                 }
             }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Unhandled exception in Run: {ex}");
-                // Log exception, show message box, etc.
-            }
-        } // appWindow.Dispose() is called here, which triggers its window closure
+        }
 
         Console.WriteLine("Application finished.");
-        // Console.ReadKey(); // Optional: Keep console open after exit
     }
 }
 </file>
@@ -7814,7 +8377,6 @@ public class MainView
 <file path="Views\MenuBarView.cs">
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -7825,12 +8387,14 @@ public class MenuBarView
 
     public void Draw(UIContext context, Action openProjectWindowAction)
     {
-        var rt = context.RenderTarget;
+        var renderer = context.Renderer;
 
-        ID2D1SolidColorBrush menuBarBackgroundBrush = UI.Resources.GetOrCreateBrush(rt, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-        ID2D1SolidColorBrush menuBarBorderBrush = UI.Resources.GetOrCreateBrush(rt, DefaultTheme.NormalBorder);
-        rt.FillRectangle(new Rect(0, 0, rt.Size.Width, MenuBarHeight), menuBarBackgroundBrush);
-        rt.DrawLine(new Vector2(0, MenuBarHeight - 1), new Vector2(rt.Size.Width, MenuBarHeight - 1), menuBarBorderBrush, 1f);
+        // Use renderer's GetOrCreateBrush and DrawBox/DrawLine methods
+        var menuBarBackgroundBrushColor = new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f);
+        var menuBarBorderColor = DefaultTheme.NormalBorder;
+
+        renderer.DrawBox(new Rect(0, 0, renderer.RenderTargetSize.X, MenuBarHeight), new BoxStyle { FillColor = menuBarBackgroundBrushColor, Roundness = 0f, BorderLength = 0f });
+        renderer.DrawLine(new Vector2(0, MenuBarHeight - 1), new Vector2(renderer.RenderTargetSize.X, MenuBarHeight - 1), menuBarBorderColor, 1f);
 
         // Define a shared style for all menu buttons
         UI.PushStyleVar(StyleVar.FrameRounding, 0.0f);
@@ -7862,7 +8426,7 @@ public class MenuBarView
 
             }
 
-            if (MenuBarButton("help_button", "Help")) 
+            if (MenuBarButton("help_button", "Help"))
             {
 
             }

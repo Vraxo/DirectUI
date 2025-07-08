@@ -29,13 +29,8 @@ public static partial class UI
         Vector2 lineStart = new(drawPos.X, lineY);
         Vector2 lineEnd = new(drawPos.X + width, lineY);
 
-        // Use the renderer to get a brush and draw the line
-        var brush = Context.Renderer.GetOrCreateBrush(finalColor);
-
-        if (brush != null)
-        {
-            Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
-        }
+        // Use the renderer to draw the line
+        Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
 
         Context.Layout.AdvanceLayout(size);
     }

@@ -168,16 +168,14 @@ public static partial class UI
         if (string.IsNullOrEmpty(text)) return;
 
         var renderer = Context.Renderer;
-        var textService = Context.TextService;
-
-        // Use ITextService to get the text layout
-        var textLayout = textService.GetTextLayout(text, style, new(bounds.Width, bounds.Height), textAlignment);
-
-        if (textLayout is null) return;
 
         // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         float yOffsetCorrection = (textAlignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
 
-        renderer.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection), textLayout, style.FontColor);
+        // Calculate drawing origin
+        Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection);
+
+        // Call the new backend-agnostic DrawText method on the renderer
+        renderer.DrawText(drawOrigin, text, style, textAlignment, new Vector2(bounds.Width, bounds.Height), style.FontColor);
     }
 }

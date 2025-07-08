@@ -2,6 +2,7 @@
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
+using Raylib_cs; // Added for Raylib
 
 namespace DirectUI;
 
@@ -10,7 +11,7 @@ namespace DirectUI;
 /// managing the window, hosting the rendering engine (AppHost), and orchestrating
 /// the different views and modal dialogs.
 /// </summary>
-public class MyDirectUIApp : Direct2DAppWindow
+public class MyDirectUIApp : Direct2DAppWindow // This class name might be misleading if we use Raylib
 {
     // View models for different parts of the UI
     private readonly MainView _mainView;
@@ -22,6 +23,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     private int _projectWindowActiveTab = 0;
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
+    // Flag to control which backend is used
+    private readonly bool _useRaylibBackend = true; // Set to true to test Raylib backend
+
     public MyDirectUIApp(string title, int width, int height) : base(title, width, height)
     {
         _mainView = new MainView();
@@ -31,14 +35,113 @@ public class MyDirectUIApp : Direct2DAppWindow
         _inputMapEditor = new InputMapEditor(inputMapPath);
     }
 
+    /// <summary>
+    /// Creates the window and initializes resources for either D2D or Raylib backend.
+    /// This is the primary entry point for starting the application window.
+    /// </summary>
+    public bool Create()
+    {
+        if (_useRaylibBackend)
+        {
+            // For Raylib, we bypass the base Create and call Initialize directly
+            // which handles Raylib.InitWindow.
+            return Initialize();
+        }
+        else
+        {
+            // For D2D, use the standard Win32 window creation from the base class.
+            return base.Create();
+        }
+    }
+
+    // Override Initialize and Cleanup in Win32Window base if using Raylib
+    // For Raylib, we won't actually create a Win32 window directly.
+    // The AppHost will handle the Raylib window management.
+    protected override bool Initialize()
+    {
+        if (_useRaylibBackend)
+        {
+            // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
+            // We just need to initialize AppHost.
+            Console.WriteLine("Initializing with Raylib backend...");
+            Raylib.InitWindow(Width, Height, Title);
+            Raylib.SetTargetFPS(60); // Control FPS for Raylib
+
+            // AppHost expects an IntPtr HWND even for Raylib.
+            // It will ignore it if _useRaylibBackend is true.
+            _appHost = CreateAppHost();
+            return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
+        }
+        else
+        {
+            Console.WriteLine("Direct2DAppWindow initializing...");
+            _appHost = CreateAppHost();
+            return _appHost.Initialize(Handle, GetClientRectSize());
+        }
+    }
+
+    protected override void Cleanup()
+    {
+        if (_useRaylibBackend)
+        {
+            Console.WriteLine("RaylibAppWindow cleaning up its resources...");
+            _appHost?.Cleanup();
+            _appHost = null;
+            Raylib.CloseWindow(); // Close the Raylib window
+        }
+        else
+        {
+            Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
+            _appHost?.Cleanup();
+            _appHost = null;
+        }
+    }
+
+    // For Raylib, the main loop in Program.cs handles drawing, not OnPaint messages.
+    // OnPaint will only be called for D2D backend.
+    protected override void OnPaint()
+    {
+        if (!_useRaylibBackend)
+        {
+            _appHost?.Render();
+        }
+    }
+
+    public override void FrameUpdate()
+    {
+        if (_useRaylibBackend)
+        {
+            // For Raylib, Raylib.WindowShouldClose() is the equivalent of WM_QUIT.
+            if (Raylib.WindowShouldClose())
+            {
+                Application.Exit(); // Signal main loop to exit
+                return;
+            }
+
+            // Manually process input and render loop for Raylib
+            // Input is managed by Raylib directly, so we need to pump it into AppHost's InputManager.
+            _appHost?.Input.ProcessRaylibInput(); // Call the new method to update input state
+            _appHost?.Render(); // Render the UI for this frame
+        }
+        else
+        {
+            // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
+            Invalidate();
+        }
+    }
+
     protected override AppHost CreateAppHost()
     {
         var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        return new AppHost(DrawUI, backgroundColor);
+        return new AppHost(DrawUI, backgroundColor, _useRaylibBackend); // Pass the backend flag
     }
 
+    // For Raylib, AppHost's InputManager directly processes Raylib events.
+    // Therefore, Win32Window's OnKeyDown/Move/Up/etc. methods should only call base
+    // if using the D2D backend. Otherwise, they are irrelevant.
     protected override void OnKeyDown(Keys key)
     {
+        if (!_useRaylibBackend) base.OnKeyDown(key);
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -46,7 +149,36 @@ public class MyDirectUIApp : Direct2DAppWindow
                 _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
             }
         }
-        base.OnKeyDown(key); // Important: ensures input is registered and default keys (ESC) work
+    }
+
+    protected override void OnMouseMove(int x, int y)
+    {
+        if (!_useRaylibBackend) base.OnMouseMove(x, y);
+    }
+
+    protected override void OnMouseDown(MouseButton button, int x, int y)
+    {
+        if (!_useRaylibBackend) base.OnMouseDown(button, x, y);
+    }
+
+    protected override void OnMouseUp(MouseButton button, int x, int y)
+    {
+        if (!_useRaylibBackend) base.OnMouseUp(button, x, y);
+    }
+
+    protected override void OnMouseWheel(float delta)
+    {
+        if (!_useRaylibBackend) base.OnMouseWheel(delta);
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        if (!_useRaylibBackend) base.OnKeyUp(key);
+    }
+
+    protected override void OnChar(char c)
+    {
+        if (!_useRaylibBackend) base.OnChar(c);
     }
 
     /// <summary>
@@ -110,6 +242,15 @@ public class MyDirectUIApp : Direct2DAppWindow
     {
         if (_isProjectWindowOpen) return;
 
+        // For Raylib backend, modal windows are not handled by Win32Window directly.
+        // Implementing true modal behavior (disabling owner window, blocking loop) would
+        // require a different approach or a Raylib-specific modal window class.
+        if (_useRaylibBackend)
+        {
+            Console.WriteLine("Modal windows are not yet implemented for Raylib backend.");
+            return;
+        }
+
         _projectWindow = new ModalWindow(this, "Project Settings", 600, 400, DrawProjectWindowUI);
         if (_projectWindow.CreateAsModal())
         {
@@ -125,6 +266,8 @@ public class MyDirectUIApp : Direct2DAppWindow
 
     private void ManageModalWindowState()
     {
+        if (_useRaylibBackend) return; // Modal window management is D2D-specific
+
         if (_projectWindow == null) return;
 
         // If the OS window handle is gone (e.g., user clicked the 'X' button),
