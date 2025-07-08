@@ -1,8 +1,8 @@
 ﻿// Widgets/InternalScrollBarLogic.cs
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using DirectUI.Core; // Ensure this is present for IRenderer
 
 namespace DirectUI;
 
@@ -40,6 +40,7 @@ internal class InternalScrollBarLogic
         var context = UI.Context;
         var state = UI.State;
         var input = context.InputState;
+        var renderer = context.Renderer;
 
         _isFocused = state.FocusedElementId == _id;
         float newScrollOffset = HandleInput(input, currentScrollOffset);
@@ -47,9 +48,9 @@ internal class InternalScrollBarLogic
         _isThumbPressed = state.ActivelyPressedElementId == _id;
         ThumbTheme.UpdateCurrentStyle(_isThumbHovered, _isThumbPressed, false, _isFocused);
 
-        if (context.RenderTarget != null)
+        if (renderer != null) // Check if renderer is available
         {
-            Draw(context.RenderTarget, newScrollOffset);
+            Draw(renderer, newScrollOffset); // Pass the renderer instance
         }
 
         return newScrollOffset;
@@ -155,12 +156,10 @@ internal class InternalScrollBarLogic
         return currentScrollOffset;
     }
 
-    private void Draw(ID2D1RenderTarget rt, float currentScrollOffset)
+    private void Draw(IRenderer renderer, float currentScrollOffset) // Changed ID2D1RenderTarget to IRenderer
     {
         // Draw Track
-        UI.Resources.DrawBoxStyleHelper(rt, Position,
-            IsVertical ? new Vector2(TrackThickness, TrackLength) : new Vector2(TrackLength, TrackThickness),
-            Theme.Background);
+        renderer.DrawBox(GetTrackBounds(), Theme.Background);
 
         // Draw Thumb
         var thumbBounds = GetThumbBounds(currentScrollOffset, out _);
@@ -173,8 +172,8 @@ internal class InternalScrollBarLogic
                 BorderLength = ThumbTheme.Current.BorderLength,
                 Roundness = ThumbTheme.Current.Roundness
             };
-            // BUG FIX: Convert Vortice.Mathematics.Rect.Size to a System.Numerics.Vector2
-            UI.Resources.DrawBoxStyleHelper(rt, thumbBounds.TopLeft, new Vector2(thumbBounds.Width, thumbBounds.Height), thumbStyle);
+            // Convert Vortice.Mathematics.Rect to System.Numerics.Vector2 for size
+            renderer.DrawBox(new Rect(thumbBounds.X, thumbBounds.Y, thumbBounds.Width, thumbBounds.Height), thumbStyle);
         }
     }
 }

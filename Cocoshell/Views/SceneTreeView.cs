@@ -4,17 +4,22 @@ namespace DirectUI;
 
 public class SceneTreeView
 {
-    private readonly TreeNode<Node> _uiTreeRoot;
+    private TreeNode<Node> _uiTreeRoot;
     private readonly TreeStyle _treeStyle = new();
 
     public Node? SelectedNode { get; private set; }
 
     public SceneTreeView()
     {
+        string defaultScenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
+        LoadScene(defaultScenePath);
+        // _uiTreeRoot is initialized by LoadScene
+    }
+
+    public void LoadScene(string scenePath)
+    {
         try
         {
-            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
-
             if (File.Exists(scenePath))
             {
                 // Use the Cherris engine's PackedScene loader
@@ -29,9 +34,10 @@ public class SceneTreeView
         }
         catch (Exception ex)
         {
-            _uiTreeRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
+            _uiTreeRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", scenePath);
         }
-        SelectedNode = null;
+
+        SelectedNode = null; // Reset selection when loading a new scene
     }
 
     private TreeNode<Node> ConvertToUITree(Node root)
@@ -47,6 +53,8 @@ public class SceneTreeView
 
     public void Draw()
     {
+        if (_uiTreeRoot is null) return;
+
         UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
         UI.Tree("file_tree", _uiTreeRoot, out var clickedNode, _treeStyle);
         if (clickedNode is not null)

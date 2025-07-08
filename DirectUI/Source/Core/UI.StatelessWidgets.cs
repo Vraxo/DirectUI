@@ -1,6 +1,5 @@
 ﻿using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -25,9 +24,8 @@ public static partial class UI
     {
         var context = Context;
         var state = State;
-        var resources = Resources;
-        var renderTarget = context.RenderTarget;
-        var dwriteFactory = context.DWriteFactory;
+        var renderer = context.Renderer;
+        var textService = context.TextService;
         var input = context.InputState;
 
         // --- State Calculation ---
@@ -83,10 +81,10 @@ public static partial class UI
         if (bounds.Width > 0 && bounds.Height > 0)
         {
             // Draw Background
-            resources.DrawBoxStyleHelper(renderTarget, new Vector2(bounds.X, bounds.Y), new Vector2(bounds.Width, bounds.Height), currentStyle);
+            renderer.DrawBox(bounds, currentStyle);
 
             // Draw Text
-            DrawTextPrimitive(renderTarget, dwriteFactory, resources, bounds, text, currentStyle, textAlignment, textOffset);
+            DrawTextPrimitive(bounds, text, currentStyle, textAlignment, textOffset);
         }
 
         return wasClickedThisFrame;
@@ -161,9 +159,6 @@ public static partial class UI
     /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
     internal static void DrawTextPrimitive(
-        ID2D1RenderTarget renderTarget,
-        IDWriteFactory dwriteFactory,
-        UIResources resources,
         Rect bounds,
         string text,
         ButtonStyle style,
@@ -172,36 +167,17 @@ public static partial class UI
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        var textBrush = resources.GetOrCreateBrush(renderTarget, style.FontColor);
-        if (textBrush is null) return;
+        var renderer = Context.Renderer;
+        var textService = Context.TextService;
 
-        var layoutKey = new UIResources.TextLayoutCacheKey(text, style, new(bounds.Width, bounds.Height), textAlignment);
-        if (!resources.textLayoutCache.TryGetValue(layoutKey, out var textLayout))
-        {
-            var textFormat = resources.GetOrCreateTextFormat(dwriteFactory, style);
-            if (textFormat is null) return;
+        // Use ITextService to get the text layout
+        var textLayout = textService.GetTextLayout(text, style, new(bounds.Width, bounds.Height), textAlignment);
 
-            textLayout = dwriteFactory.CreateTextLayout(text, textFormat, bounds.Width, bounds.Height);
-            textLayout.TextAlignment = textAlignment.Horizontal switch
-            {
-                HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
-                HAlignment.Center => Vortice.DirectWrite.TextAlignment.Center,
-                HAlignment.Right => Vortice.DirectWrite.TextAlignment.Trailing,
-                _ => Vortice.DirectWrite.TextAlignment.Leading
-            };
-            textLayout.ParagraphAlignment = textAlignment.Vertical switch
-            {
-                VAlignment.Top => ParagraphAlignment.Near,
-                VAlignment.Center => ParagraphAlignment.Center,
-                VAlignment.Bottom => ParagraphAlignment.Far,
-                _ => ParagraphAlignment.Near
-            };
-            resources.textLayoutCache[layoutKey] = textLayout;
-        }
+        if (textLayout is null) return;
 
         // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         float yOffsetCorrection = (textAlignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
 
-        renderTarget.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection), textLayout, textBrush, DrawTextOptions.None);
+        renderer.DrawTextLayout(new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection), textLayout, style.FontColor);
     }
 }

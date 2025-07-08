@@ -20,7 +20,7 @@ internal class InternalComboboxLogic
     {
         var context = UI.Context;
         var state = UI.State;
-        var resources = UI.Resources;
+        var renderer = context.Renderer; // Get the renderer from the context
 
         int newSelectedIndex = selectedIndex;
 
@@ -83,9 +83,9 @@ internal class InternalComboboxLogic
                 // Define the draw callback for the popup, which runs at EndFrame
                 Action<UIContext> drawCallback = (ctx) =>
                 {
-                    // Draw popup background
+                    // Draw popup background using the renderer
                     var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0f };
-                    resources.DrawBoxStyleHelper(ctx.RenderTarget, popupBounds.TopLeft, new Vector2(popupBounds.Width, popupBounds.Height), popupStyle);
+                    ctx.Renderer.DrawBox(popupBounds, popupStyle);
 
                     // Draw items
                     for (int i = 0; i < items.Length; i++)

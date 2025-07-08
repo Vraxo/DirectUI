@@ -3,8 +3,12 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
+using DirectUI.Backends;
+using DirectUI.Core;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -19,13 +23,15 @@ public class AppHost
     private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
-    private readonly UIResources _uiResources;
     private readonly InputManager _inputManager;
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
 
     private GraphicsDevice? _graphicsDevice;
     private IntPtr _hwnd;
+
+    private IRenderer? _renderer;
+    private ITextService? _textService;
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
@@ -35,23 +41,10 @@ public class AppHost
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
-        _uiResources = new UIResources();
         _inputManager = new InputManager();
 
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
-
-        // Initialize the FpsCounter once during construction.
-        // The DWriteFactory is available from shared resources, which are initialized
-        // by the Application's static constructor before any AppHost is created.
-        if (SharedGraphicsResources.DWriteFactory != null)
-        {
-            _fpsCounter.Initialize(SharedGraphicsResources.DWriteFactory);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: DWriteFactory was not available for FpsCounter initialization.");
-        }
     }
 
     public bool Initialize(IntPtr hwnd, SizeI clientSize)
@@ -62,13 +55,34 @@ public class AppHost
 
         _graphicsDevice ??= new GraphicsDevice();
 
-        return _graphicsDevice.Initialize(_hwnd, clientSize);
+        if (!_graphicsDevice.Initialize(_hwnd, clientSize))
+        {
+            return false;
+        }
+
+        // Initialize backend services using the concrete D2D and DWrite factories
+        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        {
+            _renderer = new Direct2DRenderer(_graphicsDevice.RenderTarget);
+            _textService = new DirectWriteTextService(_graphicsDevice.DWriteFactory);
+
+            // Initialize the FpsCounter once during construction.
+            _fpsCounter.Initialize(_textService, _renderer);
+        }
+        else
+        {
+            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for backend initialization.");
+            return false;
+        }
+
+        return true;
     }
 
     public void Cleanup()
     {
         _fpsCounter.Cleanup();
-        _uiResources.CleanupResources();
+        _textService?.Cleanup();
+        (_renderer as Direct2DRenderer)?.Cleanup(); // Specific cleanup for Direct2DRenderer
         _graphicsDevice?.Cleanup();
     }
 
@@ -90,7 +104,7 @@ public class AppHost
         // is created and painted synchronously inside another window's render loop.
         if (UI.IsRendering) return;
 
-        if (!(_graphicsDevice?.IsInitialized ?? false))
+        if (!(_graphicsDevice?.IsInitialized ?? false) || _renderer is null || _textService is null)
         {
             if (!Initialize(_hwnd, GetClientRectSizeForHost()))
             {
@@ -112,24 +126,21 @@ public class AppHost
 
         _graphicsDevice!.BeginDraw();
 
-        var rt = _graphicsDevice.RenderTarget!;
-        var dwrite = _graphicsDevice.DWriteFactory!;
-
         try
         {
-            rt.Clear(_backgroundColor);
+            _graphicsDevice.RenderTarget!.Clear(_backgroundColor); // Clear the actual D2D render target
 
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(rt, dwrite, inputState, _uiResources, deltaTime);
+            var uiContext = new UIContext(_renderer!, _textService!, inputState, deltaTime);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);
 
             if (ShowFpsCounter)
             {
-                _fpsCounter.Draw(rt);
+                _fpsCounter.Draw(); // FpsCounter now uses its own internal renderer ref
             }
 
             UI.EndFrame();

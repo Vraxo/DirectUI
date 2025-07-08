@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using Vortice.Mathematics;
+using Vortice.Direct2D1; // Still needed for AntialiasMode enum
 
 namespace DirectUI;
 
@@ -21,7 +22,7 @@ public static partial class UI
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
         var textStyle = new ButtonStyle { FontColor = textColor }; // Use ButtonStyle for font properties.
 
-        var labelSize = string.IsNullOrEmpty(label) ? Vector2.Zero : Resources.MeasureText(Context.DWriteFactory, label, textStyle);
+        var labelSize = string.IsNullOrEmpty(label) ? Vector2.Zero : Context.TextService.MeasureText(label, textStyle);
 
         var contentWidth = boxSize.X + (labelSize.X > 0 ? spacing + labelSize.X : 0);
         var contentHeight = Math.Max(boxSize.Y, labelSize.Y);
@@ -59,7 +60,7 @@ public static partial class UI
         }
 
         // --- Drawing ---
-        var rt = Context.RenderTarget;
+        var renderer = Context.Renderer;
         // This calculation centers the box inside the widget's total height.
         // A small vertical adjustment is added to compensate for font metrics in DrawTextPrimitive,
         // ensuring the checkbox and text align perfectly.
@@ -93,13 +94,13 @@ public static partial class UI
         boxStyle.Roundness = 0.2f;
         boxStyle.BorderLength = 1f;
 
-        Resources.DrawBoxStyleHelper(rt, boxRect.TopLeft, new Vector2(boxRect.Width, boxRect.Height), boxStyle);
+        renderer.DrawBox(boxRect, boxStyle);
 
         // Draw the checkmark if checked
         if (isChecked)
         {
             // The checkmarkColor variable was changed above to pure white.
-            var checkBrush = Resources.GetOrCreateBrush(rt, checkmarkColor);
+            var checkBrush = renderer.GetOrCreateBrush(checkmarkColor);
             if (checkBrush != null)
             {
                 // A simple checkmark drawn as two lines
@@ -107,8 +108,8 @@ public static partial class UI
                 var p1 = new Vector2(boxRect.Left + pad, boxRect.Top + boxSize.Y * 0.5f);
                 var p2 = new Vector2(boxRect.Left + boxSize.X * 0.45f, boxRect.Bottom - pad);
                 var p3 = new Vector2(boxRect.Right - pad, boxRect.Top + pad);
-                rt.DrawLine(p1, p2, checkBrush, 2.0f);
-                rt.DrawLine(p2, p3, checkBrush, 2.0f);
+                renderer.DrawLine(p1, p2, checkmarkColor, 2.0f);
+                renderer.DrawLine(p2, p3, checkmarkColor, 2.0f);
             }
         }
 
@@ -117,7 +118,7 @@ public static partial class UI
         {
             var labelPos = new Vector2(boxRect.Right + spacing, drawPos.Y);
             var labelBounds = new Rect(labelPos.X, labelPos.Y, labelSize.X, totalSize.Y);
-            DrawTextPrimitive(rt, Context.DWriteFactory, Resources, labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
+            DrawTextPrimitive(labelBounds, label, textStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
         }
 
         Context.Layout.AdvanceLayout(totalSize);

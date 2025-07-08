@@ -1,6 +1,5 @@
 ﻿using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -11,12 +10,14 @@ public class MenuBarView
 
     public void Draw(UIContext context, Action openProjectWindowAction)
     {
-        var rt = context.RenderTarget;
+        var renderer = context.Renderer;
 
-        ID2D1SolidColorBrush menuBarBackgroundBrush = UI.Resources.GetOrCreateBrush(rt, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f));
-        ID2D1SolidColorBrush menuBarBorderBrush = UI.Resources.GetOrCreateBrush(rt, DefaultTheme.NormalBorder);
-        rt.FillRectangle(new Rect(0, 0, rt.Size.Width, MenuBarHeight), menuBarBackgroundBrush);
-        rt.DrawLine(new Vector2(0, MenuBarHeight - 1), new Vector2(rt.Size.Width, MenuBarHeight - 1), menuBarBorderBrush, 1f);
+        // Use renderer's GetOrCreateBrush and DrawBox/DrawLine methods
+        var menuBarBackgroundBrushColor = new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1f);
+        var menuBarBorderColor = DefaultTheme.NormalBorder;
+
+        renderer.DrawBox(new Rect(0, 0, renderer.RenderTargetSize.X, MenuBarHeight), new BoxStyle { FillColor = menuBarBackgroundBrushColor, Roundness = 0f, BorderLength = 0f });
+        renderer.DrawLine(new Vector2(0, MenuBarHeight - 1), new Vector2(renderer.RenderTargetSize.X, MenuBarHeight - 1), menuBarBorderColor, 1f);
 
         // Define a shared style for all menu buttons
         UI.PushStyleVar(StyleVar.FrameRounding, 0.0f);
@@ -48,7 +49,7 @@ public class MenuBarView
 
             }
 
-            if (MenuBarButton("help_button", "Help")) 
+            if (MenuBarButton("help_button", "Help"))
             {
 
             }

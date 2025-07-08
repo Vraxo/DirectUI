@@ -1,6 +1,4 @@
 ﻿using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -26,7 +24,8 @@ public static partial class UI
             var styleForMeasuring = tabTheme.Normal;
             foreach (var label in tabLabels)
             {
-                Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, label, styleForMeasuring);
+                // Use ITextService to measure text
+                Vector2 measuredSize = Context.TextService.MeasureText(label, styleForMeasuring);
                 if (measuredSize.X > maxWidth)
                 {
                     maxWidth = measuredSize.X;

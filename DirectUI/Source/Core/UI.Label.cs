@@ -1,6 +1,4 @@
 ﻿using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -20,7 +18,7 @@ public static partial class UI
         Alignment finalAlignment = textAlignment
             ?? new(HAlignment.Left, VAlignment.Center);
 
-        Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, finalStyle);
+        Vector2 measuredSize = Context.TextService.MeasureText(text, finalStyle);
 
         Vector2 finalSize;
         if (size.HasValue)
@@ -45,9 +43,6 @@ public static partial class UI
         }
 
         DrawTextPrimitive(
-            Context.RenderTarget,
-            Context.DWriteFactory,
-            Resources,
             widgetBounds,
             text,
             finalStyle,

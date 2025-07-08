@@ -1,7 +1,6 @@
 ﻿// Core/UI.Containers.cs
 using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -107,7 +106,7 @@ public static partial class UI
         scrollState.ContentVBox = contentVBox;
 
         Context.Layout.PushClipRect(regionBounds);
-        Context.RenderTarget.PushAxisAlignedClip(regionBounds, D2D.AntialiasMode.Aliased);
+        Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
 
         Context.Layout.PushContainer(scrollState);
     }
@@ -123,7 +122,7 @@ public static partial class UI
 
         // Pop the container and clip rect so the scrollbar can be drawn outside the content's clipped area.
         Context.Layout.PopContainer();
-        Context.RenderTarget.PopAxisAlignedClip();
+        Context.Renderer.PopClipRect();
         Context.Layout.PopClipRect();
 
         // Draw scrollbar if needed. This will return a new, validated scroll offset.
@@ -175,9 +174,9 @@ public static partial class UI
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
         var input = Context.InputState;
-        var renderTarget = Context.RenderTarget;
-        var windowWidth = renderTarget.Size.Width;
-        var windowHeight = renderTarget.Size.Height;
+        var renderer = Context.Renderer;
+        var windowWidth = renderer.RenderTargetSize.X;
+        var windowHeight = renderer.RenderTargetSize.Y;
         var availableHeight = windowHeight - topOffset;
 
         if (!disabled)
@@ -204,7 +203,7 @@ public static partial class UI
         Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), finalPanelStyle);
+            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
         }
 
         Vector2 contentStartPosition = new Vector2(finalPanelX + finalPadding.X, topOffset + finalPadding.Y);
@@ -212,7 +211,7 @@ public static partial class UI
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
-            renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
             Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
@@ -234,10 +233,10 @@ public static partial class UI
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizablePanelState state)
         { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
-        if (state.ClipRectWasPushed && Context.RenderTarget is not null)
+        if (state.ClipRectWasPushed)
         {
             Context.Layout.PopClipRect(); // For culling
-            Context.RenderTarget.PopAxisAlignedClip();
+            Context.Renderer.PopClipRect();
         }
         Context.Layout.PopContainer();
     }
@@ -262,9 +261,9 @@ public static partial class UI
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
         var input = Context.InputState;
-        var renderTarget = Context.RenderTarget;
-        var windowWidth = renderTarget.Size.Width;
-        var windowHeight = renderTarget.Size.Height;
+        var renderer = Context.Renderer;
+        var windowWidth = renderer.RenderTargetSize.X;
+        var windowHeight = renderer.RenderTargetSize.Y;
         var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
         var maxAllowedHeight = windowHeight - topOffset;
         var effectiveMaxHeight = Math.Min(maxHeight, maxAllowedHeight);
@@ -294,7 +293,7 @@ public static partial class UI
         Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
         if (panelRect.Width > 0 && panelRect.Height > 0)
         {
-            Resources.DrawBoxStyleHelper(renderTarget, new Vector2(panelRect.X, panelRect.Y), new Vector2(panelRect.Width, panelRect.Height), finalPanelStyle);
+            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
         }
 
         Vector2 contentStartPosition = new Vector2(reservedLeftSpace + finalPadding.X, finalPanelY + finalPadding.Y);
@@ -302,7 +301,7 @@ public static partial class UI
         bool clipPushed = false;
         if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
         {
-            renderTarget.PushAxisAlignedClip(contentClipRect, D2D.AntialiasMode.Aliased);
+            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
             Context.Layout.PushClipRect(contentClipRect); // For culling
             clipPushed = true;
         }
@@ -324,10 +323,10 @@ public static partial class UI
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizableHPanelState state)
         { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
-        if (state.ClipRectWasPushed && Context.RenderTarget is not null)
+        if (state.ClipRectWasPushed)
         {
             Context.Layout.PopClipRect(); // For culling
-            Context.RenderTarget.PopAxisAlignedClip();
+            Context.Renderer.PopClipRect();
         }
         Context.Layout.PopContainer();
     }

@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
+using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -41,7 +41,7 @@ internal abstract class InternalSliderLogic
     protected abstract float HandleInput(InputState input, float currentValue);
     protected abstract float ConvertPositionToValue(float position);
     protected abstract Vector2 CalculateGrabberPosition(float currentValue);
-    protected abstract void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue);
+    protected abstract void DrawForeground(IRenderer renderer, float currentValue);
 
 
     // --- Common Logic ---
@@ -49,6 +49,7 @@ internal abstract class InternalSliderLogic
     {
         var context = UI.Context;
         var state = UI.State;
+        var renderer = context.Renderer;
 
         GlobalIntId = id;
         isFocused = state.FocusedElementId == GlobalIntId;
@@ -80,17 +81,17 @@ internal abstract class InternalSliderLogic
 
         UpdateGrabberThemeStyle();
 
-        if (context.RenderTarget is null)
+        if (renderer is null)
         {
-            Console.WriteLine("Error: RenderTarget is null during Slider UpdateAndDraw.");
+            Console.WriteLine("Error: Renderer is null during Slider UpdateAndDraw.");
             return newValue;
         }
 
         try
         {
-            DrawBackground(context.RenderTarget);
-            DrawForeground(context.RenderTarget, newValue);
-            DrawGrabber(context.RenderTarget, newValue);
+            DrawBackground(renderer);
+            DrawForeground(renderer, newValue);
+            DrawGrabber(renderer, newValue);
         }
         catch (SharpGen.Runtime.SharpGenException ex) when (ex.ResultCode.Code == Vortice.Direct2D1.ResultCode.RecreateTarget.Code)
         {
@@ -135,14 +136,16 @@ internal abstract class InternalSliderLogic
 
 
     // --- Drawing Methods ---
-    protected void DrawBackground(ID2D1RenderTarget renderTarget)
+    protected void DrawBackground(IRenderer renderer)
     {
-        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Background);
+        // Explicitly pass X, Y, Width, Height components to Rect constructor
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Background);
     }
 
-    protected void DrawGrabber(ID2D1RenderTarget renderTarget, float currentValue)
+    protected void DrawGrabber(IRenderer renderer, float currentValue)
     {
         Vector2 grabberPos = CalculateGrabberPosition(currentValue);
-        UI.Resources.DrawBoxStyleHelper(renderTarget, grabberPos, GrabberSize, GrabberTheme.Current);
+        // Explicitly pass X, Y, Width, Height components to Rect constructor
+        renderer.DrawBox(new Rect(grabberPos.X, grabberPos.Y, GrabberSize.X, GrabberSize.Y), GrabberTheme.Current);
     }
 }

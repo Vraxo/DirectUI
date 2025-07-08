@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Views/MainView.cs
+using System;
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -34,6 +35,12 @@ public class MainView
     {
         _menuBarView.Draw(context, openProjectWindowAction);
         DrawMainLayoutPanels();
+
+        // After drawing all panels, check if the bottom panel has signalled a scene change.
+        if (_bottomPanelView.SelectedScenePath is not null)
+        {
+            _sceneTreeView.LoadScene(_bottomPanelView.SelectedScenePath);
+        }
     }
 
     private void DrawMainLayoutPanels()
@@ -62,26 +69,43 @@ public class MainView
         var padding = new Vector2(PanelPadding, PanelPadding);
 
         // Calculate the available content height inside the panel for the inspector view.
-        float panelContentHeight = UI.Context.RenderTarget.Size.Height - MenuBarHeight - (padding.Y * 2);
+        float panelContentHeight = UI.Context.Renderer.RenderTargetSize.Y - MenuBarHeight - (padding.Y * 2);
 
-        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
-            minWidth: 150, maxWidth: 400, padding: padding, gap: 0, panelStyle: panelStyle);
-
-        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
-
+        UI.BeginResizableVPanel(
+            "right_panel",
+            ref _rightPanelWidth,
+            HAlignment.Right,
+            MenuBarHeight,
+            minWidth: 150,
+            maxWidth: 400,
+            padding: padding,
+            gap: 0,
+            panelStyle: panelStyle);
+        {
+            _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
+        }
         UI.EndResizableVPanel();
     }
 
     private void DrawBottomPanel()
     {
-        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
-        var padding = new Vector2(PanelPadding, PanelPadding);
+        BoxStyle panelStyle = new() { BorderLength = 1, Roundness = 0f };
+        Vector2 padding = new(PanelPadding, PanelPadding);
 
-        UI.BeginResizableHPanel("bottom_panel", ref _bottomPanelHeight, _leftPanelWidth, _rightPanelWidth, MenuBarHeight,
-            minHeight: 50, maxHeight: 300, padding: padding, gap: PanelGap, panelStyle: panelStyle);
-
-        _bottomPanelView.Draw();
-
+        UI.BeginResizableHPanel(
+            "bottom_panel",
+            ref _bottomPanelHeight,
+            _leftPanelWidth,
+            _rightPanelWidth,
+            MenuBarHeight,
+            minHeight: 50,
+            maxHeight: 300,
+            padding: padding,
+            gap: PanelGap,
+            panelStyle: panelStyle);
+        {
+            _bottomPanelView.Draw();
+        }
         UI.EndResizableHPanel();
     }
 }

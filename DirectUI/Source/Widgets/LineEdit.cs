@@ -3,11 +3,10 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+using DirectUI.Core;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
-using SharpGen.Runtime;
+using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
+using Vortice.DirectWrite; // Still used for WordWrapping, TextAlignment, ParagraphAlignment
 
 namespace DirectUI;
 
@@ -15,12 +14,6 @@ namespace DirectUI;
 // All persistent state is managed in a separate LineEditState object.
 internal class LineEdit
 {
-    // === CACHED RENDERING RESOURCES (transient, not persistent state) ===
-    private IDWriteTextLayout? _cachedTextLayout;
-    private string _cachedText = " "; // Use a non-null, non-empty default
-    private ButtonStyle? _cachedStyle;
-    private float _cachedMaxWidth = -1;
-
     // === MAIN UPDATE & DRAW METHOD ===
     public bool UpdateAndDraw(
         int intId,
@@ -38,11 +31,12 @@ internal class LineEdit
     {
         var context = UI.Context;
         var uiState = UI.State;
-        var resources = UI.Resources;
+        var renderer = context.Renderer;
+        var textService = context.TextService;
+        var input = context.InputState;
 
         var themeId = HashCode.Combine(intId, "theme");
         var finalTheme = theme ?? uiState.GetOrCreateElement<ButtonStylePack>(themeId);
-        var input = context.InputState;
 
         // If no specific theme was provided, configure the default one for a LineEdit look.
         if (theme is null)
@@ -100,16 +94,17 @@ internal class LineEdit
                 Math.Max(0, bounds.Height - textMargin.Y * 2)
             );
 
-            var textLayout = GetTextLayout(textForHitTest, size, styleForHitTest, float.MaxValue);
+            // Use ITextService to get the text layout
+            var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
             if (textLayout != null)
             {
                 float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
                 float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
 
-                textLayout.HitTestPoint(relativeClickX, relativeClickY, out RawBool isTrailingHit, out RawBool isInside, out var hitTestMetrics);
+                var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
 
-                int newCaretPos = (int)hitTestMetrics.TextPosition;
-                if (isTrailingHit)
+                int newCaretPos = hitTestResult.TextPosition;
+                if (hitTestResult.IsTrailingHit)
                 {
                     newCaretPos++;
                 }
@@ -132,7 +127,7 @@ internal class LineEdit
 
         // --- Drawing ---
         finalTheme.UpdateCurrentStyle(isHovering, false, disabled, uiState.FocusedElementId == intId);
-        resources.DrawBoxStyleHelper(context.RenderTarget, position, size, finalTheme.Current);
+        renderer.DrawBox(bounds, finalTheme.Current);
 
         // Define content area and clip to it
         Rect contentRect = new Rect(
@@ -141,11 +136,10 @@ internal class LineEdit
             Math.Max(0, bounds.Width - textMargin.X * 2),
             Math.Max(0, bounds.Height - textMargin.Y * 2)
         );
-        context.RenderTarget.PushAxisAlignedClip(contentRect, D2D.AntialiasMode.PerPrimitive);
+        renderer.PushClipRect(contentRect, D2D.AntialiasMode.PerPrimitive);
 
         string textToDraw;
         ButtonStyle styleToDraw;
-        Vector2 drawPos = contentRect.TopLeft;
 
         if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
         {
@@ -161,14 +155,14 @@ internal class LineEdit
             styleToDraw = finalTheme.Current;
         }
 
-        DrawVisibleText(textToDraw, state, size, styleToDraw, drawPos);
+        DrawVisibleText(textToDraw, state, size, styleToDraw, contentRect.TopLeft);
 
         if (uiState.FocusedElementId == intId && state.IsBlinkOn)
         {
             DrawCaret(textToDraw, state, size, finalTheme.Current, contentRect);
         }
 
-        context.RenderTarget.PopAxisAlignedClip();
+        renderer.PopClipRect();
 
         return textChanged;
     }
@@ -178,7 +172,7 @@ internal class LineEdit
         bool textChanged = false;
 
         state.BlinkTimer += UI.Context.DeltaTime;
-        
+
         if (state.BlinkTimer > 0.5f)
         {
             state.BlinkTimer = 0;
@@ -190,7 +184,7 @@ internal class LineEdit
         if (input.TypedCharacters.Any())
         {
             PushUndoState(text, state);
-            
+
             foreach (char c in input.TypedCharacters)
             {
                 if (text.Length >= maxLength)
@@ -288,68 +282,47 @@ internal class LineEdit
         }
 
         var context = UI.Context;
-        var rt = context.RenderTarget;
-        var textBrush = UI.Resources.GetOrCreateBrush(rt, style.FontColor);
-        var textLayout = GetTextLayout(fullText, size, style, float.MaxValue);
+        var renderer = context.Renderer;
+        var textService = context.TextService;
 
-        if (textBrush == null || textLayout == null) return;
+        // Use ITextService to get the text layout
+        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
 
-        var originalTransform = rt.Transform;
+        if (textLayout is null) return;
 
         // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         const float yOffsetCorrection = -1.5f;
-        var translation = Matrix3x2.CreateTranslation(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
-        rt.Transform = translation * originalTransform;
 
-        rt.DrawTextLayout(Vector2.Zero, textLayout, textBrush, DrawTextOptions.None);
+        // Calculate the drawing origin by applying scroll offset directly.
+        // The renderer's DrawTextLayout method should handle the final placement based on this origin.
+        Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
 
-        rt.Transform = originalTransform;
+        renderer.DrawTextLayout(drawOrigin, textLayout, style.FontColor);
     }
 
     private void DrawCaret(string text, LineEditState state, Vector2 size, ButtonStyle style, Rect contentRect)
     {
-        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
+        var textService = UI.Context.TextService;
+        var renderer = UI.Context.Renderer;
+
+        // Use ITextService to get the text layout
+        var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout == null) return;
 
-        textLayout.HitTestTextPosition((uint)state.CaretPosition, false, out _, out _, out var hitTestMetrics);
-        float caretX = contentRect.Left + hitTestMetrics.Left - state.ScrollPixelOffset;
+        // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
+        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
+
+        float caretX = contentRect.Left + hitTestMetrics.Point.X - state.ScrollPixelOffset;
         Rect caretRect = new Rect(caretX, contentRect.Top, 1, contentRect.Height);
 
-        var context = UI.Context;
-        var caretBrush = UI.Resources.GetOrCreateBrush(context.RenderTarget, style.FontColor);
-        if (caretBrush != null)
-        {
-            context.RenderTarget.FillRectangle(caretRect, caretBrush);
-        }
+        renderer.DrawBox(caretRect, new BoxStyle { FillColor = style.FontColor, Roundness = 0f, BorderLength = 0f });
     }
 
-    private IDWriteTextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
+    private ITextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
     {
-        var dwrite = UI.Context.DWriteFactory;
-
-        // Check if cached layout is still valid
-        if (_cachedTextLayout != null && _cachedText == text && _cachedStyle == style && _cachedMaxWidth == maxWidth)
-        {
-            return _cachedTextLayout;
-        }
-
-        // If not, create a new one
-        var textFormat = UI.Resources.GetOrCreateTextFormat(dwrite, style);
-        if (textFormat == null) return null;
-
-        textFormat.WordWrapping = WordWrapping.NoWrap;
-        textFormat.TextAlignment = Vortice.DirectWrite.TextAlignment.Leading;
-        textFormat.ParagraphAlignment = ParagraphAlignment.Center;
-
-        _cachedTextLayout?.Dispose();
-        _cachedTextLayout = dwrite.CreateTextLayout(text, textFormat, maxWidth, size.Y);
-
-        // Update cache state
-        _cachedText = text;
-        _cachedStyle = style;
-        _cachedMaxWidth = maxWidth;
-
-        return _cachedTextLayout;
+        // LineEdit needs to re-layout text based on user input, so it requests a fresh layout from the service.
+        // The ITextService handles the caching internally for performance.
+        return UI.Context.TextService.GetTextLayout(text, style, new(maxWidth, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
     }
 
     private void UpdateView(string text, LineEditState state, Vector2 size, Vector2 textMargin)
@@ -357,11 +330,11 @@ internal class LineEdit
         float availableWidth = size.X - textMargin.X * 2;
         var style = new ButtonStyle(); // A default style is fine for measuring
 
-        var textLayout = GetTextLayout(text, size, style, float.MaxValue);
+        var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout == null) return;
 
-        textLayout.HitTestTextPosition((uint)state.CaretPosition, false, out _, out _, out var hitTestMetrics);
-        float caretAbsoluteX = hitTestMetrics.Left;
+        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
+        float caretAbsoluteX = hitTestMetrics.Point.X;
 
         if (caretAbsoluteX - state.ScrollPixelOffset > availableWidth)
         {
@@ -372,7 +345,7 @@ internal class LineEdit
             state.ScrollPixelOffset = caretAbsoluteX;
         }
 
-        float maxScroll = Math.Max(0, textLayout.Metrics.WidthIncludingTrailingWhitespace - availableWidth);
+        float maxScroll = Math.Max(0, textLayout.Size.X - availableWidth);
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
 

@@ -1,5 +1,4 @@
 ﻿using System.Numerics;
-using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -30,11 +29,12 @@ public static partial class UI
         Vector2 lineStart = new(drawPos.X, lineY);
         Vector2 lineEnd = new(drawPos.X + width, lineY);
 
-        ID2D1SolidColorBrush brush = Resources.GetOrCreateBrush(Context.RenderTarget, finalColor);
-        
+        // Use the renderer to get a brush and draw the line
+        var brush = Context.Renderer.GetOrCreateBrush(finalColor);
+
         if (brush != null)
         {
-            Context.RenderTarget.DrawLine(lineStart, lineEnd, brush, thickness);
+            Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
         }
 
         Context.Layout.AdvanceLayout(size);

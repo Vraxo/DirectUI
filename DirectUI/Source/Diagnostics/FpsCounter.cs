@@ -1,9 +1,10 @@
 ﻿using System;
 using System.Diagnostics;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+using DirectUI.Core;
+using Vortice.Direct2D1; // Still used for DrawTextOptions enum
 using Vortice.Mathematics;
-using DW = Vortice.DirectWrite;
+using Vortice.DirectWrite;
+using System.Numerics; // Still used for TextAlignment and ParagraphAlignment enums
 
 namespace DirectUI.Diagnostics;
 
@@ -22,23 +23,20 @@ public class FpsCounter
     private float _currentFps = 0.0f;
     private long _updateIntervalInStopwatchTicks;
 
-    // Direct2D Resources (Device-Independent only)
-    private IDWriteTextFormat? _textFormat;
+    // DirectUI Service references
+    private ITextService? _textService;
+    private IRenderer? _renderer;
+    private ITextLayout? _fpsTextLayout; // Cached layout
 
-    public void Initialize(IDWriteFactory dwriteFactory)
+    public void Initialize(ITextService textService, IRenderer renderer)
     {
-        ArgumentNullException.ThrowIfNull(dwriteFactory);
+        _textService = textService ?? throw new ArgumentNullException(nameof(textService));
+        _renderer = renderer ?? throw new ArgumentNullException(nameof(renderer));
 
         Cleanup(); // Ensure any old resources are released
 
         try
         {
-            _textFormat = dwriteFactory.CreateTextFormat(_fontName, null, FontWeight.Normal, FontStyle.Normal, FontStretch.Normal, _fontSize, "en-us");
-            _textFormat.TextAlignment = DW.TextAlignment.Leading;
-            _textFormat.ParagraphAlignment = ParagraphAlignment.Near;
-
-            Console.WriteLine("Created FPS text format resource.");
-
             // Calculate the update interval based on the Stopwatch's actual frequency.
             if (Stopwatch.IsHighResolution)
             {
@@ -57,7 +55,7 @@ public class FpsCounter
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Warning: Failed to create FPS counter text format: {ex.Message}");
+            Console.WriteLine($"Warning: Failed to initialize FPS counter: {ex.Message}");
             Cleanup(); // Clean up partial resources on failure
         }
     }
@@ -65,8 +63,8 @@ public class FpsCounter
     public void Cleanup()
     {
         _timer.Stop();
-        _textFormat?.Dispose();
-        _textFormat = null;
+        _fpsTextLayout?.Dispose();
+        _fpsTextLayout = null;
     }
 
     /// <summary>
@@ -89,24 +87,40 @@ public class FpsCounter
             _currentFps = (secondsElapsed > 0.001f) ? (_frameCountSinceUpdate / secondsElapsed) : 0.0f;
             _frameCountSinceUpdate = 0;
             _lastUpdateTimeTicks = elapsedTicks;
+
+            // Invalidate the cached text layout so it's recreated with the new FPS value
+            _fpsTextLayout?.Dispose();
+            _fpsTextLayout = null;
         }
     }
 
-    public void Draw(ID2D1RenderTarget renderTarget)
+    public void Draw()
     {
-        if (_textFormat is null || UI.Resources is null)
-        {
-            return;
-        }
-
-        var textBrush = UI.Resources.GetOrCreateBrush(renderTarget, _textColor);
-        if (textBrush is null)
+        if (_textService is null || _renderer is null)
         {
             return;
         }
 
         string fpsText = $"FPS: {_currentFps:F1}";
-        var layoutRect = new Rect(5f, 5f, 150f, 30f);
-        renderTarget.DrawText(fpsText, _textFormat, layoutRect, textBrush);
+
+        // Lazily create the text layout
+        if (_fpsTextLayout == null)
+        {
+            var style = new ButtonStyle
+            {
+                FontName = _fontName,
+                FontSize = _fontSize,
+                FontWeight = FontWeight.Normal,
+                FontStyle = FontStyle.Normal,
+                FontStretch = FontStretch.Normal,
+                FontColor = _textColor
+            };
+            // Use a large max size as FPS counter typically won't wrap
+            _fpsTextLayout = _textService.GetTextLayout(fpsText, style, new Vector2(float.MaxValue, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        }
+
+        if (_fpsTextLayout is null) return;
+
+        _renderer.DrawTextLayout(new Vector2(5f, 5f), _fpsTextLayout, _textColor);
     }
 }

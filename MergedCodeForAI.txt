@@ -1426,6 +1426,393 @@ protected virtual void OnMouseUp(MouseButton button, int x, int y)
 }
 </file>
 
+<file path="Backends\Direct2DRenderer.cs">
+// DirectUI/Backends/Direct2DRenderer.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using SharpGen.Runtime;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A rendering backend that uses Direct2D to implement the IRenderer interface.
+/// It manages its own cache of Direct2D brushes.
+/// </summary>
+public class Direct2DRenderer : IRenderer
+{
+    private readonly ID2D1RenderTarget _renderTarget;
+    private readonly Dictionary<Color4, ID2D1SolidColorBrush> _brushCache = new();
+
+    public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
+
+    public Direct2DRenderer(ID2D1RenderTarget renderTarget)
+    {
+        _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    {
+        var brush = GetOrCreateBrush(color);
+        if (brush is null) return;
+        _renderTarget.DrawLine(p1, p2, brush, strokeWidth);
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        if (_renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
+
+        var pos = rect.TopLeft;
+        var size = new Vector2(rect.Width, rect.Height);
+
+        ID2D1SolidColorBrush fillBrush = GetOrCreateBrush(style.FillColor);
+        ID2D1SolidColorBrush borderBrush = GetOrCreateBrush(style.BorderColor);
+
+        float borderTop = Math.Max(0f, style.BorderLengthTop);
+        float borderRight = Math.Max(0f, style.BorderLengthRight);
+        float borderBottom = Math.Max(0f, style.BorderLengthBottom);
+        float borderLeft = Math.Max(0f, style.BorderLengthLeft);
+
+        bool hasVisibleFill = style.FillColor.A > 0 && fillBrush is not null;
+        bool hasVisibleBorder = style.BorderColor.A > 0 && borderBrush is not null && (borderTop > 0 || borderRight > 0 || borderBottom > 0 || borderLeft > 0);
+
+        if (!hasVisibleFill && !hasVisibleBorder) return;
+
+        if (style.Roundness > 0.0f)
+        {
+            float maxRadius = Math.Min(rect.Width * 0.5f, rect.Height * 0.5f);
+            float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
+
+            if (float.IsFinite(radius) && radius >= 0)
+            {
+                if (hasVisibleBorder)
+                {
+                    _renderTarget.FillRoundedRectangle(new RoundedRectangle(rect, radius, radius), borderBrush);
+                }
+                if (hasVisibleFill)
+                {
+                    float fillX = pos.X + borderLeft;
+                    float fillY = pos.Y + borderTop;
+                    float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+                    float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+                    if (fillWidth > 0 && fillHeight > 0)
+                    {
+                        float avgBorderX = (borderLeft + borderRight) * 0.5f;
+                        float avgBorderY = (borderTop + borderBottom) * 0.5f;
+                        float innerRadiusX = Math.Max(0f, radius - avgBorderX);
+                        float innerRadiusY = Math.Max(0f, radius - avgBorderY);
+                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), innerRadiusX, innerRadiusY), fillBrush);
+                    }
+                    else if (!hasVisibleBorder && fillBrush is not null)
+                    {
+                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(rect, radius, radius), fillBrush);
+                    }
+                }
+                return;
+            }
+        }
+        if (hasVisibleBorder && borderBrush is not null)
+        {
+            _renderTarget.FillRectangle(rect, borderBrush);
+        }
+        if (hasVisibleFill)
+        {
+            float fillX = pos.X + borderLeft;
+            float fillY = pos.Y + borderTop;
+            float fillWidth = Math.Max(0f, size.X - borderLeft - borderRight);
+            float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
+            if (fillWidth > 0 && fillHeight > 0)
+            {
+                _renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+            }
+            else if (!hasVisibleBorder && fillBrush is not null)
+            {
+                _renderTarget.FillRectangle(rect, fillBrush);
+            }
+        }
+    }
+
+    public void DrawTextLayout(Vector2 origin, ITextLayout textLayout, Color4 color)
+    {
+        if (textLayout is not DirectWriteTextLayout dwLayout) return;
+
+        var brush = GetOrCreateBrush(color);
+        if (brush is null) return;
+        _renderTarget.DrawTextLayout(origin, dwLayout.DWriteLayout, brush, DrawTextOptions.None);
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        _renderTarget.PushAxisAlignedClip(rect, antialiasMode);
+    }
+
+    public void PopClipRect()
+    {
+        _renderTarget.PopAxisAlignedClip();
+    }
+
+    public void Cleanup()
+    {
+        foreach (var pair in _brushCache)
+        {
+            pair.Value?.Dispose();
+        }
+        _brushCache.Clear();
+    }
+
+    private ID2D1SolidColorBrush GetOrCreateBrush(Color4 color)
+    {
+        if (_renderTarget is null)
+        {
+            Console.WriteLine("Error: GetOrCreateBrush called with no active render target.");
+            return null!;
+        }
+
+        if (_brushCache.TryGetValue(color, out var brush) && brush is not null)
+        {
+            return brush;
+        }
+
+        if (brush is null && _brushCache.ContainsKey(color))
+        {
+            _brushCache.Remove(color);
+        }
+
+        try
+        {
+            brush = _renderTarget.CreateSolidColorBrush(color);
+            if (brush is not null)
+            {
+                _brushCache[color] = brush;
+                return brush;
+            }
+
+            Console.WriteLine($"Warning: CreateSolidColorBrush returned null for color {color}");
+            return null!;
+        }
+        catch (SharpGenException ex) when (ex.ResultCode.Code == ResultCode.RecreateTarget.Code)
+        {
+            Console.WriteLine($"Brush creation failed due to RecreateTarget error (Color: {color}). External cleanup needed.");
+            // Don't re-throw, allow graceful failure. The calling code should handle the null.
+            return null!;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating brush for color {color}: {ex.Message}");
+            return null!;
+        }
+    }
+}
+</file>
+
+<file path="Backends\DirectWriteTextLayout.cs">
+// DirectUI/Backends/DirectWriteTextLayout.cs
+using System;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.DirectWrite;
+using SharpGen.Runtime;
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// A DirectWrite-specific implementation of the ITextLayout interface.
+/// This class wraps an IDWriteTextLayout object. It is internal to the backend.
+/// </summary>
+internal class DirectWriteTextLayout : ITextLayout
+{
+    public IDWriteTextLayout DWriteLayout { get; }
+
+    public Vector2 Size { get; }
+    public string Text { get; }
+
+    public DirectWriteTextLayout(IDWriteTextLayout dwriteLayout)
+    {
+        DWriteLayout = dwriteLayout;
+        Size = new Vector2(dwriteLayout.Metrics.WidthIncludingTrailingWhitespace, dwriteLayout.Metrics.Height);
+        Text = dwriteLayout.Text;
+    }
+
+    public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
+    {
+        DWriteLayout.HitTestTextPosition((uint)textPosition, isTrailingHit, out float x, out float y, out var metrics);
+        return new TextHitTestMetrics(new Vector2(x, y), new Vector2(metrics.Width, metrics.Height));
+    }
+
+    public TextHitTestResult HitTestPoint(Vector2 point)
+    {
+        DWriteLayout.HitTestPoint(point.X, point.Y, out RawBool isTrailingHit, out RawBool isInside, out var hitTestMetrics);
+
+        var metrics = new TextHitTestMetrics(
+            new Vector2(hitTestMetrics.Left, hitTestMetrics.Top),
+            new Vector2(hitTestMetrics.Width, hitTestMetrics.Height)
+        );
+
+        return new TextHitTestResult(
+            (int)hitTestMetrics.TextPosition,
+            isTrailingHit,
+            isInside,
+            metrics
+        );
+    }
+
+    public void Dispose()
+    {
+        DWriteLayout.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    ~DirectWriteTextLayout()
+    {
+        Dispose();
+    }
+}
+</file>
+
+<file path="Backends\DirectWriteTextService.cs">
+// DirectUI/Backends/DirectWriteTextService.cs
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends;
+
+/// <summary>
+/// An implementation of ITextService that uses DirectWrite.
+/// It manages caches for text formats, layouts, and measured sizes.
+/// </summary>
+public class DirectWriteTextService : ITextService
+{
+    private readonly IDWriteFactory _dwriteFactory;
+    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new();
+    private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
+    private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
+
+    // Internal cache key structs
+    internal readonly struct FontKey(ButtonStyle style) : IEquatable<FontKey>
+    {
+        private readonly string FontName = style.FontName;
+        private readonly float FontSize = style.FontSize;
+        private readonly FontWeight FontWeight = style.FontWeight;
+        private readonly FontStyle FontStyle = style.FontStyle;
+        private readonly FontStretch FontStretch = style.FontStretch;
+        public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontSize, FontWeight, FontStyle, FontStretch);
+    }
+
+    internal readonly struct TextLayoutCacheKey(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment) : IEquatable<TextLayoutCacheKey>
+    {
+        private readonly string Text = text;
+        private readonly FontKey FontKey = new(style);
+        private readonly Vector2 MaxSize = maxSize;
+        private readonly HAlignment HAlign = alignment.Horizontal;
+        private readonly VAlignment VAlign = alignment.Vertical;
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && MaxSize.Equals(other.MaxSize) && HAlign == other.HAlign && VAlign == other.VAlign && FontKey.Equals(other.FontKey);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, MaxSize, HAlign, VAlign);
+    }
+
+    public DirectWriteTextService(IDWriteFactory dwriteFactory)
+    {
+        _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
+    }
+
+    public Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || style is null) return Vector2.Zero;
+
+        var fontKey = new FontKey(style);
+        var cacheKey = (text, fontKey);
+        if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
+
+        IDWriteTextFormat? textFormat = GetOrCreateTextFormat(style);
+        if (textFormat is null)
+        {
+            Console.WriteLine("Warning: Failed to create/get TextFormat for measurement.");
+            return Vector2.Zero;
+        }
+
+        using var textLayout = _dwriteFactory.CreateTextLayout(text, textFormat, float.MaxValue, float.MaxValue);
+        TextMetrics textMetrics = textLayout.Metrics;
+        var measuredSize = new Vector2(textMetrics.WidthIncludingTrailingWhitespace, textMetrics.Height);
+        _textSizeCache[cacheKey] = measuredSize;
+        return measuredSize;
+    }
+
+    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+    {
+        var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
+        if (_textLayoutCache.TryGetValue(layoutKey, out var cachedLayout))
+        {
+            return cachedLayout;
+        }
+
+        var textFormat = GetOrCreateTextFormat(style);
+        if (textFormat is null) return null!;
+
+        var dwriteLayout = _dwriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
+        dwriteLayout.TextAlignment = alignment.Horizontal switch
+        {
+            HAlignment.Left => TextAlignment.Leading,
+            HAlignment.Center => TextAlignment.Center,
+            HAlignment.Right => TextAlignment.Trailing,
+            _ => TextAlignment.Leading
+        };
+        dwriteLayout.ParagraphAlignment = alignment.Vertical switch
+        {
+            VAlignment.Top => ParagraphAlignment.Near,
+            VAlignment.Center => ParagraphAlignment.Center,
+            VAlignment.Bottom => ParagraphAlignment.Far,
+            _ => ParagraphAlignment.Near
+        };
+
+        var newLayout = new DirectWriteTextLayout(dwriteLayout);
+        _textLayoutCache[layoutKey] = newLayout;
+        return newLayout;
+    }
+
+    private IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
+    {
+        var key = new FontKey(style);
+        if (_textFormatCache.TryGetValue(key, out var format))
+        {
+            return format;
+        }
+
+        try
+        {
+            var newFormat = _dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
+            if (newFormat is not null)
+            {
+                _textFormatCache[key] = newFormat;
+            }
+            return newFormat;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
+            return null;
+        }
+    }
+
+    public void Cleanup()
+    {
+        foreach (var pair in _textFormatCache) { pair.Value?.Dispose(); }
+        _textFormatCache.Clear();
+        foreach (var pair in _textLayoutCache) { pair.Value?.Dispose(); }
+        _textLayoutCache.Clear();
+        _textSizeCache.Clear();
+    }
+}
+</file>
+
 <file path="Containers\ComboboxState.cs">
 namespace DirectUI;
 
@@ -1720,6 +2107,168 @@ public interface ILayoutContainer
 }
 </file>
 
+<file path="Core\IRenderer.cs">
+// DirectUI/Core/IRenderer.cs
+using System.Numerics;
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the abstract contract for a rendering backend.
+/// The UI library uses this interface to issue all drawing commands.
+/// </summary>
+public interface IRenderer
+{
+    /// <summary>
+    /// Draws a line between two points.
+    /// </summary>
+    void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth);
+
+    /// <summary>
+    /// Draws a box with fill, border, and rounding based on a style.
+    /// </summary>
+    void DrawBox(Rect rect, BoxStyle style);
+
+    /// <summary>
+    /// Draws a pre-formatted text layout.
+    /// </summary>
+    /// <remarks>
+    /// This is currently coupled to DirectWrite's layout object. A future refactoring
+    /// could replace this with a backend-agnostic text representation.
+    /// </remarks>
+    void DrawTextLayout(Vector2 origin, IDWriteTextLayout textLayout, Color4 color);
+
+    /// <summary>
+    /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
+    /// </summary>
+    void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);
+
+    /// <summary>
+    /// Pops the last clipping rectangle from the stack.
+    /// </summary>
+    void PopClipRect();
+}
+</file>
+
+<file path="Core\ITextLayout.cs">
+// DirectUI/Core/ITextLayout.cs
+using System;
+using System.Numerics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Represents a block of text that has been fully processed for layout.
+/// This is a backend-agnostic interface.
+/// </summary>
+public interface ITextLayout : IDisposable
+{
+    /// <summary>
+    /// The final measured size of the laid-out text.
+    /// </summary>
+    Vector2 Size { get; }
+
+    /// <summary>
+    /// The original string content of this layout.
+    /// </summary>
+    string Text { get; }
+
+    /// <summary>
+    /// Retrieves the metrics for a glyph at a specific text position.
+    /// </summary>
+    /// <param name="textPosition">The zero-based index of the target character.</param>
+    /// <param name="isTrailingHit">Indicates whether to measure the leading or trailing edge of the character.</param>
+    /// <returns>Metrics describing the position and size of the specified character position.</returns>
+    TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit);
+
+    /// <summary>
+    /// Performs a hit-test to determine which character position is at a given point.
+    /// </summary>
+    /// <param name="point">The point to test, relative to the layout's origin.</param>
+    /// <returns>A result object containing the metrics and character position of the hit.</returns>
+    TextHitTestResult HitTestPoint(Vector2 point);
+}
+</file>
+
+<file path="Core\ITextService.cs">
+// DirectUI/Core/ITextService.cs
+using System.Numerics;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the abstract contract for text processing services like measurement and layout.
+/// The UI library uses this to handle all font-related operations.
+/// </summary>
+public interface ITextService
+{
+    /// <summary>
+    /// Measures the bounding box of a string given a specific style, without layout constraints.
+    /// </summary>
+    Vector2 MeasureText(string text, ButtonStyle style);
+
+    /// <summary>
+    /// Creates or retrieves a cached, fully formatted text layout object.
+    /// </summary>
+    ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment);
+}
+</file>
+
+<file path="Core\TextMetrics.cs">
+// DirectUI/Core/TextMetrics.cs
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Describes the metrics of a character position within a text layout.
+/// This is a backend-agnostic struct.
+/// </summary>
+public readonly record struct TextHitTestMetrics(
+    /// <summary>
+    /// The top-left corner of the character position, relative to the layout's origin.
+    /// </summary>
+    Vector2 Point,
+
+    /// <summary>
+    /// The measured size of the character position.
+    /// </summary>
+    Vector2 Size
+);
+
+/// <summary>
+/// The result of a point-based hit-test on a text layout.
+/// This is a backend-agnostic struct.
+/// </summary>
+public readonly record struct TextHitTestResult(
+    /// <summary>
+    /// The character position that was hit.
+    /// </summary>
+    int TextPosition,
+
+    /// <summary>
+    /// A value indicating whether the hit occurred on the leading or trailing edge of the character.
+    /// </summary>
+    bool IsTrailingHit,
+
+    /// <summary>
+    /// A value indicating whether the hit occurred inside the text string.
+    /// </summary>
+    bool IsInside,
+
+    /// <summary>
+    /// The detailed metrics of the hit character position.
+    /// </summary>
+    TextHitTestMetrics Metrics
+);
+</file>
+
 <file path="Core\UI.Button.cs">
 using System.Numerics;
 using Vortice.Mathematics;
@@ -1817,7 +2366,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool Checkbox(string id, string label, ref bool isChecked, bool disabled = false)
+    public static bool Checkbox(string id, string label, ref bool isChecked, bool disabled = false, Vector2? size = null)
     {
         if (!IsContextValid()) return false;
 
@@ -1834,7 +2383,14 @@ public static partial class UI
         var textStyle = new ButtonStyle { FontColor = textColor }; // Use ButtonStyle for font properties.
 
         var labelSize = string.IsNullOrEmpty(label) ? Vector2.Zero : Resources.MeasureText(Context.DWriteFactory, label, textStyle);
-        var totalSize = new Vector2(boxSize.X + (labelSize.X > 0 ? spacing + labelSize.X : 0), Math.Max(boxSize.Y, labelSize.Y));
+
+        var contentWidth = boxSize.X + (labelSize.X > 0 ? spacing + labelSize.X : 0);
+        var contentHeight = Math.Max(boxSize.Y, labelSize.Y);
+
+        var finalWidgetHeight = size?.Y > 0 ? size.Value.Y : contentHeight;
+        var finalWidgetWidth = size?.X > 0 ? size.Value.X : contentWidth;
+        var totalSize = new Vector2(finalWidgetWidth, finalWidgetHeight);
+
         var drawPos = Context.Layout.GetCurrentPosition();
 
         var widgetBounds = new Rect(drawPos.X, drawPos.Y, totalSize.X, totalSize.Y);
@@ -1865,7 +2421,11 @@ public static partial class UI
 
         // --- Drawing ---
         var rt = Context.RenderTarget;
-        float boxY = drawPos.Y + (totalSize.Y - boxSize.Y) / 2; // Vertically center the box
+        // This calculation centers the box inside the widget's total height.
+        // A small vertical adjustment is added to compensate for font metrics in DrawTextPrimitive,
+        // ensuring the checkbox and text align perfectly.
+        const float yOffsetCorrection = -1.5f;
+        float boxY = drawPos.Y + (totalSize.Y - boxSize.Y) / 2 + yOffsetCorrection;
         var boxRect = new Rect(drawPos.X, boxY, boxSize.X, boxSize.Y);
 
         // Draw the box frame
@@ -3273,7 +3833,9 @@ public static partial class UI
 </file>
 
 <file path="Core\UIContext.cs">
+// Core/UIContext.cs
 using System.Collections.Generic;
+using DirectUI.Core;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 
@@ -3281,11 +3843,10 @@ namespace DirectUI;
 
 public class UIContext
 {
-    // Per-frame resources
-    public ID2D1HwndRenderTarget RenderTarget { get; }
-    public IDWriteFactory DWriteFactory { get; }
+    // Per-frame services and state
+    public IRenderer Renderer { get; }
+    public ITextService TextService { get; }
     public InputState InputState { get; }
-    public UIResources Resources { get; }
     public float DeltaTime { get; }
 
     // Layout and state management
@@ -3294,12 +3855,11 @@ public class UIContext
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
 
-    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources, float deltaTime)
+    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime)
     {
-        RenderTarget = renderTarget;
-        DWriteFactory = dwriteFactory;
+        Renderer = renderer;
+        TextService = textService;
         InputState = inputState;
-        Resources = resources;
         DeltaTime = deltaTime;
         Layout = new UILayoutManager();
     }
@@ -4900,8 +5460,10 @@ internal class InternalComboboxLogic
 </file>
 
 <file path="Widgets\InternalHSliderLogic.cs">
+// Widgets/InternalHSliderLogic.cs
 using System;
 using System.Numerics;
+using DirectUI.Core;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -4997,10 +5559,10 @@ internal class InternalHSliderLogic : InternalSliderLogic
         xPos = Math.Clamp(xPos, minX, maxX);
         return new Vector2(xPos, yPos);
     }
-    protected override void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue)
+    protected override void DrawForeground(IRenderer renderer, float currentValue)
     {
         float valueRange = MaxValue - MinValue;
-        if (valueRange <= 0 || renderTarget is null) return;
+        if (valueRange <= 0 || renderer is null) return;
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0.0f;
         float foregroundWidth = Size.X * normalizedValue;
@@ -5008,9 +5570,10 @@ internal class InternalHSliderLogic : InternalSliderLogic
         Rect clipRect;
         if (Direction == HSliderDirection.RightToLeft) { clipRect = new Rect(trackPosition.X + Size.X - foregroundWidth, trackPosition.Y, foregroundWidth, Size.Y); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
-        renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
-        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
-        renderTarget.PopAxisAlignedClip();
+
+        renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
+        renderer.DrawBox(new Rect(trackPosition, Size), Theme.Foreground);
+        renderer.PopClipRect();
     }
 }
 </file>
@@ -6420,9 +6983,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     /// </summary>
     private void DrawProjectWindowUI(UIContext context)
     {
-        var rt = context.RenderTarget;
-        float windowWidth = rt.Size.Width;
-        float windowHeight = rt.Size.Height;
+        var renderer = context.Renderer;
+        float windowWidth = renderer.RenderTargetSize.X;
+        float windowHeight = renderer.RenderTargetSize.Y;
         float tabBarHeight = 30f;
         var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
@@ -6437,8 +7000,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             BorderLengthTop = 1f,
             Roundness = 0f
         };
-        // BUG FIX: Convert Vortice.Mathematics.Rect.Size to System.Numerics.Vector2
-        UI.Resources.DrawBoxStyleHelper(rt, contentArea.TopLeft, new Vector2(contentArea.Width, contentArea.Height), panelStyle);
+        renderer.DrawBox(contentArea, panelStyle);
 
         // --- Draw Active Tab Content ---
         if (_projectWindowActiveTab == 0)
@@ -6636,20 +7198,206 @@ public static class SceneParser
 </file>
 
 <file path="Views\BottomPanelView.cs">
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using Vortice.Mathematics;
+
 namespace DirectUI;
 
 public class BottomPanelView
 {
-    public static void Draw()
-    {
-        UI.PushStyleVar(StyleVar.FrameRounding, 0f);
-        
-        if (UI.Button("bottom_button", "Bottom Panel Button"))
-        {
+    private readonly string _rootPath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res";
+    private string _currentPath;
+    private string? _pathToNavigateTo; // Used to defer navigation until after drawing
 
+    private readonly List<string> _directories;
+    private readonly List<string> _files;
+    private string? _errorMessage;
+
+    private readonly ButtonStylePack _folderIconStyle;
+    private readonly ButtonStylePack _fileIconStyle;
+    private readonly ButtonStyle _labelStyle;
+    private readonly ButtonStyle _pathLabelStyle;
+
+    public string? SelectedScenePath { get; private set; }
+
+    public BottomPanelView()
+    {
+        _folderIconStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 1f };
+        _folderIconStyle.Normal.FillColor = new Color4(0.3f, 0.4f, 0.6f, 1f); // Blueish for folders
+        _folderIconStyle.Hover.FillColor = new Color4(0.4f, 0.5f, 0.7f, 1f);
+        _folderIconStyle.Pressed.FillColor = new Color4(0.5f, 0.6f, 0.8f, 1f);
+
+        _fileIconStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 1f };
+        _fileIconStyle.Normal.FillColor = new Color4(0.4f, 0.4f, 0.4f, 1f); // Grey for files
+        _fileIconStyle.Hover.FillColor = new Color4(0.5f, 0.5f, 0.5f, 1f);
+        _fileIconStyle.Pressed.FillColor = new Color4(0.6f, 0.6f, 0.6f, 1f);
+
+        _labelStyle = new ButtonStyle
+        {
+            FontColor = DefaultTheme.Text,
+            FontSize = 12f
+        };
+
+        _pathLabelStyle = new ButtonStyle
+        {
+            FontColor = new Color4(0.7f, 0.7f, 0.7f, 1f),
+            FontSize = 12f
+        };
+
+        _directories = new List<string>();
+        _files = new List<string>();
+        _currentPath = _rootPath;
+
+        LoadDirectoryContents();
+    }
+
+    private void LoadDirectoryContents()
+    {
+        _directories.Clear();
+        _files.Clear();
+        _errorMessage = null;
+
+        try
+        {
+            if (Directory.Exists(_currentPath))
+            {
+                // Add an "up" directory if we're not at the root
+                if (Path.GetFullPath(_currentPath).TrimEnd('\\') != Path.GetFullPath(_rootPath).TrimEnd('\\'))
+                {
+                    _directories.Add("..");
+                }
+
+                _directories.AddRange(Directory.GetDirectories(_currentPath).Select(Path.GetFileName).Where(s => s is not null)!);
+                _files.AddRange(Directory.GetFiles(_currentPath).Select(Path.GetFileName).Where(s => s is not null)!);
+
+                // Keep ".." at the top, sort the rest
+                var sortedDirs = _directories.Where(d => d != "..").OrderBy(d => d, StringComparer.OrdinalIgnoreCase).ToList();
+                _directories.RemoveAll(d => d != "..");
+                _directories.AddRange(sortedDirs);
+
+                _files.Sort(StringComparer.OrdinalIgnoreCase);
+            }
+            else
+            {
+                _errorMessage = $"Path not found: {_currentPath}";
+            }
+        }
+        catch (Exception ex)
+        {
+            _errorMessage = $"Error accessing path '{_currentPath}': {ex.Message}";
+        }
+    }
+
+    public void Draw()
+    {
+        _pathToNavigateTo = null; // Reset deferred action at the start of the frame
+        SelectedScenePath = null; // Reset selected scene path at start of frame
+
+        var contentArea = UI.Context.Layout.GetCurrentClipRect();
+        if (contentArea.Width <= 0 || contentArea.Height <= 0)
+        {
+            return;
         }
 
-        UI.PopStyleVar();
+        UI.BeginVBoxContainer("bottom_panel_main_vbox", UI.Context.Layout.GetCurrentPosition(), 5);
+
+        // Display current path
+        UI.Label("current_path_label", _currentPath, style: _pathLabelStyle);
+
+        if (!string.IsNullOrEmpty(_errorMessage))
+        {
+            UI.Label("bottom_panel_error", _errorMessage);
+        }
+        else
+        {
+            var scrollableSize = new Vector2(contentArea.Width, Math.Max(0, contentArea.Height - 30));
+            UI.BeginScrollableRegion("bottom_panel_scroll", scrollableSize, out float innerWidth);
+            {
+                var gridStartPosition = UI.Context.Layout.GetCurrentPosition();
+                var gridAvailableSize = new Vector2(innerWidth, 10000);
+                var gridGap = new Vector2(16, 16);
+                int numColumns = Math.Max(1, (int)(innerWidth / 90));
+
+                UI.BeginGridContainer("bottom_panel_grid", gridStartPosition, gridAvailableSize, numColumns, gridGap);
+                {
+                    foreach (var dirName in _directories)
+                    {
+                        DrawFileSystemEntry(dirName, true);
+                    }
+
+                    foreach (var fileName in _files)
+                    {
+                        DrawFileSystemEntry(fileName, false);
+                    }
+                }
+                UI.EndGridContainer();
+            }
+            UI.EndScrollableRegion();
+        }
+
+        // --- Deferred Action ---
+        // After all drawing loops are complete, check if navigation was requested.
+        // This prevents modifying the collection while it's being enumerated.
+        if (_pathToNavigateTo != null)
+        {
+            _currentPath = _pathToNavigateTo;
+            LoadDirectoryContents();
+        }
+
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawFileSystemEntry(string name, bool isDirectory)
+    {
+        string id = (isDirectory ? "dir_" : "file_") + name;
+        var iconSize = new Vector2(64, 64);
+        var labelSize = new Vector2(iconSize.X + 10, 30);
+
+        UI.BeginVBoxContainer(id + "_vbox", UI.Context.Layout.GetCurrentPosition(), 4);
+        {
+            string iconText = isDirectory ? (name == ".." ? ".." : "D") : "F";
+            var style = isDirectory ? _folderIconStyle : _fileIconStyle;
+
+            if (UI.Button(id + "_icon", iconText, size: iconSize, theme: style))
+            {
+                if (isDirectory)
+                {
+                    if (name == "..")
+                    {
+                        var parentDir = Directory.GetParent(_currentPath);
+                        if (parentDir != null)
+                        {
+                            _pathToNavigateTo = parentDir.FullName; // Defer navigation
+                        }
+                    }
+                    else
+                    {
+                        _pathToNavigateTo = Path.Combine(_currentPath, name); // Defer navigation
+                    }
+                }
+                else
+                {
+                    // If a file is clicked, check its extension.
+                    if (Path.GetExtension(name).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        SelectedScenePath = Path.Combine(_currentPath, name);
+                    }
+                }
+            }
+
+            UI.Label(
+                id + "_label",
+                name,
+                size: labelSize,
+                style: _labelStyle,
+                textAlignment: new Alignment(HAlignment.Center, VAlignment.Top)
+            );
+        }
+        UI.EndVBoxContainer();
     }
 }
 </file>
@@ -6677,7 +7425,8 @@ public class InspectorView
 
     private readonly ButtonStyle _propertyLabelStyle = new()
     {
-        FontWeight = FontWeight.SemiBold,
+        FontSize = 13f,
+        FontWeight = FontWeight.Normal,
         FontColor = new(0.8f, 0.8f, 0.8f, 1.0f)
     };
 
@@ -6690,13 +7439,17 @@ public class InspectorView
     public void Draw(Node? selectedNode, float panelWidth, float panelHeight)
     {
         float availableContentWidth = panelWidth - (PanelPadding * 2);
+        var startPos = UI.Context.Layout.GetCurrentPosition();
 
-        UI.BeginVBoxContainer("inspector_outer_vbox", UI.Context.Layout.GetCurrentPosition(), PanelGap);
+        UI.BeginVBoxContainer("inspector_outer_vbox", startPos, PanelGap);
         {
             DrawHeader(availableContentWidth);
+            UI.Separator(availableContentWidth, thickness: 1f, verticalPadding: 4f);
 
-            Vector2 headerSize = UI.Resources.MeasureText(UI.Context.DWriteFactory, "Inspector", _titleStyle);
-            float scrollableHeight = panelHeight - headerSize.Y - PanelGap;
+            var currentPos = UI.Context.Layout.GetCurrentPosition();
+            var heightUsed = currentPos.Y - startPos.Y;
+            var scrollableHeight = panelHeight - heightUsed;
+
 
             if (scrollableHeight < 0)
             {
@@ -6715,12 +7468,6 @@ public class InspectorView
                 }
                 else
                 {
-                    UI.BeginVBoxContainer("inspector_header_vbox", UI.Context.Layout.GetCurrentPosition(), 0f);
-                    {
-                        DrawNodeInfo(selectedNode, innerContentWidth);
-                    }
-                    UI.EndVBoxContainer();
-
                     UI.BeginVBoxContainer("inspector_properties_vbox", UI.Context.Layout.GetCurrentPosition(), 8f);
                     {
                         DrawAllProperties(selectedNode, innerContentWidth);
@@ -6744,27 +7491,56 @@ public class InspectorView
         );
     }
 
-    private void DrawNodeInfo(Node selectedNode, float availableWidth)
+    private void DrawAllProperties(Node selectedNode, float availableWidth)
     {
-        UI.Label("type_header", $"Type: {selectedNode.GetType().Name}", style: _propertyLabelStyle);
-        UI.Separator(availableWidth, thickness: 1f, verticalPadding: 4f);
-    }
+        Type? currentType = selectedNode.GetType();
+        bool isFirstGroup = true;
 
-    private static void DrawAllProperties(Node selectedNode, float availableWidth)
-    {
-        IEnumerable<PropertyInfo> properties = selectedNode.GetType()
-            .GetProperties(BindingFlags.Public | BindingFlags.Instance)
-            .Where(p => p.CanRead &&
-                        p.GetIndexParameters().Length == 0 &&
-                        !p.IsDefined(typeof(HideFromInspectorAttribute), false));
-
-        foreach (PropertyInfo prop in properties)
+        var classHeaderStyle = new ButtonStyle
         {
-            DrawPropertyRow(selectedNode, prop, availableWidth);
+            FontWeight = FontWeight.Bold,
+            FontSize = 13f
+        };
+
+        while (currentType != null && typeof(Node).IsAssignableFrom(currentType))
+        {
+            var properties = currentType
+                .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(p => p.CanRead &&
+                            p.GetIndexParameters().Length == 0 &&
+                            !p.IsDefined(typeof(HideFromInspectorAttribute), false))
+                .ToList();
+
+            if (properties.Any())
+            {
+                if (!isFirstGroup)
+                {
+                    // Add separator BEFORE the group, but not for the first one.
+                    UI.Separator(availableWidth, thickness: 1f, verticalPadding: 8f);
+                }
+
+                UI.Label(
+                    $"header_{currentType.Name}",
+                    currentType.Name,
+                    style: classHeaderStyle,
+                    size: new(availableWidth, 0),
+                    textAlignment: new Alignment(HAlignment.Center, VAlignment.Center)
+                );
+
+
+                foreach (var prop in properties)
+                {
+                    DrawPropertyRow(selectedNode, prop, availableWidth);
+                }
+
+                isFirstGroup = false;
+            }
+
+            currentType = currentType.BaseType;
         }
     }
 
-    private static void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
+    private void DrawPropertyRow(Node node, PropertyInfo prop, float availableWidth)
     {
         float labelWidth = (availableWidth - GridGap) * 0.4f;
         float editorWidth = (availableWidth - GridGap) * 0.6f;
@@ -6789,6 +7565,7 @@ public class InspectorView
                 $"prop_label_{prop.Name}",
                 SplitPascalCase(prop.Name),
                 size: new(labelWidth, 24),
+                style: _propertyLabelStyle,
                 textAlignment: new(HAlignment.Left, VAlignment.Center)
             );
 
@@ -6808,7 +7585,7 @@ public class InspectorView
         {
             case bool b when prop.CanWrite:
                 bool isChecked = b;
-                if (UI.Checkbox(propId, "", ref isChecked))
+                if (UI.Checkbox(propId, "", ref isChecked, size: new Vector2(0, 24)))
                 {
                     prop.SetValue(node, isChecked);
                 }
@@ -6921,6 +7698,7 @@ public class InspectorView
 </file>
 
 <file path="Views\MainView.cs">
+// Views/MainView.cs
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -6957,6 +7735,12 @@ public class MainView
     {
         _menuBarView.Draw(context, openProjectWindowAction);
         DrawMainLayoutPanels();
+
+        // After drawing all panels, check if the bottom panel has signalled a scene change.
+        if (_bottomPanelView.SelectedScenePath is not null)
+        {
+            _sceneTreeView.LoadScene(_bottomPanelView.SelectedScenePath);
+        }
     }
 
     private void DrawMainLayoutPanels()
@@ -6985,26 +7769,43 @@ public class MainView
         var padding = new Vector2(PanelPadding, PanelPadding);
 
         // Calculate the available content height inside the panel for the inspector view.
-        float panelContentHeight = UI.Context.RenderTarget.Size.Height - MenuBarHeight - (padding.Y * 2);
+        float panelContentHeight = UI.Context.Renderer.RenderTargetSize.Y - MenuBarHeight - (padding.Y * 2);
 
-        UI.BeginResizableVPanel("right_panel", ref _rightPanelWidth, HAlignment.Right, MenuBarHeight,
-            minWidth: 150, maxWidth: 400, padding: padding, gap: 0, panelStyle: panelStyle);
-
-        _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
-
+        UI.BeginResizableVPanel(
+            "right_panel",
+            ref _rightPanelWidth,
+            HAlignment.Right,
+            MenuBarHeight,
+            minWidth: 150,
+            maxWidth: 400,
+            padding: padding,
+            gap: 0,
+            panelStyle: panelStyle);
+        {
+            _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
+        }
         UI.EndResizableVPanel();
     }
 
     private void DrawBottomPanel()
     {
-        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
-        var padding = new Vector2(PanelPadding, PanelPadding);
+        BoxStyle panelStyle = new() { BorderLength = 1, Roundness = 0f };
+        Vector2 padding = new(PanelPadding, PanelPadding);
 
-        UI.BeginResizableHPanel("bottom_panel", ref _bottomPanelHeight, _leftPanelWidth, _rightPanelWidth, MenuBarHeight,
-            minHeight: 50, maxHeight: 300, padding: padding, gap: PanelGap, panelStyle: panelStyle);
-
-        BottomPanelView.Draw();
-
+        UI.BeginResizableHPanel(
+            "bottom_panel",
+            ref _bottomPanelHeight,
+            _leftPanelWidth,
+            _rightPanelWidth,
+            MenuBarHeight,
+            minHeight: 50,
+            maxHeight: 300,
+            padding: padding,
+            gap: PanelGap,
+            panelStyle: panelStyle);
+        {
+            _bottomPanelView.Draw();
+        }
         UI.EndResizableHPanel();
     }
 }
@@ -7092,17 +7893,22 @@ namespace DirectUI;
 
 public class SceneTreeView
 {
-    private readonly TreeNode<Node> _uiTreeRoot;
+    private TreeNode<Node> _uiTreeRoot;
     private readonly TreeStyle _treeStyle = new();
 
     public Node? SelectedNode { get; private set; }
 
     public SceneTreeView()
     {
+        string defaultScenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
+        LoadScene(defaultScenePath);
+        // _uiTreeRoot is initialized by LoadScene
+    }
+
+    public void LoadScene(string scenePath)
+    {
         try
         {
-            string scenePath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cosmocrush\Res\Scenes\Menu\Menu.yaml";
-
             if (File.Exists(scenePath))
             {
                 // Use the Cherris engine's PackedScene loader
@@ -7117,9 +7923,10 @@ public class SceneTreeView
         }
         catch (Exception ex)
         {
-            _uiTreeRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", "");
+            _uiTreeRoot = CreateDefaultTree($"Error parsing scene: {ex.Message}", scenePath);
         }
-        SelectedNode = null;
+
+        SelectedNode = null; // Reset selection when loading a new scene
     }
 
     private TreeNode<Node> ConvertToUITree(Node root)
@@ -7135,6 +7942,8 @@ public class SceneTreeView
 
     public void Draw()
     {
+        if (_uiTreeRoot is null) return;
+
         UI.BeginVBoxContainer("tree_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
         UI.Tree("file_tree", _uiTreeRoot, out var clickedNode, _treeStyle);
         if (clickedNode is not null)

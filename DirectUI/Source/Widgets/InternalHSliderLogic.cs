@@ -1,6 +1,7 @@
-﻿using System;
+﻿// Widgets/InternalHSliderLogic.cs
+using System;
 using System.Numerics;
-using Vortice.Direct2D1;
+using DirectUI.Core;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -95,10 +96,10 @@ internal class InternalHSliderLogic : InternalSliderLogic
         xPos = Math.Clamp(xPos, minX, maxX);
         return new Vector2(xPos, yPos);
     }
-    protected override void DrawForeground(ID2D1RenderTarget renderTarget, float currentValue)
+    protected override void DrawForeground(IRenderer renderer, float currentValue)
     {
         float valueRange = MaxValue - MinValue;
-        if (valueRange <= 0 || renderTarget is null) return;
+        if (valueRange <= 0 || renderer is null) return;
         float clampedValue = Math.Clamp(currentValue, MinValue, MaxValue);
         float normalizedValue = (valueRange > 0) ? (clampedValue - MinValue) / valueRange : 0.0f;
         float foregroundWidth = Size.X * normalizedValue;
@@ -106,8 +107,10 @@ internal class InternalHSliderLogic : InternalSliderLogic
         Rect clipRect;
         if (Direction == HSliderDirection.RightToLeft) { clipRect = new Rect(trackPosition.X + Size.X - foregroundWidth, trackPosition.Y, foregroundWidth, Size.Y); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
-        renderTarget.PushAxisAlignedClip(clipRect, D2D.AntialiasMode.Aliased);
-        UI.Resources.DrawBoxStyleHelper(renderTarget, trackPosition, Size, Theme.Foreground);
-        renderTarget.PopAxisAlignedClip();
+
+        renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
+        // Changed to explicitly pass float components for Rect constructor
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
+        renderer.PopClipRect();
     }
 }

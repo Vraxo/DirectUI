@@ -1,6 +1,6 @@
 ﻿using System.Numerics;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
+using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
 
 namespace DirectUI;
 
@@ -34,7 +34,7 @@ public static partial class UI
         if (autoWidth)
         {
             var styleForMeasuring = finalTheme.Normal; // Measure against the normal style
-            Vector2 measuredSize = Resources.MeasureText(Context.DWriteFactory, text, styleForMeasuring);
+            Vector2 measuredSize = Context.TextService.MeasureText(text, styleForMeasuring);
             Vector2 margin = textMargin ?? new Vector2(10, 5);
             finalSize.X = measuredSize.X + margin.X * 2;
         }
@@ -55,9 +55,9 @@ public static partial class UI
             float gridBottomY = grid.StartPosition.Y + grid.AvailableSize.Y;
             float clipHeight = Math.Max(0f, gridBottomY - clipStartY);
             Rect cellClipRect = new Rect(grid.CurrentDrawPosition.X, clipStartY, Math.Max(0f, grid.CellWidth), clipHeight);
-            if (Context.RenderTarget is not null && cellClipRect.Width > 0 && cellClipRect.Height > 0)
+            if (cellClipRect.Width > 0 && cellClipRect.Height > 0)
             {
-                Context.RenderTarget.PushAxisAlignedClip(cellClipRect, D2D.AntialiasMode.Aliased);
+                Context.Renderer.PushClipRect(cellClipRect, D2D.AntialiasMode.Aliased);
                 pushedClip = true;
             }
         }
@@ -75,9 +75,9 @@ public static partial class UI
             isActive: false
         );
 
-        if (pushedClip && Context.RenderTarget is not null)
+        if (pushedClip)
         {
-            Context.RenderTarget.PopAxisAlignedClip();
+            Context.Renderer.PopClipRect();
         }
 
         Context.Layout.AdvanceLayout(finalSize);

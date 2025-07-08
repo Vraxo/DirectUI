@@ -1,4 +1,8 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Numerics;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -17,6 +21,8 @@ public class BottomPanelView
     private readonly ButtonStylePack _fileIconStyle;
     private readonly ButtonStyle _labelStyle;
     private readonly ButtonStyle _pathLabelStyle;
+
+    public string? SelectedScenePath { get; private set; }
 
     public BottomPanelView()
     {
@@ -60,8 +66,7 @@ public class BottomPanelView
             if (Directory.Exists(_currentPath))
             {
                 // Add an "up" directory if we're not at the root
-                var parentDir = Directory.GetParent(_currentPath);
-                if (parentDir != null && parentDir.FullName.Length >= _rootPath.Length && _rootPath != _currentPath)
+                if (Path.GetFullPath(_currentPath).TrimEnd('\\') != Path.GetFullPath(_rootPath).TrimEnd('\\'))
                 {
                     _directories.Add("..");
                 }
@@ -90,6 +95,7 @@ public class BottomPanelView
     public void Draw()
     {
         _pathToNavigateTo = null; // Reset deferred action at the start of the frame
+        SelectedScenePath = null; // Reset selected scene path at start of frame
 
         var contentArea = UI.Context.Layout.GetCurrentClipRect();
         if (contentArea.Width <= 0 || contentArea.Height <= 0)
@@ -163,7 +169,7 @@ public class BottomPanelView
                     if (name == "..")
                     {
                         var parentDir = Directory.GetParent(_currentPath);
-                        if (parentDir != null && parentDir.FullName.Length >= _rootPath.Length)
+                        if (parentDir != null)
                         {
                             _pathToNavigateTo = parentDir.FullName; // Defer navigation
                         }
@@ -173,7 +179,14 @@ public class BottomPanelView
                         _pathToNavigateTo = Path.Combine(_currentPath, name); // Defer navigation
                     }
                 }
-                // Future: Handle file click (e.g., open file inspector)
+                else
+                {
+                    // If a file is clicked, check its extension.
+                    if (Path.GetExtension(name).Equals(".yaml", StringComparison.OrdinalIgnoreCase))
+                    {
+                        SelectedScenePath = Path.Combine(_currentPath, name);
+                    }
+                }
             }
 
             UI.Label(

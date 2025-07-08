@@ -64,9 +64,9 @@ public class MyDirectUIApp : Direct2DAppWindow
     /// </summary>
     private void DrawProjectWindowUI(UIContext context)
     {
-        var rt = context.RenderTarget;
-        float windowWidth = rt.Size.Width;
-        float windowHeight = rt.Size.Height;
+        var renderer = context.Renderer;
+        float windowWidth = renderer.RenderTargetSize.X;
+        float windowHeight = renderer.RenderTargetSize.Y;
         float tabBarHeight = 30f;
         var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
 
@@ -81,8 +81,7 @@ public class MyDirectUIApp : Direct2DAppWindow
             BorderLengthTop = 1f,
             Roundness = 0f
         };
-        // BUG FIX: Convert Vortice.Mathematics.Rect.Size to System.Numerics.Vector2
-        UI.Resources.DrawBoxStyleHelper(rt, contentArea.TopLeft, new Vector2(contentArea.Width, contentArea.Height), panelStyle);
+        renderer.DrawBox(contentArea, panelStyle);
 
         // --- Draw Active Tab Content ---
         if (_projectWindowActiveTab == 0)

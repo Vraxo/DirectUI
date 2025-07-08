@@ -27,7 +27,7 @@ public static partial class UI
         Vector2 finalPosition = Context.Layout.ApplyLayout(position);
         Vector2 finalMargin = textMargin ?? new(4, 2);
         Rect widgetBounds = new(finalPosition.X, finalPosition.Y, size.X, size.Y);
-        
+
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
             Context.Layout.AdvanceLayout(size);

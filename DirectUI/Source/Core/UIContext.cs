@@ -1,16 +1,15 @@
-﻿using System.Collections.Generic;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
+﻿// Core/UIContext.cs
+using System.Collections.Generic;
+using DirectUI.Core;
 
 namespace DirectUI;
 
 public class UIContext
 {
-    // Per-frame resources
-    public ID2D1HwndRenderTarget RenderTarget { get; }
-    public IDWriteFactory DWriteFactory { get; }
+    // Per-frame services and state
+    public IRenderer Renderer { get; }
+    public ITextService TextService { get; }
     public InputState InputState { get; }
-    public UIResources Resources { get; }
     public float DeltaTime { get; }
 
     // Layout and state management
@@ -19,12 +18,11 @@ public class UIContext
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
 
-    public UIContext(ID2D1HwndRenderTarget renderTarget, IDWriteFactory dwriteFactory, InputState inputState, UIResources resources, float deltaTime)
+    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime)
     {
-        RenderTarget = renderTarget;
-        DWriteFactory = dwriteFactory;
+        Renderer = renderer;
+        TextService = textService;
         InputState = inputState;
-        Resources = resources;
         DeltaTime = deltaTime;
         Layout = new UILayoutManager();
     }
