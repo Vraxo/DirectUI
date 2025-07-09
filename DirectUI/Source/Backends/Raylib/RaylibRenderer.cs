@@ -163,10 +163,10 @@ public class RaylibRenderer : IRenderer
             switch (alignment.Vertical)
             {
                 case VAlignment.Center:
-                    // Center based on the font's point size rather than its measured pixel height.
-                    // This is more stable as measured height can include line spacing metrics that
-                    // throw off the visual centering, pushing text upwards and clipping descenders.
-                    textDrawPos.Y += (maxSize.Y - style.FontSize) / 2f;
+                    // FIX: Use the measured height for centering. Using the font's point size (style.FontSize)
+                    // does not account for descenders and can cause the bottom of the text to be clipped
+                    // in tight containers. The measured height provides the actual bounding box of the rendered text.
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
                     break;
                 case VAlignment.Bottom:
                     textDrawPos.Y += (maxSize.Y - measuredSize.Y);
