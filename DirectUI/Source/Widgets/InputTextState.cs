@@ -4,7 +4,7 @@ namespace DirectUI;
 
 internal record struct LineEditUndoRecord(string Text, int CaretPosition, float ScrollPixelOffset);
 
-internal class LineEditState
+internal class InputTextState
 {
     internal int CaretPosition;
     internal float ScrollPixelOffset;

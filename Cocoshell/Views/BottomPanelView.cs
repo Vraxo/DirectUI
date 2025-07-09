@@ -106,11 +106,11 @@ public class BottomPanelView
         UI.BeginVBoxContainer("bottom_panel_main_vbox", UI.Context.Layout.GetCurrentPosition(), 5);
 
         // Display current path
-        UI.Label("current_path_label", _currentPath, style: _pathLabelStyle);
+        UI.Text("current_path_label", _currentPath, style: _pathLabelStyle);
 
         if (!string.IsNullOrEmpty(_errorMessage))
         {
-            UI.Label("bottom_panel_error", _errorMessage);
+            UI.Text("bottom_panel_error", _errorMessage);
         }
         else
         {
@@ -189,7 +189,7 @@ public class BottomPanelView
                 }
             }
 
-            UI.Label(
+            UI.Text(
                 id + "_label",
                 name,
                 size: labelSize,

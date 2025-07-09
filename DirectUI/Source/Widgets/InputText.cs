@@ -12,13 +12,13 @@ namespace DirectUI;
 
 // Logic and drawing for an immediate-mode LineEdit control. This class is STATELESS.
 // All persistent state is managed in a separate LineEditState object.
-internal class LineEdit
+internal class InputText
 {
     // === MAIN UPDATE & DRAW METHOD ===
     public bool UpdateAndDraw(
         int intId,
         ref string text,
-        LineEditState state, // The state is now passed in
+        InputTextState state, // The state is now passed in
         Vector2 position,
         Vector2 size,
         ButtonStylePack? theme,
@@ -167,7 +167,7 @@ internal class LineEdit
         return textChanged;
     }
 
-    private bool ProcessInput(ref string text, LineEditState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
+    private bool ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
     {
         bool textChanged = false;
 
@@ -274,7 +274,7 @@ internal class LineEdit
         return pos;
     }
 
-    private void DrawVisibleText(string fullText, LineEditState state, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
+    private void DrawVisibleText(string fullText, InputTextState state, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
     {
         if (string.IsNullOrEmpty(fullText))
         {
@@ -301,7 +301,7 @@ internal class LineEdit
         renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
     }
 
-    private void DrawCaret(string text, LineEditState state, Vector2 size, ButtonStyle style, Rect contentRect)
+    private void DrawCaret(string text, InputTextState state, Vector2 size, ButtonStyle style, Rect contentRect)
     {
         var textService = UI.Context.TextService;
         var renderer = UI.Context.Renderer;
@@ -326,7 +326,7 @@ internal class LineEdit
         return UI.Context.TextService.GetTextLayout(text, style, new(maxWidth, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
     }
 
-    private void UpdateView(string text, LineEditState state, Vector2 size, Vector2 textMargin)
+    private void UpdateView(string text, InputTextState state, Vector2 size, Vector2 textMargin)
     {
         float availableWidth = size.X - textMargin.X * 2;
         var style = new ButtonStyle(); // A default style is fine for measuring
@@ -350,17 +350,17 @@ internal class LineEdit
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
 
-    private static void PushUndoState(string text, LineEditState state)
+    private static void PushUndoState(string text, InputTextState state)
     {
         var lastState = state.UndoStack.Count > 0 ? state.UndoStack.Peek() : default;
         if (state.UndoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == state.CaretPosition) return;
 
-        if (state.UndoStack.Count >= LineEditState.HistoryLimit) state.UndoStack.Pop();
+        if (state.UndoStack.Count >= InputTextState.HistoryLimit) state.UndoStack.Pop();
         state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
         state.RedoStack.Clear();
     }
 
-    private static void Undo(ref string text, LineEditState state)
+    private static void Undo(ref string text, InputTextState state)
     {
         if (state.UndoStack.Count == 0) return;
         state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
@@ -370,7 +370,7 @@ internal class LineEdit
         state.ScrollPixelOffset = lastState.ScrollPixelOffset;
     }
 
-    private static void Redo(ref string text, LineEditState state)
+    private static void Redo(ref string text, InputTextState state)
     {
         if (state.RedoStack.Count == 0) return;
         state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));

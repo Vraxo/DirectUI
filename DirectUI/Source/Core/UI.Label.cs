@@ -5,7 +5,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void Label(string id, string text, Vector2? size = null, ButtonStyle? style = null, Alignment? textAlignment = null)
+    public static void Text(string id, string text, Vector2? size = null, ButtonStyle? style = null, Alignment? textAlignment = null)
     {
         if (!IsContextValid() || string.IsNullOrEmpty(text))
         {

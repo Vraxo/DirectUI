@@ -5,7 +5,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool LineEdit(
+    public static bool InputText(
         string id,
         ref string text,
         Vector2 size,
@@ -34,8 +34,8 @@ public static partial class UI
             return false;
         }
 
-        LineEdit lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
-        var lineEditState = State.GetOrCreateElement<LineEditState>(HashCode.Combine(intId, "state"));
+        InputText lineEditInstance = State.GetOrCreateElement<InputText>(intId);
+        var lineEditState = State.GetOrCreateElement<InputTextState>(HashCode.Combine(intId, "state"));
 
         bool textChanged = lineEditInstance.UpdateAndDraw(
             intId,

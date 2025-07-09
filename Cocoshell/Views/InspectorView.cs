@@ -77,7 +77,7 @@ public class InspectorView
 
     private void DrawHeader(float availableWidth)
     {
-        UI.Label(
+        UI.Text(
             "inspector_title",
             "Inspector",
             size: new(availableWidth, 0),
@@ -114,7 +114,7 @@ public class InspectorView
                     UI.Separator(availableWidth, thickness: 1f, verticalPadding: 8f);
                 }
 
-                UI.Label(
+                UI.Text(
                     $"header_{currentType.Name}",
                     currentType.Name,
                     style: classHeaderStyle,
@@ -148,7 +148,7 @@ public class InspectorView
         }
         catch (Exception ex)
         {
-            UI.Label($"prop_error_{prop.Name}", $"Error getting value: {ex.Message}");
+            UI.Text($"prop_error_{prop.Name}", $"Error getting value: {ex.Message}");
             return;
         }
 
@@ -156,7 +156,7 @@ public class InspectorView
 
         try
         {
-            UI.Label(
+            UI.Text(
                 $"prop_label_{prop.Name}",
                 SplitPascalCase(prop.Name),
                 size: new(labelWidth, 24),
@@ -239,7 +239,7 @@ public class InspectorView
 
             string localX = editState.X;
 
-            if (UI.LineEdit(xId, ref localX, lineEditSize))
+            if (UI.InputText(xId, ref localX, lineEditSize))
             {
                 editState.X = localX;
                 if (float.TryParse(editState.X, out var newX))
@@ -252,7 +252,7 @@ public class InspectorView
 
             string localY = editState.Y;
 
-            if (UI.LineEdit(yId, ref localY, lineEditSize))
+            if (UI.InputText(yId, ref localY, lineEditSize))
             {
                 editState.Y = localY;
 
