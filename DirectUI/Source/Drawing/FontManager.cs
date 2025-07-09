@@ -80,8 +80,10 @@ namespace DirectUI.Drawing
                 // via oversampling, we want to scale down from a single high-resolution texture.
                 // Raylib.GenTextureMipmaps(ref newFont.Texture);
 
-                // Use Bilinear filtering for smooth downscaling from the oversized atlas.
-                Raylib.SetTextureFilter(newFont.Texture, TextureFilter.Bilinear);
+                // Use Point filtering for sharp, 1:1 pixel rendering from the atlas.
+                // This avoids the blurriness/shagginess of Bilinear filtering when not oversampling.
+                // MSAA should handle smoothing the final glyph edges.
+                Raylib.SetTextureFilter(newFont.Texture, TextureFilter.Point);
 
                 s_loadedFontsCache[cacheKey] = newFont;
                 return newFont;

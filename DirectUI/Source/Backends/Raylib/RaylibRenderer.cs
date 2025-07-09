@@ -130,15 +130,22 @@ public class RaylibRenderer : IRenderer
             return;
         }
 
-        const int oversampleFactor = 4;
-        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
+        // Font Rendering Strategy:
+        // No oversampling. The font is loaded into an atlas at the nearest integer size to the requested style.FontSize.
+        // This avoids scaling artifacts from oversampling that can cause "shaggy" or blurry text.
+        // Point filtering is used in FontManager to ensure sharp pixels from the atlas.
+        // MSAA (enabled globally) is relied upon for anti-aliasing the final glyph geometry.
+        int atlasSize = (int)Math.Round(style.FontSize);
+        if (atlasSize <= 0) atlasSize = 1; // Prevent loading font at size 0.
+
         Raylib_cs.Color rlColor = color;
 
-        // Use the FontManager to get the appropriate font, loaded at the oversized atlas resolution.
+        // Use the FontManager to get the appropriate font, loaded at the native resolution.
         Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
 
         // Measure and Draw using the original float font size.
-        // Raylib will downscale the oversized font texture, producing a smooth, anti-aliased result.
+        // Raylib will scale the glyphs from the atlas (rasterized at 'atlasSize') to match 'style.FontSize'.
+        // Since these two values are very close, scaling artifacts are minimized.
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
 
         Vector2 textDrawPos = origin;
