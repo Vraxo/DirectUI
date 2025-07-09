@@ -5,6 +5,7 @@ using System.Diagnostics;
 using System.Numerics;
 using DirectUI.Backends; // Added Raylib namespace
 using DirectUI.Core; // For IRenderer, ITextService
+using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
 using Vortice.Direct2D1;
@@ -60,6 +61,10 @@ public class AppHost
             // This AppHost simply creates the renderer/text service.
             _renderer = new RaylibRenderer();
             _textService = new RaylibTextService();
+            FontManager.Initialize();
+            // For now, we'll load common system fonts. A real app should bundle fonts.
+            FontManager.LoadFont("Segoe UI", "C:/Windows/Fonts/segoeui.ttf");
+            FontManager.LoadFont("Consolas", "C:/Windows/Fonts/consola.ttf"); // Corrected Consolas font file name
         }
         else // Direct2D Backend
         {
@@ -105,6 +110,10 @@ public class AppHost
         _textService?.Cleanup();
         (_renderer as Direct2DRenderer)?.Cleanup(); // Specific cleanup for Direct2DRenderer
         (_renderer as RaylibRenderer)?.Cleanup(); // Specific cleanup for RaylibRenderer (if any needed in future)
+        if (_useRaylibBackend)
+        {
+            FontManager.UnloadAll();
+        }
         _graphicsDevice?.Cleanup();
     }
 

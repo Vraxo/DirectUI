@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
+using DirectUI.Drawing;
 using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
 using Raylib_cs; // Raylib specific library
 
@@ -131,11 +132,9 @@ public class RaylibRenderer : IRenderer
 
         Raylib_cs.Color rlColor = color;
 
-        // Load font on demand (consider caching this externally or internally with FontKey)
-        // For simplicity, using a default font or a very basic approach for now.
-        // A robust solution would involve pre-loading fonts by style.FontName
-        // and caching Raylib.Font objects.
-        Font rlFont = Raylib.GetFontDefault(); // Use default font for simplicity
+        // Use the FontManager to get the appropriate font.
+        // The FontName from the style is used as the key.
+        Font rlFont = FontManager.GetFont(style.FontName);
 
         // Raylib's MeasureTextEx needs a font object
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f); // Default spacing is 1/10th of font size

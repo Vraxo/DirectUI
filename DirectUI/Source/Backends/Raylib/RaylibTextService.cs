@@ -3,6 +3,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
+using DirectUI.Drawing;
 using Vortice.Mathematics; // For Color4, Rect
 using Raylib_cs; // Raylib specific library
 
@@ -55,9 +56,8 @@ public class RaylibTextService : ITextService
         var cacheKey = (text, fontKey);
         if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
 
-        // Use Raylib's MeasureTextEx with default font for simplicity
-        // For robustness, you'd load/cache fonts by name (style.FontName).
-        Font rlFont = Raylib.GetFontDefault();
+        // Use the FontManager to get the appropriate font.
+        Font rlFont = FontManager.GetFont(style.FontName);
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
         _textSizeCache[cacheKey] = measuredSize;
         return measuredSize;
