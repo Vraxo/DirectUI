@@ -130,16 +130,22 @@ public class RaylibRenderer : IRenderer
             return;
         }
 
+        // Get DPI scale to ensure text size is consistent with D2D backend.
+        var dpiScale = Raylib.GetWindowScaleDPI();
+        float finalFontSize = style.FontSize * dpiScale.Y;
+
         const int oversampleFactor = 4;
-        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
+        // The atlas needs to be generated based on the final scaled size for crispness.
+        int atlasSize = (int)Math.Round(finalFontSize * oversampleFactor);
+
         Raylib_cs.Color rlColor = color;
 
         // Use the FontManager to get the appropriate font, loaded at the oversized atlas resolution.
         Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
 
-        // Measure and Draw using the original float font size.
+        // Measure and Draw using the final DPI-scaled font size.
         // Raylib will downscale the oversized font texture, producing a smooth, anti-aliased result.
-        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, finalFontSize, finalFontSize / 10f);
 
         Vector2 textDrawPos = origin;
 
@@ -163,9 +169,6 @@ public class RaylibRenderer : IRenderer
             switch (alignment.Vertical)
             {
                 case VAlignment.Center:
-                    // FIX: Use the measured height for centering. Using the font's point size (style.FontSize)
-                    // does not account for descenders and can cause the bottom of the text to be clipped
-                    // in tight containers. The measured height provides the actual bounding box of the rendered text.
                     textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
                     break;
                 case VAlignment.Bottom:
@@ -177,8 +180,8 @@ public class RaylibRenderer : IRenderer
         // Round the final position to the nearest whole pixel to prevent sub-pixel "wobble".
         textDrawPos = new Vector2(MathF.Round(textDrawPos.X), MathF.Round(textDrawPos.Y));
 
-        // Draw using the original float font size.
-        Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
+        // Draw using the final DPI-scaled font size.
+        Raylib.DrawTextEx(rlFont, text, textDrawPos, finalFontSize, finalFontSize / 10f, rlColor);
     }
 
     public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
