@@ -56,8 +56,13 @@ public class RaylibTextService : ITextService
         var cacheKey = (text, fontKey);
         if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
 
-        // Use the FontManager to get the appropriate font at the correct size.
-        Font rlFont = FontManager.GetFont(style.FontName, (int)style.FontSize);
+        const int oversampleFactor = 4;
+        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
+
+        // Use the FontManager to get the appropriate font at the oversized atlas resolution.
+        Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
+
+        // Measure using the original float font size for accurate layout metrics.
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
         _textSizeCache[cacheKey] = measuredSize;
         return measuredSize;
@@ -71,10 +76,13 @@ public class RaylibTextService : ITextService
             return cachedLayout;
         }
 
-        // Fetch the font at the correct size
-        var font = FontManager.GetFont(style.FontName, (int)style.FontSize);
+        const int oversampleFactor = 4;
+        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
 
-        // Pass the pre-loaded font to the layout constructor
+        // Fetch the font at the correct, oversized atlas resolution.
+        var font = FontManager.GetFont(style.FontName, atlasSize);
+
+        // Pass the pre-loaded font to the layout constructor. It will measure internally.
         var newLayout = new RaylibTextLayout(text, style, font);
         _textLayoutCache[layoutKey] = newLayout;
         return newLayout;

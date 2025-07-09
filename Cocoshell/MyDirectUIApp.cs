@@ -65,7 +65,6 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
             // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
             // We just need to initialize AppHost.
             Console.WriteLine("Initializing with Raylib backend...");
-            Raylib.SetConfigFlags(ConfigFlags.HighDpiWindow); // Enable high DPI awareness for scaling
             Raylib.InitWindow(Width, Height, Title);
             Raylib.SetTargetFPS(60); // Control FPS for Raylib
 
