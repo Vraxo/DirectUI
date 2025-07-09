@@ -6896,10 +6896,10 @@ public class RaylibRenderer : IRenderer
             switch (alignment.Vertical)
             {
                 case VAlignment.Center:
-                    // Center based on the font's point size rather than its measured pixel height.
-                    // This is more stable as measured height can include line spacing metrics that
-                    // throw off the visual centering, pushing text upwards and clipping descenders.
-                    textDrawPos.Y += (maxSize.Y - style.FontSize) / 2f;
+                    // FIX: Use the measured height for centering. Using the font's point size (style.FontSize)
+                    // does not account for descenders and can cause the bottom of the text to be clipped
+                    // in tight containers. The measured height provides the actual bounding box of the rendered text.
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
                     break;
                 case VAlignment.Bottom:
                     textDrawPos.Y += (maxSize.Y - measuredSize.Y);
@@ -6916,12 +6916,9 @@ public class RaylibRenderer : IRenderer
 
     public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
-        // Raylib has BeginScissorMode / EndScissorMode
-        // Note: Raylib's scissor mode is typically integer-based.
-        // Also, it's global, so nesting requires careful management.
-        // We simulate a stack by saving and restoring.
-        _clipRectStack.Push(new Raylib_cs.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height));
-        Raylib.BeginScissorMode((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+        // Store the original float rect on our stack to preserve precision.
+        _clipRectStack.Push(new Raylib_cs.Rectangle(rect.X, rect.Y, rect.Width, rect.Height));
+        ApplyScissorFromRect(rect);
     }
 
     public void PopClipRect()
@@ -6932,17 +6929,32 @@ public class RaylibRenderer : IRenderer
         }
 
         _clipRectStack.Pop();
+
         if (_clipRectStack.Count > 0)
         {
-            // Re-apply the previous clip rect
+            // Re-apply the previous clip rect from the stack.
             var prevRect = _clipRectStack.Peek();
-            Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
+            ApplyScissorFromRect(new Vortice.Mathematics.Rect(prevRect.X, prevRect.Y, prevRect.Width, prevRect.Height));
         }
         else
         {
-            // If stack is empty, end scissor mode entirely
+            // If stack is empty, end scissor mode entirely.
             Raylib.EndScissorMode();
         }
+    }
+
+    private void ApplyScissorFromRect(Vortice.Mathematics.Rect rect)
+    {
+        // Raylib's scissor mode is integer-based. To avoid clipping artifacts with
+        // fractional coordinates, we calculate an integer-based bounding box that
+        // fully contains the desired float-based rectangle.
+        int x = (int)MathF.Floor(rect.X);
+        int y = (int)MathF.Floor(rect.Y);
+        // Add the fractional part of the origin back to the size before ceiling to ensure the rect is fully covered.
+        int width = (int)MathF.Ceiling(rect.Width + (rect.X - x));
+        int height = (int)MathF.Ceiling(rect.Height + (rect.Y - y));
+
+        Raylib.BeginScissorMode(x, y, width, height);
     }
 
     // Raylib specific cleanup (if any resources like fonts were loaded dynamically)
@@ -7674,6 +7686,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
             // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
             // We just need to initialize AppHost.
             Console.WriteLine("Initializing with Raylib backend...");
+
+            // Enable MSAA 4X for smooth edges on geometry and fonts.
+            // This flag must be set *before* the window is initialized.
+            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+
             Raylib.InitWindow(Width, Height, Title);
             Raylib.SetTargetFPS(60); // Control FPS for Raylib
 
@@ -8051,7 +8068,7 @@ public class BottomPanelView
         _labelStyle = new ButtonStyle
         {
             FontColor = DefaultTheme.Text,
-            FontSize = 12f
+            FontSize = 24f
         };
 
         _pathLabelStyle = new ButtonStyle
@@ -8232,7 +8249,7 @@ public class InspectorView
     private readonly ButtonStyle _titleStyle = new()
     {
         FontWeight = FontWeight.SemiBold,
-        FontSize = 14f
+        FontSize = 28f
     };
 
     private readonly ButtonStyle _propertyLabelStyle = new()

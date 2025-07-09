@@ -65,6 +65,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
             // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
             // We just need to initialize AppHost.
             Console.WriteLine("Initializing with Raylib backend...");
+
+            // Enable MSAA 4X for smooth edges on geometry and fonts.
+            // This flag must be set *before* the window is initialized.
+            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+
             Raylib.InitWindow(Width, Height, Title);
             Raylib.SetTargetFPS(60); // Control FPS for Raylib
 

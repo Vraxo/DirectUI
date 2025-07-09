@@ -39,7 +39,7 @@ public class BottomPanelView
         _labelStyle = new ButtonStyle
         {
             FontColor = DefaultTheme.Text,
-            FontSize = 12f
+            FontSize = 24f
         };
 
         _pathLabelStyle = new ButtonStyle

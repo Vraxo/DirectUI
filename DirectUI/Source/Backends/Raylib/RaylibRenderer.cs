@@ -183,12 +183,9 @@ public class RaylibRenderer : IRenderer
 
     public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
-        // Raylib has BeginScissorMode / EndScissorMode
-        // Note: Raylib's scissor mode is typically integer-based.
-        // Also, it's global, so nesting requires careful management.
-        // We simulate a stack by saving and restoring.
-        _clipRectStack.Push(new Raylib_cs.Rectangle((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height));
-        Raylib.BeginScissorMode((int)rect.X, (int)rect.Y, (int)rect.Width, (int)rect.Height);
+        // Store the original float rect on our stack to preserve precision.
+        _clipRectStack.Push(new Raylib_cs.Rectangle(rect.X, rect.Y, rect.Width, rect.Height));
+        ApplyScissorFromRect(rect);
     }
 
     public void PopClipRect()
@@ -199,17 +196,32 @@ public class RaylibRenderer : IRenderer
         }
 
         _clipRectStack.Pop();
+
         if (_clipRectStack.Count > 0)
         {
-            // Re-apply the previous clip rect
+            // Re-apply the previous clip rect from the stack.
             var prevRect = _clipRectStack.Peek();
-            Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
+            ApplyScissorFromRect(new Vortice.Mathematics.Rect(prevRect.X, prevRect.Y, prevRect.Width, prevRect.Height));
         }
         else
         {
-            // If stack is empty, end scissor mode entirely
+            // If stack is empty, end scissor mode entirely.
             Raylib.EndScissorMode();
         }
+    }
+
+    private void ApplyScissorFromRect(Vortice.Mathematics.Rect rect)
+    {
+        // Raylib's scissor mode is integer-based. To avoid clipping artifacts with
+        // fractional coordinates, we calculate an integer-based bounding box that
+        // fully contains the desired float-based rectangle.
+        int x = (int)MathF.Floor(rect.X);
+        int y = (int)MathF.Floor(rect.Y);
+        // Add the fractional part of the origin back to the size before ceiling to ensure the rect is fully covered.
+        int width = (int)MathF.Ceiling(rect.Width + (rect.X - x));
+        int height = (int)MathF.Ceiling(rect.Height + (rect.Y - y));
+
+        Raylib.BeginScissorMode(x, y, width, height);
     }
 
     // Raylib specific cleanup (if any resources like fonts were loaded dynamically)
