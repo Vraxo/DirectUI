@@ -1,5 +1,4 @@
-﻿using DirectUI;
-using Vortice.Mathematics;
+﻿using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -7,7 +6,7 @@ public class TreeStyle
 {
     public float Indent { get; set; } = 19f;
     public float RowHeight { get; set; } = 22f;
-    public Color4 LineColor { get; set; } = DefaultTheme.HoverBorder;
+    public Color LineColor { get; set; } = DefaultTheme.HoverBorder;
     public ButtonStylePack ToggleStyle { get; set; }
     public ButtonStylePack NodeLabelStyle { get; set; }
 
@@ -34,12 +33,12 @@ public class TreeStyle
             FontName = "Segoe UI",
             FontSize = 14
         };
-        NodeLabelStyle.Normal.FillColor = Colors.Transparent;
+        NodeLabelStyle.Normal.FillColor = DefaultTheme.Transparent;
         NodeLabelStyle.Normal.FontColor = DefaultTheme.Text;
-        NodeLabelStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 0.5f); // Semi-transparent gray
+        NodeLabelStyle.Hover.FillColor = new Color(64, 64, 64, 128); // Semi-transparent gray
         NodeLabelStyle.Hover.FontColor = DefaultTheme.Text;
         NodeLabelStyle.Pressed.FillColor = DefaultTheme.Accent;
-        NodeLabelStyle.Pressed.FontColor = Colors.White;
+        NodeLabelStyle.Pressed.FontColor = DefaultTheme.White;
         NodeLabelStyle.Pressed.BorderColor = DefaultTheme.AccentBorder;
     }
 }

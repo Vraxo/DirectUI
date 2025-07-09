@@ -3,7 +3,6 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
-using Vortice.Mathematics;
 using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
 using Raylib_cs; // Raylib specific library
 
@@ -32,36 +31,16 @@ public class RaylibRenderer : IRenderer
         // No Raylib-specific initialization needed here in the constructor.
     }
 
-    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
     {
         // Raylib draws lines with thickness 1 by default, or you can use DrawLineEx for thicker lines
-        // Mapping DirectUI Color4 to Raylib_cs.Color
-        Raylib_cs.Color rlColor = new(
-            (byte)(color.R * 255),
-            (byte)(color.G * 255),
-            (byte)(color.B * 255),
-            (byte)(color.A * 255)
-        );
-
-        Raylib.DrawLineEx(p1, p2, strokeWidth, rlColor);
+        Raylib.DrawLineEx(p1, p2, strokeWidth, color);
     }
 
-    public void DrawBox(Rect rect, BoxStyle style)
+    public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
     {
-        // Mapping DirectUI Color4 to Raylib_cs.Color
-        Raylib_cs.Color fillColor = new Raylib_cs.Color(
-            (byte)(style.FillColor.R * 255),
-            (byte)(style.FillColor.G * 255),
-            (byte)(style.FillColor.B * 255),
-            (byte)(style.FillColor.A * 255)
-        );
-
-        Raylib_cs.Color borderColor = new Raylib_cs.Color(
-            (byte)(style.BorderColor.R * 255),
-            (byte)(style.BorderColor.G * 255),
-            (byte)(style.BorderColor.B * 255),
-            (byte)(style.BorderColor.A * 255)
-        );
+        Raylib_cs.Color fillColor = style.FillColor;
+        Raylib_cs.Color borderColor = style.BorderColor;
 
         Raylib_cs.Rectangle rlRect = new(rect.X, rect.Y, rect.Width, rect.Height);
 
@@ -143,19 +122,14 @@ public class RaylibRenderer : IRenderer
         }
     }
 
-    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
         if (string.IsNullOrEmpty(text))
         {
             return;
         }
 
-        Raylib_cs.Color rlColor = new Raylib_cs.Color(
-            (byte)(color.R * 255),
-            (byte)(color.G * 255),
-            (byte)(color.B * 255),
-            (byte)(color.A * 255)
-        );
+        Raylib_cs.Color rlColor = color;
 
         // Load font on demand (consider caching this externally or internally with FontKey)
         // For simplicity, using a default font or a very basic approach for now.
@@ -199,7 +173,7 @@ public class RaylibRenderer : IRenderer
         Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
     }
 
-    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
         // Raylib has BeginScissorMode / EndScissorMode
         // Note: Raylib's scissor mode is typically integer-based.

@@ -1,6 +1,6 @@
 ﻿// MODIFIED: Styles/SliderStyle.cs
 // Summary: Updated default BoxStyle initializations to use BorderLength instead of BorderThickness.
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -17,7 +17,7 @@ public class SliderStyle
     public BoxStyle Foreground { get; set; } = new()
     {
         FillColor = DefaultTheme.Accent,
-        BorderColor = Colors.Transparent,
+        BorderColor = DefaultTheme.Transparent,
         Roundness = 0.5f,
         BorderLength = 0.0f // Use new property
     };

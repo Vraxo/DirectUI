@@ -1,6 +1,7 @@
 ﻿// Core/UIContext.cs
 using System.Collections.Generic;
 using DirectUI.Core;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -16,7 +17,7 @@ public class UIContext
     public UILayoutManager Layout { get; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
-    internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
+    internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
 
     public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime)
     {

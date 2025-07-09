@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -55,7 +55,7 @@ public static partial class UI
         }
     }
 
-    public static void PushStyleColor(StyleColor styleColor, Color4 color)
+    public static void PushStyleColor(StyleColor styleColor, Color color)
     {
         Context.styleColorStack.Push((styleColor, color));
     }
@@ -85,7 +85,7 @@ public static partial class UI
         return defaultValue;
     }
 
-    internal static Color4 GetStyleColor(StyleColor styleColor, Color4 defaultValue)
+    internal static Color GetStyleColor(StyleColor styleColor, Color defaultValue)
     {
         foreach (var (key, value) in Context.styleColorStack)
         {

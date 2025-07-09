@@ -1,13 +1,8 @@
-﻿// DirectUI/Backends/Direct2DRenderer.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+﻿using System.Numerics;
 using DirectUI.Core;
 using SharpGen.Runtime;
 using Vortice.Direct2D1;
-using Vortice.DirectWrite; // Added for IDWriteFactory and TextFormat/ParagraphAlignment
-using Vortice.Mathematics;
-using System.Drawing; // Added for RectangleF
+using Vortice.DirectWrite;
 
 namespace DirectUI.Backends;
 
@@ -19,7 +14,7 @@ public class Direct2DRenderer : IRenderer
 {
     private readonly ID2D1RenderTarget _renderTarget;
     private readonly IDWriteFactory _dwriteFactory; // Added DirectWrite factory
-    private readonly Dictionary<Color4, ID2D1SolidColorBrush> _brushCache = new();
+    private readonly Dictionary<Color, ID2D1SolidColorBrush> _brushCache = new();
 
     // Internal text layout cache for DrawText method
     private readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> _textLayoutCache = new();
@@ -79,14 +74,14 @@ public class Direct2DRenderer : IRenderer
         _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
     }
 
-    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
     {
         var brush = GetOrCreateBrush(color);
         if (brush is null) return;
         _renderTarget.DrawLine(p1, p2, brush, strokeWidth);
     }
 
-    public void DrawBox(Rect rect, BoxStyle style)
+    public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
     {
         if (_renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
 
@@ -108,7 +103,7 @@ public class Direct2DRenderer : IRenderer
 
         if (style.Roundness > 0.0f)
         {
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+            Vortice.Mathematics.Rect outerBounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, size.X, size.Y);
             float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
             float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
 
@@ -155,7 +150,7 @@ public class Direct2DRenderer : IRenderer
             float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
             if (fillWidth > 0 && fillHeight > 0)
             {
-                _renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+                _renderTarget.FillRectangle(new Vortice.Mathematics.Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
             }
             else if (!hasVisibleBorder && fillBrush is not null)
             {
@@ -164,7 +159,7 @@ public class Direct2DRenderer : IRenderer
         }
     }
 
-    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
         if (string.IsNullOrEmpty(text)) return;
 
@@ -201,7 +196,7 @@ public class Direct2DRenderer : IRenderer
         _renderTarget.DrawTextLayout(new Vector2(origin.X, origin.Y + yOffsetCorrection), textLayout, textBrush, Vortice.Direct2D1.DrawTextOptions.None);
     }
 
-    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
         _renderTarget.PushAxisAlignedClip(rect, antialiasMode);
     }
@@ -232,7 +227,7 @@ public class Direct2DRenderer : IRenderer
         _textFormatCache.Clear();
     }
 
-    private ID2D1SolidColorBrush? GetOrCreateBrush(Color4 color)
+    private ID2D1SolidColorBrush? GetOrCreateBrush(Drawing.Color color)
     {
         if (_renderTarget is null)
         {
@@ -252,7 +247,8 @@ public class Direct2DRenderer : IRenderer
 
         try
         {
-            brush = _renderTarget.CreateSolidColorBrush(color);
+            Vortice.Mathematics.Color4 color4 = color;
+            brush = _renderTarget.CreateSolidColorBrush(color4);
             if (brush is not null)
             {
                 _brushCache[color] = brush;

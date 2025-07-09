@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
 
@@ -12,7 +13,7 @@ public static partial class UI
     /// </summary>
     internal static bool DrawButtonPrimitive(
         int id,
-        Rect bounds,
+        Vortice.Mathematics.Rect bounds,
         string text,
         ButtonStylePack theme,
         bool disabled,
@@ -159,7 +160,7 @@ public static partial class UI
     /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
     internal static void DrawTextPrimitive(
-        Rect bounds,
+        Vortice.Mathematics.Rect bounds,
         string text,
         ButtonStyle style,
         Alignment textAlignment,

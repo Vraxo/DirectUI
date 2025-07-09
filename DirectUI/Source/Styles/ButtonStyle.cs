@@ -1,5 +1,5 @@
 ﻿// ButtonStyle.cs
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
 
 namespace DirectUI;
@@ -10,7 +10,7 @@ public class ButtonStyle : BoxStyle
     // public float FontSpacing { get; set; } = 0; // Handled by TextFormat
     // public float FontSize { get; set; } = 16; // Handled by TextFormat
     // public Font? Font { get; set; } = null; // Represented by TextFormat
-    public Color4 FontColor { get; set; } = DefaultTheme.Text;
+    public Color FontColor { get; set; } = DefaultTheme.Text;
 
     // Properties needed for creating IDWriteTextFormat
     public string FontName { get; set; } = "Segoe UI";

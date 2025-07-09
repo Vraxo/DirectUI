@@ -1,12 +1,12 @@
-﻿using Vortice.Mathematics;
+﻿using DirectUI.Drawing;
 
 namespace DirectUI;
 
 public class BoxStyle
 {
     public float Roundness { get; set; } = 0.2f;
-    public Color4 FillColor { get; set; } = DefaultTheme.NormalFill;
-    public Color4 BorderColor { get; set; } = DefaultTheme.NormalBorder;
+    public Color FillColor { get; set; } = DefaultTheme.NormalFill;
+    public Color BorderColor { get; set; } = DefaultTheme.NormalBorder;
 
     public float BorderLengthTop { get; set; } = 1.0f;
     public float BorderLengthRight { get; set; } = 1.0f;
