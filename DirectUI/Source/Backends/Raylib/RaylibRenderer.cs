@@ -140,8 +140,8 @@ public class RaylibRenderer : IRenderer
 
         Raylib_cs.Color rlColor = color;
 
-        // Use the FontManager to get the appropriate font, loaded at the native resolution.
-        Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
+        // Use the FontManager to get the appropriate font, loaded at the native resolution and correct weight.
+        Font rlFont = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
         // Measure and Draw using the original float font size.
         // Raylib will scale the glyphs from the atlas (rasterized at 'atlasSize') to match 'style.FontSize'.

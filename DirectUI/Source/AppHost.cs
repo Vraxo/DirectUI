@@ -62,9 +62,11 @@ public class AppHost
             _renderer = new RaylibRenderer();
             _textService = new RaylibTextService();
             FontManager.Initialize();
-            // Register fonts instead of loading them. They will be loaded on demand at specific sizes.
-            FontManager.RegisterFont("Segoe UI", "C:/Windows/Fonts/segoeui.ttf");
-            FontManager.RegisterFont("Consolas", "C:/Windows/Fonts/consola.ttf");
+            // Register font variants. The backend will now select the appropriate file based on weight.
+            FontManager.RegisterFontVariant("Segoe UI", FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
+            FontManager.RegisterFontVariant("Segoe UI", FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
+            FontManager.RegisterFontVariant("Consolas", FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
+            FontManager.RegisterFontVariant("Consolas", FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
         }
         else // Direct2D Backend
         {

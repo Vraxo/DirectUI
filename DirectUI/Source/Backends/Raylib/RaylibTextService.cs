@@ -60,8 +60,8 @@ public class RaylibTextService : ITextService
         int atlasSize = (int)Math.Round(style.FontSize);
         if (atlasSize <= 0) atlasSize = 1;
 
-        // Use the FontManager to get the appropriate font at the native resolution.
-        Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
+        // Use the FontManager to get the appropriate font at the native resolution and correct weight.
+        Font rlFont = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
         // Measure using the original float font size for accurate layout metrics.
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
@@ -81,8 +81,8 @@ public class RaylibTextService : ITextService
         int atlasSize = (int)Math.Round(style.FontSize);
         if (atlasSize <= 0) atlasSize = 1;
 
-        // Fetch the font at the correct, native atlas resolution.
-        var font = FontManager.GetFont(style.FontName, atlasSize);
+        // Fetch the font at the correct, native atlas resolution and weight.
+        var font = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
         // Pass the pre-loaded font to the layout constructor. It will measure internally.
         var newLayout = new RaylibTextLayout(text, style, font);
