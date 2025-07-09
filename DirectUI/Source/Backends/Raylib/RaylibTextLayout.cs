@@ -18,13 +18,13 @@ internal class RaylibTextLayout : ITextLayout
 
     private readonly Font _raylibFont;
 
-    public RaylibTextLayout(string text, Font preloadedFont, float finalFontSize)
+    public RaylibTextLayout(string text, Font preloadedFont, int atlasSize)
     {
         Text = text;
         _raylibFont = preloadedFont;
 
-        // Measure using the provided final (compensated) font size.
-        Size = Raylib.MeasureTextEx(_raylibFont, text, finalFontSize, finalFontSize / 10f);
+        // Measure using the integer size the font was generated with to ensure 1:1 metrics.
+        Size = Raylib.MeasureTextEx(_raylibFont, text, atlasSize, atlasSize / 10f);
     }
 
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)

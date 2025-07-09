@@ -142,8 +142,9 @@ public class RaylibRenderer : IRenderer
         // Use the FontManager to get the appropriate font, loaded at the native resolution and correct weight.
         Font rlFont = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
-        // Measure and Draw using the final (compensated) float font size.
-        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, finalFontSize, finalFontSize / 10f);
+        // The font size passed to Raylib should be the integer size the font atlas was generated with
+        // to ensure 1:1 pixel rendering and avoid scaling artifacts.
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, atlasSize, atlasSize / 10f);
 
         Vector2 textDrawPos = origin;
 
@@ -178,8 +179,8 @@ public class RaylibRenderer : IRenderer
         // Round the final position to the nearest whole pixel to prevent sub-pixel "wobble".
         textDrawPos = new Vector2(MathF.Round(textDrawPos.X), MathF.Round(textDrawPos.Y));
 
-        // Draw using the final float font size.
-        Raylib.DrawTextEx(rlFont, text, textDrawPos, finalFontSize, finalFontSize / 10f, rlColor);
+        // Draw using the integer atlas size to prevent scaling.
+        Raylib.DrawTextEx(rlFont, text, textDrawPos, atlasSize, atlasSize / 10f, rlColor);
     }
 
     public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
