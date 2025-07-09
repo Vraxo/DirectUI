@@ -24,11 +24,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
     // Flag to control which backend is used
-    private readonly bool _useRaylibBackend;
+    private readonly GraphicsBackend _backend;
 
-    public MyDirectUIApp(string title, int width, int height, bool useRaylib) : base(title, width, height)
+    public MyDirectUIApp(string title, int width, int height, GraphicsBackend backend) : base(title, width, height)
     {
-        _useRaylibBackend = useRaylib;
+        _backend = backend;
         _mainView = new MainView();
 
         // This path would typically come from a config file or service locator
@@ -42,7 +42,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     /// </summary>
     public bool Create()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             // For Raylib, we bypass the base Create and call Initialize directly
             // which handles Raylib.InitWindow.
@@ -60,7 +60,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // The AppHost will handle the Raylib window management.
     protected override bool Initialize()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
             // We just need to initialize AppHost.
@@ -69,7 +69,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
             Raylib.SetTargetFPS(60); // Control FPS for Raylib
 
             // AppHost expects an IntPtr HWND even for Raylib.
-            // It will ignore it if _useRaylibBackend is true.
+            // It will ignore it if _backend == GraphicsBackend.Raylib is true.
             _appHost = CreateAppHost();
             return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
         }
@@ -83,7 +83,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     protected override void Cleanup()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             Console.WriteLine("RaylibAppWindow cleaning up its resources...");
             _appHost?.Cleanup();
@@ -102,7 +102,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // OnPaint will only be called for D2D backend.
     protected override void OnPaint()
     {
-        if (!_useRaylibBackend)
+        if (_backend == GraphicsBackend.Direct2D)
         {
             _appHost?.Render();
         }
@@ -110,7 +110,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     public override void FrameUpdate()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             // For Raylib, Raylib.WindowShouldClose() is the equivalent of WM_QUIT.
             if (Raylib.WindowShouldClose())
@@ -134,7 +134,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     protected override AppHost CreateAppHost()
     {
         var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        return new AppHost(DrawUI, backgroundColor, _useRaylibBackend); // Pass the backend flag
+        return new AppHost(DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib); // Pass the backend flag
     }
 
     // For Raylib, AppHost's InputManager directly processes Raylib events.
@@ -142,7 +142,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // if using the D2D backend. Otherwise, they are irrelevant.
     protected override void OnKeyDown(Keys key)
     {
-        if (!_useRaylibBackend) base.OnKeyDown(key);
+        if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -154,32 +154,32 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     protected override void OnMouseMove(int x, int y)
     {
-        if (!_useRaylibBackend) base.OnMouseMove(x, y);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseMove(x, y);
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        if (!_useRaylibBackend) base.OnMouseDown(button, x, y);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseDown(button, x, y);
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        if (!_useRaylibBackend) base.OnMouseUp(button, x, y);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseUp(button, x, y);
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        if (!_useRaylibBackend) base.OnMouseWheel(delta);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseWheel(delta);
     }
 
     protected override void OnKeyUp(Keys key)
     {
-        if (!_useRaylibBackend) base.OnKeyUp(key);
+        if (_backend == GraphicsBackend.Direct2D) base.OnKeyUp(key);
     }
 
     protected override void OnChar(char c)
     {
-        if (!_useRaylibBackend) base.OnChar(c);
+        if (_backend == GraphicsBackend.Direct2D) base.OnChar(c);
     }
 
     /// <summary>
@@ -246,7 +246,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
         // For Raylib backend, modal windows are not handled by Win32Window directly.
         // Implementing true modal behavior (disabling owner window, blocking loop) would
         // require a different approach or a Raylib-specific modal window class.
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             Console.WriteLine("Modal windows are not yet implemented for Raylib backend.");
             return;
@@ -267,7 +267,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     private void ManageModalWindowState()
     {
-        if (_useRaylibBackend) return; // Modal window management is D2D-specific
+        if (_backend == GraphicsBackend.Raylib) return; // Modal window management is D2D-specific
 
         if (_projectWindow == null) return;
 

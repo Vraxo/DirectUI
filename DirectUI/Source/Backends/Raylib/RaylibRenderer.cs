@@ -65,37 +65,81 @@ public class RaylibRenderer : IRenderer
 
         Raylib_cs.Rectangle rlRect = new(rect.X, rect.Y, rect.Width, rect.Height);
 
-        // Fill
-        if (style.FillColor.A > 0)
+        // Border
+        if (style.BorderColor.A > 0 && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0))
         {
             if (style.Roundness > 0)
             {
-                // Raylib's DrawRectangleRounded takes normalized roundness (0 to 1)
+                // Draw the outer rounded rectangle for the border
+                Raylib.DrawRectangleRounded(rlRect, style.Roundness, 0, borderColor);
+
+                // Calculate the inner rectangle for the fill
+                var fillRect = new Raylib_cs.Rectangle(
+                    rect.X + style.BorderLengthLeft,
+                    rect.Y + style.BorderLengthTop,
+                    rect.Width - style.BorderLengthLeft - style.BorderLengthRight,
+                    rect.Height - style.BorderLengthTop - style.BorderLengthBottom
+                );
+
+                // Calculate the inner roundness
+                float innerRoundness = style.Roundness; // This might need more sophisticated calculation
+
+                // Draw the inner rounded rectangle for the fill color, effectively creating the border
+                if (style.FillColor.A > 0)
+                {
+                    Raylib.DrawRectangleRounded(fillRect, innerRoundness, 0, fillColor);
+                }
+            }
+            else
+            {
+                // Original line-by-line drawing for non-rounded rectangles
+                // Top border
+                if (style.BorderLengthTop > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X, rect.Y), new Vector2(rect.X + rect.Width, rect.Y), style.BorderLengthTop, borderColor);
+                }
+                // Right border
+                if (style.BorderLengthRight > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X + rect.Width, rect.Y), new Vector2(rect.X + rect.Width, rect.Y + rect.Height), style.BorderLengthRight, borderColor);
+                }
+                // Bottom border
+                if (style.BorderLengthBottom > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X + rect.Width, rect.Y + rect.Height), new Vector2(rect.X, rect.Y + rect.Height), style.BorderLengthBottom, borderColor);
+                }
+                // Left border
+                if (style.BorderLengthLeft > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X, rect.Y + rect.Height), new Vector2(rect.X, rect.Y), style.BorderLengthLeft, borderColor);
+                }
+
+                // Now, draw the fill rectangle inside the borders
+                if (style.FillColor.A > 0)
+                {
+                    var fillRect = new Raylib_cs.Rectangle(
+                        rect.X + style.BorderLengthLeft,
+                        rect.Y + style.BorderLengthTop,
+                        rect.Width - style.BorderLengthLeft - style.BorderLengthRight,
+                        rect.Height - style.BorderLengthTop - style.BorderLengthBottom
+                    );
+                    if (fillRect.Width > 0 && fillRect.Height > 0)
+                    {
+                        Raylib.DrawRectangleRec(fillRect, fillColor);
+                    }
+                }
+            }
+        }
+        else if (style.FillColor.A > 0) // No border, just fill
+        {
+            if (style.Roundness > 0)
+            {
                 Raylib.DrawRectangleRounded(rlRect, style.Roundness, 0, fillColor);
             }
             else
             {
                 Raylib.DrawRectangleRec(rlRect, fillColor);
             }
-        }
-
-        // Border (simplified for uniform border lengths for now)
-        float borderThickness = Math.Max(style.BorderLengthTop, style.BorderLengthRight); // Take max for simplicity
-        borderThickness = Math.Max(borderThickness, style.BorderLengthBottom);
-        borderThickness = Math.Max(borderThickness, style.BorderLengthLeft);
-
-        if (style.BorderColor.A <= 0 || borderThickness <= 0)
-        {
-            return;
-        }
-
-        if (style.Roundness > 0)
-        {
-            Raylib.DrawRectangleRoundedLinesEx(rlRect, style.Roundness, 0, borderThickness, borderColor);
-        }
-        else
-        {
-            Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
         }
     }
 
