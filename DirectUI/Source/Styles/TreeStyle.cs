@@ -5,7 +5,7 @@ namespace DirectUI;
 public class TreeStyle
 {
     public float Indent { get; set; } = 19f;
-    public float RowHeight { get; set; } = 22f;
+    public float RowHeight { get; set; } = 24f; // Increased from 22f to accommodate font descenders
     public Color LineColor { get; set; } = DefaultTheme.HoverBorder;
     public ButtonStylePack ToggleStyle { get; set; }
     public ButtonStylePack NodeLabelStyle { get; set; }

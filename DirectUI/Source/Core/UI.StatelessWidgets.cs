@@ -170,13 +170,11 @@ public static partial class UI
 
         var renderer = Context.Renderer;
 
-        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
-        float yOffsetCorrection = (textAlignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
+        // Calculate a clean drawing origin without backend-specific corrections.
+        Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y);
 
-        // Calculate drawing origin
-        Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y + yOffsetCorrection);
-
-        // Call the new backend-agnostic DrawText method on the renderer
+        // Call the backend-agnostic DrawText method on the renderer.
+        // The renderer is now responsible for any specific positional adjustments.
         renderer.DrawText(drawOrigin, text, style, textAlignment, new Vector2(bounds.Width, bounds.Height), style.FontColor);
     }
 }

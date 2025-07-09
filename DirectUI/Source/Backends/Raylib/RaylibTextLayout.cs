@@ -17,16 +17,16 @@ internal class RaylibTextLayout : ITextLayout
     public string Text { get; }
 
     private readonly ButtonStyle _style;
-    private readonly Font _raylibFont; // For consistency, though Raylib text operations often use default font
+    private readonly Font _raylibFont;
 
-    public RaylibTextLayout(string text, ButtonStyle style)
+    public RaylibTextLayout(string text, ButtonStyle style, Font preloadedFont)
     {
         Text = text;
         _style = style;
-        _raylibFont = Raylib.GetFontDefault(); // Using default Raylib font for now
+        _raylibFont = preloadedFont;
 
-        // Raylib.MeasureTextEx needs a font object.
-        // For simplicity, spacing is approximated as 1/10th of font size, typical for Raylib's default.
+        // Measure using the original float size to get accurate layout metrics.
+        // The preloadedFont is already oversized, and Raylib will calculate the scaled measurement.
         Size = Raylib.MeasureTextEx(_raylibFont, text, style.FontSize, style.FontSize / 10f);
     }
 
@@ -87,7 +87,7 @@ internal class RaylibTextLayout : ITextLayout
 
     public void Dispose()
     {
-        // No Raylib-specific font objects to dispose that are loaded here per layout.
-        // If fonts were loaded with LoadFontEx, they would need UnloadFont.
+        // This object doesn't own the font resource, so it does not dispose it.
+        // FontManager is responsible for unloading fonts.
     }
 }

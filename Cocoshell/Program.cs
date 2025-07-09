@@ -7,6 +7,9 @@ public class Program
     [STAThread]
     static void Main()
     {
-        ApplicationRunner.Run(GraphicsBackend.Raylib);
+        var backend = GraphicsBackend.Raylib;
+        //var backend = GraphicsBackend.Direct2D;
+
+        ApplicationRunner.Run(backend);
     }
 }

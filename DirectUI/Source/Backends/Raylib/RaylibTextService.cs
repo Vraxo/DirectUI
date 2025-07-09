@@ -56,8 +56,13 @@ public class RaylibTextService : ITextService
         var cacheKey = (text, fontKey);
         if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
 
-        // Use the FontManager to get the appropriate font.
-        Font rlFont = FontManager.GetFont(style.FontName);
+        const int oversampleFactor = 4;
+        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
+
+        // Use the FontManager to get the appropriate font at the oversized atlas resolution.
+        Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
+
+        // Measure using the original float font size for accurate layout metrics.
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
         _textSizeCache[cacheKey] = measuredSize;
         return measuredSize;
@@ -65,15 +70,20 @@ public class RaylibTextService : ITextService
 
     public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
     {
-        // Raylib does not have advanced text layout objects like DirectWrite.
-        // The ITextLayout implementation for Raylib will be simpler, primarily for size and basic hit-testing.
         var layoutKey = new TextLayoutCacheKey(text, style, maxSize, alignment);
         if (_textLayoutCache.TryGetValue(layoutKey, out var cachedLayout))
         {
             return cachedLayout;
         }
 
-        var newLayout = new RaylibTextLayout(text, style); // Create a Raylib-specific ITextLayout
+        const int oversampleFactor = 4;
+        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
+
+        // Fetch the font at the correct, oversized atlas resolution.
+        var font = FontManager.GetFont(style.FontName, atlasSize);
+
+        // Pass the pre-loaded font to the layout constructor. It will measure internally.
+        var newLayout = new RaylibTextLayout(text, style, font);
         _textLayoutCache[layoutKey] = newLayout;
         return newLayout;
     }

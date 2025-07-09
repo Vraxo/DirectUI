@@ -18,8 +18,8 @@ public class RaylibRenderer : IRenderer
 
     public Vector2 RenderTargetSize
     {
-        get 
-        { 
+        get
+        {
             return new(
                 Raylib.GetScreenWidth(),
                 Raylib.GetScreenHeight());
@@ -130,19 +130,20 @@ public class RaylibRenderer : IRenderer
             return;
         }
 
+        const int oversampleFactor = 4;
+        int atlasSize = (int)Math.Round(style.FontSize * oversampleFactor);
         Raylib_cs.Color rlColor = color;
 
-        // Use the FontManager to get the appropriate font.
-        // The FontName from the style is used as the key.
-        Font rlFont = FontManager.GetFont(style.FontName);
+        // Use the FontManager to get the appropriate font, loaded at the oversized atlas resolution.
+        Font rlFont = FontManager.GetFont(style.FontName, atlasSize);
 
-        // Raylib's MeasureTextEx needs a font object
-        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f); // Default spacing is 1/10th of font size
+        // Measure and Draw using the original float font size.
+        // Raylib will downscale the oversized font texture, producing a smooth, anti-aliased result.
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
 
         Vector2 textDrawPos = origin;
 
-        // Apply alignment based on maxSize and measuredSize
-        // This logic is similar to what a text layout engine would do.
+        // Apply horizontal alignment
         if (maxSize.X > 0 && measuredSize.X < maxSize.X)
         {
             switch (alignment.Horizontal)
@@ -155,12 +156,17 @@ public class RaylibRenderer : IRenderer
                     break;
             }
         }
-        if (maxSize.Y > 0 && measuredSize.Y < maxSize.Y)
+
+        // Apply vertical alignment
+        if (maxSize.Y > 0)
         {
             switch (alignment.Vertical)
             {
                 case VAlignment.Center:
-                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
+                    // Center based on the font's point size rather than its measured pixel height.
+                    // This is more stable as measured height can include line spacing metrics that
+                    // throw off the visual centering, pushing text upwards and clipping descenders.
+                    textDrawPos.Y += (maxSize.Y - style.FontSize) / 2f;
                     break;
                 case VAlignment.Bottom:
                     textDrawPos.Y += (maxSize.Y - measuredSize.Y);
@@ -168,7 +174,10 @@ public class RaylibRenderer : IRenderer
             }
         }
 
-        // Raylib DrawTextEx takes position, text, font, font size, spacing, tint
+        // Round the final position to the nearest whole pixel to prevent sub-pixel "wobble".
+        textDrawPos = new Vector2(MathF.Round(textDrawPos.X), MathF.Round(textDrawPos.Y));
+
+        // Draw using the original float font size.
         Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
     }
 

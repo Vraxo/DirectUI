@@ -1,4 +1,4 @@
-// DirectUI/Source/Drawing/FontManager.cs
+// DirectUI/Drawing/FontManager.cs
 using Raylib_cs;
 using System;
 using System.Collections.Generic;
@@ -7,94 +7,108 @@ namespace DirectUI.Drawing
 {
     /// <summary>
     /// Manages loading and caching of fonts for the Raylib backend.
+    /// Fonts are registered by name and loaded on-demand at specific sizes.
     /// </summary>
     public static class FontManager
     {
-        private static readonly Dictionary<string, Font> s_fontCache = new();
+        // Caches the actual loaded Raylib Font objects. Key is (font name, font size).
+        private static readonly Dictionary<(string, int), Font> s_loadedFontsCache = new();
+        // Stores the registered mapping from a font name to its file path.
+        private static readonly Dictionary<string, string> s_fontPaths = new();
         private static bool s_isInitialized = false;
 
         /// <summary>
-        /// Initializes the FontManager. Must be called after Raylib window is initialized.
+        /// Initializes the FontManager.
         /// </summary>
         public static void Initialize()
         {
             if (s_isInitialized) return;
-            
-            // Load a default font that is guaranteed to exist.
-            // This prevents crashes if a requested font is not found.
-            s_fontCache["default"] = Raylib.GetFontDefault();
             s_isInitialized = true;
         }
 
         /// <summary>
-        /// Loads a font from the specified file path and associates it with a given name.
+        /// Registers a font's name and file path so it can be loaded later.
         /// </summary>
-        /// <param name="fontName">The logical name to assign to the font (e.g., "Default", "UI_Bold").</param>
-        /// <param name="filePath">The path to the font file (e.g., "Assets/Fonts/Roboto-Regular.ttf").</param>
-        public static void LoadFont(string fontName, string filePath)
+        /// <param name="fontName">The logical name for the font (e.g., "Segoe UI").</param>
+        /// <param name="filePath">The path to the font file.</param>
+        public static void RegisterFont(string fontName, string filePath)
         {
             if (!s_isInitialized)
             {
                 Console.WriteLine("FontManager not initialized. Call FontManager.Initialize() first.");
                 return;
             }
-
-            if (s_fontCache.ContainsKey(fontName))
-            {
-                Console.WriteLine($"Font '{fontName}' is already loaded.");
-                return;
-            }
-
-            try
-            {
-                // Use LoadFontEx for better quality font rendering, specifying a base font size.
-                // A base size of 64 is generally good for UI elements, allowing Raylib to scale down cleanly.
-                // The '0' for fontChars allows Raylib to load default ASCII characters.
-                Font font = Raylib.LoadFontEx(filePath, 64, null, 0);
-                s_fontCache[fontName] = font;
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Failed to load font '{fontName}' from '{filePath}'. Reason: {ex.Message}");
-            }
+            s_fontPaths[fontName] = filePath;
         }
 
         /// <summary>
-        /// Retrieves a loaded font by its logical name.
+        /// Retrieves a font at a specific size. If not cached, it's loaded from its registered path.
         /// </summary>
-        /// <param name="fontName">The name of the font to retrieve.</param>
-        /// <returns>The Raylib Font object. Returns the default font if the named font is not found.</returns>
-        public static Font GetFont(string fontName)
+        /// <param name="fontName">The name of the registered font.</param>
+        /// <param name="fontSize">The desired size of the font.</param>
+        /// <returns>The Raylib Font object. Returns the default font if the requested font cannot be loaded.</returns>
+        public static Font GetFont(string fontName, int fontSize)
         {
             if (!s_isInitialized)
             {
-                // Fallback to default font if not initialized, to prevent crashes.
                 return Raylib.GetFontDefault();
             }
+            if (fontSize <= 0)
+            {
+                fontSize = 10; // Use a default small size for safety.
+            }
 
-            if (s_fontCache.TryGetValue(fontName, out var font))
+            var cacheKey = (fontName, fontSize);
+            if (s_loadedFontsCache.TryGetValue(cacheKey, out var font))
             {
                 return font;
             }
 
-            Console.WriteLine($"Font '{fontName}' not found. Returning default font.");
-            return s_fontCache["default"];
+            if (!s_fontPaths.TryGetValue(fontName, out var filePath))
+            {
+                Console.WriteLine($"Font '{fontName}' is not registered. Returning default font.");
+                return Raylib.GetFontDefault();
+            }
+
+            try
+            {
+                // Load the font at the exact size requested for the atlas.
+                Font newFont = Raylib.LoadFontEx(filePath, fontSize, null, 0);
+
+                // CRITICAL FIX: Do NOT generate mipmaps. Mipmaps can cause additional
+                // blurring when the GPU blends between different mip levels. For crisp UI text
+                // via oversampling, we want to scale down from a single high-resolution texture.
+                // Raylib.GenTextureMipmaps(ref newFont.Texture);
+
+                // Use Bilinear filtering for smooth downscaling from the oversized atlas.
+                Raylib.SetTextureFilter(newFont.Texture, TextureFilter.Bilinear);
+
+                s_loadedFontsCache[cacheKey] = newFont;
+                return newFont;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load font '{fontName}' at size {fontSize} from '{filePath}'. Reason: {ex.Message}. Returning default font.");
+                return Raylib.GetFontDefault();
+            }
         }
 
         /// <summary>
-        /// Unloads all loaded fonts and clears the cache.
+        /// Unloads all loaded fonts and clears all caches.
         /// </summary>
         public static void UnloadAll()
         {
-            foreach (var font in s_fontCache.Values)
+            var defaultFont = Raylib.GetFontDefault();
+            foreach (var font in s_loadedFontsCache.Values)
             {
                 // Do not unload the default font, Raylib manages it.
-                if (font.Texture.Id != Raylib.GetFontDefault().Texture.Id)
+                if (font.Texture.Id != defaultFont.Texture.Id)
                 {
                     Raylib.UnloadFont(font);
                 }
             }
-            s_fontCache.Clear();
+            s_loadedFontsCache.Clear();
+            s_fontPaths.Clear();
             s_isInitialized = false;
         }
     }

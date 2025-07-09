@@ -20,6 +20,7 @@ using System.Diagnostics;
 using System.Numerics;
 using DirectUI.Backends; // Added Raylib namespace
 using DirectUI.Core; // For IRenderer, ITextService
+using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
 using Vortice.Direct2D1;
@@ -75,6 +76,10 @@ public class AppHost
             // This AppHost simply creates the renderer/text service.
             _renderer = new RaylibRenderer();
             _textService = new RaylibTextService();
+            FontManager.Initialize();
+            // For now, we'll load common system fonts. A real app should bundle fonts.
+            FontManager.LoadFont("Segoe UI", "C:/Windows/Fonts/segoeui.ttf");
+            FontManager.LoadFont("Consolas", "C:/Windows/Fonts/consola.ttf"); // Corrected Consolas font file name
         }
         else // Direct2D Backend
         {
@@ -120,6 +125,10 @@ public class AppHost
         _textService?.Cleanup();
         (_renderer as Direct2DRenderer)?.Cleanup(); // Specific cleanup for Direct2DRenderer
         (_renderer as RaylibRenderer)?.Cleanup(); // Specific cleanup for RaylibRenderer (if any needed in future)
+        if (_useRaylibBackend)
+        {
+            FontManager.UnloadAll();
+        }
         _graphicsDevice?.Cleanup();
     }
 
@@ -482,6 +491,21 @@ public abstract class Direct2DAppWindow : Win32Window
             Console.WriteLine($"GetClientRect failed. Falling back to stored size: {baseWidth}x{baseHeight}");
         }
         return new SizeI(baseWidth, baseHeight);
+    }
+}
+</file>
+
+<file path="GlobalUsings.cs">
+global using Color = DirectUI.Drawing.Color;
+</file>
+
+<file path="GraphicsBackend.cs">
+namespace DirectUI
+{
+    public enum GraphicsBackend
+    {
+        Direct2D,
+        Raylib
     }
 }
 </file>
@@ -1777,8 +1801,9 @@ public interface ILayoutContainer
 <file path="Core\IRenderer.cs">
 // DirectUI/Core/IRenderer.cs
 using System.Numerics;
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 using Vortice.Direct2D1; // Required for AntialiasMode
+using Vortice.Mathematics;
 
 namespace DirectUI.Core;
 
@@ -1796,22 +1821,22 @@ public interface IRenderer
     /// <summary>
     /// Draws a line between two points.
     /// </summary>
-    void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth);
+    void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth);
 
     /// <summary>
     /// Draws a box with fill, border, and rounding based on a style.
     /// </summary>
-    void DrawBox(Rect rect, BoxStyle style);
+    void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style);
 
     /// <summary>
     /// Draws text. The renderer is responsible for its own text layout and caching.
     /// </summary>
-    void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color);
+    void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color);
 
     /// <summary>
     /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
     /// </summary>
-    void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);
+    void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);
 
     /// <summary>
     /// Pops the last clipping rectangle from the stack.
@@ -2999,6 +3024,7 @@ public static partial class UI
 
 <file path="Core\UI.StatelessWidgets.cs">
 using System.Numerics;
+using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
 
@@ -3012,7 +3038,7 @@ public static partial class UI
     /// </summary>
     internal static bool DrawButtonPrimitive(
         int id,
-        Rect bounds,
+        Vortice.Mathematics.Rect bounds,
         string text,
         ButtonStylePack theme,
         bool disabled,
@@ -3159,7 +3185,7 @@ public static partial class UI
     /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
     internal static void DrawTextPrimitive(
-        Rect bounds,
+        Vortice.Mathematics.Rect bounds,
         string text,
         ButtonStyle style,
         Alignment textAlignment,
@@ -3185,7 +3211,7 @@ public static partial class UI
 using System;
 using System.Collections.Generic;
 using System.Numerics;
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -3239,7 +3265,7 @@ public static partial class UI
         }
     }
 
-    public static void PushStyleColor(StyleColor styleColor, Color4 color)
+    public static void PushStyleColor(StyleColor styleColor, Color color)
     {
         Context.styleColorStack.Push((styleColor, color));
     }
@@ -3269,7 +3295,7 @@ public static partial class UI
         return defaultValue;
     }
 
-    internal static Color4 GetStyleColor(StyleColor styleColor, Color4 defaultValue)
+    internal static Color GetStyleColor(StyleColor styleColor, Color defaultValue)
     {
         foreach (var (key, value) in Context.styleColorStack)
         {
@@ -3422,7 +3448,7 @@ public static partial class UI
         float toggleWidth = style.RowHeight - 4;
         if (node.Children.Count > 0)
         {
-            var bounds = new Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
+            var bounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
             if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false))
             {
                 node.IsExpanded = !node.IsExpanded;
@@ -3438,7 +3464,7 @@ public static partial class UI
         var labelSize = Context.TextService.MeasureText(node.Text, labelStyle.Normal);
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
-        var labelBounds = new Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
+        var labelBounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
         if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false))
         {
             clickedNode = node;
@@ -3465,6 +3491,7 @@ public static partial class UI
 // Core/UIContext.cs
 using System.Collections.Generic;
 using DirectUI.Core;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -3480,7 +3507,7 @@ public class UIContext
     public UILayoutManager Layout { get; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
-    internal readonly Stack<(StyleColor, Vortice.Mathematics.Color4)> styleColorStack = new();
+    internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
 
     public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime)
     {
@@ -3924,6 +3951,164 @@ public class FpsCounter
         // Use a large max size as FPS counter typically won't wrap
         // The IRenderer.DrawText method requires a maxSize and alignment for its internal layout logic.
         _renderer.DrawText(new Vector2(5f, 5f), fpsText, style, new Alignment(HAlignment.Left, VAlignment.Top), new Vector2(150f, 30f), _textColor);
+    }
+}
+</file>
+
+<file path="Drawing\Color.cs">
+using System.Runtime.InteropServices;
+
+namespace DirectUI.Drawing;
+
+[StructLayout(LayoutKind.Sequential)]
+public struct Color
+{
+    public byte R;
+    public byte G;
+    public byte B;
+    public byte A;
+
+    public Color(byte r, byte g, byte b, byte a)
+    {
+        R = r;
+        G = g;
+        B = b;
+        A = a;
+    }
+
+    public Color(float r, float g, float b, float a)
+    {
+        R = (byte)(r * 255.0f);
+        G = (byte)(g * 255.0f);
+        B = (byte)(b * 255.0f);
+        A = (byte)(a * 255.0f);
+    }
+
+    public static implicit operator Raylib_cs.Color(Color color)
+    {
+        return new Raylib_cs.Color(color.R, color.G, color.B, color.A);
+    }
+
+    public static implicit operator Vortice.Mathematics.Color4(Color color)
+    {
+        return new Vortice.Mathematics.Color4(color.R / 255.0f, color.G / 255.0f, color.B / 255.0f, color.A / 255.0f);
+    }
+
+    public static implicit operator Color(Vortice.Mathematics.Color4 color)
+    {
+        return new Color((byte)(color.R * 255), (byte)(color.G * 255), (byte)(color.B * 255), (byte)(color.A * 255));
+    }
+}
+</file>
+
+<file path="Drawing\FontManager.cs">
+// DirectUI/Source/Drawing/FontManager.cs
+using Raylib_cs;
+using System;
+using System.Collections.Generic;
+
+namespace DirectUI.Drawing
+{
+    /// <summary>
+    /// Manages loading and caching of fonts for the Raylib backend.
+    /// </summary>
+    public static class FontManager
+    {
+        private static readonly Dictionary<string, Font> s_fontCache = new();
+        private static bool s_isInitialized = false;
+
+        /// <summary>
+        /// Initializes the FontManager. Must be called after Raylib window is initialized.
+        /// </summary>
+        public static void Initialize()
+        {
+            if (s_isInitialized) return;
+
+            // Load a default font that is guaranteed to exist.
+            // This prevents crashes if a requested font is not found.
+            s_fontCache["default"] = Raylib.GetFontDefault();
+            s_isInitialized = true;
+        }
+
+        /// <summary>
+        /// Loads a font from the specified file path and associates it with a given name.
+        /// </summary>
+        /// <param name="fontName">The logical name to assign to the font (e.g., "Default", "UI_Bold").</param>
+        /// <param name="filePath">The path to the font file (e.g., "Assets/Fonts/Roboto-Regular.ttf").</param>
+        public static void LoadFont(string fontName, string filePath)
+        {
+            if (!s_isInitialized)
+            {
+                Console.WriteLine("FontManager not initialized. Call FontManager.Initialize() first.");
+                return;
+            }
+
+            if (s_fontCache.ContainsKey(fontName))
+            {
+                Console.WriteLine($"Font '{fontName}' is already loaded.");
+                return;
+            }
+
+            try
+            {
+                // Use LoadFontEx for better quality font rendering, specifying a base font size.
+                // Changed base size from 64 to 32 to be closer to common UI font sizes (e.g., 14),
+                // reducing the amount of downscaling and potential blur.
+                Font font = Raylib.LoadFontEx(filePath, 32, null, 0);
+
+                // Generate mipmaps for the font atlas texture to enable better quality scaling.
+                Raylib.GenTextureMipmaps(ref font.Texture);
+
+                // Changed texture filter from Trilinear to Bilinear.
+                // Bilinear filtering often provides a good balance between smoothness and sharpness for static UI elements.
+                Raylib.SetTextureFilter(font.Texture, TextureFilter.Bilinear);
+
+                s_fontCache[fontName] = font;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to load font '{fontName}' from '{filePath}'. Reason: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// Retrieves a loaded font by its logical name.
+        /// </summary>
+        /// <param name="fontName">The name of the font to retrieve.</param>
+        /// <returns>The Raylib Font object. Returns the default font if the named font is not found.</returns>
+        public static Font GetFont(string fontName)
+        {
+            if (!s_isInitialized)
+            {
+                // Fallback to default font if not initialized, to prevent crashes.
+                return Raylib.GetFontDefault();
+            }
+
+            if (s_fontCache.TryGetValue(fontName, out var font))
+            {
+                return font;
+            }
+
+            Console.WriteLine($"Font '{fontName}' not found. Returning default font.");
+            return s_fontCache["default"];
+        }
+
+        /// <summary>
+        /// Unloads all loaded fonts and clears the cache.
+        /// </summary>
+        public static void UnloadAll()
+        {
+            foreach (var font in s_fontCache.Values)
+            {
+                // Do not unload the default font, Raylib manages it.
+                if (font.Texture.Id != Raylib.GetFontDefault().Texture.Id)
+                {
+                    Raylib.UnloadFont(font);
+                }
+            }
+            s_fontCache.Clear();
+            s_isInitialized = false;
+        }
     }
 }
 </file>
@@ -4399,15 +4584,15 @@ public enum Keys
 </file>
 
 <file path="Styles\BoxStyle.cs">
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
 public class BoxStyle
 {
     public float Roundness { get; set; } = 0.2f;
-    public Color4 FillColor { get; set; } = DefaultTheme.NormalFill;
-    public Color4 BorderColor { get; set; } = DefaultTheme.NormalBorder;
+    public Color FillColor { get; set; } = DefaultTheme.NormalFill;
+    public Color BorderColor { get; set; } = DefaultTheme.NormalBorder;
 
     public float BorderLengthTop { get; set; } = 1.0f;
     public float BorderLengthRight { get; set; } = 1.0f;
@@ -4443,7 +4628,7 @@ public class BoxStyle
 
 <file path="Styles\ButtonStyle.cs">
 // ButtonStyle.cs
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
 
 namespace DirectUI;
@@ -4454,7 +4639,7 @@ public class ButtonStyle : BoxStyle
     // public float FontSpacing { get; set; } = 0; // Handled by TextFormat
     // public float FontSize { get; set; } = 16; // Handled by TextFormat
     // public Font? Font { get; set; } = null; // Represented by TextFormat
-    public Color4 FontColor { get; set; } = DefaultTheme.Text;
+    public Color FontColor { get; set; } = DefaultTheme.Text;
 
     // Properties needed for creating IDWriteTextFormat
     public string FontName { get; set; } = "Segoe UI";
@@ -4619,7 +4804,7 @@ public sealed class ButtonStylePack
 
 <file path="Styles\DefaultTheme.cs">
 // DefaultTheme.cs
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -4631,37 +4816,37 @@ public static class DefaultTheme
     private static class Ue5ThemeColors
     {
         // Palette based on Unreal Engine 5 Editor
-        public static readonly Color4 Fill = new Color4(42 / 255f, 42 / 255f, 42 / 255f, 1.0f);        // #2A2A2A
-        public static readonly Color4 FillLighter = new Color4(58 / 255f, 58 / 255f, 58 / 255f, 1.0f);  // #3A3A3A
-        public static readonly Color4 Border = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f);      // #151515 (Matches window background)
+        public static readonly Color Fill = new Color(42, 42, 42, 255);        // #2A2A2A
+        public static readonly Color FillLighter = new Color(58, 58, 58, 255);  // #3A3A3A
+        public static readonly Color Border = new Color(21, 21, 21, 255);      // #151515 (Matches window background)
 
         // --- CHANGE HERE ---
         // Changed from blue to a light gray for a more authentic UE5 feel.
-        public static readonly Color4 Hover = new Color4(160 / 255f, 160 / 255f, 160 / 255f, 1.0f);   // #A0A0A0
+        public static readonly Color Hover = new Color(160, 160, 160, 255);   // #A0A0A0
         // --- END CHANGE ---
 
-        public static readonly Color4 Accent = new Color4(255 / 255f, 171 / 255f, 0 / 255f, 1.0f);     // Orange #FFAB00
-        public static readonly Color4 AccentBorder = new Color4(255 / 255f, 187 / 255f, 51 / 255f, 1.0f); // Lighter Orange
+        public static readonly Color Accent = new Color(255, 171, 0, 255);     // Orange #FFAB00
+        public static readonly Color AccentBorder = new Color(255, 187, 51, 255); // Lighter Orange
 
-        public static readonly Color4 DisabledFill = new Color4(32 / 255f, 32 / 255f, 32 / 255f, 0.8f);
-        public static readonly Color4 DisabledBorder = new Color4(48 / 255f, 48 / 255f, 48 / 255f, 0.8f);
-        public static readonly Color4 DisabledText = new Color4(128 / 255f, 128 / 255f, 128 / 255f, 1.0f);
+        public static readonly Color DisabledFill = new Color(32, 32, 32, (byte)(255 * 0.8f));
+        public static readonly Color DisabledBorder = new Color(48, 48, 48, (byte)(255 * 0.8f));
+        public static readonly Color DisabledText = new Color(128, 128, 128, 255);
 
-        public static readonly Color4 Text = new Color4(240 / 255f, 240 / 255f, 240 / 255f, 1.0f);     // #F0F0F0
+        public static readonly Color Text = new Color(240, 240, 240, 255);     // #F0F0F0
     }
 
     private static class OriginalColors
     {
-        public static readonly Color4 NormalFill = new Color4(0.25f, 0.25f, 0.3f, 1.0f);
-        public static readonly Color4 NormalBorder = new Color4(0.4f, 0.4f, 0.45f, 1.0f);
-        public static readonly Color4 HoverFill = new Color4(0.35f, 0.35f, 0.4f, 1.0f);
-        public static readonly Color4 HoverBorder = new Color4(0.5f, 0.5f, 0.55f, 1.0f);
-        public static readonly Color4 Accent = new Color4(0.2f, 0.4f, 0.8f, 1.0f);
-        public static readonly Color4 AccentBorder = new Color4(0.3f, 0.5f, 0.9f, 1.0f);
-        public static readonly Color4 DisabledFill = new Color4(0.2f, 0.2f, 0.2f, 0.8f);
-        public static readonly Color4 DisabledBorder = new Color4(0.3f, 0.3f, 0.3f, 0.8f);
-        public static readonly Color4 DisabledText = new Color4(0.5f, 0.5f, 0.5f, 1.0f);
-        public static readonly Color4 Text = Colors.WhiteSmoke;
+        public static readonly Color NormalFill = new Color(64, 64, 77, 255);
+        public static readonly Color NormalBorder = new Color(102, 102, 115, 255);
+        public static readonly Color HoverFill = new Color(89, 89, 102, 255);
+        public static readonly Color HoverBorder = new Color(128, 128, 140, 255);
+        public static readonly Color Accent = new Color(51, 102, 204, 255);
+        public static readonly Color AccentBorder = new Color(77, 128, 230, 255);
+        public static readonly Color DisabledFill = new Color(51, 51, 51, (byte)(255 * 0.8f));
+        public static readonly Color DisabledBorder = new Color(77, 77, 77, (byte)(255 * 0.8f));
+        public static readonly Color DisabledText = new Color(128, 128, 128, 255);
+        public static readonly Color Text = new Color(245, 245, 245, 255); // WhiteSmoke
     }
 
 
@@ -4669,38 +4854,38 @@ public static class DefaultTheme
     // Change the assignments here to swap themes.
 
     // Basic Palette
-    public static readonly Color4 White = Colors.White;
-    public static readonly Color4 Black = Colors.Black;
-    public static readonly Color4 Transparent = Colors.Transparent;
+    public static readonly Color White = new Color(255, 255, 255, 255);
+    public static readonly Color Black = new Color(0, 0, 0, 255);
+    public static readonly Color Transparent = new Color(0, 0, 0, 0);
 
     // --- ACTIVE THEME: UE5 ---
-    public static readonly Color4 NormalFill = Ue5ThemeColors.Fill;
-    public static readonly Color4 NormalBorder = Ue5ThemeColors.Border;
-    public static readonly Color4 HoverFill = Ue5ThemeColors.FillLighter;    // Subtle gray change for hover fill
-    public static readonly Color4 HoverBorder = Ue5ThemeColors.Hover;        // Light gray border on hover
-    public static readonly Color4 Accent = Ue5ThemeColors.Accent;            // Orange accent for pressed
-    public static readonly Color4 AccentBorder = Ue5ThemeColors.AccentBorder;
-    public static readonly Color4 DisabledFill = Ue5ThemeColors.DisabledFill;
-    public static readonly Color4 DisabledBorder = Ue5ThemeColors.DisabledBorder;
-    public static readonly Color4 DisabledText = Ue5ThemeColors.DisabledText;
-    public static readonly Color4 FocusBorder = Ue5ThemeColors.Hover;        // Use gray for focus
-    public static readonly Color4 Text = Ue5ThemeColors.Text;
+    public static readonly Color NormalFill = Ue5ThemeColors.Fill;
+    public static readonly Color NormalBorder = Ue5ThemeColors.Border;
+    public static readonly Color HoverFill = Ue5ThemeColors.FillLighter;    // Subtle gray change for hover fill
+    public static readonly Color HoverBorder = Ue5ThemeColors.Hover;        // Light gray border on hover
+    public static readonly Color Accent = Ue5ThemeColors.Accent;            // Orange accent for pressed
+    public static readonly Color AccentBorder = Ue5ThemeColors.AccentBorder;
+    public static readonly Color DisabledFill = Ue5ThemeColors.DisabledFill;
+    public static readonly Color DisabledBorder = Ue5ThemeColors.DisabledBorder;
+    public static readonly Color DisabledText = Ue5ThemeColors.DisabledText;
+    public static readonly Color FocusBorder = Ue5ThemeColors.Hover;        // Use gray for focus
+    public static readonly Color Text = Ue5ThemeColors.Text;
 
     /*
     // --- BACKUP THEME: Original ---
     // To restore the original theme, comment out the "UE5" block above
     // and uncomment this block below.
-    public static readonly Color4 NormalFill = OriginalColors.NormalFill;
-    public static readonly Color4 NormalBorder = OriginalColors.NormalBorder;
-    public static readonly Color4 HoverFill = OriginalColors.HoverFill;
-    public static readonly Color4 HoverBorder = OriginalColors.HoverBorder;
-    public static readonly Color4 Accent = OriginalColors.Accent;
-    public static readonly Color4 AccentBorder = OriginalColors.AccentBorder;
-    public static readonly Color4 DisabledFill = OriginalColors.DisabledFill;
-    public static readonly Color4 DisabledBorder = OriginalColors.DisabledBorder;
-    public static readonly Color4 DisabledText = OriginalColors.DisabledText;
-    public static readonly Color4 FocusBorder = Colors.LightSkyBlue;
-    public static readonly Color4 Text = OriginalColors.Text;
+    public static readonly Color NormalFill = OriginalColors.NormalFill;
+    public static readonly Color NormalBorder = OriginalColors.NormalBorder;
+    public static readonly Color HoverFill = OriginalColors.HoverFill;
+    public static readonly Color HoverBorder = OriginalColors.HoverBorder;
+    public static readonly Color Accent = OriginalColors.Accent;
+    public static readonly Color AccentBorder = OriginalColors.AccentBorder;
+    public static readonly Color DisabledFill = OriginalColors.DisabledFill;
+    public static readonly Color DisabledBorder = OriginalColors.DisabledBorder;
+    public static readonly Color DisabledText = OriginalColors.DisabledText;
+    public static readonly Color FocusBorder = new Color(135, 206, 250, 255); // LightSkyBlue
+    public static readonly Color Text = OriginalColors.Text;
     */
 }
 </file>
@@ -4708,7 +4893,7 @@ public static class DefaultTheme
 <file path="Styles\SliderStyle.cs">
 // MODIFIED: Styles/SliderStyle.cs
 // Summary: Updated default BoxStyle initializations to use BorderLength instead of BorderThickness.
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -4725,7 +4910,7 @@ public class SliderStyle
     public BoxStyle Foreground { get; set; } = new()
     {
         FillColor = DefaultTheme.Accent,
-        BorderColor = Colors.Transparent,
+        BorderColor = DefaultTheme.Transparent,
         Roundness = 0.5f,
         BorderLength = 0.0f // Use new property
     };
@@ -4817,8 +5002,7 @@ public sealed class TabStylePack
 </file>
 
 <file path="Styles\TreeStyle.cs">
-using DirectUI;
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -4826,7 +5010,7 @@ public class TreeStyle
 {
     public float Indent { get; set; } = 19f;
     public float RowHeight { get; set; } = 22f;
-    public Color4 LineColor { get; set; } = DefaultTheme.HoverBorder;
+    public Color LineColor { get; set; } = DefaultTheme.HoverBorder;
     public ButtonStylePack ToggleStyle { get; set; }
     public ButtonStylePack NodeLabelStyle { get; set; }
 
@@ -4853,12 +5037,12 @@ public class TreeStyle
             FontName = "Segoe UI",
             FontSize = 14
         };
-        NodeLabelStyle.Normal.FillColor = Colors.Transparent;
+        NodeLabelStyle.Normal.FillColor = DefaultTheme.Transparent;
         NodeLabelStyle.Normal.FontColor = DefaultTheme.Text;
-        NodeLabelStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 0.5f); // Semi-transparent gray
+        NodeLabelStyle.Hover.FillColor = new Color(64, 64, 64, 128); // Semi-transparent gray
         NodeLabelStyle.Hover.FontColor = DefaultTheme.Text;
         NodeLabelStyle.Pressed.FillColor = DefaultTheme.Accent;
-        NodeLabelStyle.Pressed.FontColor = Colors.White;
+        NodeLabelStyle.Pressed.FontColor = DefaultTheme.White;
         NodeLabelStyle.Pressed.BorderColor = DefaultTheme.AccentBorder;
     }
 }
@@ -6040,16 +6224,11 @@ public class TreeNode<T>
 </file>
 
 <file path="Backends\Direct2D\Direct2DRenderer.cs">
-// DirectUI/Backends/Direct2DRenderer.cs
-using System;
-using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
 using SharpGen.Runtime;
 using Vortice.Direct2D1;
-using Vortice.DirectWrite; // Added for IDWriteFactory and TextFormat/ParagraphAlignment
-using Vortice.Mathematics;
-using System.Drawing; // Added for RectangleF
+using Vortice.DirectWrite;
 
 namespace DirectUI.Backends;
 
@@ -6061,7 +6240,7 @@ public class Direct2DRenderer : IRenderer
 {
     private readonly ID2D1RenderTarget _renderTarget;
     private readonly IDWriteFactory _dwriteFactory; // Added DirectWrite factory
-    private readonly Dictionary<Color4, ID2D1SolidColorBrush> _brushCache = new();
+    private readonly Dictionary<Color, ID2D1SolidColorBrush> _brushCache = new();
 
     // Internal text layout cache for DrawText method
     private readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> _textLayoutCache = new();
@@ -6121,14 +6300,14 @@ public class Direct2DRenderer : IRenderer
         _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
     }
 
-    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
     {
         var brush = GetOrCreateBrush(color);
         if (brush is null) return;
         _renderTarget.DrawLine(p1, p2, brush, strokeWidth);
     }
 
-    public void DrawBox(Rect rect, BoxStyle style)
+    public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
     {
         if (_renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
 
@@ -6150,7 +6329,7 @@ public class Direct2DRenderer : IRenderer
 
         if (style.Roundness > 0.0f)
         {
-            Rect outerBounds = new Rect(pos.X, pos.Y, size.X, size.Y);
+            Vortice.Mathematics.Rect outerBounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, size.X, size.Y);
             float maxRadius = Math.Min(outerBounds.Width * 0.5f, outerBounds.Height * 0.5f);
             float radius = Math.Max(0f, maxRadius * Math.Clamp(style.Roundness, 0.0f, 1.0f));
 
@@ -6197,7 +6376,7 @@ public class Direct2DRenderer : IRenderer
             float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
             if (fillWidth > 0 && fillHeight > 0)
             {
-                _renderTarget.FillRectangle(new Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+                _renderTarget.FillRectangle(new Vortice.Mathematics.Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
             }
             else if (!hasVisibleBorder && fillBrush is not null)
             {
@@ -6206,7 +6385,7 @@ public class Direct2DRenderer : IRenderer
         }
     }
 
-    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
         if (string.IsNullOrEmpty(text)) return;
 
@@ -6243,7 +6422,7 @@ public class Direct2DRenderer : IRenderer
         _renderTarget.DrawTextLayout(new Vector2(origin.X, origin.Y + yOffsetCorrection), textLayout, textBrush, Vortice.Direct2D1.DrawTextOptions.None);
     }
 
-    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
         _renderTarget.PushAxisAlignedClip(rect, antialiasMode);
     }
@@ -6274,7 +6453,7 @@ public class Direct2DRenderer : IRenderer
         _textFormatCache.Clear();
     }
 
-    private ID2D1SolidColorBrush? GetOrCreateBrush(Color4 color)
+    private ID2D1SolidColorBrush? GetOrCreateBrush(Drawing.Color color)
     {
         if (_renderTarget is null)
         {
@@ -6294,7 +6473,8 @@ public class Direct2DRenderer : IRenderer
 
         try
         {
-            brush = _renderTarget.CreateSolidColorBrush(color);
+            Vortice.Mathematics.Color4 color4 = color;
+            brush = _renderTarget.CreateSolidColorBrush(color4);
             if (brush is not null)
             {
                 _brushCache[color] = brush;
@@ -6554,7 +6734,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
-using Vortice.Mathematics;
+using DirectUI.Drawing;
 using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
 using Raylib_cs; // Raylib specific library
 
@@ -6583,45 +6763,88 @@ public class RaylibRenderer : IRenderer
         // No Raylib-specific initialization needed here in the constructor.
     }
 
-    public void DrawLine(Vector2 p1, Vector2 p2, Color4 color, float strokeWidth)
+    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
     {
         // Raylib draws lines with thickness 1 by default, or you can use DrawLineEx for thicker lines
-        // Mapping DirectUI Color4 to Raylib_cs.Color
-        Raylib_cs.Color rlColor = new(
-            (byte)(color.R * 255),
-            (byte)(color.G * 255),
-            (byte)(color.B * 255),
-            (byte)(color.A * 255)
-        );
-
-        Raylib.DrawLineEx(p1, p2, strokeWidth, rlColor);
+        Raylib.DrawLineEx(p1, p2, strokeWidth, color);
     }
 
-    public void DrawBox(Rect rect, BoxStyle style)
+    public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
     {
-        // Mapping DirectUI Color4 to Raylib_cs.Color
-        Raylib_cs.Color fillColor = new Raylib_cs.Color(
-            (byte)(style.FillColor.R * 255),
-            (byte)(style.FillColor.G * 255),
-            (byte)(style.FillColor.B * 255),
-            (byte)(style.FillColor.A * 255)
-        );
-
-        Raylib_cs.Color borderColor = new Raylib_cs.Color(
-            (byte)(style.BorderColor.R * 255),
-            (byte)(style.BorderColor.G * 255),
-            (byte)(style.BorderColor.B * 255),
-            (byte)(style.BorderColor.A * 255)
-        );
+        Raylib_cs.Color fillColor = style.FillColor;
+        Raylib_cs.Color borderColor = style.BorderColor;
 
         Raylib_cs.Rectangle rlRect = new(rect.X, rect.Y, rect.Width, rect.Height);
 
-        // Fill
-        if (style.FillColor.A > 0)
+        // Border
+        if (style.BorderColor.A > 0 && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0))
         {
             if (style.Roundness > 0)
             {
-                // Raylib's DrawRectangleRounded takes normalized roundness (0 to 1)
+                // Draw the outer rounded rectangle for the border
+                Raylib.DrawRectangleRounded(rlRect, style.Roundness, 0, borderColor);
+
+                // Calculate the inner rectangle for the fill
+                var fillRect = new Raylib_cs.Rectangle(
+                    rect.X + style.BorderLengthLeft,
+                    rect.Y + style.BorderLengthTop,
+                    rect.Width - style.BorderLengthLeft - style.BorderLengthRight,
+                    rect.Height - style.BorderLengthTop - style.BorderLengthBottom
+                );
+
+                // Calculate the inner roundness
+                float innerRoundness = style.Roundness; // This might need more sophisticated calculation
+
+                // Draw the inner rounded rectangle for the fill color, effectively creating the border
+                if (style.FillColor.A > 0)
+                {
+                    Raylib.DrawRectangleRounded(fillRect, innerRoundness, 0, fillColor);
+                }
+            }
+            else
+            {
+                // Original line-by-line drawing for non-rounded rectangles
+                // Top border
+                if (style.BorderLengthTop > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X, rect.Y), new Vector2(rect.X + rect.Width, rect.Y), style.BorderLengthTop, borderColor);
+                }
+                // Right border
+                if (style.BorderLengthRight > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X + rect.Width, rect.Y), new Vector2(rect.X + rect.Width, rect.Y + rect.Height), style.BorderLengthRight, borderColor);
+                }
+                // Bottom border
+                if (style.BorderLengthBottom > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X + rect.Width, rect.Y + rect.Height), new Vector2(rect.X, rect.Y + rect.Height), style.BorderLengthBottom, borderColor);
+                }
+                // Left border
+                if (style.BorderLengthLeft > 0)
+                {
+                    Raylib.DrawLineEx(new Vector2(rect.X, rect.Y + rect.Height), new Vector2(rect.X, rect.Y), style.BorderLengthLeft, borderColor);
+                }
+
+                // Now, draw the fill rectangle inside the borders
+                if (style.FillColor.A > 0)
+                {
+                    var fillRect = new Raylib_cs.Rectangle(
+                        rect.X + style.BorderLengthLeft,
+                        rect.Y + style.BorderLengthTop,
+                        rect.Width - style.BorderLengthLeft - style.BorderLengthRight,
+                        rect.Height - style.BorderLengthTop - style.BorderLengthBottom
+                    );
+                    if (fillRect.Width > 0 && fillRect.Height > 0)
+                    {
+                        Raylib.DrawRectangleRec(fillRect, fillColor);
+                    }
+                }
+            }
+        }
+        else if (style.FillColor.A > 0) // No border, just fill
+        {
+            if (style.Roundness > 0)
+            {
                 Raylib.DrawRectangleRounded(rlRect, style.Roundness, 0, fillColor);
             }
             else
@@ -6629,46 +6852,20 @@ public class RaylibRenderer : IRenderer
                 Raylib.DrawRectangleRec(rlRect, fillColor);
             }
         }
-
-        // Border (simplified for uniform border lengths for now)
-        float borderThickness = Math.Max(style.BorderLengthTop, style.BorderLengthRight); // Take max for simplicity
-        borderThickness = Math.Max(borderThickness, style.BorderLengthBottom);
-        borderThickness = Math.Max(borderThickness, style.BorderLengthLeft);
-
-        if (style.BorderColor.A <= 0 || borderThickness <= 0)
-        {
-            return;
-        }
-
-        if (style.Roundness > 0)
-        {
-            Raylib.DrawRectangleRoundedLinesEx(rlRect, style.Roundness, 0, borderThickness, borderColor);
-        }
-        else
-        {
-            Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
-        }
     }
 
-    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
         if (string.IsNullOrEmpty(text))
         {
             return;
         }
 
-        Raylib_cs.Color rlColor = new Raylib_cs.Color(
-            (byte)(color.R * 255),
-            (byte)(color.G * 255),
-            (byte)(color.B * 255),
-            (byte)(color.A * 255)
-        );
+        Raylib_cs.Color rlColor = color;
 
-        // Load font on demand (consider caching this externally or internally with FontKey)
-        // For simplicity, using a default font or a very basic approach for now.
-        // A robust solution would involve pre-loading fonts by style.FontName
-        // and caching Raylib.Font objects.
-        Font rlFont = Raylib.GetFontDefault(); // Use default font for simplicity
+        // Use the FontManager to get the appropriate font.
+        // The FontName from the style is used as the key.
+        Font rlFont = FontManager.GetFont(style.FontName);
 
         // Raylib's MeasureTextEx needs a font object
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f); // Default spacing is 1/10th of font size
@@ -6706,7 +6903,7 @@ public class RaylibRenderer : IRenderer
         Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
     }
 
-    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
         // Raylib has BeginScissorMode / EndScissorMode
         // Note: Raylib's scissor mode is typically integer-based.
@@ -6718,20 +6915,22 @@ public class RaylibRenderer : IRenderer
 
     public void PopClipRect()
     {
+        if (_clipRectStack.Count <= 0)
+        {
+            return;
+        }
+
+        _clipRectStack.Pop();
         if (_clipRectStack.Count > 0)
         {
-            _clipRectStack.Pop();
-            if (_clipRectStack.Count > 0)
-            {
-                // Re-apply the previous clip rect
-                var prevRect = _clipRectStack.Peek();
-                Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
-            }
-            else
-            {
-                // If stack is empty, end scissor mode entirely
-                Raylib.EndScissorMode();
-            }
+            // Re-apply the previous clip rect
+            var prevRect = _clipRectStack.Peek();
+            Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
+        }
+        else
+        {
+            // If stack is empty, end scissor mode entirely
+            Raylib.EndScissorMode();
         }
     }
 
@@ -6847,6 +7046,7 @@ using System;
 using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
+using DirectUI.Drawing;
 using Vortice.Mathematics; // For Color4, Rect
 using Raylib_cs; // Raylib specific library
 
@@ -6899,9 +7099,8 @@ public class RaylibTextService : ITextService
         var cacheKey = (text, fontKey);
         if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
 
-        // Use Raylib's MeasureTextEx with default font for simplicity
-        // For robustness, you'd load/cache fonts by name (style.FontName).
-        Font rlFont = Raylib.GetFontDefault();
+        // Use the FontManager to get the appropriate font.
+        Font rlFont = FontManager.GetFont(style.FontName);
         Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
         _textSizeCache[cacheKey] = measuredSize;
         return measuredSize;
@@ -6929,6 +7128,69 @@ public class RaylibTextService : ITextService
         _textLayoutCache.Clear();
         _textSizeCache.Clear();
         Console.WriteLine("RaylibTextService Cleanup finished.");
+    }
+}
+</file>
+
+<file path="ApplicationRunner.cs">
+using DirectUI;
+using Raylib_cs;
+
+namespace Cocoshell;
+
+public static class ApplicationRunner
+{
+    public static void Run(GraphicsBackend backend)
+    {
+        switch (backend)
+        {
+            case GraphicsBackend.Raylib:
+                RunRaylib();
+                break;
+            case GraphicsBackend.Direct2D:
+                RunDirect2D();
+                break;
+            default:
+                throw new ArgumentOutOfRangeException(nameof(backend), backend, null);
+        }
+    }
+
+    private static void RunRaylib()
+    {
+        Console.WriteLine("Using Raylib Backend.");
+        
+        using MyDirectUIApp app = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
+        
+        if (app.Create())
+        {
+            while (!Raylib.WindowShouldClose())
+            {
+                app.FrameUpdate();
+            }
+        }
+        else
+        {
+            Console.WriteLine("Failed to initialize Raylib application.");
+        }
+    }
+
+    private static void RunDirect2D()
+    {
+        Console.WriteLine("Using Direct2D Backend.");
+
+        using MyDirectUIApp appWindow = new("My Refactored D2D App", 1024, 768, GraphicsBackend.Direct2D);
+        
+        try
+        {
+            if (appWindow.Create())
+            {
+                Application.Run();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
+        }
     }
 }
 </file>
@@ -7350,10 +7612,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
     // Flag to control which backend is used
-    private readonly bool _useRaylibBackend = true; // Set to true to test Raylib backend
+    private readonly GraphicsBackend _backend;
 
-    public MyDirectUIApp(string title, int width, int height) : base(title, width, height)
+    public MyDirectUIApp(string title, int width, int height, GraphicsBackend backend) : base(title, width, height)
     {
+        _backend = backend;
         _mainView = new MainView();
 
         // This path would typically come from a config file or service locator
@@ -7367,7 +7630,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     /// </summary>
     public bool Create()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             // For Raylib, we bypass the base Create and call Initialize directly
             // which handles Raylib.InitWindow.
@@ -7385,7 +7648,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // The AppHost will handle the Raylib window management.
     protected override bool Initialize()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
             // We just need to initialize AppHost.
@@ -7394,7 +7657,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
             Raylib.SetTargetFPS(60); // Control FPS for Raylib
 
             // AppHost expects an IntPtr HWND even for Raylib.
-            // It will ignore it if _useRaylibBackend is true.
+            // It will ignore it if _backend == GraphicsBackend.Raylib is true.
             _appHost = CreateAppHost();
             return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
         }
@@ -7408,7 +7671,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     protected override void Cleanup()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             Console.WriteLine("RaylibAppWindow cleaning up its resources...");
             _appHost?.Cleanup();
@@ -7427,7 +7690,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // OnPaint will only be called for D2D backend.
     protected override void OnPaint()
     {
-        if (!_useRaylibBackend)
+        if (_backend == GraphicsBackend.Direct2D)
         {
             _appHost?.Render();
         }
@@ -7435,7 +7698,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     public override void FrameUpdate()
     {
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             // For Raylib, Raylib.WindowShouldClose() is the equivalent of WM_QUIT.
             if (Raylib.WindowShouldClose())
@@ -7459,7 +7722,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     protected override AppHost CreateAppHost()
     {
         var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        return new AppHost(DrawUI, backgroundColor, _useRaylibBackend); // Pass the backend flag
+        return new AppHost(DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib); // Pass the backend flag
     }
 
     // For Raylib, AppHost's InputManager directly processes Raylib events.
@@ -7467,7 +7730,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // if using the D2D backend. Otherwise, they are irrelevant.
     protected override void OnKeyDown(Keys key)
     {
-        if (!_useRaylibBackend) base.OnKeyDown(key);
+        if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
         if (key == Keys.F3)
         {
             if (_appHost != null)
@@ -7479,32 +7742,32 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     protected override void OnMouseMove(int x, int y)
     {
-        if (!_useRaylibBackend) base.OnMouseMove(x, y);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseMove(x, y);
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        if (!_useRaylibBackend) base.OnMouseDown(button, x, y);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseDown(button, x, y);
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        if (!_useRaylibBackend) base.OnMouseUp(button, x, y);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseUp(button, x, y);
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        if (!_useRaylibBackend) base.OnMouseWheel(delta);
+        if (_backend == GraphicsBackend.Direct2D) base.OnMouseWheel(delta);
     }
 
     protected override void OnKeyUp(Keys key)
     {
-        if (!_useRaylibBackend) base.OnKeyUp(key);
+        if (_backend == GraphicsBackend.Direct2D) base.OnKeyUp(key);
     }
 
     protected override void OnChar(char c)
     {
-        if (!_useRaylibBackend) base.OnChar(c);
+        if (_backend == GraphicsBackend.Direct2D) base.OnChar(c);
     }
 
     /// <summary>
@@ -7571,7 +7834,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
         // For Raylib backend, modal windows are not handled by Win32Window directly.
         // Implementing true modal behavior (disabling owner window, blocking loop) would
         // require a different approach or a Raylib-specific modal window class.
-        if (_useRaylibBackend)
+        if (_backend == GraphicsBackend.Raylib)
         {
             Console.WriteLine("Modal windows are not yet implemented for Raylib backend.");
             return;
@@ -7592,7 +7855,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     private void ManageModalWindowState()
     {
-        if (_useRaylibBackend) return; // Modal window management is D2D-specific
+        if (_backend == GraphicsBackend.Raylib) return; // Modal window management is D2D-specific
 
         if (_projectWindow == null) return;
 
@@ -7622,69 +7885,15 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
 <file path="Program.cs">
 using DirectUI;
-using System;
-using Raylib_cs; // Added for Raylib
 
 namespace Cocoshell;
 
 public class Program
 {
-    [STAThread] // Important for COM (Direct2D) and Win32 APIs
-    static void Main(string[] args)
+    [STAThread]
+    static void Main()
     {
-        Console.WriteLine("Starting Refactored Direct2D/Raylib Application...");
-
-        bool useRaylib = false; // Set to true to test Raylib backend
-
-        if (useRaylib)
-        {
-            Console.WriteLine("Using Raylib Backend.");
-
-            // For Raylib, the main loop is driven directly by Program.cs
-            // and Raylib-cs's window management.
-            // MyDirectUIApp (when configured for Raylib) will handle Raylib window creation and input.
-            using var app = new MyDirectUIApp("My Refactored Raylib App", 1024, 768);
-            // app.Create() will internally call the correct Initialize for Raylib.
-            if (app.Create())
-            {
-                // The primary application loop for Raylib.
-                // This loop runs as long as the Raylib window should not close.
-                while (!Raylib.WindowShouldClose())
-                {
-                    // MyDirectUIApp.FrameUpdate for Raylib backend
-                    // handles input processing and calls AppHost.Render().
-                    // It also sets Application.s_isRunning to false if Raylib.WindowShouldClose() is true.
-                    app.FrameUpdate();
-                }
-            }
-            else
-            {
-                Console.WriteLine("Failed to initialize Raylib application.");
-            }
-            // app.Dispose() is called here implicitly, triggering cleanup
-        }
-        else
-        {
-            Console.WriteLine("Using Direct2D Backend.");
-
-            // Original Direct2D flow, using Win32 window and message loop.
-            using var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768);
-            try
-            {
-                // Create the main window, which registers itself with the Application manager.
-                if (appWindow.Create())
-                {
-                    // Run the central Win32 message loop that processes all windows.
-                    Application.Run();
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
-            }
-        }
-
-        Console.WriteLine("Application finished.");
+        ApplicationRunner.Run(GraphicsBackend.Raylib);
     }
 }
 </file>
