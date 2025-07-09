@@ -14,6 +14,9 @@ namespace DirectUI.Backends;
 /// </summary>
 public class RaylibRenderer : IRenderer
 {
+    // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
+    // DirectWrite text tends to appear slightly larger/bolder for the same point size.
+    private const float FONT_SCALE_FACTOR = 1.125f;
     private readonly Stack<Rectangle> _clipRectStack = new();
 
     public Vector2 RenderTargetSize
@@ -130,12 +133,8 @@ public class RaylibRenderer : IRenderer
             return;
         }
 
-        // Font Rendering Strategy:
-        // No oversampling. The font is loaded into an atlas at the nearest integer size to the requested style.FontSize.
-        // This avoids scaling artifacts from oversampling that can cause "shaggy" or blurry text.
-        // Point filtering is used in FontManager to ensure sharp pixels from the atlas.
-        // MSAA (enabled globally) is relied upon for anti-aliasing the final glyph geometry.
-        int atlasSize = (int)Math.Round(style.FontSize);
+        float finalFontSize = style.FontSize * FONT_SCALE_FACTOR;
+        int atlasSize = (int)Math.Round(finalFontSize);
         if (atlasSize <= 0) atlasSize = 1; // Prevent loading font at size 0.
 
         Raylib_cs.Color rlColor = color;
@@ -143,10 +142,8 @@ public class RaylibRenderer : IRenderer
         // Use the FontManager to get the appropriate font, loaded at the native resolution and correct weight.
         Font rlFont = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
-        // Measure and Draw using the original float font size.
-        // Raylib will scale the glyphs from the atlas (rasterized at 'atlasSize') to match 'style.FontSize'.
-        // Since these two values are very close, scaling artifacts are minimized.
-        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
+        // Measure and Draw using the final (compensated) float font size.
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, finalFontSize, finalFontSize / 10f);
 
         Vector2 textDrawPos = origin;
 
@@ -170,9 +167,6 @@ public class RaylibRenderer : IRenderer
             switch (alignment.Vertical)
             {
                 case VAlignment.Center:
-                    // FIX: Use the measured height for centering. Using the font's point size (style.FontSize)
-                    // does not account for descenders and can cause the bottom of the text to be clipped
-                    // in tight containers. The measured height provides the actual bounding box of the rendered text.
                     textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
                     break;
                 case VAlignment.Bottom:
@@ -184,8 +178,8 @@ public class RaylibRenderer : IRenderer
         // Round the final position to the nearest whole pixel to prevent sub-pixel "wobble".
         textDrawPos = new Vector2(MathF.Round(textDrawPos.X), MathF.Round(textDrawPos.Y));
 
-        // Draw using the original float font size.
-        Raylib.DrawTextEx(rlFont, text, textDrawPos, style.FontSize, style.FontSize / 10f, rlColor);
+        // Draw using the final float font size.
+        Raylib.DrawTextEx(rlFont, text, textDrawPos, finalFontSize, finalFontSize / 10f, rlColor);
     }
 
     public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)

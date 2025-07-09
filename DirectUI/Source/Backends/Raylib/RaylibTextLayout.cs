@@ -16,18 +16,15 @@ internal class RaylibTextLayout : ITextLayout
     public Vector2 Size { get; }
     public string Text { get; }
 
-    private readonly ButtonStyle _style;
     private readonly Font _raylibFont;
 
-    public RaylibTextLayout(string text, ButtonStyle style, Font preloadedFont)
+    public RaylibTextLayout(string text, Font preloadedFont, float finalFontSize)
     {
         Text = text;
-        _style = style;
         _raylibFont = preloadedFont;
 
-        // Measure using the original float size to get accurate layout metrics.
-        // The preloadedFont is already oversized, and Raylib will calculate the scaled measurement.
-        Size = Raylib.MeasureTextEx(_raylibFont, text, style.FontSize, style.FontSize / 10f);
+        // Measure using the provided final (compensated) font size.
+        Size = Raylib.MeasureTextEx(_raylibFont, text, finalFontSize, finalFontSize / 10f);
     }
 
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)

@@ -15,6 +15,10 @@ namespace DirectUI.Backends;
 /// </summary>
 public class RaylibTextService : ITextService
 {
+    // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
+    // DirectWrite text tends to appear slightly larger/bolder for the same point size.
+    private const float FONT_SCALE_FACTOR = 1.125f;
+
     private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
     private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
 
@@ -56,15 +60,15 @@ public class RaylibTextService : ITextService
         var cacheKey = (text, fontKey);
         if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize)) return cachedSize;
 
-        // No oversampling: Load font at its native size for crisp rendering.
-        int atlasSize = (int)Math.Round(style.FontSize);
+        float finalFontSize = style.FontSize * FONT_SCALE_FACTOR;
+        int atlasSize = (int)Math.Round(finalFontSize);
         if (atlasSize <= 0) atlasSize = 1;
 
         // Use the FontManager to get the appropriate font at the native resolution and correct weight.
         Font rlFont = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
-        // Measure using the original float font size for accurate layout metrics.
-        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, style.FontSize, style.FontSize / 10f);
+        // Measure using the final (compensated) float font size for accurate layout metrics.
+        Vector2 measuredSize = Raylib.MeasureTextEx(rlFont, text, finalFontSize, finalFontSize / 10f);
         _textSizeCache[cacheKey] = measuredSize;
         return measuredSize;
     }
@@ -77,15 +81,15 @@ public class RaylibTextService : ITextService
             return cachedLayout;
         }
 
-        // No oversampling: Load font at its native size for crisp rendering.
-        int atlasSize = (int)Math.Round(style.FontSize);
+        float finalFontSize = style.FontSize * FONT_SCALE_FACTOR;
+        int atlasSize = (int)Math.Round(finalFontSize);
         if (atlasSize <= 0) atlasSize = 1;
 
         // Fetch the font at the correct, native atlas resolution and weight.
         var font = FontManager.GetFont(style.FontName, atlasSize, style.FontWeight);
 
-        // Pass the pre-loaded font to the layout constructor. It will measure internally.
-        var newLayout = new RaylibTextLayout(text, style, font);
+        // Pass the pre-loaded font and the final size to the layout constructor.
+        var newLayout = new RaylibTextLayout(text, font, finalFontSize);
         _textLayoutCache[layoutKey] = newLayout;
         return newLayout;
     }
