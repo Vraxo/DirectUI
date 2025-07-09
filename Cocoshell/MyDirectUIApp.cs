@@ -24,10 +24,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
     // Flag to control which backend is used
-    private readonly bool _useRaylibBackend = true; // Set to true to test Raylib backend
+    private readonly bool _useRaylibBackend;
 
-    public MyDirectUIApp(string title, int width, int height) : base(title, width, height)
+    public MyDirectUIApp(string title, int width, int height, bool useRaylib) : base(title, width, height)
     {
+        _useRaylibBackend = useRaylib;
         _mainView = new MainView();
 
         // This path would typically come from a config file or service locator

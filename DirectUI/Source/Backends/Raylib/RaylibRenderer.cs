@@ -18,7 +18,12 @@ public class RaylibRenderer : IRenderer
 
     public Vector2 RenderTargetSize
     {
-        get { return new Vector2(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()); }
+        get 
+        { 
+            return new(
+                Raylib.GetScreenWidth(),
+                Raylib.GetScreenHeight());
+        }
     }
 
     public RaylibRenderer()
@@ -31,32 +36,34 @@ public class RaylibRenderer : IRenderer
     {
         // Raylib draws lines with thickness 1 by default, or you can use DrawLineEx for thicker lines
         // Mapping DirectUI Color4 to Raylib_cs.Color
-        var rlColor = new Raylib_cs.Color(
+        Raylib_cs.Color rlColor = new(
             (byte)(color.R * 255),
             (byte)(color.G * 255),
             (byte)(color.B * 255),
             (byte)(color.A * 255)
         );
+
         Raylib.DrawLineEx(p1, p2, strokeWidth, rlColor);
     }
 
     public void DrawBox(Rect rect, BoxStyle style)
     {
         // Mapping DirectUI Color4 to Raylib_cs.Color
-        var fillColor = new Raylib_cs.Color(
+        Raylib_cs.Color fillColor = new Raylib_cs.Color(
             (byte)(style.FillColor.R * 255),
             (byte)(style.FillColor.G * 255),
             (byte)(style.FillColor.B * 255),
             (byte)(style.FillColor.A * 255)
         );
-        var borderColor = new Raylib_cs.Color(
+
+        Raylib_cs.Color borderColor = new Raylib_cs.Color(
             (byte)(style.BorderColor.R * 255),
             (byte)(style.BorderColor.G * 255),
             (byte)(style.BorderColor.B * 255),
             (byte)(style.BorderColor.A * 255)
         );
 
-        Raylib_cs.Rectangle rlRect = new Raylib_cs.Rectangle(rect.X, rect.Y, rect.Width, rect.Height);
+        Raylib_cs.Rectangle rlRect = new(rect.X, rect.Y, rect.Width, rect.Height);
 
         // Fill
         if (style.FillColor.A > 0)
@@ -77,25 +84,29 @@ public class RaylibRenderer : IRenderer
         borderThickness = Math.Max(borderThickness, style.BorderLengthBottom);
         borderThickness = Math.Max(borderThickness, style.BorderLengthLeft);
 
-        if (style.BorderColor.A > 0 && borderThickness > 0)
+        if (style.BorderColor.A <= 0 || borderThickness <= 0)
         {
-            if (style.Roundness > 0)
-            {
-                Raylib.DrawRectangleRoundedLinesEx(rlRect, style.Roundness, 0, borderThickness, borderColor);
-            }
-            else
-            {
-                Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
-            }
+            return;
+        }
+
+        if (style.Roundness > 0)
+        {
+            Raylib.DrawRectangleRoundedLinesEx(rlRect, style.Roundness, 0, borderThickness, borderColor);
+        }
+        else
+        {
+            Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
         }
     }
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
     {
-        if (string.IsNullOrEmpty(text)) return;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
 
-        // Mapping DirectUI Color4 to Raylib_cs.Color
-        var rlColor = new Raylib_cs.Color(
+        Raylib_cs.Color rlColor = new Raylib_cs.Color(
             (byte)(color.R * 255),
             (byte)(color.G * 255),
             (byte)(color.B * 255),
@@ -156,20 +167,22 @@ public class RaylibRenderer : IRenderer
 
     public void PopClipRect()
     {
+        if (_clipRectStack.Count <= 0)
+        {
+            return;
+        }
+
+        _clipRectStack.Pop();
         if (_clipRectStack.Count > 0)
         {
-            _clipRectStack.Pop();
-            if (_clipRectStack.Count > 0)
-            {
-                // Re-apply the previous clip rect
-                var prevRect = _clipRectStack.Peek();
-                Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
-            }
-            else
-            {
-                // If stack is empty, end scissor mode entirely
-                Raylib.EndScissorMode();
-            }
+            // Re-apply the previous clip rect
+            var prevRect = _clipRectStack.Peek();
+            Raylib.BeginScissorMode((int)prevRect.X, (int)prevRect.Y, (int)prevRect.Width, (int)prevRect.Height);
+        }
+        else
+        {
+            // If stack is empty, end scissor mode entirely
+            Raylib.EndScissorMode();
         }
     }
 

@@ -1041,6 +1041,7 @@ public abstract class Win32Window : IDisposable
     private GCHandle _gcHandle;
 
     public IntPtr Handle => _hwnd;
+    public string Title => _windowTitle;
     public int Width { get; protected set; }
     public int Height { get; protected set; }
     protected IntPtr OwnerHandle { get; private set; } = IntPtr.Zero;
@@ -1385,7 +1386,7 @@ public abstract class Win32Window : IDisposable
 
     }
 
-protected virtual void OnMouseUp(MouseButton button, int x, int y)
+    protected virtual void OnMouseUp(MouseButton button, int x, int y)
     {
 
     }
@@ -2131,17 +2132,13 @@ public static partial class UI
         if (isChecked)
         {
             // The checkmarkColor variable was changed above to pure white.
-            var checkBrush = renderer.GetOrCreateBrush(checkmarkColor);
-            if (checkBrush != null)
-            {
-                // A simple checkmark drawn as two lines
-                float pad = boxSize.X * 0.25f;
-                var p1 = new Vector2(boxRect.Left + pad, boxRect.Top + boxSize.Y * 0.5f);
-                var p2 = new Vector2(boxRect.Left + boxSize.X * 0.45f, boxRect.Bottom - pad);
-                var p3 = new Vector2(boxRect.Right - pad, boxRect.Top + pad);
-                renderer.DrawLine(p1, p2, checkmarkColor, 2.0f);
-                renderer.DrawLine(p2, p3, checkmarkColor, 2.0f);
-            }
+            // A simple checkmark drawn as two lines
+            float pad = boxSize.X * 0.25f;
+            var p1 = new Vector2(boxRect.Left + pad, boxRect.Top + boxSize.Y * 0.5f);
+            var p2 = new Vector2(boxRect.Left + boxSize.X * 0.45f, boxRect.Bottom - pad);
+            var p3 = new Vector2(boxRect.Right - pad, boxRect.Top + pad);
+            renderer.DrawLine(p1, p2, checkmarkColor, 2.0f);
+            renderer.DrawLine(p2, p3, checkmarkColor, 2.0f);
         }
 
         // Draw the label
@@ -2881,13 +2878,8 @@ public static partial class UI
         Vector2 lineStart = new(drawPos.X, lineY);
         Vector2 lineEnd = new(drawPos.X + width, lineY);
 
-        // Use the renderer to get a brush and draw the line
-        var brush = Context.Renderer.GetOrCreateBrush(finalColor);
-
-        if (brush != null)
-        {
-            Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
-        }
+        // Use the renderer to draw the line
+        Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
 
         Context.Layout.AdvanceLayout(size);
     }
@@ -3400,25 +3392,22 @@ public static partial class UI
 
         var startLayoutPos = Context.Layout.GetCurrentPosition();
 
-        // Use renderer's GetOrCreateBrush and DrawLine
-        if (renderer.GetOrCreateBrush(style.LineColor) is not null) // Check if brush can be created/is valid
+        // Draw indent lines
+        int i = 0;
+        foreach (var shouldDrawLine in treeState.IndentLineState)
         {
-            int i = 0;
-            foreach (var shouldDrawLine in treeState.IndentLineState)
+            if (shouldDrawLine)
             {
-                if (shouldDrawLine)
-                {
-                    float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
-                    renderer.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), style.LineColor, 1.0f);
-                }
-                i++;
+                float x = startLayoutPos.X + (i * style.Indent) + (style.Indent * 0.5f);
+                renderer.DrawLine(new Vector2(x, startLayoutPos.Y), new Vector2(x, startLayoutPos.Y + style.RowHeight), style.LineColor, 1.0f);
             }
-            if (treeState.IndentLineState.Count > 0)
-            {
-                float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
-                float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
-                renderer.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), style.LineColor, 1.0f);
-            }
+            i++;
+        }
+        if (treeState.IndentLineState.Count > 0)
+        {
+            float hLineXStart = startLayoutPos.X + ((treeState.IndentLineState.Count - 1) * style.Indent) + (style.Indent * 0.5f);
+            float hLineY = startLayoutPos.Y + style.RowHeight * 0.5f;
+            renderer.DrawLine(new Vector2(hLineXStart, hLineY), new Vector2(hLineXStart + style.Indent * 0.5f, hLineY), style.LineColor, 1.0f);
         }
 
         float indentSize = treeState.IndentLineState.Count * style.Indent;
@@ -6580,7 +6569,12 @@ public class RaylibRenderer : IRenderer
 
     public Vector2 RenderTargetSize
     {
-        get { return new Vector2(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()); }
+        get 
+        { 
+            return new(
+                Raylib.GetScreenWidth(),
+                Raylib.GetScreenHeight());
+        }
     }
 
     public RaylibRenderer()
@@ -6593,32 +6587,34 @@ public class RaylibRenderer : IRenderer
     {
         // Raylib draws lines with thickness 1 by default, or you can use DrawLineEx for thicker lines
         // Mapping DirectUI Color4 to Raylib_cs.Color
-        var rlColor = new Raylib_cs.Color(
+        Raylib_cs.Color rlColor = new(
             (byte)(color.R * 255),
             (byte)(color.G * 255),
             (byte)(color.B * 255),
             (byte)(color.A * 255)
         );
+
         Raylib.DrawLineEx(p1, p2, strokeWidth, rlColor);
     }
 
     public void DrawBox(Rect rect, BoxStyle style)
     {
         // Mapping DirectUI Color4 to Raylib_cs.Color
-        var fillColor = new Raylib_cs.Color(
+        Raylib_cs.Color fillColor = new Raylib_cs.Color(
             (byte)(style.FillColor.R * 255),
             (byte)(style.FillColor.G * 255),
             (byte)(style.FillColor.B * 255),
             (byte)(style.FillColor.A * 255)
         );
-        var borderColor = new Raylib_cs.Color(
+
+        Raylib_cs.Color borderColor = new Raylib_cs.Color(
             (byte)(style.BorderColor.R * 255),
             (byte)(style.BorderColor.G * 255),
             (byte)(style.BorderColor.B * 255),
             (byte)(style.BorderColor.A * 255)
         );
 
-        Raylib_cs.Rectangle rlRect = new Raylib_cs.Rectangle(rect.X, rect.Y, rect.Width, rect.Height);
+        Raylib_cs.Rectangle rlRect = new(rect.X, rect.Y, rect.Width, rect.Height);
 
         // Fill
         if (style.FillColor.A > 0)
@@ -6639,25 +6635,29 @@ public class RaylibRenderer : IRenderer
         borderThickness = Math.Max(borderThickness, style.BorderLengthBottom);
         borderThickness = Math.Max(borderThickness, style.BorderLengthLeft);
 
-        if (style.BorderColor.A > 0 && borderThickness > 0)
+        if (style.BorderColor.A <= 0 || borderThickness <= 0)
         {
-            if (style.Roundness > 0)
-            {
-                Raylib.DrawRectangleRoundedLines(rlRect, style.Roundness, 0, borderThickness, borderColor);
-            }
-            else
-            {
-                Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
-            }
+            return;
+        }
+
+        if (style.Roundness > 0)
+        {
+            Raylib.DrawRectangleRoundedLinesEx(rlRect, style.Roundness, 0, borderThickness, borderColor);
+        }
+        else
+        {
+            Raylib.DrawRectangleLinesEx(rlRect, borderThickness, borderColor);
         }
     }
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color4 color)
     {
-        if (string.IsNullOrEmpty(text)) return;
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
 
-        // Mapping DirectUI Color4 to Raylib_cs.Color
-        var rlColor = new Raylib_cs.Color(
+        Raylib_cs.Color rlColor = new Raylib_cs.Color(
             (byte)(color.R * 255),
             (byte)(color.G * 255),
             (byte)(color.B * 255),
@@ -7361,6 +7361,25 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
         _inputMapEditor = new InputMapEditor(inputMapPath);
     }
 
+    /// <summary>
+    /// Creates the window and initializes resources for either D2D or Raylib backend.
+    /// This is the primary entry point for starting the application window.
+    /// </summary>
+    public bool Create()
+    {
+        if (_useRaylibBackend)
+        {
+            // For Raylib, we bypass the base Create and call Initialize directly
+            // which handles Raylib.InitWindow.
+            return Initialize();
+        }
+        else
+        {
+            // For D2D, use the standard Win32 window creation from the base class.
+            return base.Create();
+        }
+    }
+
     // Override Initialize and Cleanup in Win32Window base if using Raylib
     // For Raylib, we won't actually create a Win32 window directly.
     // The AppHost will handle the Raylib window management.
@@ -7615,7 +7634,7 @@ public class Program
     {
         Console.WriteLine("Starting Refactored Direct2D/Raylib Application...");
 
-        bool useRaylib = true; // Set to true to test Raylib backend
+        bool useRaylib = false; // Set to true to test Raylib backend
 
         if (useRaylib)
         {
@@ -7624,47 +7643,44 @@ public class Program
             // For Raylib, the main loop is driven directly by Program.cs
             // and Raylib-cs's window management.
             // MyDirectUIApp (when configured for Raylib) will handle Raylib window creation and input.
-            using (var app = new MyDirectUIApp("My Refactored Raylib App", 1024, 768))
+            using var app = new MyDirectUIApp("My Refactored Raylib App", 1024, 768);
+            // app.Create() will internally call the correct Initialize for Raylib.
+            if (app.Create())
             {
-                // App.Initialize() will create the Raylib window.
-                if (app.Initialize())
+                // The primary application loop for Raylib.
+                // This loop runs as long as the Raylib window should not close.
+                while (!Raylib.WindowShouldClose())
                 {
-                    // The primary application loop for Raylib.
-                    // This loop runs as long as the Raylib window should not close.
-                    while (!Raylib.WindowShouldClose())
-                    {
-                        // MyDirectUIApp.FrameUpdate for Raylib backend
-                        // handles input processing and calls AppHost.Render().
-                        // It also sets Application.s_isRunning to false if Raylib.WindowShouldClose() is true.
-                        app.FrameUpdate();
-                    }
+                    // MyDirectUIApp.FrameUpdate for Raylib backend
+                    // handles input processing and calls AppHost.Render().
+                    // It also sets Application.s_isRunning to false if Raylib.WindowShouldClose() is true.
+                    app.FrameUpdate();
                 }
-                else
-                {
-                    Console.WriteLine("Failed to initialize Raylib application.");
-                }
-            } // app.Dispose() is called here implicitly, triggering cleanup
+            }
+            else
+            {
+                Console.WriteLine("Failed to initialize Raylib application.");
+            }
+            // app.Dispose() is called here implicitly, triggering cleanup
         }
         else
         {
             Console.WriteLine("Using Direct2D Backend.");
 
             // Original Direct2D flow, using Win32 window and message loop.
-            using (var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768))
+            using var appWindow = new MyDirectUIApp("My Refactored D2D App", 1024, 768);
+            try
             {
-                try
+                // Create the main window, which registers itself with the Application manager.
+                if (appWindow.Create())
                 {
-                    // Create the main window, which registers itself with the Application manager.
-                    if (appWindow.Create())
-                    {
-                        // Run the central Win32 message loop that processes all windows.
-                        Application.Run();
-                    }
+                    // Run the central Win32 message loop that processes all windows.
+                    Application.Run();
                 }
-                catch (Exception ex)
-                {
-                    Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
-                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
             }
         }
 
