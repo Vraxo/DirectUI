@@ -291,9 +291,11 @@ internal class LineEdit
 
         if (textLayout is null) return;
 
+        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
+        const float yOffsetCorrection = -1.5f;
+
         // Calculate the drawing origin by applying scroll offset directly.
-        // The backend-specific vertical offset has been removed from here.
-        Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y);
+        Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
 
         // Renderer's DrawText method now takes full text parameters.
         renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
