@@ -47,7 +47,10 @@ namespace DirectUI.Drawing
 
             try
             {
-                Font font = Raylib.LoadFont(filePath);
+                // Use LoadFontEx for better quality font rendering, specifying a base font size.
+                // A base size of 64 is generally good for UI elements, allowing Raylib to scale down cleanly.
+                // The '0' for fontChars allows Raylib to load default ASCII characters.
+                Font font = Raylib.LoadFontEx(filePath, 64, null, 0);
                 s_fontCache[fontName] = font;
             }
             catch (Exception ex)
