@@ -175,32 +175,48 @@ public class InspectorView
     private static void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
         string propId = $"prop_value_{prop.Name}";
+        var lineEditSize = new Vector2(editorWidth, 24); // Default size for editors
 
-        switch (value)
+        if (prop.PropertyType.IsEnum && prop.CanWrite)
         {
-            case bool b when prop.CanWrite:
-                bool isChecked = b;
-                if (UI.Checkbox(propId, "", ref isChecked, size: new Vector2(0, 24)))
-                {
-                    prop.SetValue(node, isChecked);
-                }
-                break;
+            string[] enumNames = Enum.GetNames(prop.PropertyType);
+            int selectedIndex = Array.IndexOf(enumNames, value?.ToString());
+            if (selectedIndex == -1) selectedIndex = 0; // Default to first if not found
 
-            case Vector2 v:
-                if (prop.CanWrite)
-                {
-                    DrawVector2Editor(node, prop, v, propId, editorWidth);
-                }
-                else
-                {
-                    UI.Button($"{propId}_display", $"X:{v.X:F2}, Y:{v.Y:F2}", size: new(editorWidth, 24), disabled: true);
-                }
-                break;
+            if (UI.Combobox(propId, ref selectedIndex, enumNames, lineEditSize))
+            {
+                object? newValue = Enum.ToObject(prop.PropertyType, selectedIndex);
+                prop.SetValue(node, newValue);
+            }
+        }
+        else
+        {
+            switch (value)
+            {
+                case bool b when prop.CanWrite:
+                    bool isChecked = b;
+                    if (UI.Checkbox(propId, "", ref isChecked, size: new Vector2(0, 24)))
+                    {
+                        prop.SetValue(node, isChecked);
+                    }
+                    break;
 
-            default:
-                string defaultString = value?.ToString() ?? "null";
-                UI.Button($"{propId}_display", defaultString, size: new(editorWidth, 24), disabled: true);
-                break;
+                case Vector2 v:
+                    if (prop.CanWrite)
+                    {
+                        DrawVector2Editor(node, prop, v, propId, editorWidth);
+                    }
+                    else
+                    {
+                        UI.Button($"{propId}_display", $"X:{v.X:F2}, Y:{v.Y:F2}", size: new(editorWidth, 24), disabled: true);
+                    }
+                    break;
+
+                default:
+                    string defaultString = value?.ToString() ?? "null";
+                    UI.Button($"{propId}_display", defaultString, size: new(editorWidth, 24), disabled: true);
+                    break;
+            }
         }
     }
 

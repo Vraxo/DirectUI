@@ -2655,6 +2655,66 @@ public static partial class UI
 }
 </file>
 
+<file path="Core\UI.InputText.cs">
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static bool InputText(
+        string id,
+        ref string text,
+        Vector2 size,
+        Vector2 position = default,
+        ButtonStylePack? theme = null,
+        string placeholderText = "",
+        bool isPassword = false,
+        char passwordChar = '*',
+        int maxLength = 1024,
+        bool disabled = false,
+        Vector2? textMargin = null)
+    {
+        if (!IsContextValid())
+        {
+            return false;
+        }
+
+        int intId = id.GetHashCode();
+        Vector2 finalPosition = Context.Layout.ApplyLayout(position);
+        Vector2 finalMargin = textMargin ?? new(4, 2);
+        Rect widgetBounds = new(finalPosition.X, finalPosition.Y, size.X, size.Y);
+
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return false;
+        }
+
+        InputText lineEditInstance = State.GetOrCreateElement<InputText>(intId);
+        var lineEditState = State.GetOrCreateElement<InputTextState>(HashCode.Combine(intId, "state"));
+
+        bool textChanged = lineEditInstance.UpdateAndDraw(
+            intId,
+            ref text,
+            lineEditState,
+            finalPosition,
+            size,
+            theme,
+            placeholderText,
+            isPassword,
+            passwordChar,
+            maxLength,
+            disabled,
+            finalMargin);
+
+        Context.Layout.AdvanceLayout(size);
+        return textChanged;
+    }
+}
+</file>
+
 <file path="Core\UI.Label.cs">
 using System.Numerics;
 using Vortice.Mathematics;
@@ -2663,7 +2723,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void Label(string id, string text, Vector2? size = null, ButtonStyle? style = null, Alignment? textAlignment = null)
+    public static void Text(string id, string text, Vector2? size = null, ButtonStyle? style = null, Alignment? textAlignment = null)
     {
         if (!IsContextValid() || string.IsNullOrEmpty(text))
         {
@@ -2708,66 +2768,6 @@ public static partial class UI
             Vector2.Zero);
 
         Context.Layout.AdvanceLayout(finalSize);
-    }
-}
-</file>
-
-<file path="Core\UI.LineEdit.cs">
-using System.Numerics;
-using Vortice.Mathematics;
-
-namespace DirectUI;
-
-public static partial class UI
-{
-    public static bool LineEdit(
-        string id,
-        ref string text,
-        Vector2 size,
-        Vector2 position = default,
-        ButtonStylePack? theme = null,
-        string placeholderText = "",
-        bool isPassword = false,
-        char passwordChar = '*',
-        int maxLength = 1024,
-        bool disabled = false,
-        Vector2? textMargin = null)
-    {
-        if (!IsContextValid())
-        {
-            return false;
-        }
-
-        int intId = id.GetHashCode();
-        Vector2 finalPosition = Context.Layout.ApplyLayout(position);
-        Vector2 finalMargin = textMargin ?? new(4, 2);
-        Rect widgetBounds = new(finalPosition.X, finalPosition.Y, size.X, size.Y);
-
-        if (!Context.Layout.IsRectVisible(widgetBounds))
-        {
-            Context.Layout.AdvanceLayout(size);
-            return false;
-        }
-
-        LineEdit lineEditInstance = State.GetOrCreateElement<LineEdit>(intId);
-        var lineEditState = State.GetOrCreateElement<LineEditState>(HashCode.Combine(intId, "state"));
-
-        bool textChanged = lineEditInstance.UpdateAndDraw(
-            intId,
-            ref text,
-            lineEditState,
-            finalPosition,
-            size,
-            theme,
-            placeholderText,
-            isPassword,
-            passwordChar,
-            maxLength,
-            disabled,
-            finalMargin);
-
-        Context.Layout.AdvanceLayout(size);
-        return textChanged;
     }
 }
 </file>
@@ -5078,6 +5078,412 @@ public static class Button
 }
 </file>
 
+<file path="Widgets\InputText.cs">
+// Widgets/LineEdit.cs
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
+using Vortice.DirectWrite; // Still used for WordWrapping, TextAlignment, ParagraphAlignment
+
+namespace DirectUI;
+
+// Logic and drawing for an immediate-mode LineEdit control. This class is STATELESS.
+// All persistent state is managed in a separate LineEditState object.
+internal class InputText
+{
+    // === MAIN UPDATE & DRAW METHOD ===
+    public bool UpdateAndDraw(
+        int intId,
+        ref string text,
+        InputTextState state, // The state is now passed in
+        Vector2 position,
+        Vector2 size,
+        ButtonStylePack? theme,
+        string placeholderText,
+        bool isPassword,
+        char passwordChar,
+        int maxLength,
+        bool disabled,
+        Vector2 textMargin)
+    {
+        var context = UI.Context;
+        var uiState = UI.State;
+        var renderer = context.Renderer;
+        var textService = context.TextService;
+        var input = context.InputState;
+
+        var themeId = HashCode.Combine(intId, "theme");
+        var finalTheme = theme ?? uiState.GetOrCreateElement<ButtonStylePack>(themeId);
+
+        // If no specific theme was provided, configure the default one for a LineEdit look.
+        if (theme is null)
+        {
+            // This setup runs once per widget instance and is then cached.
+            finalTheme.Roundness = 0f;
+            finalTheme.BorderLength = 1f;
+
+            // Normal state (inset look)
+            finalTheme.Normal.FillColor = DefaultTheme.NormalBorder; // Very dark, same as window border
+            finalTheme.Normal.BorderColor = Colors.Black;
+
+            // Hover state (subtle brightening)
+            finalTheme.Hover.FillColor = new Color4(35 / 255f, 35 / 255f, 35 / 255f, 1.0f);
+            finalTheme.Hover.BorderColor = Colors.Black;
+
+            // Focused state (bright border)
+            finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;
+            finalTheme.Focused.BorderColor = DefaultTheme.FocusBorder;
+
+            // Disabled state
+            finalTheme.Disabled.FillColor = finalTheme.Normal.FillColor;
+            finalTheme.Disabled.BorderColor = new Color4(48 / 255f, 48 / 255f, 48 / 255f, 1.0f);
+        }
+
+        Rect bounds = new(position.X, position.Y, size.X, size.Y);
+        bool textChanged = false;
+
+        // --- Focus Management & Caret Placement on Click ---
+        bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        bool isActive = uiState.ActivelyPressedElementId == intId;
+
+        // BUG FIX: Handle losing active press state on mouse up.
+        // Without this, the control would lock all other input after being clicked.
+        if (isActive && !input.IsLeftMouseDown)
+        {
+            uiState.ClearActivePress(intId);
+        }
+
+        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
+        {
+            uiState.SetFocus(intId);
+            uiState.SetPotentialCaptorForFrame(intId); // Claim the press
+
+            // --- BEGIN: Caret positioning logic on click ---
+            // We need to temporarily calculate drawing info here for hit-testing.
+            // This is the only place we need to do this, as keyboard input moves the caret programmatically.
+            finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
+            var styleForHitTest = finalTheme.Current;
+            var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
+            var contentRectForHitTest = new Rect(
+                bounds.X + textMargin.X,
+                bounds.Y + textMargin.Y,
+                Math.Max(0, bounds.Width - textMargin.X * 2),
+                Math.Max(0, bounds.Height - textMargin.Y * 2)
+            );
+
+            // Use ITextService to get the text layout
+            var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+            if (textLayout != null)
+            {
+                float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
+                float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
+
+                var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
+
+                int newCaretPos = hitTestResult.TextPosition;
+                if (hitTestResult.IsTrailingHit)
+                {
+                    newCaretPos++;
+                }
+
+                state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
+
+                // Reset blink and update scroll to show caret.
+                state.IsBlinkOn = true;
+                state.BlinkTimer = 0;
+                UpdateView(text, state, size, textMargin);
+            }
+            // --- END: Caret positioning logic on click ---
+        }
+
+        // --- Input Processing ---
+        if (uiState.FocusedElementId == intId && !disabled)
+        {
+            textChanged = ProcessInput(ref text, state, size, maxLength, textMargin, input);
+        }
+
+        // --- Drawing ---
+        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, uiState.FocusedElementId == intId);
+        renderer.DrawBox(bounds, finalTheme.Current);
+
+        // Define content area and clip to it
+        Rect contentRect = new Rect(
+            bounds.X + textMargin.X,
+            bounds.Y + textMargin.Y,
+            Math.Max(0, bounds.Width - textMargin.X * 2),
+            Math.Max(0, bounds.Height - textMargin.Y * 2)
+        );
+        renderer.PushClipRect(contentRect, D2D.AntialiasMode.PerPrimitive);
+
+        string textToDraw;
+        ButtonStyle styleToDraw;
+
+        if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
+        {
+            textToDraw = placeholderText;
+            styleToDraw = new ButtonStyle(finalTheme.Disabled)
+            {
+                FontColor = new Color4(100 / 255f, 100 / 255f, 100 / 255f, 1.0f) // Custom placeholder color
+            };
+        }
+        else
+        {
+            textToDraw = isPassword ? new string(passwordChar, text.Length) : text;
+            styleToDraw = finalTheme.Current;
+        }
+
+        DrawVisibleText(textToDraw, state, size, styleToDraw, contentRect.TopLeft);
+
+        if (uiState.FocusedElementId == intId && state.IsBlinkOn)
+        {
+            DrawCaret(textToDraw, state, size, finalTheme.Current, contentRect);
+        }
+
+        renderer.PopClipRect();
+
+        return textChanged;
+    }
+
+    private bool ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
+    {
+        bool textChanged = false;
+
+        state.BlinkTimer += UI.Context.DeltaTime;
+
+        if (state.BlinkTimer > 0.5f)
+        {
+            state.BlinkTimer = 0;
+            state.IsBlinkOn = !state.IsBlinkOn;
+        }
+
+        bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);
+
+        if (input.TypedCharacters.Any())
+        {
+            PushUndoState(text, state);
+
+            foreach (char c in input.TypedCharacters)
+            {
+                if (text.Length >= maxLength)
+                {
+                    continue;
+                }
+
+                text = text.Insert(state.CaretPosition, c.ToString());
+                state.CaretPosition++;
+                textChanged = true;
+            }
+        }
+
+        foreach (var key in input.PressedKeys)
+        {
+            bool hasChanged = true;
+            PushUndoState(text, state); // Push on first key press
+            switch (key)
+            {
+                case Keys.Backspace:
+                    if (state.CaretPosition > 0)
+                    {
+                        int removeCount = 1;
+                        if (isCtrlHeld) removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
+                        text = text.Remove(state.CaretPosition - removeCount, removeCount);
+                        state.CaretPosition -= removeCount;
+                    }
+                    break;
+                case Keys.Delete:
+                    if (state.CaretPosition < text.Length)
+                    {
+                        int removeCount = 1;
+                        if (isCtrlHeld) removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
+                        text = text.Remove(state.CaretPosition, removeCount);
+                    }
+                    break;
+                case Keys.LeftArrow:
+                    state.CaretPosition = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
+                    break;
+                case Keys.RightArrow:
+                    state.CaretPosition = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
+                    break;
+                case Keys.Home: state.CaretPosition = 0; break;
+                case Keys.End: state.CaretPosition = text.Length; break;
+                case Keys.Z when isCtrlHeld: Undo(ref text, state); break;
+                case Keys.Y when isCtrlHeld: Redo(ref text, state); break;
+                default: hasChanged = false; break;
+            }
+            if (hasChanged) textChanged = true;
+        }
+
+        state.CaretPosition = Math.Clamp(state.CaretPosition, 0, text.Length);
+
+        if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End))
+        {
+            UpdateView(text, state, size, textMargin);
+            state.IsBlinkOn = true;
+            state.BlinkTimer = 0;
+        }
+
+        return textChanged;
+    }
+
+    private static int FindPreviousWordStart(string text, int currentPos)
+    {
+        if (currentPos == 0)
+        {
+            return 0;
+        }
+
+        int pos = currentPos - 1;
+        while (pos > 0 && char.IsWhiteSpace(text[pos])) pos--;
+        while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) pos--;
+        return pos;
+    }
+
+    private static int FindNextWordEnd(string text, int currentPos)
+    {
+        if (currentPos >= text.Length)
+        {
+            return text.Length;
+        }
+
+        int pos = currentPos;
+        while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
+        while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
+        return pos;
+    }
+
+    private void DrawVisibleText(string fullText, InputTextState state, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
+    {
+        if (string.IsNullOrEmpty(fullText))
+        {
+            return;
+        }
+
+        var context = UI.Context;
+        var renderer = context.Renderer;
+        var textService = context.TextService;
+
+        // The LineEdit widget uses ITextLayout for hit-testing and caret position calculations.
+        // Even though IRenderer now takes raw text for drawing, ITextLayout is still relevant for widget logic.
+        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+
+        if (textLayout is null) return;
+
+        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
+        const float yOffsetCorrection = -1.5f;
+
+        // Calculate the drawing origin by applying scroll offset directly.
+        Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
+
+        // Renderer's DrawText method now takes full text parameters.
+        renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
+    }
+
+    private void DrawCaret(string text, InputTextState state, Vector2 size, ButtonStyle style, Rect contentRect)
+    {
+        var textService = UI.Context.TextService;
+        var renderer = UI.Context.Renderer;
+
+        // Use ITextService to get the text layout
+        var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+        if (textLayout == null) return;
+
+        // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
+        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
+
+        float caretX = contentRect.Left + hitTestMetrics.Point.X - state.ScrollPixelOffset;
+        Rect caretRect = new Rect(caretX, contentRect.Top, 1, contentRect.Height);
+
+        renderer.DrawBox(caretRect, new BoxStyle { FillColor = style.FontColor, Roundness = 0f, BorderLength = 0f });
+    }
+
+    private ITextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
+    {
+        // LineEdit needs to re-layout text based on user input, so it requests a fresh layout from the service.
+        // The ITextService handles the caching internally for performance.
+        return UI.Context.TextService.GetTextLayout(text, style, new(maxWidth, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+    }
+
+    private void UpdateView(string text, InputTextState state, Vector2 size, Vector2 textMargin)
+    {
+        float availableWidth = size.X - textMargin.X * 2;
+        var style = new ButtonStyle(); // A default style is fine for measuring
+
+        var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+        if (textLayout == null) return;
+
+        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
+        float caretAbsoluteX = hitTestMetrics.Point.X;
+
+        if (caretAbsoluteX - state.ScrollPixelOffset > availableWidth)
+        {
+            state.ScrollPixelOffset = caretAbsoluteX - availableWidth;
+        }
+        else if (caretAbsoluteX - state.ScrollPixelOffset < 0)
+        {
+            state.ScrollPixelOffset = caretAbsoluteX;
+        }
+
+        float maxScroll = Math.Max(0, textLayout.Size.X - availableWidth);
+        state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
+    }
+
+    private static void PushUndoState(string text, InputTextState state)
+    {
+        var lastState = state.UndoStack.Count > 0 ? state.UndoStack.Peek() : default;
+        if (state.UndoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == state.CaretPosition) return;
+
+        if (state.UndoStack.Count >= InputTextState.HistoryLimit) state.UndoStack.Pop();
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
+        state.RedoStack.Clear();
+    }
+
+    private static void Undo(ref string text, InputTextState state)
+    {
+        if (state.UndoStack.Count == 0) return;
+        state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
+        var lastState = state.UndoStack.Pop();
+        text = lastState.Text;
+        state.CaretPosition = lastState.CaretPosition;
+        state.ScrollPixelOffset = lastState.ScrollPixelOffset;
+    }
+
+    private static void Redo(ref string text, InputTextState state)
+    {
+        if (state.RedoStack.Count == 0) return;
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
+        var nextState = state.RedoStack.Pop();
+        text = nextState.Text;
+        state.CaretPosition = nextState.CaretPosition;
+        state.ScrollPixelOffset = nextState.ScrollPixelOffset;
+    }
+}
+</file>
+
+<file path="Widgets\InputTextState.cs">
+using System.Collections.Generic;
+
+namespace DirectUI;
+
+internal record struct LineEditUndoRecord(string Text, int CaretPosition, float ScrollPixelOffset);
+
+internal class InputTextState
+{
+    internal int CaretPosition;
+    internal float ScrollPixelOffset;
+
+    internal float BlinkTimer;
+    internal bool IsBlinkOn = true;
+
+    internal readonly Stack<LineEditUndoRecord> UndoStack = new();
+    internal readonly Stack<LineEditUndoRecord> RedoStack = new();
+    internal const int HistoryLimit = 50;
+}
+</file>
+
 <file path="Widgets\InternalComboboxLogic.cs">
 using System;
 using System.Numerics;
@@ -5771,410 +6177,6 @@ internal class InternalVSliderLogic : InternalSliderLogic
 }
 </file>
 
-<file path="Widgets\LineEdit.cs">
-// Widgets/LineEdit.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using DirectUI.Core;
-using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
-using Vortice.DirectWrite; // Still used for WordWrapping, TextAlignment, ParagraphAlignment
-
-namespace DirectUI;
-
-// Logic and drawing for an immediate-mode LineEdit control. This class is STATELESS.
-// All persistent state is managed in a separate LineEditState object.
-internal class LineEdit
-{
-    // === MAIN UPDATE & DRAW METHOD ===
-    public bool UpdateAndDraw(
-        int intId,
-        ref string text,
-        LineEditState state, // The state is now passed in
-        Vector2 position,
-        Vector2 size,
-        ButtonStylePack? theme,
-        string placeholderText,
-        bool isPassword,
-        char passwordChar,
-        int maxLength,
-        bool disabled,
-        Vector2 textMargin)
-    {
-        var context = UI.Context;
-        var uiState = UI.State;
-        var renderer = context.Renderer;
-        var textService = context.TextService;
-        var input = context.InputState;
-
-        var themeId = HashCode.Combine(intId, "theme");
-        var finalTheme = theme ?? uiState.GetOrCreateElement<ButtonStylePack>(themeId);
-
-        // If no specific theme was provided, configure the default one for a LineEdit look.
-        if (theme is null)
-        {
-            // This setup runs once per widget instance and is then cached.
-            finalTheme.Roundness = 0f;
-            finalTheme.BorderLength = 1f;
-
-            // Normal state (inset look)
-            finalTheme.Normal.FillColor = DefaultTheme.NormalBorder; // Very dark, same as window border
-            finalTheme.Normal.BorderColor = Colors.Black;
-
-            // Hover state (subtle brightening)
-            finalTheme.Hover.FillColor = new Color4(35 / 255f, 35 / 255f, 35 / 255f, 1.0f);
-            finalTheme.Hover.BorderColor = Colors.Black;
-
-            // Focused state (bright border)
-            finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;
-            finalTheme.Focused.BorderColor = DefaultTheme.FocusBorder;
-
-            // Disabled state
-            finalTheme.Disabled.FillColor = finalTheme.Normal.FillColor;
-            finalTheme.Disabled.BorderColor = new Color4(48 / 255f, 48 / 255f, 48 / 255f, 1.0f);
-        }
-
-        Rect bounds = new(position.X, position.Y, size.X, size.Y);
-        bool textChanged = false;
-
-        // --- Focus Management & Caret Placement on Click ---
-        bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
-        bool isActive = uiState.ActivelyPressedElementId == intId;
-
-        // BUG FIX: Handle losing active press state on mouse up.
-        // Without this, the control would lock all other input after being clicked.
-        if (isActive && !input.IsLeftMouseDown)
-        {
-            uiState.ClearActivePress(intId);
-        }
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
-        {
-            uiState.SetFocus(intId);
-            uiState.SetPotentialCaptorForFrame(intId); // Claim the press
-
-            // --- BEGIN: Caret positioning logic on click ---
-            // We need to temporarily calculate drawing info here for hit-testing.
-            // This is the only place we need to do this, as keyboard input moves the caret programmatically.
-            finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
-            var styleForHitTest = finalTheme.Current;
-            var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
-            var contentRectForHitTest = new Rect(
-                bounds.X + textMargin.X,
-                bounds.Y + textMargin.Y,
-                Math.Max(0, bounds.Width - textMargin.X * 2),
-                Math.Max(0, bounds.Height - textMargin.Y * 2)
-            );
-
-            // Use ITextService to get the text layout
-            var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-            if (textLayout != null)
-            {
-                float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
-                float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
-
-                var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
-
-                int newCaretPos = hitTestResult.TextPosition;
-                if (hitTestResult.IsTrailingHit)
-                {
-                    newCaretPos++;
-                }
-
-                state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
-
-                // Reset blink and update scroll to show caret.
-                state.IsBlinkOn = true;
-                state.BlinkTimer = 0;
-                UpdateView(text, state, size, textMargin);
-            }
-            // --- END: Caret positioning logic on click ---
-        }
-
-        // --- Input Processing ---
-        if (uiState.FocusedElementId == intId && !disabled)
-        {
-            textChanged = ProcessInput(ref text, state, size, maxLength, textMargin, input);
-        }
-
-        // --- Drawing ---
-        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, uiState.FocusedElementId == intId);
-        renderer.DrawBox(bounds, finalTheme.Current);
-
-        // Define content area and clip to it
-        Rect contentRect = new Rect(
-            bounds.X + textMargin.X,
-            bounds.Y + textMargin.Y,
-            Math.Max(0, bounds.Width - textMargin.X * 2),
-            Math.Max(0, bounds.Height - textMargin.Y * 2)
-        );
-        renderer.PushClipRect(contentRect, D2D.AntialiasMode.PerPrimitive);
-
-        string textToDraw;
-        ButtonStyle styleToDraw;
-
-        if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
-        {
-            textToDraw = placeholderText;
-            styleToDraw = new ButtonStyle(finalTheme.Disabled)
-            {
-                FontColor = new Color4(100 / 255f, 100 / 255f, 100 / 255f, 1.0f) // Custom placeholder color
-            };
-        }
-        else
-        {
-            textToDraw = isPassword ? new string(passwordChar, text.Length) : text;
-            styleToDraw = finalTheme.Current;
-        }
-
-        DrawVisibleText(textToDraw, state, size, styleToDraw, contentRect.TopLeft);
-
-        if (uiState.FocusedElementId == intId && state.IsBlinkOn)
-        {
-            DrawCaret(textToDraw, state, size, finalTheme.Current, contentRect);
-        }
-
-        renderer.PopClipRect();
-
-        return textChanged;
-    }
-
-    private bool ProcessInput(ref string text, LineEditState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
-    {
-        bool textChanged = false;
-
-        state.BlinkTimer += UI.Context.DeltaTime;
-
-        if (state.BlinkTimer > 0.5f)
-        {
-            state.BlinkTimer = 0;
-            state.IsBlinkOn = !state.IsBlinkOn;
-        }
-
-        bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);
-
-        if (input.TypedCharacters.Any())
-        {
-            PushUndoState(text, state);
-
-            foreach (char c in input.TypedCharacters)
-            {
-                if (text.Length >= maxLength)
-                {
-                    continue;
-                }
-
-                text = text.Insert(state.CaretPosition, c.ToString());
-                state.CaretPosition++;
-                textChanged = true;
-            }
-        }
-
-        foreach (var key in input.PressedKeys)
-        {
-            bool hasChanged = true;
-            PushUndoState(text, state); // Push on first key press
-            switch (key)
-            {
-                case Keys.Backspace:
-                    if (state.CaretPosition > 0)
-                    {
-                        int removeCount = 1;
-                        if (isCtrlHeld) removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
-                        text = text.Remove(state.CaretPosition - removeCount, removeCount);
-                        state.CaretPosition -= removeCount;
-                    }
-                    break;
-                case Keys.Delete:
-                    if (state.CaretPosition < text.Length)
-                    {
-                        int removeCount = 1;
-                        if (isCtrlHeld) removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
-                        text = text.Remove(state.CaretPosition, removeCount);
-                    }
-                    break;
-                case Keys.LeftArrow:
-                    state.CaretPosition = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
-                    break;
-                case Keys.RightArrow:
-                    state.CaretPosition = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
-                    break;
-                case Keys.Home: state.CaretPosition = 0; break;
-                case Keys.End: state.CaretPosition = text.Length; break;
-                case Keys.Z when isCtrlHeld: Undo(ref text, state); break;
-                case Keys.Y when isCtrlHeld: Redo(ref text, state); break;
-                default: hasChanged = false; break;
-            }
-            if (hasChanged) textChanged = true;
-        }
-
-        state.CaretPosition = Math.Clamp(state.CaretPosition, 0, text.Length);
-
-        if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End))
-        {
-            UpdateView(text, state, size, textMargin);
-            state.IsBlinkOn = true;
-            state.BlinkTimer = 0;
-        }
-
-        return textChanged;
-    }
-
-    private static int FindPreviousWordStart(string text, int currentPos)
-    {
-        if (currentPos == 0)
-        {
-            return 0;
-        }
-
-        int pos = currentPos - 1;
-        while (pos > 0 && char.IsWhiteSpace(text[pos])) pos--;
-        while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) pos--;
-        return pos;
-    }
-
-    private static int FindNextWordEnd(string text, int currentPos)
-    {
-        if (currentPos >= text.Length)
-        {
-            return text.Length;
-        }
-
-        int pos = currentPos;
-        while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
-        while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
-        return pos;
-    }
-
-    private void DrawVisibleText(string fullText, LineEditState state, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
-    {
-        if (string.IsNullOrEmpty(fullText))
-        {
-            return;
-        }
-
-        var context = UI.Context;
-        var renderer = context.Renderer;
-        var textService = context.TextService;
-
-        // The LineEdit widget uses ITextLayout for hit-testing and caret position calculations.
-        // Even though IRenderer now takes raw text for drawing, ITextLayout is still relevant for widget logic.
-        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-
-        if (textLayout is null) return;
-
-        // Calculate the drawing origin by applying scroll offset directly.
-        // The backend-specific vertical offset has been removed from here.
-        Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y);
-
-        // Renderer's DrawText method now takes full text parameters.
-        renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
-    }
-
-    private void DrawCaret(string text, LineEditState state, Vector2 size, ButtonStyle style, Rect contentRect)
-    {
-        var textService = UI.Context.TextService;
-        var renderer = UI.Context.Renderer;
-
-        // Use ITextService to get the text layout
-        var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-        if (textLayout == null) return;
-
-        // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
-        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
-
-        float caretX = contentRect.Left + hitTestMetrics.Point.X - state.ScrollPixelOffset;
-        Rect caretRect = new Rect(caretX, contentRect.Top, 1, contentRect.Height);
-
-        renderer.DrawBox(caretRect, new BoxStyle { FillColor = style.FontColor, Roundness = 0f, BorderLength = 0f });
-    }
-
-    private ITextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
-    {
-        // LineEdit needs to re-layout text based on user input, so it requests a fresh layout from the service.
-        // The ITextService handles the caching internally for performance.
-        return UI.Context.TextService.GetTextLayout(text, style, new(maxWidth, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-    }
-
-    private void UpdateView(string text, LineEditState state, Vector2 size, Vector2 textMargin)
-    {
-        float availableWidth = size.X - textMargin.X * 2;
-        var style = new ButtonStyle(); // A default style is fine for measuring
-
-        var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-        if (textLayout == null) return;
-
-        var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
-        float caretAbsoluteX = hitTestMetrics.Point.X;
-
-        if (caretAbsoluteX - state.ScrollPixelOffset > availableWidth)
-        {
-            state.ScrollPixelOffset = caretAbsoluteX - availableWidth;
-        }
-        else if (caretAbsoluteX - state.ScrollPixelOffset < 0)
-        {
-            state.ScrollPixelOffset = caretAbsoluteX;
-        }
-
-        float maxScroll = Math.Max(0, textLayout.Size.X - availableWidth);
-        state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
-    }
-
-    private static void PushUndoState(string text, LineEditState state)
-    {
-        var lastState = state.UndoStack.Count > 0 ? state.UndoStack.Peek() : default;
-        if (state.UndoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == state.CaretPosition) return;
-
-        if (state.UndoStack.Count >= LineEditState.HistoryLimit) state.UndoStack.Pop();
-        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
-        state.RedoStack.Clear();
-    }
-
-    private static void Undo(ref string text, LineEditState state)
-    {
-        if (state.UndoStack.Count == 0) return;
-        state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
-        var lastState = state.UndoStack.Pop();
-        text = lastState.Text;
-        state.CaretPosition = lastState.CaretPosition;
-        state.ScrollPixelOffset = lastState.ScrollPixelOffset;
-    }
-
-    private static void Redo(ref string text, LineEditState state)
-    {
-        if (state.RedoStack.Count == 0) return;
-        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
-        var nextState = state.RedoStack.Pop();
-        text = nextState.Text;
-        state.CaretPosition = nextState.CaretPosition;
-        state.ScrollPixelOffset = nextState.ScrollPixelOffset;
-    }
-}
-</file>
-
-<file path="Widgets\LineEditState.cs">
-using System.Collections.Generic;
-
-namespace DirectUI;
-
-internal record struct LineEditUndoRecord(string Text, int CaretPosition, float ScrollPixelOffset);
-
-internal class LineEditState
-{
-    internal int CaretPosition;
-    internal float ScrollPixelOffset;
-
-    internal float BlinkTimer;
-    internal bool IsBlinkOn = true;
-
-    internal readonly Stack<LineEditUndoRecord> UndoStack = new();
-    internal readonly Stack<LineEditUndoRecord> RedoStack = new();
-    internal const int HistoryLimit = 50;
-}
-</file>
-
 <file path="Widgets\SliderDirection.cs">
 namespace DirectUI;
 
@@ -6795,7 +6797,15 @@ public class RaylibRenderer : IRenderer
         Raylib_cs.Color fillColor = style.FillColor;
         Raylib_cs.Color borderColor = style.BorderColor;
 
-        Raylib_cs.Rectangle rlRect = new(rect.X, rect.Y, rect.Width, rect.Height);
+        // Round coordinates to align to the pixel grid for sharper rendering.
+        float roundedX = MathF.Round(rect.X);
+        float roundedY = MathF.Round(rect.Y);
+        // Round the right/bottom edges and calculate width/height to avoid shimmering/gaps.
+        float roundedWidth = MathF.Round(rect.X + rect.Width) - roundedX;
+        float roundedHeight = MathF.Round(rect.Y + rect.Height) - roundedY;
+
+        // Use this rounded rectangle for all drawing operations.
+        Raylib_cs.Rectangle rlRect = new(roundedX, roundedY, roundedWidth, roundedHeight);
 
         // Border
         if (style.BorderColor.A > 0 && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0))
@@ -6807,53 +6817,44 @@ public class RaylibRenderer : IRenderer
 
                 // Calculate the inner rectangle for the fill
                 var fillRect = new Raylib_cs.Rectangle(
-                    rect.X + style.BorderLengthLeft,
-                    rect.Y + style.BorderLengthTop,
-                    rect.Width - style.BorderLengthLeft - style.BorderLengthRight,
-                    rect.Height - style.BorderLengthTop - style.BorderLengthBottom
+                    rlRect.X + style.BorderLengthLeft,
+                    rlRect.Y + style.BorderLengthTop,
+                    rlRect.Width - style.BorderLengthLeft - style.BorderLengthRight,
+                    rlRect.Height - style.BorderLengthTop - style.BorderLengthBottom
                 );
 
                 // Calculate the inner roundness
                 float innerRoundness = style.Roundness; // This might need more sophisticated calculation
 
                 // Draw the inner rounded rectangle for the fill color, effectively creating the border
-                if (style.FillColor.A > 0)
+                if (style.FillColor.A > 0 && fillRect.Width > 0 && fillRect.Height > 0)
                 {
                     Raylib.DrawRectangleRounded(fillRect, innerRoundness, 0, fillColor);
                 }
             }
             else
             {
-                // Original line-by-line drawing for non-rounded rectangles
+                // Use original line-by-line drawing for non-rounded rectangles with rounded coordinates
+                float right = rlRect.X + rlRect.Width;
+                float bottom = rlRect.Y + rlRect.Height;
+
                 // Top border
-                if (style.BorderLengthTop > 0)
-                {
-                    Raylib.DrawLineEx(new Vector2(rect.X, rect.Y), new Vector2(rect.X + rect.Width, rect.Y), style.BorderLengthTop, borderColor);
-                }
+                if (style.BorderLengthTop > 0) Raylib.DrawLineEx(new Vector2(rlRect.X, rlRect.Y), new Vector2(right, rlRect.Y), style.BorderLengthTop, borderColor);
                 // Right border
-                if (style.BorderLengthRight > 0)
-                {
-                    Raylib.DrawLineEx(new Vector2(rect.X + rect.Width, rect.Y), new Vector2(rect.X + rect.Width, rect.Y + rect.Height), style.BorderLengthRight, borderColor);
-                }
+                if (style.BorderLengthRight > 0) Raylib.DrawLineEx(new Vector2(right, rlRect.Y), new Vector2(right, bottom), style.BorderLengthRight, borderColor);
                 // Bottom border
-                if (style.BorderLengthBottom > 0)
-                {
-                    Raylib.DrawLineEx(new Vector2(rect.X + rect.Width, rect.Y + rect.Height), new Vector2(rect.X, rect.Y + rect.Height), style.BorderLengthBottom, borderColor);
-                }
+                if (style.BorderLengthBottom > 0) Raylib.DrawLineEx(new Vector2(right, bottom), new Vector2(rlRect.X, bottom), style.BorderLengthBottom, borderColor);
                 // Left border
-                if (style.BorderLengthLeft > 0)
-                {
-                    Raylib.DrawLineEx(new Vector2(rect.X, rect.Y + rect.Height), new Vector2(rect.X, rect.Y), style.BorderLengthLeft, borderColor);
-                }
+                if (style.BorderLengthLeft > 0) Raylib.DrawLineEx(new Vector2(rlRect.X, bottom), new Vector2(rlRect.X, rlRect.Y), style.BorderLengthLeft, borderColor);
 
                 // Now, draw the fill rectangle inside the borders
                 if (style.FillColor.A > 0)
                 {
                     var fillRect = new Raylib_cs.Rectangle(
-                        rect.X + style.BorderLengthLeft,
-                        rect.Y + style.BorderLengthTop,
-                        rect.Width - style.BorderLengthLeft - style.BorderLengthRight,
-                        rect.Height - style.BorderLengthTop - style.BorderLengthBottom
+                        rlRect.X + style.BorderLengthLeft,
+                        rlRect.Y + style.BorderLengthTop,
+                        rlRect.Width - style.BorderLengthLeft - style.BorderLengthRight,
+                        rlRect.Height - style.BorderLengthTop - style.BorderLengthBottom
                     );
                     if (fillRect.Width > 0 && fillRect.Height > 0)
                     {
@@ -8156,11 +8157,11 @@ public class BottomPanelView
         UI.BeginVBoxContainer("bottom_panel_main_vbox", UI.Context.Layout.GetCurrentPosition(), 5);
 
         // Display current path
-        UI.Label("current_path_label", _currentPath, style: _pathLabelStyle);
+        UI.Text("current_path_label", _currentPath, style: _pathLabelStyle);
 
         if (!string.IsNullOrEmpty(_errorMessage))
         {
-            UI.Label("bottom_panel_error", _errorMessage);
+            UI.Text("bottom_panel_error", _errorMessage);
         }
         else
         {
@@ -8239,7 +8240,7 @@ public class BottomPanelView
                 }
             }
 
-            UI.Label(
+            UI.Text(
                 id + "_label",
                 name,
                 size: labelSize,
@@ -8332,7 +8333,7 @@ public class InspectorView
 
     private void DrawHeader(float availableWidth)
     {
-        UI.Label(
+        UI.Text(
             "inspector_title",
             "Inspector",
             size: new(availableWidth, 0),
@@ -8369,7 +8370,7 @@ public class InspectorView
                     UI.Separator(availableWidth, thickness: 1f, verticalPadding: 8f);
                 }
 
-                UI.Label(
+                UI.Text(
                     $"header_{currentType.Name}",
                     currentType.Name,
                     style: classHeaderStyle,
@@ -8403,7 +8404,7 @@ public class InspectorView
         }
         catch (Exception ex)
         {
-            UI.Label($"prop_error_{prop.Name}", $"Error getting value: {ex.Message}");
+            UI.Text($"prop_error_{prop.Name}", $"Error getting value: {ex.Message}");
             return;
         }
 
@@ -8411,7 +8412,7 @@ public class InspectorView
 
         try
         {
-            UI.Label(
+            UI.Text(
                 $"prop_label_{prop.Name}",
                 SplitPascalCase(prop.Name),
                 size: new(labelWidth, 24),
@@ -8494,7 +8495,7 @@ public class InspectorView
 
             string localX = editState.X;
 
-            if (UI.LineEdit(xId, ref localX, lineEditSize))
+            if (UI.InputText(xId, ref localX, lineEditSize))
             {
                 editState.X = localX;
                 if (float.TryParse(editState.X, out var newX))
@@ -8507,7 +8508,7 @@ public class InspectorView
 
             string localY = editState.Y;
 
-            if (UI.LineEdit(yId, ref localY, lineEditSize))
+            if (UI.InputText(yId, ref localY, lineEditSize))
             {
                 editState.Y = localY;
 
