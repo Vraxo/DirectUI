@@ -3,7 +3,7 @@ using System;
 using System.Numerics;
 using Vortice.Mathematics;
 using DirectUI;
-using DirectUI.Core; 
+using DirectUI.Core;
 
 namespace Cocoshell;
 
@@ -132,15 +132,15 @@ public class MyUILogic : IAppLogic
     /// <summary>
     /// The drawing callback for the modal window.
     /// </summary>
-    private void DrawProjectWindowUI(UIContext context)
+    private void DrawProjectWindowUI(UIContext context, float modalWidth, float modalHeight)
     {
         var renderer = context.Renderer;
-        float windowWidth = renderer.RenderTargetSize.X;
-        float windowHeight = renderer.RenderTargetSize.Y;
         float tabBarHeight = 30f;
-        var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
+        // The content area is now relative to the modal's own 0,0, using its explicit width/height
+        var contentArea = new Rect(0, tabBarHeight, modalWidth, modalHeight - tabBarHeight);
 
         // --- Draw Tab Bar ---
+        // UI.TabBar starts at current layout position, which is 0,0 due to PushLayoutOrigin
         UI.TabBar("project_tabs", ProjectWindowTabLabels, ref _projectWindowActiveTab);
 
         // --- Draw Content Panel Background ---
@@ -151,22 +151,26 @@ public class MyUILogic : IAppLogic
             BorderLengthTop = 1f,
             Roundness = 0f
         };
+        // Draw the background using the contentArea (relative to modal's 0,0)
         renderer.DrawBox(contentArea, panelStyle);
 
         // --- Draw Active Tab Content ---
+        // These will use the current layout origin (which is the modal's top-left corner)
+        // and draw their content relative to it.
         if (_projectWindowActiveTab == 0)
         {
             DrawGeneralSettingsTab(context, contentArea);
         }
         else if (_projectWindowActiveTab == 1)
         {
+            // _inputMapEditor.Draw expects a contentArea, which is already relative to the modal's 0,0
             _inputMapEditor.Draw(context, contentArea);
         }
     }
 
     private void DrawGeneralSettingsTab(UIContext context, Rect contentArea)
     {
-        var contentPos = contentArea.TopLeft + new Vector2(10, 10);
+        var contentPos = contentArea.TopLeft + new Vector2(10, 10); // Still relative to modal's 0,0
         UI.BeginVBoxContainer("tab_general_vbox", contentPos, 10);
         if (UI.Button("modal_button_1", "A button in a modal")) { /* ... */ }
         if (UI.Button("modal_button_close", "Close Me"))
@@ -183,11 +187,15 @@ public class MyUILogic : IAppLogic
     {
         if (_modalWindowService.IsModalWindowOpen) return;
 
+        float modalWidth = 600; // Define here
+        float modalHeight = 400; // Define here
+
         _modalWindowService.OpenModalWindow(
             "Project Settings",
-            600,
-            400,
-            DrawProjectWindowUI,
+            (int)modalWidth, // Pass int width
+            (int)modalHeight, // Pass int height
+                              // MODIFIED: Lambda now captures modalWidth and modalHeight and passes them to the actual drawing method
+            (ctx) => DrawProjectWindowUI(ctx, modalWidth, modalHeight),
             (result) => {
                 Console.WriteLine($"Project Settings Modal Closed with result: {result}");
                 // If the modal was closed without explicitly saving (e.g., by X button), revert changes.

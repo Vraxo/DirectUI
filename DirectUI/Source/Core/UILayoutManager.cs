@@ -9,6 +9,7 @@ public class UILayoutManager
     private readonly Stack<ILayoutContainer> _containerStack = new();
     private readonly Dictionary<int, object> _containerStateCache = new();
     private readonly Stack<Rect> _clipRectStack = new();
+    private readonly Stack<Vector2> _layoutOriginStack = new(); // New stack for layout origins
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
@@ -20,6 +21,7 @@ public class UILayoutManager
     {
         _containerStack.Clear();
         _clipRectStack.Clear();
+        _layoutOriginStack.Clear(); // Clear the new stack too
     }
 
     public void PushClipRect(Rect rect) => _clipRectStack.Push(rect);
@@ -104,9 +106,26 @@ public class UILayoutManager
         PushContainer(vboxState);
     }
 
+    /// <summary>
+    /// Applies the current layout position, accounting for any pushed layout origins.
+    /// </summary>
     public Vector2 ApplyLayout(Vector2 defaultPosition)
     {
-        return IsInLayoutContainer() ? GetCurrentPosition() : defaultPosition;
+        Vector2 finalPosition;
+        if (IsInLayoutContainer())
+        {
+            finalPosition = GetCurrentPosition();
+        }
+        else
+        {
+            finalPosition = defaultPosition;
+        }
+
+        if (_layoutOriginStack.Count > 0)
+        {
+            finalPosition += _layoutOriginStack.Peek();
+        }
+        return finalPosition;
     }
 
     public void AdvanceLayout(Vector2 elementSize)
@@ -133,5 +152,25 @@ public class UILayoutManager
 
         // Polymorphic call to the container at the top of the stack.
         _containerStack.Peek().Advance(elementSize);
+    }
+
+    /// <summary>
+    /// Pushes a new origin offset to which all subsequent layout positions will be relative.
+    /// </summary>
+    /// <param name="originOffset">The offset to add to current layout positions.</param>
+    public void PushLayoutOrigin(Vector2 originOffset)
+    {
+        _layoutOriginStack.Push(originOffset);
+    }
+
+    /// <summary>
+    /// Pops the last layout origin offset from the stack.
+    /// </summary>
+    public void PopLayoutOrigin()
+    {
+        if (_layoutOriginStack.Count > 0)
+        {
+            _layoutOriginStack.Pop();
+        }
     }
 }

@@ -7,21 +7,16 @@ namespace DirectUI;
 
 public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 {
-    private AppServices? _appServices; // Changed to the new bundle
+    private AppServices? _appServices;
 
-    private ModalWindow? _activeModalWindow;
-    private int _modalResultCode;
-    private Action<int>? _onModalClosedCallback;
-    private bool _isModalClosing;
+    // State for managing overlay modals
+    private bool _isModalActive;
+    private Rect _currentModalBounds; // Bounds of the modal overlay relative to the main window
+    private Action<UIContext>? _currentModalDrawCallback;
+    private Action<int>? _currentOnModalClosedCallback;
+    private int _currentModalResultCode;
 
-    public bool IsModalWindowOpen
-    {
-        get
-        {
-            return _activeModalWindow is not null
-                && _activeModalWindow.Handle != IntPtr.Zero;
-        }
-    }
+    public bool IsModalWindowOpen => _isModalActive;
 
     public Win32WindowHost(string title = "DirectUI Win32 Host", int width = 800, int height = 600)
         : base(title, width, height)
@@ -63,6 +58,11 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         try
         {
             _appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
+            _isModalActive = false;
+            _currentModalDrawCallback = null;
+            _currentOnModalClosedCallback = null;
+            _currentModalResultCode = 0;
+            _currentModalBounds = default;
             return true;
         }
         catch (Exception ex)
@@ -79,11 +79,6 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void Cleanup()
     {
-        if (_isModalClosing)
-        {
-            return;
-        }
-
         Console.WriteLine("Win32WindowHost cleaning up its resources...");
         _appServices?.AppEngine.Cleanup();
         _appServices?.TextService.Cleanup();
@@ -91,7 +86,6 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         _appServices?.GraphicsDevice.Cleanup();
 
         _appServices = null; // Clear the bundle
-        _activeModalWindow = null;
 
         base.Cleanup();
     }
@@ -113,7 +107,42 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         try
         {
-            _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
+            if (_isModalActive)
+            {
+                // Draw a dimming overlay first, covering the entire window
+                _appServices.Renderer.DrawBox(
+                    new Rect(0, 0, _appServices.Renderer.RenderTargetSize.X, _appServices.Renderer.RenderTargetSize.Y),
+                    new BoxStyle { FillColor = new Color4(0, 0, 0, 0.5f), Roundness = 0f, BorderLength = 0f });
+
+                // Then, draw the modal's content by providing its specific draw callback to the AppEngine
+                // The AppEngine will handle BeginFrame/EndFrame, layout, and actual drawing.
+                // The modal content itself will draw within _currentModalBounds.
+                // This call effectively replaces the main UI rendering for this frame.
+                _appServices.AppEngine.UpdateAndRenderModal(_appServices.Renderer, _appServices.TextService,
+                    (ctx) =>
+                    {
+                        // Push a layout origin for the modal's internal UI elements
+                        // to draw relative to 0,0 for its content area.
+                        ctx.Layout.PushLayoutOrigin(_currentModalBounds.TopLeft);
+
+                        // Push a clip rect for the modal's content area
+                        ctx.Renderer.PushClipRect(_currentModalBounds);
+                        ctx.Layout.PushClipRect(_currentModalBounds);
+
+                        _currentModalDrawCallback?.Invoke(ctx);
+
+                        // Pop clip rect and layout origin
+                        ctx.Layout.PopClipRect();
+                        ctx.Renderer.PopClipRect();
+                        ctx.Layout.PopLayoutOrigin();
+                    }
+                );
+            }
+            else
+            {
+                // If no modal is active, draw the main UI
+                _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
+            }
         }
         catch (Exception ex)
         {
@@ -129,7 +158,8 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     public override void FrameUpdate()
     {
         Invalidate();
-        HandleModalLifecycle();
+        // The modal lifecycle is now fully managed by the IModalWindowService implementation
+        // and the AppEngine's conditional rendering in OnPaint.
     }
 
     protected override void OnSize(int width, int height)
@@ -169,7 +199,14 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         if (key == Keys.Escape)
         {
-            Close();
+            if (IsModalWindowOpen)
+            {
+                CloseModalWindow(-1); // Escape closes modal with a cancel result
+            }
+            else
+            {
+                Close(); // Escape closes main window if no modal is open
+            }
         }
 
         if (key == Keys.F3 && _appServices?.AppEngine is not null)
@@ -200,13 +237,16 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     protected override void OnDestroy()
     {
         base.OnDestroy();
-
-        if (_activeModalWindow is null || _activeModalWindow.Handle == IntPtr.Zero)
+        // Ensure the modal state is reset if the main window is destroyed while a modal is active.
+        if (_isModalActive)
         {
-            return;
+            // Do not call CloseModalWindow as it tries to re-enable main window, which is being destroyed.
+            _isModalActive = false;
+            _currentModalDrawCallback = null;
+            _currentOnModalClosedCallback = null;
+            _currentModalBounds = default;
+            // No explicit UI.State.ClearActivePopup because window destruction implies UI context cleanup.
         }
-
-        _activeModalWindow.Close();
     }
 
     private SizeI GetClientRectSize()
@@ -224,61 +264,49 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
     {
-        if (_activeModalWindow is not null && _activeModalWindow.Handle != IntPtr.Zero)
+        if (_isModalActive)
         {
             Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
+            onClosedCallback?.Invoke(-1);
             return;
         }
 
-        _activeModalWindow = new(this, title, width, height, drawCallback);
+        // Calculate modal position to center it over the main window
+        var clientSize = ClientSize;
+        float modalX = (clientSize.Width - width) / 2f;
+        float modalY = (clientSize.Height - height) / 2f;
+        _currentModalBounds = new Rect(modalX, modalY, width, height);
 
-        if (_activeModalWindow.CreateAsModal())
-        {
-            _onModalClosedCallback = onClosedCallback;
-            _modalResultCode = -1;
-            Console.WriteLine("Modal window opened successfully.");
-        }
-        else
-        {
-            Console.WriteLine("Failed to create modal window.");
-            _activeModalWindow.Dispose();
-            _activeModalWindow = null;
-            onClosedCallback?.Invoke(-1);
-        }
+        _currentModalDrawCallback = drawCallback;
+        _currentOnModalClosedCallback = onClosedCallback;
+        _currentModalResultCode = -1; // Default to cancel/error
+
+        _isModalActive = true;
+
+        // Disable interaction with the main window until the modal is closed
+        NativeMethods.EnableWindow(Handle, false);
+        Invalidate(); // Ensure a repaint happens to show the modal
     }
 
     public void CloseModalWindow(int resultCode = 0)
     {
-        if (_activeModalWindow is null || _activeModalWindow.Handle == IntPtr.Zero)
+        if (!_isModalActive)
         {
             return;
         }
 
-        _modalResultCode = resultCode;
-        _activeModalWindow.Close();
-    }
+        _currentModalResultCode = resultCode;
+        _currentOnModalClosedCallback?.Invoke(_currentModalResultCode);
 
-    private void HandleModalLifecycle()
-    {
-        if (_activeModalWindow is null)
-        {
-            return;
-        }
+        // Re-enable the main window
+        NativeMethods.EnableWindow(Handle, true);
 
-        if (_activeModalWindow.Handle != IntPtr.Zero || _isModalClosing)
-        {
-            return;
-        }
+        // Clear local modal state
+        _isModalActive = false;
+        _currentModalDrawCallback = null;
+        _currentOnModalClosedCallback = null;
+        _currentModalBounds = default;
 
-        _isModalClosing = true;
-
-        Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
-        _onModalClosedCallback?.Invoke(_modalResultCode);
-
-        _activeModalWindow.Dispose();
-        _activeModalWindow = null;
-        _onModalClosedCallback = null;
-        _modalResultCode = 0;
-        _isModalClosing = false;
+        Invalidate(); // Ensure a repaint happens
     }
 }
