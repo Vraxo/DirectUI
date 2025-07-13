@@ -10,10 +10,7 @@ public class ModalWindow : Win32Window
 {
     private readonly Win32Window _owner;
     private readonly Action<UIContext> _drawCallback;
-    private AppEngine? _appEngine;
-    private DuiGraphicsDevice? _graphicsDevice;
-    private IRenderer? _renderer;
-    private ITextService? _textService;
+    private AppServices? _appServices; // Changed to the new bundle
 
     public ModalWindow(Win32Window owner, string title, int width, int height, Action<UIContext> drawCallback)
         : base(title, width, height)
@@ -25,67 +22,51 @@ public class ModalWindow : Win32Window
     protected override bool Initialize()
     {
         Console.WriteLine("ModalWindow initializing...");
-        _appEngine = new AppEngine(_drawCallback, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
-
-        _graphicsDevice = new DuiGraphicsDevice();
-        if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
+        try
         {
-            Console.WriteLine("Failed to initialize DuiGraphicsDevice for modal window.");
+            _appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), _drawCallback, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize modal window services: {ex.Message}");
             return false;
         }
-
-        // Initialize backend services using the concrete D2D and DWrite factories
-        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
-        {
-            _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
-            _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for modal window initialization.");
-            return false;
-        }
-
-        _appEngine.Initialize(_textService, _renderer); // Initialize AppEngine's internal components
-        return true;
     }
 
     protected override void Cleanup()
     {
         Console.WriteLine("ModalWindow cleaning up its resources...");
-        _appEngine?.Cleanup();
-        _textService?.Cleanup();
-        (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
-        _graphicsDevice?.Cleanup();
+        _appServices?.AppEngine.Cleanup();
+        _appServices?.TextService.Cleanup();
+        (_appServices?.Renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
+        _appServices?.GraphicsDevice.Cleanup();
 
-        _appEngine = null;
-        _renderer = null;
-        _textService = null;
-        _graphicsDevice = null;
+        _appServices = null; // Clear the bundle
     }
 
     protected override void OnPaint()
     {
-        if (_graphicsDevice is null || _renderer is null || _textService is null || _appEngine is null)
+        if (_appServices is null || !_appServices.GraphicsDevice.IsInitialized)
         {
             Console.WriteLine("Modal window render services not initialized. Skipping paint.");
             return;
         }
 
-        _graphicsDevice.BeginDraw();
+        _appServices.GraphicsDevice.BeginDraw();
         try
         {
             // Pass the modal's specific renderer and text service to the AppEngine
-            _appEngine.UpdateAndRender(_renderer, _textService);
+            _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during modal window drawing: {ex}");
-            _graphicsDevice.Cleanup();
+            _appServices.GraphicsDevice.Cleanup();
         }
         finally
         {
-            _graphicsDevice.EndDraw();
+            _appServices.GraphicsDevice.EndDraw();
         }
     }
 
@@ -96,39 +77,39 @@ public class ModalWindow : Win32Window
 
     protected override void OnSize(int width, int height)
     {
-        _graphicsDevice?.Resize(new SizeI(width, height));
+        _appServices?.GraphicsDevice.Resize(new SizeI(width, height));
     }
 
     // Input handlers for the modal window pass input to its own AppEngine's InputManager.
     protected override void OnMouseMove(int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y); // Update position on click
-        _appEngine?.Input.SetMouseDown(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y); // Update position on click
+        _appServices?.AppEngine.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y); // Update position on release
-        _appEngine?.Input.SetMouseUp(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y); // Update position on release
+        _appServices?.AppEngine.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        _appEngine?.Input.AddMouseWheelDelta(delta);
+        _appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appEngine?.Input.AddKeyPressed(key);
+        _appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
@@ -139,13 +120,13 @@ public class ModalWindow : Win32Window
 
     protected override void OnKeyUp(Keys key)
     {
-        _appEngine?.Input.AddKeyReleased(key);
+        _appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appEngine?.Input.AddCharacterInput(c);
+        _appServices?.AppEngine.Input.AddCharacterInput(c);
         Invalidate();
     }
 

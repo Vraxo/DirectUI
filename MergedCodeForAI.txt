@@ -387,7 +387,7 @@ public class DuiGraphicsDevice : IDisposable
 
     public void Resize(SizeI newSize)
     {
-        if (!IsInitialized || RenderTarget == null) return;
+        if (!IsInitialized || RenderTarget is null) return;
 
         try
         {
@@ -413,7 +413,7 @@ public class DuiGraphicsDevice : IDisposable
 
     public void BeginDraw()
     {
-        if (!IsInitialized || RenderTarget == null)
+        if (!IsInitialized || RenderTarget is null)
         {
             return;
         }
@@ -422,7 +422,7 @@ public class DuiGraphicsDevice : IDisposable
 
     public void EndDraw()
     {
-        if (!IsInitialized || RenderTarget == null) return;
+        if (!IsInitialized || RenderTarget is null) return;
 
         try
         {
@@ -536,7 +536,7 @@ public class ModalWindow : Win32Window
         }
 
         // Initialize backend services using the concrete D2D and DWrite factories
-        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
         {
             _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
             _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
@@ -1470,22 +1470,13 @@ public abstract class Win32Window : IDisposable
 </file>
 
 <file path="Win32WindowHost.cs">
-// Win32WindowHost.cs
-using System;
-using System.Numerics;
-using DirectUI.Core; // Added for IWindowHost, IModalWindowService
+using DirectUI.Core;
 using DirectUI.Input;
-using Vortice.Direct2D1; // For AntialiasMode
-using Vortice.DirectWrite; // For DirectWriteTextService
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
 
-/// <summary>
-/// A concrete implementation of <see cref="IWindowHost"/> for Win32 and Direct2D.
-/// It also implements <see cref="IModalWindowService"/> for Win32 modal dialogues.
-/// </summary>
 public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 {
     private AppEngine? _appEngine;
@@ -1493,51 +1484,71 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     private IRenderer? _renderer;
     private ITextService? _textService;
 
-    // Modal Window State
     private ModalWindow? _activeModalWindow;
     private int _modalResultCode;
     private Action<int>? _onModalClosedCallback;
-    private bool _isModalClosing; // Flag to prevent re-entry during modal cleanup
+    private bool _isModalClosing;
+
+    public bool IsModalWindowOpen
+    {
+        get
+        {
+            return _activeModalWindow is not null 
+                && _activeModalWindow.Handle != IntPtr.Zero;
+        }
+    }
 
     public Win32WindowHost(string title = "DirectUI Win32 Host", int width = 800, int height = 600)
         : base(title, width, height)
     {
     }
 
-    public InputManager Input => _appEngine?.Input ?? new InputManager(); // Provide AppEngine's input manager
+    public InputManager Input => _appEngine?.Input ?? new();
     public SizeI ClientSize => GetClientRectSize();
 
     public bool ShowFpsCounter
     {
-        get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+        get
+        {
+            return _appEngine?.ShowFpsCounter ?? false;
+        }
+
+        set
+        {
+            if (_appEngine is null)
+            {
+                return;
+            }
+
+            _appEngine.ShowFpsCounter = value;
+        }
     }
 
-    public IModalWindowService ModalWindowService => this; // This class *is* the modal window service
+    public IModalWindowService ModalWindowService => this;
 
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine("Win32WindowHost initializing...");
-        if (!base.Initialize()) // Call base Win32Window initialization (registers class, creates HWND)
+        
+        if (!base.Initialize())
         {
             return false;
         }
 
-        _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+        _appEngine = new(uiDrawCallback, backgroundColor);
 
-        // Initialize Direct2D specific graphics resources
-        _graphicsDevice = new DuiGraphicsDevice();
+        _graphicsDevice = new();
+
         if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
         {
             Console.WriteLine("Failed to initialize DuiGraphicsDevice.");
             return false;
         }
 
-        // Initialize backend services using the concrete D2D and DWrite factories
-        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
         {
-            _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
-            _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
+            _renderer = new Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
+            _textService = new Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
         }
         else
         {
@@ -1545,39 +1556,39 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             return false;
         }
 
-        _appEngine.Initialize(_textService, _renderer); // Initialize AppEngine's internal components
+        _appEngine.Initialize(_textService, _renderer);
         return true;
     }
 
     void IWindowHost.Cleanup()
     {
-        // Call the protected override Cleanup method from this class
-        this.Cleanup();
+        Cleanup();
     }
 
-    protected override void Cleanup() // Retain protected override for internal consistency
+    protected override void Cleanup()
     {
-        if (_isModalClosing) return; // Prevent re-entry if modal is already cleaning up
+        if (_isModalClosing)
+        {
+            return;
+        }
 
         Console.WriteLine("Win32WindowHost cleaning up its resources...");
         _appEngine?.Cleanup();
         _textService?.Cleanup();
         (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
-        _graphicsDevice?.Cleanup(); // Dispose of Direct2D graphics resources
+        _graphicsDevice?.Cleanup();
 
         _appEngine = null;
         _renderer = null;
         _textService = null;
         _graphicsDevice = null;
-        _activeModalWindow = null; // Ensure modal reference is cleared
+        _activeModalWindow = null;
 
-        base.Cleanup(); // Call base class cleanup
+        base.Cleanup();
     }
 
     public void RunLoop()
     {
-        // The main application loop for Win32.
-        // This will block and process messages, calling OnPaint/FrameUpdate.
         Application.RunMessageLoop();
     }
 
@@ -1590,6 +1601,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         _graphicsDevice.BeginDraw();
+
         try
         {
             _appEngine.UpdateAndRender(_renderer, _textService);
@@ -1597,7 +1609,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            _graphicsDevice.Cleanup(); // Try to recover by cleaning graphics device
+            _graphicsDevice.Cleanup();
         }
         finally
         {
@@ -1607,11 +1619,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public override void FrameUpdate()
     {
-        // For Win32/Direct2D, FrameUpdate means requesting a paint.
-        // The actual drawing happens in OnPaint triggered by WM_PAINT.
         Invalidate();
-
-        // Handle modal window lifecycle outside of WM_PAINT to avoid re-entrancy.
         HandleModalLifecycle();
     }
 
@@ -1628,14 +1636,14 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y); // Update position on click
+        _appEngine?.Input.SetMousePosition(x, y);
         _appEngine?.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y); // Update position on release
+        _appEngine?.Input.SetMousePosition(x, y);
         _appEngine?.Input.SetMouseUp(button);
         Invalidate();
     }
@@ -1654,10 +1662,12 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         {
             Close();
         }
-        if (key == Keys.F3)
+
+        if (key == Keys.F3 && _appEngine is not null)
         {
-            if (_appEngine != null) _appEngine.ShowFpsCounter = !_appEngine.ShowFpsCounter;
+            _appEngine.ShowFpsCounter = !_appEngine.ShowFpsCounter;
         }
+
         Invalidate();
     }
 
@@ -1675,48 +1685,48 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override bool OnClose()
     {
-        return true; // Allow window to close
+        return true;
     }
 
     protected override void OnDestroy()
     {
-        // Base OnDestroy unregisters the window and triggers Application.Exit if last window.
         base.OnDestroy();
 
-        // If a modal window is open when the owner closes, ensure it's also closed.
-        if (_activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero)
+        if (_activeModalWindow is null || _activeModalWindow.Handle == IntPtr.Zero)
         {
-            _activeModalWindow.Close(); // This will trigger its own OnDestroy/Cleanup
+            return;
         }
+
+        _activeModalWindow.Close();
     }
 
     private SizeI GetClientRectSize()
     {
-        if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
+        if (Handle == nint.Zero || !NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
         {
-            int width = Math.Max(1, r.right - r.left);
-            int height = Math.Max(1, r.bottom - r.top);
-            return new SizeI(width, height);
+            return new(Width, Height);
         }
-        // Fallback for when the handle is not yet valid during initialization or if GetClientRect fails.
-        // This size isn't critical as resize will be called immediately after if the window is created.
-        return new SizeI(Width, Height); // Use stored initial window size.
+
+        int width = Math.Max(1, r.right - r.left);
+        int height = Math.Max(1, r.bottom - r.top);
+
+        return new(width, height);
     }
 
-    // --- IModalWindowService Implementation ---
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
     {
-        if (_activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero)
+        if (_activeModalWindow is not null && _activeModalWindow.Handle != IntPtr.Zero)
         {
             Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
             return;
         }
 
-        _activeModalWindow = new ModalWindow(this, title, width, height, drawCallback);
+        _activeModalWindow = new(this, title, width, height, drawCallback);
+        
         if (_activeModalWindow.CreateAsModal())
         {
             _onModalClosedCallback = onClosedCallback;
-            _modalResultCode = -1; // Default to an "unset" or "error" state
+            _modalResultCode = -1;
             Console.WriteLine("Modal window opened successfully.");
         }
         else
@@ -1724,41 +1734,43 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             Console.WriteLine("Failed to create modal window.");
             _activeModalWindow.Dispose();
             _activeModalWindow = null;
-            onClosedCallback?.Invoke(-1); // Indicate failure to the caller
+            onClosedCallback?.Invoke(-1);
         }
     }
 
     public void CloseModalWindow(int resultCode = 0)
     {
-        if (_activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero)
+        if (_activeModalWindow is null || _activeModalWindow.Handle == IntPtr.Zero)
         {
-            _modalResultCode = resultCode;
-            _activeModalWindow.Close(); // This will trigger WM_DESTROY
+            return;
         }
+
+        _modalResultCode = resultCode;
+        _activeModalWindow.Close();
     }
 
-    public bool IsModalWindowOpen => _activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero;
-
-    /// <summary>
-    /// Manages the lifecycle of the modal window, checking its state each frame.
-    /// </summary>
     private void HandleModalLifecycle()
     {
-        if (_activeModalWindow == null) return;
-
-        if (_activeModalWindow.Handle == IntPtr.Zero && !_isModalClosing)
+        if (_activeModalWindow is null)
         {
-            // The modal window has been destroyed (e.g., by user clicking X or our CloseModalWindow call).
-            _isModalClosing = true; // Set flag to prevent re-entry
-            Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
-            _onModalClosedCallback?.Invoke(_modalResultCode); // Notify caller of closure and result
-
-            _activeModalWindow.Dispose(); // Ensure all managed resources are cleaned up
-            _activeModalWindow = null;
-            _onModalClosedCallback = null;
-            _modalResultCode = 0;
-            _isModalClosing = false; // Reset flag
+            return;
         }
+
+        if (_activeModalWindow.Handle != IntPtr.Zero || _isModalClosing)
+        {
+            return;
+        }
+
+        _isModalClosing = true;
+        
+        Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
+        _onModalClosedCallback?.Invoke(_modalResultCode);
+
+        _activeModalWindow.Dispose();
+        _activeModalWindow = null;
+        _onModalClosedCallback = null;
+        _modalResultCode = 0;
+        _isModalClosing = false;
     }
 }
 </file>
@@ -4074,7 +4086,7 @@ public class UIPersistentState
 
     public void SetUserData(int id, object? data)
     {
-        if (data != null)
+        if (data is not null)
         {
             _userData[id] = data;
         }
@@ -4465,8 +4477,7 @@ namespace DirectUI.Drawing
                 return font;
             }
 
-            string? filePath = null;
-            if (!TryGetFontFilePath(familyName, weight, out filePath) && !TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
+            if (!TryGetFontFilePath(familyName, weight, out string? filePath) && !TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
             {
                 Console.WriteLine($"Font family '{familyName}' does not have a variant for weight {weight} or a Normal fallback. Returning default font.");
                 return Raylib.GetFontDefault();
@@ -5740,7 +5751,7 @@ internal class InputText
 
             // Use ITextService to get the text layout
             var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-            if (textLayout != null)
+            if (textLayout is not null)
             {
                 float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
                 float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
@@ -5952,7 +5963,7 @@ internal class InputText
 
         // Use ITextService to get the text layout
         var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-        if (textLayout == null) return;
+        if (textLayout is null) return;
 
         // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
@@ -5976,7 +5987,7 @@ internal class InputText
         var style = new ButtonStyle(); // A default style is fine for measuring
 
         var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-        if (textLayout == null) return;
+        if (textLayout is null) return;
 
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
         float caretAbsoluteX = hitTestMetrics.Point.X;
@@ -6339,7 +6350,7 @@ internal class InternalScrollBarLogic
         _isThumbPressed = state.ActivelyPressedElementId == _id;
         ThumbTheme.UpdateCurrentStyle(_isThumbHovered, _isThumbPressed, false, _isFocused);
 
-        if (renderer != null) // Check if renderer is available
+        if (renderer is not null) // Check if renderer is available
         {
             Draw(renderer, newScrollOffset); // Pass the renderer instance
         }
@@ -7796,7 +7807,7 @@ public class RaylibWindowHost : IWindowHost
     public bool ShowFpsCounter
     {
         get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+        set { if (_appEngine is not null) _appEngine.ShowFpsCounter = value; }
     }
 
     public IModalWindowService ModalWindowService { get; } = new RaylibDummyModalWindowService();
@@ -8091,7 +8102,7 @@ public unsafe class SDL3Renderer : IRenderer
             return;
 
         var textService = UI.Context.TextService as SDL3TextService;
-        if (textService == null)
+        if (textService is null)
         {
             Console.WriteLine("Error: SDL3TextService not available for text rendering.");
             return;
@@ -8566,9 +8577,6 @@ public unsafe class SDL3TextService : ITextService
 </file>
 
 <file path="Backends\SDL3\SDL3WindowHost.cs">
-using System;
-using System.Diagnostics;
-using System.Threading; // Added for Interlocked
 using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
@@ -8582,7 +8590,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private readonly string _title;
     private readonly int _initialWidth;
     private readonly int _initialHeight;
-    private readonly Color4 _backgroundColor; // Stored here to pass to new modal instances
+    private readonly Color4 _backgroundColor;
 
     private nint _windowPtr;
     private nint _rendererPtr;
@@ -8592,19 +8600,17 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private SDL3TextService? _textService;
     private bool _isDisposed;
 
-    // Static counters for global SDL and TTF initialization/cleanup
     private static int s_sdlInitCount = 0;
     private static int s_ttfInitCount = 0;
 
-    // Modal Window State
     private SDL3WindowHost? _activeModalWindow;
-    private Action<UIContext>? _modalDrawCallback; // Only used by the modal instance itself
-    private Action<int>? _onModalClosedCallback; // Used by the parent to get result from modal
+    private Action<UIContext>? _modalDrawCallback;
+    private Action<int>? _onModalClosedCallback;
     private int _modalResultCode;
-    private bool _isModalClosing; // Flag to prevent re-entry during modal cleanup
+    private bool _isModalClosing;
 
     public IntPtr Handle => _windowPtr;
-    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public InputManager Input => _appEngine?.Input ?? new();
     public SizeI ClientSize
     {
         get
@@ -8616,8 +8622,20 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
     public bool ShowFpsCounter
     {
-        get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+        get
+        {
+            return _appEngine?.ShowFpsCounter ?? false;
+        }
+
+        set
+        {
+            if (_appEngine is null)
+            {
+                return;
+            }
+
+            _appEngine.ShowFpsCounter = value;
+        }
     }
 
     public IModalWindowService ModalWindowService => this;
@@ -8633,10 +8651,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
+        
         try
         {
-            // Global SDL initialization (guarded by static counters)
             Interlocked.Increment(ref s_sdlInitCount);
+            
             if (s_sdlInitCount == 1)
             {
                 if (!SDL.Init(SDL.InitFlags.Video))
@@ -8646,8 +8665,8 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                 }
             }
 
-            // Global SDL_ttf initialization (guarded by static counters)
             Interlocked.Increment(ref s_ttfInitCount);
+            
             if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
@@ -8655,7 +8674,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                     Console.WriteLine($"SDL_ttf could not initialize! SDL_Error: {SDL.GetError()}");
                     return false;
                 }
-                SDL3TextService.RegisterDefaultFonts(); // Register font paths once globally
+                SDL3TextService.RegisterDefaultFonts();
             }
 
             _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable);
@@ -8667,17 +8686,17 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
+            
             if (_rendererPtr == nint.Zero)
             {
                 Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
-                SDL.DestroyWindow(_windowPtr); // Clean up window if renderer fails
+                SDL.DestroyWindow(_windowPtr);
                 return false;
             }
 
-            // Create instance-specific DirectUI components
-            _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
-            _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
-            _textService = new SDL3TextService();
+            _appEngine = new(uiDrawCallback, backgroundColor);
+            _renderer = new(_rendererPtr, _windowPtr);
+            _textService = new();
             _appEngine.Initialize(_textService, _renderer);
 
             Console.WriteLine($"SDL3WindowHost '{_title}' initialized successfully. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
@@ -8686,7 +8705,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during SDL3WindowHost initialization: {ex.Message}");
-            Cleanup(); // Ensure partial initialization is cleaned up
+            Cleanup();
             return false;
         }
     }
@@ -8694,18 +8713,16 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public void RunLoop()
     {
         bool running = true;
+
         while (running)
         {
-            if (IsModalWindowOpen && _activeModalWindow != null)
+            if (IsModalWindowOpen && _activeModalWindow is not null)
             {
-                // Delegate control to the modal window's own run loop
                 _activeModalWindow.ModalRunLoop();
-                // After modal loop finishes, handle its lifecycle (cleanup, callback)
                 HandleModalLifecycle();
             }
             else
             {
-                // Main window loop
                 while (SDL.PollEvent(out SDL.Event ev))
                 {
                     if (ev.Type == (uint)SDL.EventType.Quit)
@@ -8713,11 +8730,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                         running = false;
                         break;
                     }
-                    // TODO: Handle main window close event if it's not WM_QUIT
-                    Input.ProcessSDL3Event(ev); // Process input for the main window
+
+                    Input.ProcessSDL3Event(ev);
                 }
 
-                this.RenderFrame(); // Explicitly call RenderFrame
+                RenderFrame();
             }
         }
     }
@@ -8725,28 +8742,27 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private void ModalRunLoop()
     {
         bool modalRunning = true;
+        
         while (modalRunning)
         {
             while (SDL.PollEvent(out SDL.Event ev))
             {
                 if (ev.Type == (uint)SDL.EventType.Quit)
                 {
-                    // This generally means the whole application is quitting
                     modalRunning = false;
-                    _modalResultCode = -1; // Indicate a forced quit
+                    _modalResultCode = -1;
                     break;
                 }
                 else if (ev.Type == (uint)SDL.EventType.WindowCloseRequested)
                 {
-                    // Check if the event is for THIS modal window and it's a close event
                     if (ev.Window.WindowID == SDL.GetWindowID(_windowPtr))
                     {
-                        modalRunning = false; // Exit modal loop
-                        _modalResultCode = -1; // Indicate closure by X button (cancel)
+                        modalRunning = false;
+                        _modalResultCode = -1;
                         break;
                     }
                 }
-                // Process input for the modal window
+
                 Input.ProcessSDL3Event(ev);
             }
 
@@ -8757,7 +8773,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
             ModalRenderFrame();
         }
-        // When modal loop exits, signal its cleanup to the parent
+
         _isModalClosing = true;
     }
 
@@ -8766,7 +8782,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
         SDL.RenderClear(_rendererPtr);
 
-        if (_renderer != null && _textService != null && _appEngine != null)
+        if (_renderer is not null && _textService is not null && _appEngine is not null)
         {
             _appEngine.UpdateAndRender(_renderer, _textService);
         }
@@ -8779,9 +8795,8 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
         SDL.RenderClear(_rendererPtr);
 
-        if (_renderer != null && _textService != null && _appEngine != null && _modalDrawCallback != null)
+        if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
         {
-            // The modal's AppEngine will use its own _renderer and _textService
             _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
         }
 
@@ -8793,41 +8808,42 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         if (_isDisposed) return;
         Console.WriteLine($"SDL3WindowHost cleanup for '{_title}'...");
 
-        // If this is a parent host and has an active modal, clean it up first
         _activeModalWindow?.Cleanup();
 
-        // Clean up instance-specific DirectUI components
         _appEngine?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
 
-        // Destroy SDL renderer and window for THIS instance
         if (_rendererPtr != nint.Zero)
         {
             SDL.DestroyRenderer(_rendererPtr);
             _rendererPtr = nint.Zero;
         }
+
         if (_windowPtr != nint.Zero)
         {
             SDL.DestroyWindow(_windowPtr);
             _windowPtr = nint.Zero;
         }
 
-        // Global SDL and TTF cleanup (guarded by static counters)
         Interlocked.Decrement(ref s_ttfInitCount);
+
         if (s_ttfInitCount == 0)
         {
             Console.WriteLine("Final TTF.Quit().");
             TTF.Quit();
         }
+
         Interlocked.Decrement(ref s_sdlInitCount);
+        
         if (s_sdlInitCount == 0)
         {
-            Console.WriteLine("Final SDL.Quit().");
+            Console.WriteLine("Final SDL.Quit()..");
             SDL.Quit();
         }
 
         _isDisposed = true;
+        
         GC.SuppressFinalize(this);
         Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
@@ -8837,37 +8853,37 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         Cleanup();
     }
 
-    // --- IModalWindowService Implementation ---
-    public bool IsModalWindowOpen => _activeModalWindow != null;
+    public bool IsModalWindowOpen
+    {
+        get
+        {
+            return _activeModalWindow is not null;
+        }
+    }
 
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
     {
-        if (_activeModalWindow != null)
+        if (_activeModalWindow is not null)
         {
             Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
             return;
         }
 
-        // Create a NEW SDL3WindowHost instance for the modal window
         _activeModalWindow = new SDL3WindowHost(title, width, height, _backgroundColor);
-        _activeModalWindow._modalDrawCallback = drawCallback; // This callback is for the modal's internal drawing logic
+        _activeModalWindow._modalDrawCallback = drawCallback;
         _onModalClosedCallback = onClosedCallback;
-        _modalResultCode = -1; // Default result
+        _modalResultCode = -1;
 
-        // Initialize the modal window. This will create its own SDL window, renderer, and DirectUI components.
-        // Important: this call creates the modal window, but without a parent specified in SDL_CreateWindow flags.
-        if (!_activeModalWindow.InitializeModalInternal()) // Use internal helper that just calls Initialize()
+        if (!_activeModalWindow.InitializeModalInternal())
         {
             Console.WriteLine("Failed to initialize modal SDL window.");
-            _activeModalWindow.Dispose(); // Dispose failed modal
+            _activeModalWindow.Dispose();
             _activeModalWindow = null;
-            onClosedCallback?.Invoke(-1); // Indicate failure to the caller
+            onClosedCallback?.Invoke(-1);
             return;
         }
 
-        // Now that _activeModalWindow._windowPtr is valid, set its parent.
-        // This is crucial to satisfy the "Window must have a parent..." requirement for SDL.SetWindowModal().
-        if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, this._windowPtr))
+        if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, _windowPtr))
         {
             Console.WriteLine($"Failed to set window parent: {SDL.GetError()}");
             _activeModalWindow.Dispose();
@@ -8876,8 +8892,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             return;
         }
 
-        // Now that it has a parent, set it as modal.
-        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true)) // Assume 0 is success for SDL functions
+        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true))
         {
             Console.WriteLine($"Failed to set modal flag on window: {SDL.GetError()}");
             _activeModalWindow.Dispose();
@@ -8885,13 +8900,10 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             onClosedCallback?.Invoke(-1);
             return;
         }
+
         Console.WriteLine("Modal window opened successfully.");
     }
 
-    /// <summary>
-    /// Internal helper to initialize the modal window's DirectUI components.
-    /// This simply calls the main `Initialize` method with the modal's own draw callback.
-    /// </summary>
     private bool InitializeModalInternal()
     {
         return Initialize(_modalDrawCallback!, _backgroundColor);
@@ -8899,38 +8911,40 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
     public void CloseModalWindow(int resultCode = 0)
     {
-        if (_activeModalWindow != null)
+        if (_activeModalWindow is null)
         {
-            _activeModalWindow._modalResultCode = resultCode;
-            _activeModalWindow._isModalClosing = true; // Signal modal to close gracefully
+            return;
         }
+
+        _activeModalWindow._modalResultCode = resultCode;
+        _activeModalWindow._isModalClosing = true;
     }
 
-    /// <summary>
-    /// Manages the lifecycle of the modal window, checking its state each frame.
-    /// </summary>
     private void HandleModalLifecycle()
     {
-        if (_activeModalWindow == null) return;
-
-        if (_activeModalWindow._isModalClosing)
+        if (_activeModalWindow is null)
         {
-            Console.WriteLine($"Modal window closed. Result: {_activeModalWindow._modalResultCode}");
-            _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode); // Notify caller of closure and result
-
-            // After modal closes, raise the parent window to ensure it gets focus back.
-            // SDL automatically handles the modal un-setting when the modal window is destroyed.
-            if (this._windowPtr != nint.Zero)
-            {
-                SDL.RaiseWindow(this._windowPtr);
-            }
-
-            _activeModalWindow.Dispose(); // Ensure all managed and unmanaged resources are cleaned up
-            _activeModalWindow = null;
-            _onModalClosedCallback = null;
-            _modalResultCode = 0;
-            _isModalClosing = false; // Reset flag
+            return;
         }
+
+        if (!_activeModalWindow._isModalClosing)
+        {
+            return;
+        }
+
+        Console.WriteLine($"Modal window closed. Result: {_activeModalWindow._modalResultCode}");
+        _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode);
+
+        if (_windowPtr != nint.Zero)
+        {
+            SDL.RaiseWindow(_windowPtr);
+        }
+
+        _activeModalWindow.Dispose();
+        _activeModalWindow = null;
+        _onModalClosedCallback = null;
+        _modalResultCode = 0;
+        _isModalClosing = false;
     }
 }
 </file>

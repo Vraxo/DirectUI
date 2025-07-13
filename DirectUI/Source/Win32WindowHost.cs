@@ -7,10 +7,7 @@ namespace DirectUI;
 
 public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 {
-    private AppEngine? _appEngine;
-    private DuiGraphicsDevice? _graphicsDevice;
-    private IRenderer? _renderer;
-    private ITextService? _textService;
+    private AppServices? _appServices; // Changed to the new bundle
 
     private ModalWindow? _activeModalWindow;
     private int _modalResultCode;
@@ -21,7 +18,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
         get
         {
-            return _activeModalWindow is not null 
+            return _activeModalWindow is not null
                 && _activeModalWindow.Handle != IntPtr.Zero;
         }
     }
@@ -31,24 +28,24 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
     }
 
-    public InputManager Input => _appEngine?.Input ?? new();
+    public InputManager Input => _appServices?.AppEngine.Input ?? new();
     public SizeI ClientSize => GetClientRectSize();
 
     public bool ShowFpsCounter
     {
         get
         {
-            return _appEngine?.ShowFpsCounter ?? false;
+            return _appServices?.AppEngine.ShowFpsCounter ?? false;
         }
 
         set
         {
-            if (_appEngine is null)
+            if (_appServices is null)
             {
                 return;
             }
 
-            _appEngine.ShowFpsCounter = value;
+            _appServices.AppEngine.ShowFpsCounter = value;
         }
     }
 
@@ -57,35 +54,22 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine("Win32WindowHost initializing...");
-        
+
         if (!base.Initialize())
         {
             return false;
         }
 
-        _appEngine = new(uiDrawCallback, backgroundColor);
-
-        _graphicsDevice = new();
-
-        if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
+        try
         {
-            Console.WriteLine("Failed to initialize DuiGraphicsDevice.");
+            _appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize Win32WindowHost services: {ex.Message}");
             return false;
         }
-
-        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
-        {
-            _renderer = new Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
-            _textService = new Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for Direct2D backend initialization.");
-            return false;
-        }
-
-        _appEngine.Initialize(_textService, _renderer);
-        return true;
     }
 
     void IWindowHost.Cleanup()
@@ -101,15 +85,12 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         Console.WriteLine("Win32WindowHost cleaning up its resources...");
-        _appEngine?.Cleanup();
-        _textService?.Cleanup();
-        (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
-        _graphicsDevice?.Cleanup();
+        _appServices?.AppEngine.Cleanup();
+        _appServices?.TextService.Cleanup();
+        (_appServices?.Renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
+        _appServices?.GraphicsDevice.Cleanup();
 
-        _appEngine = null;
-        _renderer = null;
-        _textService = null;
-        _graphicsDevice = null;
+        _appServices = null; // Clear the bundle
         _activeModalWindow = null;
 
         base.Cleanup();
@@ -122,26 +103,26 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnPaint()
     {
-        if (_graphicsDevice is null || _renderer is null || _textService is null || _appEngine is null)
+        if (_appServices is null || !_appServices.GraphicsDevice.IsInitialized)
         {
             Console.WriteLine("Render services not initialized. Skipping paint.");
             return;
         }
 
-        _graphicsDevice.BeginDraw();
+        _appServices.GraphicsDevice.BeginDraw();
 
         try
         {
-            _appEngine.UpdateAndRender(_renderer, _textService);
+            _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            _graphicsDevice.Cleanup();
+            _appServices.GraphicsDevice.Cleanup();
         }
         finally
         {
-            _graphicsDevice.EndDraw();
+            _appServices.GraphicsDevice.EndDraw();
         }
     }
 
@@ -153,47 +134,47 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnSize(int width, int height)
     {
-        _graphicsDevice?.Resize(new SizeI(width, height));
+        _appServices?.GraphicsDevice.Resize(new SizeI(width, height));
     }
 
     protected override void OnMouseMove(int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
-        _appEngine?.Input.SetMouseDown(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
-        _appEngine?.Input.SetMouseUp(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        _appEngine?.Input.AddMouseWheelDelta(delta);
+        _appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appEngine?.Input.AddKeyPressed(key);
+        _appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
             Close();
         }
 
-        if (key == Keys.F3 && _appEngine is not null)
+        if (key == Keys.F3 && _appServices?.AppEngine is not null)
         {
-            _appEngine.ShowFpsCounter = !_appEngine.ShowFpsCounter;
+            _appServices.AppEngine.ShowFpsCounter = !_appServices.AppEngine.ShowFpsCounter;
         }
 
         Invalidate();
@@ -201,13 +182,13 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnKeyUp(Keys key)
     {
-        _appEngine?.Input.AddKeyReleased(key);
+        _appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appEngine?.Input.AddCharacterInput(c);
+        _appServices?.AppEngine.Input.AddCharacterInput(c);
         Invalidate();
     }
 
@@ -250,7 +231,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         _activeModalWindow = new(this, title, width, height, drawCallback);
-        
+
         if (_activeModalWindow.CreateAsModal())
         {
             _onModalClosedCallback = onClosedCallback;
@@ -290,7 +271,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         _isModalClosing = true;
-        
+
         Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
         _onModalClosedCallback?.Invoke(_modalResultCode);
 
