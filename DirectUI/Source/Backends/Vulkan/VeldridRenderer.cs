@@ -32,7 +32,6 @@ public class VeldridRenderer : IRenderer, IDisposable
     private readonly ResourceLayout _textTextureLayout;
     private readonly DeviceBuffer _textVertexBuffer;
     private readonly DeviceBuffer _textIndexBuffer;
-    private readonly Sampler _pointSampler; // Sampler for sharp, non-blended text
     private readonly uint _textVertexBufferSize = 8192;
     private readonly uint _textIndexBufferSize = 12288;
 
@@ -49,11 +48,6 @@ public class VeldridRenderer : IRenderer, IDisposable
         _projMatrixLayout = _gd.ResourceFactory.CreateResourceLayout(
             new(new ResourceLayoutElementDescription("ProjectionMatrix", ResourceKind.UniformBuffer, ShaderStages.Vertex)));
         _projMatrixSet = _gd.ResourceFactory.CreateResourceSet(new ResourceSetDescription(_projMatrixLayout, _projMatrixBuffer));
-
-        // --- Create Sampler for Text ---
-        // Using a Point sampler is crucial for font atlases to prevent bleeding between characters.
-        _pointSampler = _gd.ResourceFactory.CreateSampler(SamplerDescription.Point);
-
 
         // --- Flat Pipeline ---
         _flatVertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_flatVertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -173,13 +167,10 @@ public class VeldridRenderer : IRenderer, IDisposable
         {
             if (!fontAtlas.Glyphs.TryGetValue(c, out var glyph)) continue;
 
-            // --- Pixel Snapping for Sharpness ---
-            // Rounding vertex positions to whole numbers prevents sub-pixel artifacts.
-            float x0 = MathF.Floor(currentX + glyph.Bearing.X);
-            float y0 = MathF.Floor(textDrawPos.Y + glyph.Bearing.Y);
+            float x0 = currentX + glyph.Bearing.X;
+            float y0 = textDrawPos.Y + glyph.Bearing.Y;
             float x1 = x0 + glyph.Size.X;
             float y1 = y0 + glyph.Size.Y;
-
             float u0 = glyph.SourceRect.Left;
             float v0 = glyph.SourceRect.Top;
             float u1 = glyph.SourceRect.Right;
@@ -206,9 +197,8 @@ public class VeldridRenderer : IRenderer, IDisposable
         _cl.UpdateBuffer(_textVertexBuffer, 0, vertices.ToArray());
         _cl.UpdateBuffer(_textIndexBuffer, 0, indices.ToArray());
 
-        // Create the texture set using the correct Point sampler
         using var textureSet = _gd.ResourceFactory.CreateResourceSet(new ResourceSetDescription(
-            _textTextureLayout, fontAtlas.AtlasTexture, _pointSampler));
+            _textTextureLayout, fontAtlas.AtlasTexture, _gd.Aniso4xSampler));
 
         _cl.SetPipeline(_textPipeline);
         _cl.SetVertexBuffer(0, _textVertexBuffer);
@@ -242,7 +232,6 @@ public class VeldridRenderer : IRenderer, IDisposable
         _textTextureLayout.Dispose();
 
         _projMatrixSet.Dispose();
-        _pointSampler.Dispose(); // Dispose the sampler
 
         _projMatrixBuffer.Dispose();
         _flatVertexBuffer.Dispose();

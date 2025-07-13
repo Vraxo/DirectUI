@@ -1,15 +1,23 @@
-﻿using System.Numerics;
-using SixLabors.Fonts;
-using SixLabors.Fonts.Unicode;
-using SixLabors.ImageSharp;
-using SixLabors.ImageSharp.PixelFormats;
-using SixLabors.ImageSharp.Processing;
+﻿using System;
+using System.Collections.Generic;
+using System.Numerics;
 using Veldrid;
 using PixelFormat = Veldrid.PixelFormat;
 
+// Add new using statements for SixLabors libraries
+using SixLabors.Fonts;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Drawing.Processing;
+using SixLabors.ImageSharp.PixelFormats;
+using SixLabors.ImageSharp.Processing;
+using System.IO;
+
 namespace DirectUI.Backends.Vulkan;
 
-
+/// <summary>
+/// Creates and manages a texture atlas for a single font using SixLabors.ImageSharp.
+/// It rasterizes characters to a bitmap and uploads it to a Veldrid texture.
+/// </summary>
 public class FontAtlas : IDisposable
 {
     public Texture AtlasTexture { get; }
@@ -39,85 +47,92 @@ public class FontAtlas : IDisposable
         var glyphs = new Dictionary<char, GlyphInfo>();
         Glyphs = glyphs;
 
+        // Find and load the font using SixLabors.Fonts
         var fontCollection = new FontCollection();
         FontFamily fontFamily;
         try
         {
+            // First, try to find the font installed on the system.
             fontFamily = fontCollection.Get(fontName);
         }
         catch (FontFamilyNotFoundException)
         {
             try
             {
+                // If not found, fall back to trying to load from a common Windows fonts path.
+                // This makes it more portable than relying on system-installed fonts alone.
                 string windowsFontPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts", fontName + ".ttf");
-                string SegoeUIPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Fonts", "segoeui.ttf");
                 if (File.Exists(windowsFontPath))
                 {
                     fontFamily = fontCollection.Add(windowsFontPath);
                 }
-                else if (File.Exists(SegoeUIPath))
-                {
-                    Console.WriteLine($"Warning: Font '{fontName}' not found. Falling back to Segoe UI.");
-                    fontFamily = fontCollection.Add(SegoeUIPath);
-                }
                 else
                 {
-                    Console.WriteLine($"Warning: Font '{fontName}' and Segoe UI not found. Falling back to system default.");
+                    // Fallback to a known system font as a last resort.
+                    Console.WriteLine($"Warning: Font '{fontName}' not found. Falling back to Arial.");
                     fontFamily = SystemFonts.Get("Arial");
                 }
             }
             catch (Exception ex)
             {
                 Console.WriteLine($"Critical: Could not load fallback font. {ex.Message}");
+                // If even the fallback fails, we must re-throw or handle it gracefully.
                 throw new FileNotFoundException("Could not find or load any suitable font.", ex);
             }
         }
         var font = fontFamily.CreateFont(fontSize);
-        float scale = fontSize / font.FontMetrics.UnitsPerEm;
 
-        using var image = new Image<L8>(AtlasSize, AtlasSize);
+        using var image = new Image<Rgba32>(AtlasSize, AtlasSize);
 
         int currentX = Padding;
         int currentY = Padding;
-        int maxRowHeight = 0;
+        float maxRowHeight = 0;
 
-        for (char c = FirstChar; c <= LastChar; c++)
+        var textOptions = new RichTextOptions(font)
         {
-            if (font.TryGetGlyphs(new CodePoint(c), out IReadOnlyList<Glyph>? glyphsList) && glyphsList is not null && glyphsList.Count > 0)
-            {
-                var glyph = glyphsList[0];
-                using var glyphImage = glyph.RenderToImage<L8>();
+            HorizontalAlignment = HorizontalAlignment.Left,
+            VerticalAlignment = VerticalAlignment.Top,
+        };
 
-                if (currentX + glyphImage.Width + Padding > AtlasSize)
+        var drawingOptions = new DrawingOptions();
+
+        image.Mutate(ctx =>
+        {
+            ctx.Fill(SixLabors.ImageSharp.Color.Transparent);
+
+            for (char c = FirstChar; c <= LastChar; c++)
+            {
+                var charStr = c.ToString();
+                var size = TextMeasurer.MeasureSize(charStr, textOptions);
+
+                if (currentX + (int)Math.Ceiling(size.Width) + Padding > AtlasSize)
                 {
-                    currentY += maxRowHeight + Padding;
+                    currentY += (int)Math.Ceiling(maxRowHeight) + Padding;
                     currentX = Padding;
                     maxRowHeight = 0;
                 }
 
-                if (glyphImage.Width > 0 && glyphImage.Height > 0)
-                {
-                    image.Mutate(ctx => ctx.DrawImage(glyphImage, new SixLabors.ImageSharp.Point(currentX, currentY), 1f));
-                }
+                // Draw the character onto the atlas
+                ctx.DrawText(drawingOptions, charStr, font, SixLabors.ImageSharp.Color.White, new PointF(currentX, currentY));
 
-                var glyphInfo = new GlyphInfo
+                var glyph = new GlyphInfo
                 {
                     SourceRect = new RectangleF(
                         (float)currentX / AtlasSize,
                         (float)currentY / AtlasSize,
-                        (float)glyphImage.Width / AtlasSize,
-                        (float)glyphImage.Height / AtlasSize
+                        size.Width / AtlasSize,
+                        size.Height / AtlasSize
                     ),
-                    Size = new Vector2(glyphImage.Width, glyphImage.Height),
-                    Advance = glyph.GlyphMetrics.AdvanceWidth * scale,
-                    Bearing = new Vector2(glyph.GlyphMetrics.LeftSideBearing * scale, -glyph.GlyphMetrics.TopSideBearing * scale)
+                    Size = new Vector2(size.Width, size.Height),
+                    Advance = size.Width, // This is a simplification. Real advance is more complex.
+                    Bearing = Vector2.Zero // Simplified. Real bearing is the offset from the cursor pos to the glyph's top-left.
                 };
-                glyphs[c] = glyphInfo;
+                glyphs[c] = glyph;
 
-                currentX += glyphImage.Width + Padding;
-                maxRowHeight = Math.Max(maxRowHeight, glyphImage.Height);
+                currentX += (int)Math.Ceiling(size.Width) + Padding;
+                maxRowHeight = Math.Max(maxRowHeight, size.Height);
             }
-        }
+        });
 
         AtlasTexture = CreateTextureFromImage(image);
     }
@@ -134,10 +149,9 @@ public class FontAtlas : IDisposable
             if (Glyphs.TryGetValue(c, out var glyph))
             {
                 width += glyph.Advance;
-                // Use the glyph bitmap height for max height calculation
                 height = Math.Max(height, glyph.Size.Y);
             }
-            else
+            else // Handle character not in atlas by using a fallback '?' character
             {
                 if (Glyphs.TryGetValue('?', out var fallbackGlyph))
                 {
@@ -149,16 +163,29 @@ public class FontAtlas : IDisposable
         return new Vector2(width, height);
     }
 
-    private Texture CreateTextureFromImage(Image<L8> image)
+    private Texture CreateTextureFromImage(Image<Rgba32> image)
     {
         var texture = _gd.ResourceFactory.CreateTexture(TextureDescription.Texture2D(
             (uint)image.Width, (uint)image.Height, 1, 1,
             PixelFormat.R8_UNorm, TextureUsage.Sampled));
 
-        byte[] pixelBytes = new byte[image.Width * image.Height];
-        image.CopyPixelDataTo(pixelBytes);
+        // We need an R8 texture (single channel for alpha). We extract the alpha channel from our Rgba32 image.
+        byte[] alphaBytes = new byte[image.Width * image.Height];
 
-        _gd.UpdateTexture(texture, pixelBytes, 0, 0, 0, (uint)image.Width, (uint)image.Height, 1, 0, 0);
+        image.ProcessPixelRows(accessor =>
+        {
+            for (int y = 0; y < accessor.Height; y++)
+            {
+                var pixelRow = accessor.GetRowSpan(y);
+                for (int x = 0; x < accessor.Width; x++)
+                {
+                    // Copy the alpha byte.
+                    alphaBytes[y * accessor.Width + x] = pixelRow[x].A;
+                }
+            }
+        });
+
+        _gd.UpdateTexture(texture, alphaBytes, 0, 0, 0, (uint)image.Width, (uint)image.Height, 1, 0, 0);
 
         return texture;
     }
