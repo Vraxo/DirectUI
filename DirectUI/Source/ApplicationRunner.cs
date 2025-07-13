@@ -1,15 +1,14 @@
-using DirectUI;
 using DirectUI.Backends.SDL3;
 using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
 using SDL3;
 using GraphicsBackend = DirectUI.GraphicsBackend;
 
-namespace Cocoshell;
+namespace DirectUI;
 
 public static class ApplicationRunner
 {
-    public static void Run(GraphicsBackend backend)
+public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> appLogicFactory)
     {
         IWindowHost? host = null;
         try
@@ -24,8 +23,7 @@ public static class ApplicationRunner
 
             Console.WriteLine($"Using {backend} Backend.");
 
-            // MyUILogic now receives IModalWindowService directly
-            MyUILogic appLogic = new(host.ModalWindowService);
+            var appLogic = appLogicFactory(host);
 
             if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f))) // #151515
             {

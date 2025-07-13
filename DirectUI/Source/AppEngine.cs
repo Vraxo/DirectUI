@@ -101,4 +101,34 @@ public class AppEngine
             _inputManager.PrepareNextFrame();
         }
     }
+
+    public void UpdateAndRenderModal(IRenderer renderer, ITextService textService, Action<UIContext> modalDrawCallback)
+    {
+        if (UI.IsRendering) return;
+
+        long currentTicks = _frameTimer.ElapsedTicks;
+        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
+        _lastFrameTicks = currentTicks;
+        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
+
+        try
+        {
+            var inputState = _inputManager.GetCurrentState();
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
+            UI.BeginFrame(uiContext);
+
+            // Execute the modal-specific drawing logic
+            modalDrawCallback(uiContext);
+
+            UI.EndFrame();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during modal UI drawing: {ex}");
+        }
+        finally
+        {
+            _inputManager.PrepareNextFrame();
+        }
+    }
 }

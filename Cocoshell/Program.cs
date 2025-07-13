@@ -1,5 +1,6 @@
-﻿using DirectUI;
-using Cocoshell; // Use the namespace for ApplicationRunner
+﻿using Cocoshell;
+using DirectUI;
+using DirectUI.Core;
 
 public class Program
 {
@@ -11,6 +12,6 @@ public class Program
         //var backend = GraphicsBackend.Vulkan;
         var backend = GraphicsBackend.SDL3; // Set to SDL3 for testing
 
-        ApplicationRunner.Run(backend);
+        ApplicationRunner.Run(backend, host => new MyUILogic(host.ModalWindowService));
     }
 }

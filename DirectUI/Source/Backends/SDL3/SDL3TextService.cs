@@ -63,7 +63,8 @@ public unsafe class SDL3TextService : ITextService
 
     public nint GetOrCreateFont(string familyName, int fontSize, FontWeight weight)
     {
-        var key = new FontKey(familyName, fontSize, weight);
+        FontKey key = new(familyName, fontSize, weight);
+        
         if (_fontCache.TryGetValue(key, out nint fontPtr))
         {
             return fontPtr;
@@ -72,11 +73,10 @@ public unsafe class SDL3TextService : ITextService
         // In a real application, you'd map familyName and weight to actual font file paths.
         // For simplicity, we'll use a hardcoded fallback or look up via FontManager.
         // FontManager.GetFont is for Raylib specifically, so we'll do the file path lookup here.
-        string? filePath = null;
 
         // Try to get the specific weight first, then fallback to normal
-        if (!Drawing.FontManager.TryGetFontFilePath(familyName, weight, out filePath) &&
-            !Drawing.FontManager.TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
+        if (!FontManager.TryGetFontFilePath(familyName, weight, out string? filePath) &&
+            !FontManager.TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
         {
             Console.WriteLine($"Warning: Could not find font file for family '{familyName}' (weight {weight}). Using default.");
             // Fallback to a common system font if possible
@@ -91,6 +91,7 @@ public unsafe class SDL3TextService : ITextService
 
         // Open font using SDL_ttf
         fontPtr = TTF.OpenFont(filePath, fontSize);
+        
         if (fontPtr == nint.Zero)
         {
             Console.WriteLine($"Error opening font '{filePath}' at size {fontSize}: {SDL.GetError()}");

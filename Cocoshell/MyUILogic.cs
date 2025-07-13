@@ -2,9 +2,10 @@
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
-using DirectUI.Core; // Added for IModalWindowService
+using DirectUI;
+using DirectUI.Core; 
 
-namespace DirectUI;
+namespace Cocoshell;
 
 /// <summary>
 /// This class encapsulates the actual UI logic and view management, decoupled from windowing.

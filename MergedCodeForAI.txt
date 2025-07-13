@@ -1,5 +1,8 @@
 <file path="Alignment.cs">
 // Alignment.cs
+// Alignment.cs
+using DirectUI.Core; // Added using directive
+
 namespace DirectUI;
 
 public enum HAlignment { Left, Center, Right }
@@ -12,30 +15,24 @@ public struct Alignment(HAlignment horizontal, VAlignment vertical)
 }
 </file>
 
-<file path="AppHost.cs">
-// AppHost.cs
+<file path="AppEngine.cs">
+// AppEngine.cs
 using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Numerics;
-using DirectUI.Backends; // Added Raylib namespace
+using Vortice.Mathematics;
 using DirectUI.Core; // For IRenderer, ITextService
 using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
-using Vortice.Direct2D1;
-using Vortice.DirectWrite;
-using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
-using Raylib_cs; // Added for Raylib backend
 
 namespace DirectUI;
 
 /// <summary>
-/// Manages the application's rendering lifecycle, graphics device, and input state aggregation.
-/// This class acts as the "engine" that is hosted by a window.
+/// Manages the application's core UI engine lifecycle, input state aggregation,
+/// and frame timing. It is decoupled from any specific windowing or graphics backend.
 /// </summary>
-public class AppHost
+public class AppEngine
 {
     private readonly Action<UIContext> _drawCallback;
     private readonly Color4 _backgroundColor;
@@ -44,140 +41,47 @@ public class AppHost
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
 
-    private DuiGraphicsDevice? _graphicsDevice; // Only used for D2D backend
-    private IntPtr _hwnd; // Only used for D2D backend
-
-    private IRenderer? _renderer;
-    private ITextService? _textService;
-    private readonly bool _useRaylibBackend; // Flag to choose backend
-
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
 
-    public AppHost(Action<UIContext> drawCallback, Color4 backgroundColor, bool useRaylibBackend = false)
+    public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
         _backgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _inputManager = new InputManager();
-        _useRaylibBackend = useRaylibBackend;
 
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
     }
 
-    public bool Initialize(IntPtr hwnd, SizeI clientSize)
+    /// <summary>
+    /// Initializes internal components like the FPS counter.
+    /// This should be called once after the renderer and text service are ready.
+    /// </summary>
+    public void Initialize(ITextService textService, IRenderer renderer)
     {
-        _hwnd = hwnd; // Only relevant for D2D backend
-
-        if (_useRaylibBackend)
-        {
-            // Raylib initialization is usually done once globally (e.g. in Program.cs).
-            // This AppHost simply creates the renderer/text service.
-            _renderer = new RaylibRenderer();
-            _textService = new RaylibTextService();
-            FontManager.Initialize();
-            // Register font variants. The backend will now select the appropriate file based on weight.
-            FontManager.RegisterFontVariant("Segoe UI", FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
-            FontManager.RegisterFontVariant("Segoe UI", FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
-            FontManager.RegisterFontVariant("Consolas", FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
-            FontManager.RegisterFontVariant("Consolas", FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
-        }
-        else // Direct2D Backend
-        {
-            if (_graphicsDevice?.IsInitialized ?? false) return true;
-            if (_hwnd == IntPtr.Zero) return false;
-
-            _graphicsDevice ??= new DuiGraphicsDevice();
-
-            if (!_graphicsDevice.Initialize(_hwnd, clientSize))
-            {
-                return false;
-            }
-
-            // Initialize backend services using the concrete D2D and DWrite factories
-            if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
-            {
-                _renderer = new Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory); // Pass DWriteFactory
-                _textService = new DirectWriteTextService(_graphicsDevice.DWriteFactory);
-            }
-            else
-            {
-                Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for D2D backend initialization.");
-                return false;
-            }
-        }
-
-        // Initialize the FpsCounter using the selected backend services
-        if (_textService != null && _renderer != null)
-        {
-            _fpsCounter.Initialize(_textService, _renderer);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: Renderer or TextService was not available for FpsCounter initialization.");
-            return false;
-        }
-        return true;
+        _fpsCounter.Initialize(textService, renderer);
     }
 
+    /// <summary>
+    /// Cleans up internal engine resources.
+    /// </summary>
     public void Cleanup()
     {
         _fpsCounter.Cleanup();
-        _textService?.Cleanup();
-        (_renderer as Direct2DRenderer)?.Cleanup(); // Specific cleanup for Direct2DRenderer
-        (_renderer as RaylibRenderer)?.Cleanup(); // Specific cleanup for RaylibRenderer (if any needed in future)
-        if (_useRaylibBackend)
-        {
-            FontManager.UnloadAll();
-        }
-        _graphicsDevice?.Cleanup();
     }
 
-    public void Resize(SizeI newSize)
+    /// <summary>
+    /// Updates the engine state for a single frame and renders the UI.
+    /// This method is called by the specific window host after it has prepared its drawing surface.
+    /// </summary>
+    /// <param name="renderer">The graphics renderer for this frame.</param>
+    /// <param name="textService">The text service for this frame.</param>
+    public void UpdateAndRender(IRenderer renderer, ITextService textService)
     {
-        if (_useRaylibBackend)
-        {
-            // Raylib window resizing is typically handled externally,
-            // but the renderer's RenderTargetSize will adapt.
-        }
-        else // Direct2D Backend
-        {
-            if (_graphicsDevice?.IsInitialized ?? false)
-            {
-                _graphicsDevice.Resize(newSize);
-            }
-            else if (_hwnd != IntPtr.Zero)
-            {
-                Initialize(_hwnd, GetClientRectSizeForHost());
-            }
-        }
-    }
-
-    public void Render()
-    {
-        // Prevent re-entrant rendering calls, which can happen if a new window
-        // is created and painted synchronously inside another window's render loop.
+        // Prevent re-entrant rendering calls.
         if (UI.IsRendering) return;
-
-        // Ensure backend services are initialized
-        if (_renderer is null || _textService is null)
-        {
-            if (_useRaylibBackend)
-            {
-                // For Raylib, AppHost doesn't create the window, so we can't get its size here.
-                // Assuming Raylib.IsWindowReady() is true and window is sized externally.
-                Initialize(IntPtr.Zero, new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight()));
-            }
-            else
-            {
-                if (!Initialize(_hwnd, GetClientRectSizeForHost()))
-                {
-                    _inputManager.PrepareNextFrame();
-                    return;
-                }
-            }
-        }
 
         // Calculate delta time for the frame
         long currentTicks = _frameTimer.ElapsedTicks;
@@ -189,28 +93,12 @@ public class AppHost
 
         _fpsCounter.Update(); // Update FPS counter once per render call.
 
-        // Begin drawing for the chosen backend
-        if (_useRaylibBackend)
-        {
-            Raylib.BeginDrawing();
-            Raylib.ClearBackground(new Raylib_cs.Color(
-                (byte)(_backgroundColor.R * 255),
-                (byte)(_backgroundColor.G * 255),
-                (byte)(_backgroundColor.B * 255),
-                (byte)(_backgroundColor.A * 255)
-            ));
-        }
-        else // Direct2D Backend
-        {
-            _graphicsDevice!.BeginDraw();
-        }
-
         try
         {
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(_renderer!, _textService!, inputState, deltaTime);
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);
@@ -224,38 +112,42 @@ public class AppHost
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"An error occurred during drawing: {ex}");
-            if (!_useRaylibBackend)
-            {
-                _graphicsDevice?.Cleanup();
-            }
+            Console.WriteLine($"An error occurred during UI drawing: {ex}");
         }
         finally
         {
-            // End drawing for the chosen backend
-            if (_useRaylibBackend)
-            {
-                Raylib.EndDrawing();
-            }
-            else // Direct2D Backend
-            {
-                _graphicsDevice?.EndDraw();
-            }
             _inputManager.PrepareNextFrame();
         }
     }
 
-    private SizeI GetClientRectSizeForHost()
+    public void UpdateAndRenderModal(IRenderer renderer, ITextService textService, Action<UIContext> modalDrawCallback)
     {
-        if (_hwnd != IntPtr.Zero && NativeMethods.GetClientRect(_hwnd, out NativeMethods.RECT r))
+        if (UI.IsRendering) return;
+
+        long currentTicks = _frameTimer.ElapsedTicks;
+        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
+        _lastFrameTicks = currentTicks;
+        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
+
+        try
         {
-            int width = Math.Max(1, r.right - r.left);
-            int height = Math.Max(1, r.bottom - r.top);
-            return new SizeI(width, height);
+            var inputState = _inputManager.GetCurrentState();
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
+            UI.BeginFrame(uiContext);
+
+            // Execute the modal-specific drawing logic
+            modalDrawCallback(uiContext);
+
+            UI.EndFrame();
         }
-        // Fallback for when the handle is not yet valid during initialization.
-        // This size isn't critical as resize will be called immediately after.
-        return new SizeI(1, 1);
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during modal UI drawing: {ex}");
+        }
+        finally
+        {
+            _inputManager.PrepareNextFrame();
+        }
     }
 }
 </file>
@@ -267,7 +159,7 @@ using System.Collections.Generic;
 namespace DirectUI;
 
 /// <summary>
-/// Manages the application's global message loop and window collection.
+/// Manages Win32-specific application concerns, such as window registration and the message pump.
 /// </summary>
 public static class Application
 {
@@ -300,7 +192,7 @@ public static class Application
     public static void UnregisterWindow(Win32Window window)
     {
         s_windows.Remove(window);
-        // If the last window is closed, exit the application.
+        // If the last Win32 window is closed, signal the message loop to exit.
         if (s_windows.Count == 0)
         {
             Exit();
@@ -308,13 +200,14 @@ public static class Application
     }
 
     /// <summary>
-    /// Starts and runs the main application message loop.
+    /// Runs the Win32 main message loop. This method blocks until WM_QUIT is received.
+    /// This is intended for Win32-based applications. Other backends will have their own loops.
     /// </summary>
-    public static void Run()
+    public static void RunMessageLoop()
     {
         if (s_windows.Count == 0)
         {
-            Console.WriteLine("Application.Run() called with no windows registered.");
+            Console.WriteLine("Application.RunMessageLoop() called with no Win32 windows registered.");
             return;
         }
 
@@ -323,27 +216,21 @@ public static class Application
         {
             ProcessMessages();
 
-            if (!s_isRunning) break;
-
-            // Create a copy for safe iteration, as windows can be closed (and removed) during the loop.
-            var windowsToUpdate = new List<Win32Window>(s_windows);
-            foreach (var window in windowsToUpdate)
-            {
-                if (window.Handle != IntPtr.Zero)
-                {
-                    window.FrameUpdate();
-                }
-            }
+            // After processing messages, if no WM_QUIT was posted and there are still windows,
+            // yield control back to the specific Win32WindowHost for its frame update.
+            // Note: In this architecture, the Win32WindowHost's RunLoop will call Application.RunMessageLoop.
+            // The FrameUpdate logic should ideally live within the host's own loop.
+            // For now, this is a simplified message pump.
         }
 
-        // Clean up resources after the main loop has finished.
+        // Clean up shared resources only after the very last Win32 window has closed.
         SharedGraphicsResources.Cleanup();
     }
 
     /// <summary>
     /// Processes all pending window messages in the queue.
     /// </summary>
-    private static void ProcessMessages()
+    internal static void ProcessMessages()
     {
         while (NativeMethods.PeekMessage(out var msg, IntPtr.Zero, 0, 0, NativeMethods.PM_REMOVE))
         {
@@ -359,7 +246,7 @@ public static class Application
     }
 
     /// <summary>
-    /// Signals the application to exit its message loop.
+    /// Signals the Win32 message loop to exit.
     /// </summary>
     public static void Exit()
     {
@@ -373,127 +260,56 @@ public static class Application
 }
 </file>
 
-<file path="Direct2DAppWindow.cs">
-// Direct2DAppWindow.cs
-using System;
-using System.Numerics;
-using DirectUI.Input;
-using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
+<file path="ApplicationRunner.cs">
+using DirectUI.Backends.SDL3;
+using DirectUI.Core; // Added for IWindowHost
+using Raylib_cs;
+using SDL3;
+using GraphicsBackend = DirectUI.GraphicsBackend;
 
 namespace DirectUI;
 
-public abstract class Direct2DAppWindow : Win32Window
+public static class ApplicationRunner
 {
-    protected AppHost? _appHost;
-
-    protected Direct2DAppWindow(string title = "Vortice DirectUI Base Window", int width = 800, int height = 600)
-        : base(title, width, height)
+public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> appLogicFactory)
     {
-    }
-
-    /// <summary>
-    /// Factory method for the derived class to create its specific AppHost.
-    /// The AppHost contains the rendering logic and graphics resources.
-    /// </summary>
-    protected abstract AppHost CreateAppHost();
-
-    protected override bool Initialize()
-    {
-        Console.WriteLine("Direct2DAppWindow initializing...");
-        _appHost = CreateAppHost();
-        return _appHost.Initialize(Handle, GetClientRectSize());
-    }
-
-    protected override void Cleanup()
-    {
-        Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
-        _appHost?.Cleanup();
-        _appHost = null;
-    }
-
-    protected override void OnPaint()
-    {
-        _appHost?.Render();
-    }
-
-    public override void FrameUpdate()
-    {
-        Invalidate(); // Always invalidate to trigger a paint message for a continuous render loop.
-    }
-
-    protected override void OnSize(int width, int height)
-    {
-        _appHost?.Resize(new SizeI(width, height));
-    }
-
-    protected override void OnMouseMove(int x, int y)
-    {
-        _appHost?.Input.SetMousePosition(x, y);
-        Invalidate();
-    }
-
-    protected override void OnMouseDown(MouseButton button, int x, int y)
-    {
-        _appHost?.Input.SetMousePosition(x, y); // Update position on click
-        _appHost?.Input.SetMouseDown(button);
-        Invalidate();
-    }
-
-    protected override void OnMouseUp(MouseButton button, int x, int y)
-    {
-        _appHost?.Input.SetMousePosition(x, y); // Update position on release
-        _appHost?.Input.SetMouseUp(button);
-        Invalidate();
-    }
-
-    protected override void OnMouseWheel(float delta)
-    {
-        _appHost?.Input.AddMouseWheelDelta(delta);
-        Invalidate();
-    }
-
-    protected override void OnKeyDown(Keys key)
-    {
-        _appHost?.Input.AddKeyPressed(key);
-
-        if (key == Keys.Escape)
+        IWindowHost? host = null;
+        try
         {
-            Close();
+            host = backend switch
+            {
+                GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f)),
+                GraphicsBackend.Direct2D => new Win32WindowHost("My D2D App", 1024, 768),
+                GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f)),
+                _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "Unsupported graphics backend.")
+            };
+
+            Console.WriteLine($"Using {backend} Backend.");
+
+            var appLogic = appLogicFactory(host);
+
+            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f))) // #151515
+            {
+                host.RunLoop();
+            }
+            else
+            {
+                Console.WriteLine($"Failed to initialize {backend} application.");
+            }
         }
-        Invalidate();
-    }
-
-    protected override void OnKeyUp(Keys key)
-    {
-        _appHost?.Input.AddKeyReleased(key);
-        Invalidate();
-    }
-
-    protected override void OnChar(char c)
-    {
-        _appHost?.Input.AddCharacterInput(c);
-        Invalidate();
-    }
-
-    protected override bool OnClose() { return true; }
-
-    protected SizeI GetClientRectSize()
-    {
-        if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
+        catch (Exception ex)
         {
-            int width = Math.Max(1, r.right - r.left);
-            int height = Math.Max(1, r.bottom - r.top);
-            return new SizeI(width, height);
+            Console.WriteLine($"An unhandled exception occurred: {ex}");
         }
-        int baseWidth = Math.Max(1, Width);
-        int baseHeight = Math.Max(1, Height);
-        if (Handle != nint.Zero)
+        finally
         {
-            Console.WriteLine($"GetClientRect failed. Falling back to stored size: {baseWidth}x{baseHeight}");
+            host?.Cleanup();
+            host?.Dispose();
         }
-        return new SizeI(baseWidth, baseHeight);
     }
+
+    // Removed specific RunRaylib, RunDirect2D, RunSDL3 methods
+    // as their logic is now encapsulated within their respective IWindowHost implementations.
 }
 </file>
 
@@ -683,14 +499,22 @@ public enum GraphicsBackend
 </file>
 
 <file path="ModalWindow.cs">
+using DirectUI.Core; // Added for IWindowHost, IModalWindowService
 using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+using Vortice.DirectWrite; // For DirectWriteTextService
+using Vortice.Direct2D1; // For Direct2DRenderer
 
 namespace DirectUI;
 
-public class ModalWindow : Direct2DAppWindow
+public class ModalWindow : Win32Window
 {
     private readonly Win32Window _owner;
     private readonly Action<UIContext> _drawCallback;
+    private AppEngine? _appEngine;
+    private DuiGraphicsDevice? _graphicsDevice;
+    private IRenderer? _renderer;
+    private ITextService? _textService;
 
     public ModalWindow(Win32Window owner, string title, int width, int height, Action<UIContext> drawCallback)
         : base(title, width, height)
@@ -699,11 +523,134 @@ public class ModalWindow : Direct2DAppWindow
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
     }
 
-    protected override AppHost CreateAppHost()
+    protected override bool Initialize()
     {
-        Color4 backgroundColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f);
-        return new(_drawCallback, backgroundColor);
+        Console.WriteLine("ModalWindow initializing...");
+        _appEngine = new AppEngine(_drawCallback, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
+
+        _graphicsDevice = new DuiGraphicsDevice();
+        if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
+        {
+            Console.WriteLine("Failed to initialize DuiGraphicsDevice for modal window.");
+            return false;
+        }
+
+        // Initialize backend services using the concrete D2D and DWrite factories
+        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        {
+            _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
+            _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
+        }
+        else
+        {
+            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for modal window initialization.");
+            return false;
+        }
+
+        _appEngine.Initialize(_textService, _renderer); // Initialize AppEngine's internal components
+        return true;
     }
+
+    protected override void Cleanup()
+    {
+        Console.WriteLine("ModalWindow cleaning up its resources...");
+        _appEngine?.Cleanup();
+        _textService?.Cleanup();
+        (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
+        _graphicsDevice?.Cleanup();
+
+        _appEngine = null;
+        _renderer = null;
+        _textService = null;
+        _graphicsDevice = null;
+    }
+
+    protected override void OnPaint()
+    {
+        if (_graphicsDevice is null || _renderer is null || _textService is null || _appEngine is null)
+        {
+            Console.WriteLine("Modal window render services not initialized. Skipping paint.");
+            return;
+        }
+
+        _graphicsDevice.BeginDraw();
+        try
+        {
+            // Pass the modal's specific renderer and text service to the AppEngine
+            _appEngine.UpdateAndRender(_renderer, _textService);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during modal window drawing: {ex}");
+            _graphicsDevice.Cleanup();
+        }
+        finally
+        {
+            _graphicsDevice.EndDraw();
+        }
+    }
+
+    public override void FrameUpdate()
+    {
+        Invalidate(); // Always invalidate to trigger a paint message for a continuous render loop.
+    }
+
+    protected override void OnSize(int width, int height)
+    {
+        _graphicsDevice?.Resize(new SizeI(width, height));
+    }
+
+    // Input handlers for the modal window pass input to its own AppEngine's InputManager.
+    protected override void OnMouseMove(int x, int y)
+    {
+        _appEngine?.Input.SetMousePosition(x, y);
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseButton button, int x, int y)
+    {
+        _appEngine?.Input.SetMousePosition(x, y); // Update position on click
+        _appEngine?.Input.SetMouseDown(button);
+        Invalidate();
+    }
+
+    protected override void OnMouseUp(MouseButton button, int x, int y)
+    {
+        _appEngine?.Input.SetMousePosition(x, y); // Update position on release
+        _appEngine?.Input.SetMouseUp(button);
+        Invalidate();
+    }
+
+    protected override void OnMouseWheel(float delta)
+    {
+        _appEngine?.Input.AddMouseWheelDelta(delta);
+        Invalidate();
+    }
+
+    protected override void OnKeyDown(Keys key)
+    {
+        _appEngine?.Input.AddKeyPressed(key);
+
+        if (key == Keys.Escape)
+        {
+            Close(); // Close on Escape
+        }
+        Invalidate();
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        _appEngine?.Input.AddKeyReleased(key);
+        Invalidate();
+    }
+
+    protected override void OnChar(char c)
+    {
+        _appEngine?.Input.AddCharacterInput(c);
+        Invalidate();
+    }
+
+    protected override bool OnClose() { return true; }
 
     public bool CreateAsModal()
     {
@@ -722,7 +669,6 @@ public class ModalWindow : Direct2DAppWindow
         int? x = null;
         int? y = null;
 
-        // FIX: Use the owner's handle to get its position for centering.
         if (_owner.Handle != IntPtr.Zero && _owner.GetWindowRect(out NativeMethods.RECT ownerRect))
         {
             int ownerWidth = ownerRect.right - ownerRect.left;
@@ -734,7 +680,6 @@ public class ModalWindow : Direct2DAppWindow
             y = ownerRect.top + (ownerHeight - modalHeight) / 2;
         }
 
-        // FIX: Pass the owner's handle to the base Create method.
         if (!Create(_owner.Handle, style, x, y))
         {
             return false;
@@ -745,8 +690,6 @@ public class ModalWindow : Direct2DAppWindow
             return false;
         }
 
-        // FIX: Disable the OWNER window, not this modal window.
-        // This is the core fix for the modal behavior bug.
         NativeMethods.EnableWindow(_owner.Handle, false);
 
         return true;
@@ -754,13 +697,29 @@ public class ModalWindow : Direct2DAppWindow
 
     protected override void OnDestroy()
     {
-        // FIX: Re-enable the OWNER window when this modal is destroyed.
         if (_owner.Handle != IntPtr.Zero)
         {
             NativeMethods.EnableWindow(_owner.Handle, true);
         }
 
         base.OnDestroy();
+    }
+
+    protected SizeI GetClientRectSize()
+    {
+        if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
+        {
+            int width = Math.Max(1, r.right - r.left);
+            int height = Math.Max(1, r.bottom - r.top);
+            return new SizeI(width, height);
+        }
+        int baseWidth = Math.Max(1, Width);
+        int baseHeight = Math.Max(1, Height);
+        if (Handle != nint.Zero)
+        {
+            Console.WriteLine($"GetClientRect failed. Falling back to stored size: {baseWidth}x{baseHeight}");
+        }
+        return new SizeI(baseWidth, baseHeight);
     }
 }
 </file>
@@ -929,6 +888,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr DispatchMessage([In] ref MSG lpmsg);
     [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)] // Add return type annotation
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam); // Added
+    [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     public static extern IntPtr GetModuleHandle(string lpModuleName);
@@ -974,6 +936,155 @@ internal static class NativeMethods
     // --- Helpers ---
     public static short LoWord(IntPtr val) => unchecked((short)(long)val);
     public static short HiWord(IntPtr val) => unchecked((short)((long)val >> 16));
+}
+</file>
+
+<file path="RaylibWindowHost.cs">
+// DirectUI/RaylibWindowHost.cs
+using System;
+using System.Numerics;
+using DirectUI.Core; // For IWindowHost, IModalWindowService
+using DirectUI.Drawing;
+using DirectUI.Input;
+using Raylib_cs;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+
+namespace DirectUI;
+
+/// <summary>
+/// A concrete implementation of <see cref="IWindowHost"/> for the Raylib backend.
+/// </summary>
+public class RaylibWindowHost : IWindowHost
+{
+    private readonly string _title;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly Color4 _backgroundColor;
+
+    private AppEngine? _appEngine;
+    private IRenderer? _renderer;
+    private ITextService? _textService;
+    private bool _isDisposed = false;
+
+    // Raylib doesn't have a native window handle like Win32 or SDL, so this will be IntPtr.Zero.
+    public IntPtr Handle => IntPtr.Zero;
+    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public SizeI ClientSize => new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
+
+    public bool ShowFpsCounter
+    {
+        get => _appEngine?.ShowFpsCounter ?? false;
+        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+    }
+
+    public IModalWindowService ModalWindowService { get; } = new RaylibDummyModalWindowService();
+
+    public RaylibWindowHost(string title, int width, int height, Color4 backgroundColor)
+    {
+        _title = title;
+        _width = width;
+        _height = height;
+        _backgroundColor = backgroundColor;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        Console.WriteLine("RaylibWindowHost initializing...");
+        try
+        {
+            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+            Raylib.InitWindow(_width, _height, _title);
+            Raylib.SetTargetFPS(60);
+
+            _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+            _renderer = new DirectUI.Backends.RaylibRenderer();
+            _textService = new DirectUI.Backends.RaylibTextService();
+
+            FontManager.Initialize();
+            FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
+            FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
+            FontManager.RegisterFontVariant("Consolas", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
+            FontManager.RegisterFontVariant("Consolas", Vortice.DirectWrite.FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
+
+            _appEngine.Initialize(_textService, _renderer);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize RaylibWindowHost: {ex.Message}");
+            Cleanup(); // Ensure partial initialization is cleaned up
+            return false;
+        }
+    }
+
+    public void RunLoop()
+    {
+        while (!Raylib.WindowShouldClose())
+        {
+            // Process Raylib input events directly
+            _appEngine?.Input.ProcessRaylibInput();
+
+            // Begin drawing
+            Raylib.BeginDrawing();
+            Raylib.ClearBackground(new Raylib_cs.Color(
+                (byte)(_backgroundColor.R * 255),
+                (byte)(_backgroundColor.G * 255),
+                (byte)(_backgroundColor.B * 255),
+                (byte)(_backgroundColor.A * 255)
+            ));
+
+            // Update and render the UI through the AppEngine
+            if (_renderer is not null && _textService is not null && _appEngine is not null)
+            {
+                _appEngine.UpdateAndRender(_renderer, _textService);
+            }
+
+            // End drawing
+            Raylib.EndDrawing();
+        }
+    }
+
+    public void Cleanup()
+    {
+        if (_isDisposed) return;
+        Console.WriteLine("RaylibWindowHost cleaning up its resources...");
+        _appEngine?.Cleanup();
+        (_renderer as DirectUI.Backends.RaylibRenderer)?.Cleanup(); // Explicit cast for Cleanup
+        (_textService as DirectUI.Backends.RaylibTextService)?.Cleanup(); // Explicit cast for Cleanup
+        FontManager.UnloadAll(); // Unload all Raylib fonts
+
+        if (Raylib.IsWindowReady())
+        {
+            Raylib.CloseWindow();
+        }
+        _appEngine = null;
+        _renderer = null;
+        _textService = null;
+        _isDisposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    public void Dispose()
+    {
+        Cleanup();
+    }
+
+    private class RaylibDummyModalWindowService : IModalWindowService
+    {
+        public bool IsModalWindowOpen => false;
+
+        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+        {
+            Console.WriteLine($"Modal window '{title}' requested but not supported in Raylib backend.");
+            onClosedCallback?.Invoke(-1); // Immediately report as closed/failed
+        }
+
+        public void CloseModalWindow(int resultCode = 0)
+        {
+            // Do nothing as no modal windows are opened.
+        }
+    }
 }
 </file>
 
@@ -1050,6 +1161,7 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using DirectUI.Core; // Added for IWindowHost
 
 namespace DirectUI;
 
@@ -1506,6 +1618,300 @@ public abstract class Win32Window : IDisposable
 }
 </file>
 
+<file path="Win32WindowHost.cs">
+// Win32WindowHost.cs
+using System;
+using System.Numerics;
+using DirectUI.Core; // Added for IWindowHost, IModalWindowService
+using DirectUI.Input;
+using Vortice.Direct2D1; // For AntialiasMode
+using Vortice.DirectWrite; // For DirectWriteTextService
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+
+namespace DirectUI;
+
+/// <summary>
+/// A concrete implementation of <see cref="IWindowHost"/> for Win32 and Direct2D.
+/// It also implements <see cref="IModalWindowService"/> for Win32 modal dialogues.
+/// </summary>
+public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
+{
+    private AppEngine? _appEngine;
+    private DuiGraphicsDevice? _graphicsDevice;
+    private IRenderer? _renderer;
+    private ITextService? _textService;
+
+    // Modal Window State
+    private ModalWindow? _activeModalWindow;
+    private int _modalResultCode;
+    private Action<int>? _onModalClosedCallback;
+    private bool _isModalClosing; // Flag to prevent re-entry during modal cleanup
+
+    public Win32WindowHost(string title = "DirectUI Win32 Host", int width = 800, int height = 600)
+        : base(title, width, height)
+    {
+    }
+
+    public InputManager Input => _appEngine?.Input ?? new InputManager(); // Provide AppEngine's input manager
+    public SizeI ClientSize => GetClientRectSize();
+
+    public bool ShowFpsCounter
+    {
+        get => _appEngine?.ShowFpsCounter ?? false;
+        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+    }
+
+    public IModalWindowService ModalWindowService => this; // This class *is* the modal window service
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        Console.WriteLine("Win32WindowHost initializing...");
+        if (!base.Initialize()) // Call base Win32Window initialization (registers class, creates HWND)
+        {
+            return false;
+        }
+
+        _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+
+        // Initialize Direct2D specific graphics resources
+        _graphicsDevice = new DuiGraphicsDevice();
+        if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
+        {
+            Console.WriteLine("Failed to initialize DuiGraphicsDevice.");
+            return false;
+        }
+
+        // Initialize backend services using the concrete D2D and DWrite factories
+        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        {
+            _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
+            _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
+        }
+        else
+        {
+            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for Direct2D backend initialization.");
+            return false;
+        }
+
+        _appEngine.Initialize(_textService, _renderer); // Initialize AppEngine's internal components
+        return true;
+    }
+
+    void IWindowHost.Cleanup()
+    {
+        // Call the protected override Cleanup method from this class
+        this.Cleanup();
+    }
+
+    protected override void Cleanup() // Retain protected override for internal consistency
+    {
+        if (_isModalClosing) return; // Prevent re-entry if modal is already cleaning up
+
+        Console.WriteLine("Win32WindowHost cleaning up its resources...");
+        _appEngine?.Cleanup();
+        _textService?.Cleanup();
+        (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
+        _graphicsDevice?.Cleanup(); // Dispose of Direct2D graphics resources
+
+        _appEngine = null;
+        _renderer = null;
+        _textService = null;
+        _graphicsDevice = null;
+        _activeModalWindow = null; // Ensure modal reference is cleared
+
+        base.Cleanup(); // Call base class cleanup
+    }
+
+    public void RunLoop()
+    {
+        // The main application loop for Win32.
+        // This will block and process messages, calling OnPaint/FrameUpdate.
+        Application.RunMessageLoop();
+    }
+
+    protected override void OnPaint()
+    {
+        if (_graphicsDevice is null || _renderer is null || _textService is null || _appEngine is null)
+        {
+            Console.WriteLine("Render services not initialized. Skipping paint.");
+            return;
+        }
+
+        _graphicsDevice.BeginDraw();
+        try
+        {
+            _appEngine.UpdateAndRender(_renderer, _textService);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during drawing: {ex}");
+            _graphicsDevice.Cleanup(); // Try to recover by cleaning graphics device
+        }
+        finally
+        {
+            _graphicsDevice.EndDraw();
+        }
+    }
+
+    public override void FrameUpdate()
+    {
+        // For Win32/Direct2D, FrameUpdate means requesting a paint.
+        // The actual drawing happens in OnPaint triggered by WM_PAINT.
+        Invalidate();
+
+        // Handle modal window lifecycle outside of WM_PAINT to avoid re-entrancy.
+        HandleModalLifecycle();
+    }
+
+    protected override void OnSize(int width, int height)
+    {
+        _graphicsDevice?.Resize(new SizeI(width, height));
+    }
+
+    protected override void OnMouseMove(int x, int y)
+    {
+        _appEngine?.Input.SetMousePosition(x, y);
+        Invalidate();
+    }
+
+    protected override void OnMouseDown(MouseButton button, int x, int y)
+    {
+        _appEngine?.Input.SetMousePosition(x, y); // Update position on click
+        _appEngine?.Input.SetMouseDown(button);
+        Invalidate();
+    }
+
+    protected override void OnMouseUp(MouseButton button, int x, int y)
+    {
+        _appEngine?.Input.SetMousePosition(x, y); // Update position on release
+        _appEngine?.Input.SetMouseUp(button);
+        Invalidate();
+    }
+
+    protected override void OnMouseWheel(float delta)
+    {
+        _appEngine?.Input.AddMouseWheelDelta(delta);
+        Invalidate();
+    }
+
+    protected override void OnKeyDown(Keys key)
+    {
+        _appEngine?.Input.AddKeyPressed(key);
+
+        if (key == Keys.Escape)
+        {
+            Close();
+        }
+        if (key == Keys.F3)
+        {
+            if (_appEngine != null) _appEngine.ShowFpsCounter = !_appEngine.ShowFpsCounter;
+        }
+        Invalidate();
+    }
+
+    protected override void OnKeyUp(Keys key)
+    {
+        _appEngine?.Input.AddKeyReleased(key);
+        Invalidate();
+    }
+
+    protected override void OnChar(char c)
+    {
+        _appEngine?.Input.AddCharacterInput(c);
+        Invalidate();
+    }
+
+    protected override bool OnClose()
+    {
+        return true; // Allow window to close
+    }
+
+    protected override void OnDestroy()
+    {
+        // Base OnDestroy unregisters the window and triggers Application.Exit if last window.
+        base.OnDestroy();
+
+        // If a modal window is open when the owner closes, ensure it's also closed.
+        if (_activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero)
+        {
+            _activeModalWindow.Close(); // This will trigger its own OnDestroy/Cleanup
+        }
+    }
+
+    private SizeI GetClientRectSize()
+    {
+        if (Handle != nint.Zero && NativeMethods.GetClientRect(Handle, out NativeMethods.RECT r))
+        {
+            int width = Math.Max(1, r.right - r.left);
+            int height = Math.Max(1, r.bottom - r.top);
+            return new SizeI(width, height);
+        }
+        // Fallback for when the handle is not yet valid during initialization or if GetClientRect fails.
+        // This size isn't critical as resize will be called immediately after if the window is created.
+        return new SizeI(Width, Height); // Use stored initial window size.
+    }
+
+    // --- IModalWindowService Implementation ---
+    public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+    {
+        if (_activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero)
+        {
+            Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
+            return;
+        }
+
+        _activeModalWindow = new ModalWindow(this, title, width, height, drawCallback);
+        if (_activeModalWindow.CreateAsModal())
+        {
+            _onModalClosedCallback = onClosedCallback;
+            _modalResultCode = -1; // Default to an "unset" or "error" state
+            Console.WriteLine("Modal window opened successfully.");
+        }
+        else
+        {
+            Console.WriteLine("Failed to create modal window.");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1); // Indicate failure to the caller
+        }
+    }
+
+    public void CloseModalWindow(int resultCode = 0)
+    {
+        if (_activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero)
+        {
+            _modalResultCode = resultCode;
+            _activeModalWindow.Close(); // This will trigger WM_DESTROY
+        }
+    }
+
+    public bool IsModalWindowOpen => _activeModalWindow != null && _activeModalWindow.Handle != IntPtr.Zero;
+
+    /// <summary>
+    /// Manages the lifecycle of the modal window, checking its state each frame.
+    /// </summary>
+    private void HandleModalLifecycle()
+    {
+        if (_activeModalWindow == null) return;
+
+        if (_activeModalWindow.Handle == IntPtr.Zero && !_isModalClosing)
+        {
+            // The modal window has been destroyed (e.g., by user clicking X or our CloseModalWindow call).
+            _isModalClosing = true; // Set flag to prevent re-entry
+            Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
+            _onModalClosedCallback?.Invoke(_modalResultCode); // Notify caller of closure and result
+
+            _activeModalWindow.Dispose(); // Ensure all managed resources are cleaned up
+            _activeModalWindow = null;
+            _onModalClosedCallback = null;
+            _modalResultCode = 0;
+            _isModalClosing = false; // Reset flag
+        }
+    }
+}
+</file>
+
 <file path="Containers\ComboboxState.cs">
 namespace DirectUI;
 
@@ -1788,6 +2194,15 @@ public class VBoxContainerState : ILayoutContainer
 }
 </file>
 
+<file path="Core\IAppLogic.cs">
+namespace DirectUI.Core;
+
+public interface IAppLogic
+{
+    void DrawUI(UIContext context);
+}
+</file>
+
 <file path="Core\ILayoutContainer.cs">
 using System.Numerics;
 
@@ -1797,6 +2212,43 @@ public interface ILayoutContainer
 {
     Vector2 GetCurrentPosition();
     void Advance(Vector2 elementSize);
+}
+</file>
+
+<file path="Core\IModalWindowService.cs">
+// DirectUI/Core/IModalWindowService.cs
+using System;
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the contract for a service that can open modal windows.
+/// This allows application UI logic to request a modal window without
+/// knowing the underlying platform's windowing specifics.
+/// </summary>
+public interface IModalWindowService
+{
+    /// <summary>
+    /// Opens a modal window with the specified properties.
+    /// </summary>
+    /// <param name="title">The title of the modal window.</param>
+    /// <param name="width">The width of the modal window.</param>
+    /// <param name="height">The height of the modal window.</param>
+    /// <param name="drawCallback">The UI drawing logic for the content of the modal window.</param>
+    /// <param name="onClosedCallback">An action to be invoked when the modal window is closed. Receives a result code (0 for success, non-zero for error/cancel).</param>
+    void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null);
+
+    /// <summary>
+    /// Closes the currently active modal window, if any, with a specified result code.
+    /// </summary>
+    /// <param name="resultCode">A code indicating the outcome of the modal interaction (e.g., 0 for OK, 1 for Cancel).</param>
+    void CloseModalWindow(int resultCode = 0);
+
+    /// <summary>
+    /// Checks if a modal window is currently open.
+    /// </summary>
+    bool IsModalWindowOpen { get; }
 }
 </file>
 
@@ -1917,6 +2369,66 @@ public interface ITextService
 
     /// <summary>
     /// Cleans up any cached resources managed by the text service.
+    /// </summary>
+    void Cleanup();
+}
+</file>
+
+<file path="Core\IWindowHost.cs">
+// DirectUI/Core/IWindowHost.cs
+using System;
+using DirectUI.Input;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the contract for a platform-specific window host that integrates with the DirectUI engine.
+/// This interface abstracts window creation, main loop management, and exposes input and modal services.
+/// </summary>
+public interface IWindowHost : IDisposable
+{
+    /// <summary>
+    /// Gets the native window handle, if applicable. Returns IntPtr.Zero otherwise.
+    /// </summary>
+    IntPtr Handle { get; }
+
+    /// <summary>
+    /// Provides access to the InputManager for the host to feed input events.
+    /// </summary>
+    InputManager Input { get; }
+
+    /// <summary>
+    /// Gets the current client size of the window.
+    /// </summary>
+    SizeI ClientSize { get; }
+
+    /// <summary>
+    /// Gets or sets whether the FPS counter should be displayed.
+    /// </summary>
+    bool ShowFpsCounter { get; set; }
+
+    /// <summary>
+    /// Provides access to a service for opening modal windows specific to this host's platform.
+    /// </summary>
+    IModalWindowService ModalWindowService { get; }
+
+    /// <summary>
+    /// Initializes the window host and the DirectUI engine.
+    /// </summary>
+    /// <param name="uiDrawCallback">The callback function that contains the application's UI drawing logic.</param>
+    /// <param name="backgroundColor">The background color to clear the window with each frame.</param>
+    /// <returns>True if initialization was successful, false otherwise.</returns>
+    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor);
+
+    /// <summary>
+    /// Runs the platform-specific main message/event loop for the application.
+    /// </summary>
+    void RunLoop();
+
+    /// <summary>
+    /// Cleans up resources owned by the window host.
     /// </summary>
     void Cleanup();
 }
@@ -7905,7 +8417,8 @@ public unsafe class SDL3TextService : ITextService
 
     public nint GetOrCreateFont(string familyName, int fontSize, FontWeight weight)
     {
-        var key = new FontKey(familyName, fontSize, weight);
+        FontKey key = new(familyName, fontSize, weight);
+        
         if (_fontCache.TryGetValue(key, out nint fontPtr))
         {
             return fontPtr;
@@ -7914,11 +8427,10 @@ public unsafe class SDL3TextService : ITextService
         // In a real application, you'd map familyName and weight to actual font file paths.
         // For simplicity, we'll use a hardcoded fallback or look up via FontManager.
         // FontManager.GetFont is for Raylib specifically, so we'll do the file path lookup here.
-        string? filePath = null;
 
         // Try to get the specific weight first, then fallback to normal
-        if (!Drawing.FontManager.TryGetFontFilePath(familyName, weight, out filePath) &&
-            !Drawing.FontManager.TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
+        if (!FontManager.TryGetFontFilePath(familyName, weight, out string? filePath) &&
+            !FontManager.TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
         {
             Console.WriteLine($"Warning: Could not find font file for family '{familyName}' (weight {weight}). Using default.");
             // Fallback to a common system font if possible
@@ -7933,6 +8445,7 @@ public unsafe class SDL3TextService : ITextService
 
         // Open font using SDL_ttf
         fontPtr = TTF.OpenFont(filePath, fontSize);
+        
         if (fontPtr == nint.Zero)
         {
             Console.WriteLine($"Error opening font '{filePath}' at size {fontSize}: {SDL.GetError()}");
@@ -8017,263 +8530,290 @@ public unsafe class SDL3TextService : ITextService
 }
 </file>
 
-<file path="Backends\SDL3\SDL3UIHost.cs">
+<file path="Backends\SDL3\SDL3WindowHost.cs">
+using System;
 using System.Diagnostics;
-using DirectUI.Diagnostics;
+using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
 using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SDL3;
 
-public unsafe class SDL3UIHost
+public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 {
-    private readonly Action<UIContext> _drawCallback;
+    private readonly string _title;
+    private readonly int _initialWidth;
+    private readonly int _initialHeight;
     private readonly Color4 _backgroundColor;
-    private readonly nint _rendererPtr;
-    private readonly nint _windowPtr;
 
-    private readonly FpsCounter _fpsCounter;
-    private readonly InputManager _inputManager;
-    private readonly Stopwatch _frameTimer = new();
-    private long _lastFrameTicks;
+    private nint _windowPtr;
+    private nint _rendererPtr;
 
+    private AppEngine? _appEngine;
     private SDL3Renderer? _renderer;
     private SDL3TextService? _textService;
+    private bool _isDisposed;
 
-    public bool ShowFpsCounter { get; set; } = true;
-    public InputManager Input => _inputManager;
+    private SDL3WindowHost? _activeModalWindow;
+    private Action<UIContext>? _modalDrawCallback;
+    private Action<int>? _onModalClosedCallback;
+    private int _modalResultCode;
+    private bool _isModalClosing;
 
-    public SDL3UIHost(Action<UIContext> drawCallback, Color4 backgroundColor, nint rendererPtr, nint windowPtr)
+    public IntPtr Handle => _windowPtr;
+    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public SizeI ClientSize
     {
-        _drawCallback = drawCallback;
-        _backgroundColor = backgroundColor;
-        _rendererPtr = rendererPtr;
-        _windowPtr = windowPtr;
-
-        _fpsCounter = new FpsCounter();
-        _inputManager = new InputManager();
-
-        _frameTimer.Start();
-        _lastFrameTicks = _frameTimer.ElapsedTicks;
+        get
+        {
+            SDL.GetWindowSize(_windowPtr, out int w, out int h);
+            return new SizeI(w, h);
+        }
     }
 
-    public bool Initialize()
+    public bool ShowFpsCounter
     {
-        _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
-        _textService = new SDL3TextService();
-        _fpsCounter.Initialize(_textService, _renderer);
-        return true;
+        get => _appEngine?.ShowFpsCounter ?? false;
+        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+    }
+
+    public IModalWindowService ModalWindowService => this;
+
+    public SDL3WindowHost(string title, int width, int height, Color4 backgroundColor)
+    {
+        _title = title;
+        _initialWidth = width;
+        _initialHeight = height;
+        _backgroundColor = backgroundColor;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        try
+        {
+            if (!SDL.Init(SDL.InitFlags.Video))
+            {
+                Console.WriteLine($"SDL could not initialize! SDL_Error: {SDL.GetError()}");
+                return false;
+            }
+
+            if (!TTF.Init())
+            {
+                return false;
+            }
+
+            _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable);
+            
+            if (_windowPtr == nint.Zero)
+            {
+                Console.WriteLine($"Window could not be created! SDL_Error: {SDL.GetError()}");
+                return false;
+            }
+
+            _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
+            if (_rendererPtr == nint.Zero)
+            {
+                Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
+                SDL.DestroyWindow(_windowPtr);
+                return false;
+            }
+
+            _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+            _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
+            _textService = new SDL3TextService();
+            _appEngine.Initialize(_textService, _renderer);
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during initialization: {ex.Message}");
+            Cleanup();
+            return false;
+        }
+    }
+
+    public void RunLoop()
+    {
+        bool running = true;
+        while (running)
+        {
+            if (IsModalWindowOpen && _activeModalWindow != null)
+            {
+                _activeModalWindow.ModalRunLoop();
+                HandleModalLifecycle();
+            }
+            else
+            {
+                while (SDL.PollEvent(out SDL.Event ev))
+                {
+                    if (ev.Type == (uint)SDL.EventType.Quit)
+                    {
+                        running = false;
+                        break;
+                    }
+                    Input.ProcessSDL3Event(ev);
+                }
+                RenderFrame();
+            }
+        }
+    }
+
+    private void RenderFrame()
+    {
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
+
+        if (_renderer != null && _textService != null && _appEngine != null)
+        {
+            _appEngine.UpdateAndRender(_renderer, _textService);
+        }
+
+        SDL.RenderPresent(_rendererPtr);
+    }
+
+    private void ModalRunLoop()
+    {
+        bool modalRunning = true;
+        while (modalRunning)
+        {
+            while (SDL.PollEvent(out SDL.Event ev))
+            {
+                if (ev.Type == (uint)SDL.EventType.Quit)
+                {
+                    modalRunning = false;
+                    _modalResultCode = -1;
+                    break;
+                }
+                Input.ProcessSDL3Event(ev);
+            }
+
+            if (_isModalClosing)
+            {
+                modalRunning = false;
+            }
+
+            ModalRenderFrame();
+        }
+        _isModalClosing = true;
+    }
+
+    private void ModalRenderFrame()
+    {
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
+
+        if (_renderer != null && _textService != null && _appEngine != null && _modalDrawCallback != null)
+        {
+            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
+        }
+
+        SDL.RenderPresent(_rendererPtr);
     }
 
     public void Cleanup()
     {
-        _fpsCounter.Cleanup();
+        if (_isDisposed) return;
+
+        _activeModalWindow?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
-        // The SDL renderer and window are destroyed in ApplicationRunner.
-    }
+        _appEngine?.Cleanup();
 
-    public void Resize(int width, int height)
-    {
-        // For SDL, resizing window usually updates renderer automatically,
-        // but we might need to tell our renderer implementation the new size.
-        _renderer?.UpdateWindowSize(width, height);
-    }
-
-    public void Render()
-    {
-        if (UI.IsRendering) return;
-        if (_renderer is null || _textService is null) return;
-
-        // Mouse position is now handled by InputManager.ProcessSDL3Event (specifically MouseMotion events)
-        // No need to poll it directly here every frame, as it's event-driven.
-
-        long currentTicks = _frameTimer.ElapsedTicks;
-        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
-        _lastFrameTicks = currentTicks;
-        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
-
-        _fpsCounter.Update();
-
-        // Clear the renderer buffer
-        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
-        SDL.RenderClear(_rendererPtr);
-
-        try
+        if (_rendererPtr != nint.Zero)
         {
-            var inputState = _inputManager.GetCurrentState();
-            var uiContext = new UIContext(_renderer, _textService, inputState, deltaTime);
-            UI.BeginFrame(uiContext);
-
-            _drawCallback(uiContext);
-
-            if (ShowFpsCounter)
-            {
-                _fpsCounter.Draw();
-            }
-
-            UI.EndFrame();
-
-            _renderer.Flush(); // Flush batched commands, if any (not implemented yet for SDL)
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An error occurred during SDL3 drawing: {ex}");
-        }
-        finally
-        {
-            SDL.RenderPresent(_rendererPtr); // Present the rendered frame
-            _inputManager.PrepareNextFrame();
-        }
-    }
-}
-</file>
-
-<file path="ApplicationRunner.cs">
-using DirectUI;
-using DirectUI.Backends.SDL3;
-using Raylib_cs;
-using SDL3;
-using GraphicsBackend = DirectUI.GraphicsBackend;
-
-namespace Cocoshell;
-
-public static class ApplicationRunner
-{
-    public static void Run(GraphicsBackend backend)
-    {
-        switch (backend)
-        {
-            case GraphicsBackend.Raylib:
-                RunRaylib();
-                break;
-
-            case GraphicsBackend.Direct2D:
-                RunDirect2D();
-                break;
-
-            case GraphicsBackend.SDL3: // NEW
-                RunSDL3();
-                break;
-
-            default:
-                throw new ArgumentOutOfRangeException(nameof(backend), backend, null);
-        }
-    }
-
-    private static void RunRaylib()
-    {
-        Console.WriteLine("Using Raylib Backend.");
-
-        using MyDesktopAppWindow appWindow = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
-
-        if (appWindow.CreateHostWindow())
-        {
-            while (!Raylib.WindowShouldClose())
-            {
-                appWindow.FrameUpdate();
-            }
-        }
-        else
-        {
-            Console.WriteLine("Failed to initialize Raylib application.");
-        }
-    }
-
-    private static void RunDirect2D()
-    {
-        Console.WriteLine("Using Direct2D Backend.");
-
-        using MyDesktopAppWindow appWindow = new("My Refactored D2D App", 1024, 768, GraphicsBackend.Direct2D);
-
-        try
-        {
-            if (appWindow.CreateHostWindow()) // Call the new creation method
-            {
-                Application.Run();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
-        }
-    }
-
-    private unsafe static void RunSDL3() // NEW method, similar structure to Vulkan
-    {
-        Console.WriteLine("Using SDL3 Backend.");
-
-        SDL.Init(SDL.InitFlags.Video);
-        TTF.Init(); // Initialize SDL_ttf
-
-        // Create window
-        uint width = 1024;
-        uint height = 768;
-        string title = "My SDL3 App";
-
-        nint window = SDL.CreateWindow(title, (int)width, (int)height, SDL.WindowFlags.Resizable);
-
-        // Create renderer
-        nint renderer = SDL.CreateRenderer(window, null);
-
-        MyUILogic appLogic = new(GraphicsBackend.SDL3); // Now instantiate MyUILogic
-
-        appLogic.SetOpenProjectWindowHostAction(() =>
-        {
-            Console.WriteLine("Modal windows not supported for SDL3 yet.");
-        }); // Provide dummy action
-
-        Vortice.Mathematics.Color4 backgroundColor = new(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        SDL3UIHost host = new(appLogic.DrawUI, backgroundColor, renderer, window);
-
-        host.Initialize();
-
-        // SDL.StartTextInput(window); // Removed to prevent potential mouse event interference
-
-        bool running = true;
-
-        while (running)
-        {
-            while (SDL.PollEvent(out SDL.Event ev))
-            {
-                host.Input.ProcessSDL3Event(ev);
-
-                if ((SDL.EventType)ev.Type == SDL.EventType.Quit)
-                {
-                    running = false;
-                }
-                else if ((SDL.EventType)ev.Type == SDL.EventType.WindowResized || (SDL.EventType)ev.Type == SDL.EventType.WindowPixelSizeChanged)
-                {
-                    host.Resize(ev.Window.Data1, ev.Window.Data2);
-                }
-            }
-
-            host.Render();
+            SDL.DestroyRenderer(_rendererPtr);
+            _rendererPtr = nint.Zero;
         }
 
-        // SDL.StopTextInput(window); // Removed
+        if (_windowPtr != nint.Zero)
+        {
+            SDL.DestroyWindow(_windowPtr);
+            _windowPtr = nint.Zero;
+        }
 
-        host.Cleanup();
-        SDL.DestroyRenderer(renderer);
-        SDL.DestroyWindow(window);
+        TTF.Quit();
         SDL.Quit();
-        TTF.Quit(); // Quit SDL_ttf after all resources are cleaned up
+
+        _isDisposed = true;
+        GC.SuppressFinalize(this);
     }
-}
-</file>
 
-<file path="IAppLogic.cs">
-using System;
+    public void Dispose()
+    {
+        Cleanup();
+    }
 
-namespace DirectUI;
+    public bool IsModalWindowOpen => _activeModalWindow != null;
 
-public interface IAppLogic
-{
-    void DrawUI(UIContext context);
-    // Any other common logic that needs to be called by the host.
-    // For this step, just DrawUI.
-    Action OpenProjectWindowAction { get; }
+    public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+    {
+        if (_activeModalWindow != null)
+        {
+            Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
+            return;
+        }
+
+        _activeModalWindow = new SDL3WindowHost(title, width, height, _backgroundColor)
+        {
+            _appEngine = this._appEngine,
+            _textService = this._textService,
+            _modalDrawCallback = drawCallback
+        };
+
+        _onModalClosedCallback = onClosedCallback;
+        _modalResultCode = -1;
+
+        if (!_activeModalWindow.InitializeModal(this))
+        {
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+        }
+    }
+
+    private bool InitializeModal(SDL3WindowHost parent)
+    {
+        _windowPtr = SDL.CreateWindow(this._title, this._initialWidth, this._initialHeight, SDL.WindowFlags.Modal);
+        if (_windowPtr == nint.Zero)
+        {
+            Console.WriteLine($"Failed to create modal SDL window: {SDL.GetError()}");
+            return false;
+        }
+
+        _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
+        if (_rendererPtr == nint.Zero)
+        {
+            Console.WriteLine($"Failed to create modal SDL renderer: {SDL.GetError()}");
+            SDL.DestroyWindow(_windowPtr);
+            return false;
+        }
+
+        _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
+        return true;
+    }
+
+    public void CloseModalWindow(int resultCode = 0)
+    {
+        if (_activeModalWindow != null)
+        {
+            _activeModalWindow._modalResultCode = resultCode;
+            _activeModalWindow._isModalClosing = true;
+        }
+    }
+
+    private void HandleModalLifecycle()
+    {
+        if (_activeModalWindow?._isModalClosing == true)
+        {
+            _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode);
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            _onModalClosedCallback = null;
+        }
+    }
 }
 </file>
 
@@ -8667,196 +9207,15 @@ public class InputMapEditor
 }
 </file>
 
-<file path="MyDirectUIApp.cs">
-// MyDesktopAppWindow.cs (Renamed from MyDirectUIApp.cs)
-using System;
-using System.Numerics;
-using Vortice.Mathematics;
-using Raylib_cs; // Added for Raylib
-
-namespace DirectUI;
-
-/// <summary>
-/// This class serves as the concrete Win32 window for Direct2D and Raylib backends.
-/// It wraps the core UI logic provided by MyUILogic.
-/// </summary>
-public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Raylib
-{
-    private readonly MyUILogic _uiLogic;
-    private readonly GraphicsBackend _backend;
-
-    public MyDesktopAppWindow(string title, int width, int height, GraphicsBackend backend)
-        : base(title, width, height)
-    {
-        _backend = backend;
-        _uiLogic = new MyUILogic(backend); // Instantiate the UI logic
-        // Provide a lambda for the UI logic to call to open the project window,
-        // passing 'this' (the Win32Window instance) as the owner.
-        _uiLogic.SetOpenProjectWindowHostAction(() => _uiLogic.OpenProjectWindowInternal(this));
-    }
-
-    /// <summary>
-    /// Creates the window and initializes resources for either D2D or Raylib backend.
-    /// This is the primary entry point for starting the application window.
-    /// </summary>
-    public bool CreateHostWindow()
-    {
-        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan or GraphicsBackend.SDL3)
-        {
-            // For Raylib/Vulkan/SDL3, we bypass the Win32 window creation here.
-            // SDL3 and Vulkan are handled by ApplicationRunner directly.
-            // Raylib creates its window within AppHost.Initialize, so we just need to call Initialize.
-            return Initialize();
-        }
-        else
-        {
-            // For D2D, use the standard Win32 window creation from the base class.
-            return base.Create();
-        }
-    }
-
-    // Override Initialize and Cleanup in Win32Window base if using Raylib
-    protected override bool Initialize()
-    {
-        switch (_backend)
-        {
-            case GraphicsBackend.Raylib:
-                Console.WriteLine("Initializing with Raylib backend...");
-                Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
-                Raylib.InitWindow(Width, Height, Title);
-                Raylib.SetTargetFPS(60);
-                _appHost = CreateAppHost();
-                return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
-
-            case GraphicsBackend.Vulkan:
-            case GraphicsBackend.SDL3:
-                // This logic is now handled by ApplicationRunner and their respective hosts.
-                // This MyDesktopAppWindow should not be instantiated for these backends.
-                Console.WriteLine($"Error: MyDesktopAppWindow should not be used with {_backend} backend.");
-                return false;
-
-            case GraphicsBackend.Direct2D:
-            default:
-                return base.Initialize();
-        }
-    }
-
-    protected override void Cleanup()
-    {
-        switch (_backend)
-        {
-            case GraphicsBackend.Raylib:
-                Console.WriteLine("RaylibAppWindow cleaning up its resources...");
-                _appHost?.Cleanup();
-                _appHost = null;
-                Raylib.CloseWindow();
-                break;
-
-            case GraphicsBackend.Vulkan:
-            case GraphicsBackend.SDL3:
-                // Nothing to do here, ApplicationRunner/Host handles cleanup for these.
-                break;
-
-            case GraphicsBackend.Direct2D:
-            default:
-                base.Cleanup();
-                break;
-        }
-    }
-
-    // For Raylib, the main loop in Program.cs handles drawing, not OnPaint messages.
-    // OnPaint will only be called for D2D backend.
-    protected override void OnPaint()
-    {
-        if (_backend == GraphicsBackend.Direct2D)
-        {
-            _appHost?.Render();
-        }
-    }
-
-    public override void FrameUpdate()
-    {
-        switch (_backend)
-        {
-            case GraphicsBackend.Raylib:
-                if (Raylib.WindowShouldClose())
-                {
-                    Application.Exit();
-                    return;
-                }
-                _appHost?.Input.ProcessRaylibInput();
-                _appHost?.Render();
-                break;
-
-            case GraphicsBackend.Vulkan:
-            case GraphicsBackend.SDL3:
-                // This method should not be called for Veldrid/SDL3 backends, as their loop is in ApplicationRunner.
-                break;
-
-            case GraphicsBackend.Direct2D:
-            default:
-                // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
-                Invalidate();
-                break;
-        }
-    }
-
-    protected override AppHost CreateAppHost()
-    {
-        var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        // Pass the DrawUI method from the _uiLogic instance.
-        return new AppHost(_uiLogic.DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib);
-    }
-
-    // Input handlers only call base if D2D backend, because Raylib's input is handled directly by AppHost.
-    protected override void OnKeyDown(Keys key)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
-        if (key == Keys.F3)
-        {
-            if (_appHost != null) _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
-        }
-    }
-
-    protected override void OnMouseMove(int x, int y)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnMouseMove(x, y);
-    }
-
-    protected override void OnMouseDown(MouseButton button, int x, int y)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnMouseDown(button, x, y);
-    }
-
-    protected override void OnMouseUp(MouseButton button, int x, int y)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnMouseUp(button, x, y);
-    }
-
-    protected override void OnMouseWheel(float delta)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnMouseWheel(delta);
-    }
-
-    protected override void OnKeyUp(Keys key)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnKeyUp(key);
-    }
-
-    protected override void OnChar(char c)
-    {
-        if (_backend == GraphicsBackend.Direct2D) base.OnChar(c);
-    }
-}
-</file>
-
 <file path="MyUILogic.cs">
 // MyUILogic.cs
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
+using DirectUI;
+using DirectUI.Core; 
 
-namespace DirectUI;
+namespace Cocoshell;
 
 /// <summary>
 /// This class encapsulates the actual UI logic and view management, decoupled from windowing.
@@ -8879,44 +9238,32 @@ public class MyUILogic : IAppLogic
     private readonly SceneTreeView _sceneTreeView;
     private readonly InspectorView _inspectorView;
     private readonly BottomPanelView _bottomPanelView;
-    private readonly InputMapEditor _inputMapEditor;
+    private readonly InputMapEditor _inputMapEditor; // Input map editor instance
+    private readonly IModalWindowService _modalWindowService;
 
     // State for managing the modal "Project Settings" window
-    // These are properties on the logic class, but their actual handling
-    // for modal windows will be dependent on the capabilities of the host.
-    private ModalWindow? _projectWindow; // This will only be instantiated by the D2D host
-    private bool _isProjectWindowOpen = false; // Controlled by UI logic
     private int _projectWindowActiveTab = 0;
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
-    // Flag to indicate the backend (for logic branching, e.g., modal window support)
-    private readonly GraphicsBackend _backend;
 
-    // Delegate to call the hosting window's OpenProjectWindow method, which handles platform-specific windowing.
-    public Action OpenProjectWindowAction { get; private set; } = () => { };
+    public Action OpenProjectWindowAction { get; } // Now just a wrapper for the modal service call
 
-    public MyUILogic(GraphicsBackend backend)
+    public MyUILogic(IModalWindowService modalWindowService)
     {
-        _backend = backend;
+        _modalWindowService = modalWindowService ?? throw new ArgumentNullException(nameof(modalWindowService));
         _menuBarView = new MenuBarView();
         _sceneTreeView = new SceneTreeView();
         _inspectorView = new InspectorView();
         _bottomPanelView = new BottomPanelView();
-    }
+        _inputMapEditor = new InputMapEditor("input_map.yaml"); // Initialize here, if it's part of the app logic
 
-    /// <summary>
-    /// Sets the action that the UI logic should call to request opening the project window.
-    /// This action will be provided by the concrete window/host implementation.
-    /// </summary>
-    public void SetOpenProjectWindowHostAction(Action action)
-    {
-        OpenProjectWindowAction = action;
+        // Provide an action that calls the injected modal service.
+        OpenProjectWindowAction = () => OpenProjectWindowInternal();
     }
 
     public void DrawUI(UIContext context)
     {
-        ManageModalWindowState(); // Still manages state for D2D backend
-        _menuBarView.Draw(context, OpenProjectWindowAction); // Pass the host-provided action
+        _menuBarView.Draw(context, OpenProjectWindowAction);
         DrawMainLayoutPanels();
 
         // After drawing all panels, check if the bottom panel has signalled a scene change.
@@ -9034,71 +9381,41 @@ public class MyUILogic : IAppLogic
         if (UI.Button("modal_button_1", "A button in a modal")) { /* ... */ }
         if (UI.Button("modal_button_close", "Close Me"))
         {
-            _isProjectWindowOpen = false; // Signal the window to close
+            _modalWindowService.CloseModalWindow(0); // Signal the modal to close with success
         }
         UI.EndVBoxContainer();
     }
 
-    // This method is called internally by UI elements (e.g., MenuBarView)
-    // It signals the _host_ to open a project window.
-    // The host (e.g., MyDesktopAppWindow for D2D) then creates the modal window.
-    internal void OpenProjectWindowInternal(Win32Window ownerWindow)
+    /// <summary>
+    /// Requests the host to open the project settings modal window.
+    /// </summary>
+    private void OpenProjectWindowInternal()
     {
-        if (_isProjectWindowOpen) return;
+        if (_modalWindowService.IsModalWindowOpen) return;
 
-        // Only D2D backend supports Win32 modal windows through this path.
-        if (_backend != GraphicsBackend.Direct2D)
-        {
-            Console.WriteLine($"Modal windows are not yet implemented for the {_backend} backend.");
-            return;
-        }
-
-        _projectWindow = new ModalWindow(ownerWindow, "Project Settings", 600, 400, DrawProjectWindowUI);
-        if (_projectWindow.CreateAsModal())
-        {
-            _isProjectWindowOpen = true;
-        }
-        else
-        {
-            Console.WriteLine("Failed to create modal window.");
-            _projectWindow.Dispose();
-            _projectWindow = null;
-        }
-    }
-
-    private void ManageModalWindowState()
-    {
-        if (_backend != GraphicsBackend.Direct2D) return; // Modal window management is D2D-specific
-
-        if (_projectWindow == null) return;
-
-        // If the OS window handle is gone (e.g., user clicked the 'X' button),
-        // we must clean up our reference to it.
-        if (_projectWindow.Handle == IntPtr.Zero)
-        {
-            _projectWindow.Dispose();
-            _projectWindow = null;
-            _isProjectWindowOpen = false;
-
-            // Revert any unsaved changes in the editor since the window was closed abruptly.
-            if (_inputMapEditor.IsDirty())
-            {
-                _inputMapEditor.RevertChanges();
+        _modalWindowService.OpenModalWindow(
+            "Project Settings",
+            600,
+            400,
+            DrawProjectWindowUI,
+            (result) => {
+                Console.WriteLine($"Project Settings Modal Closed with result: {result}");
+                // If the modal was closed without explicitly saving (e.g., by X button), revert changes.
+                if (result != 0 && _inputMapEditor.IsDirty())
+                {
+                    Console.WriteLine("Modal closed without saving. Reverting Input Map changes.");
+                    _inputMapEditor.RevertChanges();
+                }
             }
-        }
-        // If our application logic has requested the window to close (e.g., via a button click),
-        // then we tell the window to close itself.
-        else if (!_isProjectWindowOpen)
-        {
-            _projectWindow.Close();
-        }
+        );
     }
 }
 </file>
 
 <file path="Program.cs">
+using Cocoshell;
 using DirectUI;
-using Cocoshell; // Use the namespace for ApplicationRunner
+using DirectUI.Core;
 
 public class Program
 {
@@ -9110,7 +9427,7 @@ public class Program
         //var backend = GraphicsBackend.Vulkan;
         var backend = GraphicsBackend.SDL3; // Set to SDL3 for testing
 
-        ApplicationRunner.Run(backend);
+        ApplicationRunner.Run(backend, host => new MyUILogic(host.ModalWindowService));
     }
 }
 </file>
