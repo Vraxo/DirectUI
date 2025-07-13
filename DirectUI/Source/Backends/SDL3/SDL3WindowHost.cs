@@ -54,11 +54,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
     public IModalWindowService ModalWindowService => this;
 
-    public SDL3WindowHost(string title, int width, int height, Color4 backgroundColor)
+    public SDL3WindowHost(string title, int width, int initialHeight, Color4 backgroundColor)
     {
         _title = title;
         _initialWidth = width;
-        _initialHeight = height;
+        _initialHeight = initialHeight;
         _backgroundColor = backgroundColor;
     }
 
@@ -145,24 +145,13 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                         running = false;
                         break;
                     }
+                    // TODO: Handle main window close event if it's not WM_QUIT
                     Input.ProcessSDL3Event(ev); // Process input for the main window
                 }
-                RenderFrame();
+
+                this.RenderFrame(); // Explicitly call RenderFrame
             }
         }
-    }
-
-    private void RenderFrame()
-    {
-        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
-        SDL.RenderClear(_rendererPtr);
-
-        if (_renderer != null && _textService != null && _appEngine != null)
-        {
-            _appEngine.UpdateAndRender(_renderer, _textService);
-        }
-
-        SDL.RenderPresent(_rendererPtr);
     }
 
     private void ModalRunLoop()
@@ -174,9 +163,20 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             {
                 if (ev.Type == (uint)SDL.EventType.Quit)
                 {
+                    // This generally means the whole application is quitting
                     modalRunning = false;
                     _modalResultCode = -1; // Indicate a forced quit
                     break;
+                }
+                else if (ev.Type == (uint)SDL.EventType.WindowCloseRequested)
+                {
+                    // Check if the event is for THIS modal window and it's a close event
+                    if (ev.Window.WindowID == SDL.GetWindowID(_windowPtr))
+                    {
+                        modalRunning = false; // Exit modal loop
+                        _modalResultCode = -1; // Indicate closure by X button (cancel)
+                        break;
+                    }
                 }
                 // Process input for the modal window
                 Input.ProcessSDL3Event(ev);
@@ -191,6 +191,19 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
         // When modal loop exits, signal its cleanup to the parent
         _isModalClosing = true;
+    }
+
+    private void RenderFrame()
+    {
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
+
+        if (_renderer != null && _textService != null && _appEngine != null)
+        {
+            _appEngine.UpdateAndRender(_renderer, _textService);
+        }
+
+        SDL.RenderPresent(_rendererPtr);
     }
 
     private void ModalRenderFrame()
@@ -285,7 +298,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         // Now that _activeModalWindow._windowPtr is valid, set its parent.
-        // This is the crucial step to satisfy the "Window must have a parent..." requirement for SDL.SetWindowModal().
+        // This is crucial to satisfy the "Window must have a parent..." requirement for SDL.SetWindowModal().
         if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, this._windowPtr))
         {
             Console.WriteLine($"Failed to set window parent: {SDL.GetError()}");
@@ -296,7 +309,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         // Now that it has a parent, set it as modal.
-        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true))
+        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true)) // Assume 0 is success for SDL functions
         {
             Console.WriteLine($"Failed to set modal flag on window: {SDL.GetError()}");
             _activeModalWindow.Dispose();
