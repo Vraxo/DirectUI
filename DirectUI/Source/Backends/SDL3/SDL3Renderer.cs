@@ -178,7 +178,7 @@ public unsafe class SDL3Renderer : IRenderer
             return;
 
         var textService = UI.Context.TextService as SDL3TextService;
-        if (textService == null)
+        if (textService is null)
         {
             Console.WriteLine("Error: SDL3TextService not available for text rendering.");
             return;

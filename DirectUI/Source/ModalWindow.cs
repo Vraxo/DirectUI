@@ -35,7 +35,7 @@ public class ModalWindow : Win32Window
         }
 
         // Initialize backend services using the concrete D2D and DWrite factories
-        if (_graphicsDevice.RenderTarget != null && _graphicsDevice.DWriteFactory != null)
+        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
         {
             _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
             _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);

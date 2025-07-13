@@ -71,7 +71,7 @@ public class DuiGraphicsDevice : IDisposable
 
     public void Resize(SizeI newSize)
     {
-        if (!IsInitialized || RenderTarget == null) return;
+        if (!IsInitialized || RenderTarget is null) return;
 
         try
         {
@@ -97,7 +97,7 @@ public class DuiGraphicsDevice : IDisposable
 
     public void BeginDraw()
     {
-        if (!IsInitialized || RenderTarget == null)
+        if (!IsInitialized || RenderTarget is null)
         {
             return;
         }
@@ -106,7 +106,7 @@ public class DuiGraphicsDevice : IDisposable
 
     public void EndDraw()
     {
-        if (!IsInitialized || RenderTarget == null) return;
+        if (!IsInitialized || RenderTarget is null) return;
 
         try
         {

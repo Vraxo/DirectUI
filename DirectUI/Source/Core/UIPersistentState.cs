@@ -43,7 +43,7 @@ public class UIPersistentState
 
     public void SetUserData(int id, object? data)
     {
-        if (data != null)
+        if (data is not null)
         {
             _userData[id] = data;
         }

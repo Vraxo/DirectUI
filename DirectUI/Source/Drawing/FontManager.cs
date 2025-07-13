@@ -93,8 +93,7 @@ namespace DirectUI.Drawing
                 return font;
             }
 
-            string? filePath = null;
-            if (!TryGetFontFilePath(familyName, weight, out filePath) && !TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
+            if (!TryGetFontFilePath(familyName, weight, out string? filePath) && !TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
             {
                 Console.WriteLine($"Font family '{familyName}' does not have a variant for weight {weight} or a Normal fallback. Returning default font.");
                 return Raylib.GetFontDefault();

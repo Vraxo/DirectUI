@@ -939,155 +939,6 @@ internal static class NativeMethods
 }
 </file>
 
-<file path="RaylibWindowHost.cs">
-// DirectUI/RaylibWindowHost.cs
-using System;
-using System.Numerics;
-using DirectUI.Core; // For IWindowHost, IModalWindowService
-using DirectUI.Drawing;
-using DirectUI.Input;
-using Raylib_cs;
-using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
-
-namespace DirectUI;
-
-/// <summary>
-/// A concrete implementation of <see cref="IWindowHost"/> for the Raylib backend.
-/// </summary>
-public class RaylibWindowHost : IWindowHost
-{
-    private readonly string _title;
-    private readonly int _width;
-    private readonly int _height;
-    private readonly Color4 _backgroundColor;
-
-    private AppEngine? _appEngine;
-    private IRenderer? _renderer;
-    private ITextService? _textService;
-    private bool _isDisposed = false;
-
-    // Raylib doesn't have a native window handle like Win32 or SDL, so this will be IntPtr.Zero.
-    public IntPtr Handle => IntPtr.Zero;
-    public InputManager Input => _appEngine?.Input ?? new InputManager();
-    public SizeI ClientSize => new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
-
-    public bool ShowFpsCounter
-    {
-        get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
-    }
-
-    public IModalWindowService ModalWindowService { get; } = new RaylibDummyModalWindowService();
-
-    public RaylibWindowHost(string title, int width, int height, Color4 backgroundColor)
-    {
-        _title = title;
-        _width = width;
-        _height = height;
-        _backgroundColor = backgroundColor;
-    }
-
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
-    {
-        Console.WriteLine("RaylibWindowHost initializing...");
-        try
-        {
-            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
-            Raylib.InitWindow(_width, _height, _title);
-            Raylib.SetTargetFPS(60);
-
-            _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
-            _renderer = new DirectUI.Backends.RaylibRenderer();
-            _textService = new DirectUI.Backends.RaylibTextService();
-
-            FontManager.Initialize();
-            FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
-            FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
-            FontManager.RegisterFontVariant("Consolas", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
-            FontManager.RegisterFontVariant("Consolas", Vortice.DirectWrite.FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
-
-            _appEngine.Initialize(_textService, _renderer);
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Failed to initialize RaylibWindowHost: {ex.Message}");
-            Cleanup(); // Ensure partial initialization is cleaned up
-            return false;
-        }
-    }
-
-    public void RunLoop()
-    {
-        while (!Raylib.WindowShouldClose())
-        {
-            // Process Raylib input events directly
-            _appEngine?.Input.ProcessRaylibInput();
-
-            // Begin drawing
-            Raylib.BeginDrawing();
-            Raylib.ClearBackground(new Raylib_cs.Color(
-                (byte)(_backgroundColor.R * 255),
-                (byte)(_backgroundColor.G * 255),
-                (byte)(_backgroundColor.B * 255),
-                (byte)(_backgroundColor.A * 255)
-            ));
-
-            // Update and render the UI through the AppEngine
-            if (_renderer is not null && _textService is not null && _appEngine is not null)
-            {
-                _appEngine.UpdateAndRender(_renderer, _textService);
-            }
-
-            // End drawing
-            Raylib.EndDrawing();
-        }
-    }
-
-    public void Cleanup()
-    {
-        if (_isDisposed) return;
-        Console.WriteLine("RaylibWindowHost cleaning up its resources...");
-        _appEngine?.Cleanup();
-        (_renderer as DirectUI.Backends.RaylibRenderer)?.Cleanup(); // Explicit cast for Cleanup
-        (_textService as DirectUI.Backends.RaylibTextService)?.Cleanup(); // Explicit cast for Cleanup
-        FontManager.UnloadAll(); // Unload all Raylib fonts
-
-        if (Raylib.IsWindowReady())
-        {
-            Raylib.CloseWindow();
-        }
-        _appEngine = null;
-        _renderer = null;
-        _textService = null;
-        _isDisposed = true;
-        GC.SuppressFinalize(this);
-    }
-
-    public void Dispose()
-    {
-        Cleanup();
-    }
-
-    private class RaylibDummyModalWindowService : IModalWindowService
-    {
-        public bool IsModalWindowOpen => false;
-
-        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
-        {
-            Console.WriteLine($"Modal window '{title}' requested but not supported in Raylib backend.");
-            onClosedCallback?.Invoke(-1); // Immediately report as closed/failed
-        }
-
-        public void CloseModalWindow(int resultCode = 0)
-        {
-            // Do nothing as no modal windows are opened.
-        }
-    }
-}
-</file>
-
 <file path="SharedGraphicsResources.cs">
 // SharedGraphicsResources.cs
 using System;
@@ -7909,6 +7760,156 @@ public class RaylibTextService : ITextService
 }
 </file>
 
+<file path="Backends\Raylib\RaylibWindowHost.cs">
+// DirectUI/RaylibWindowHost.cs
+using System;
+using System.Numerics;
+using DirectUI.Core; // For IWindowHost, IModalWindowService
+using DirectUI.Drawing;
+using DirectUI.Input;
+using Raylib_cs;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+
+namespace DirectUI;
+
+/// <summary>
+/// A concrete implementation of <see cref="IWindowHost"/> for the Raylib backend.
+/// </summary>
+public class RaylibWindowHost : IWindowHost
+{
+    private readonly string _title;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly Color4 _backgroundColor;
+
+    private AppEngine? _appEngine;
+    private IRenderer? _renderer;
+    private ITextService? _textService;
+    private bool _isDisposed = false;
+
+    // Raylib doesn't have a native window handle like Win32 or SDL, so this will be IntPtr.Zero.
+    public IntPtr Handle => IntPtr.Zero;
+    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public SizeI ClientSize => new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
+
+    public bool ShowFpsCounter
+    {
+        get => _appEngine?.ShowFpsCounter ?? false;
+        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+    }
+
+    public IModalWindowService ModalWindowService { get; } = new RaylibDummyModalWindowService();
+
+    public RaylibWindowHost(string title, int width, int height, Color4 backgroundColor)
+    {
+        _title = title;
+        _width = width;
+        _height = height;
+        _backgroundColor = backgroundColor;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        Console.WriteLine("RaylibWindowHost initializing...");
+        try
+        {
+            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+            Raylib.InitWindow(_width, _height, _title);
+            Raylib.SetTargetFPS(60);
+
+            _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+            _renderer = new DirectUI.Backends.RaylibRenderer();
+            _textService = new DirectUI.Backends.RaylibTextService();
+
+            // Raylib-specific font initialization and registration
+            FontManager.Initialize();
+            FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
+            FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
+            FontManager.RegisterFontVariant("Consolas", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
+            FontManager.RegisterFontVariant("Consolas", Vortice.DirectWrite.FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
+
+            _appEngine.Initialize(_textService, _renderer);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize RaylibWindowHost: {ex.Message}");
+            Cleanup(); // Ensure partial initialization is cleaned up
+            return false;
+        }
+    }
+
+    public void RunLoop()
+    {
+        while (!Raylib.WindowShouldClose())
+        {
+            // Process Raylib input events directly
+            _appEngine?.Input.ProcessRaylibInput();
+
+            // Begin drawing
+            Raylib.BeginDrawing();
+            Raylib.ClearBackground(new Raylib_cs.Color(
+                (byte)(_backgroundColor.R * 255),
+                (byte)(_backgroundColor.G * 255),
+                (byte)(_backgroundColor.B * 255),
+                (byte)(_backgroundColor.A * 255)
+            ));
+
+            // Update and render the UI through the AppEngine
+            if (_renderer is not null && _textService is not null && _appEngine is not null)
+            {
+                _appEngine.UpdateAndRender(_renderer, _textService);
+            }
+
+            // End drawing
+            Raylib.EndDrawing();
+        }
+    }
+
+    public void Cleanup()
+    {
+        if (_isDisposed) return;
+        Console.WriteLine("RaylibWindowHost cleaning up its resources...");
+        _appEngine?.Cleanup();
+        (_renderer as DirectUI.Backends.RaylibRenderer)?.Cleanup(); // Explicit cast for Cleanup
+        (_textService as DirectUI.Backends.RaylibTextService)?.Cleanup(); // Explicit cast for Cleanup
+        FontManager.UnloadAll(); // Unload all Raylib fonts
+
+        if (Raylib.IsWindowReady())
+        {
+            Raylib.CloseWindow();
+        }
+        _appEngine = null;
+        _renderer = null;
+        _textService = null;
+        _isDisposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    public void Dispose()
+    {
+        Cleanup();
+    }
+
+    private class RaylibDummyModalWindowService : IModalWindowService
+    {
+        public bool IsModalWindowOpen => false;
+
+        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+        {
+            Console.WriteLine($"Modal window '{title}' requested but not supported in Raylib backend.");
+            onClosedCallback?.Invoke(-1); // Immediately report as closed/failed
+        }
+
+        public void CloseModalWindow(int resultCode = 0)
+        {
+            // Do nothing as no modal windows are opened.
+        }
+    }
+}
+</file>
+
 <file path="Backends\SDL3\SDL3Renderer.cs">
 using System;
 using System.Collections.Generic;
@@ -8354,6 +8355,7 @@ internal unsafe class SDL3TextLayout : ITextLayout
 <file path="Backends\SDL3\SDL3TextService.cs">
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
@@ -8371,6 +8373,10 @@ public unsafe class SDL3TextService : ITextService
     // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
     private const float FONT_SCALE_FACTOR = 1.125f;
 
+    // Internal static dictionary for font file paths for SDL3
+    private static readonly Dictionary<string, Dictionary<FontWeight, string>> s_sdlFontFilePaths = new();
+    private static bool s_defaultFontsRegistered = false; // Flag to ensure registration happens only once
+
     // Internal cache key structs
     internal readonly struct FontKey(string fontName, int fontSize, FontWeight fontWeight) : IEquatable<FontKey>
     {
@@ -8379,9 +8385,6 @@ public unsafe class SDL3TextService : ITextService
         private readonly FontWeight FontWeight = fontWeight;
         // FontStyle and FontStretch are not directly supported by TTF.OpenFont,
         // so we omit them from the key or map them to file paths.
-        // For simplicity, we're not using them for font selection for now.
-        // private readonly FontStyle FontStyle = style.FontStyle;
-        // private readonly FontStretch FontStretch = style.FontStretch;
 
         public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight;
         public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
@@ -8402,50 +8405,81 @@ public unsafe class SDL3TextService : ITextService
 
     public SDL3TextService()
     {
-        TTF.Init();
-        // Register font variants for SDL3
-        // This needs to be consistent with the font paths used by Direct2D/Raylib AppHost
-        // For SDL_ttf, typically only Normal/Bold weights are distinct font files.
-        // If a specific weight isn't found, TTF will try to simulate it, but it's better to provide the file.
-        // Assuming "Segoe UI" and "Consolas" are available at these paths or system default.
-        FontManager.Initialize(); // Initialize the common FontManager if not already
-        FontManager.RegisterFontVariant("Segoe UI", FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
-        FontManager.RegisterFontVariant("Segoe UI", FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
-        FontManager.RegisterFontVariant("Consolas", FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
-        FontManager.RegisterFontVariant("Consolas", FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
+        // TTF.Init() should be called globally ONCE, not per instance.
+        // It's handled by SDL3WindowHost now.
     }
+
+    /// <summary>
+    /// Registers default font paths for SDL_ttf. This should be called once globally.
+    /// </summary>
+    internal static void RegisterDefaultFonts()
+    {
+        if (s_defaultFontsRegistered) return;
+
+        s_sdlFontFilePaths["Segoe UI"] = new Dictionary<FontWeight, string>
+        {
+            { FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf" },
+            { FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf" }
+        };
+        s_sdlFontFilePaths["Consolas"] = new Dictionary<FontWeight, string>
+        {
+            { FontWeight.Normal, "C:/Windows/Fonts/consola.ttf" },
+            { FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf" }
+        };
+        s_sdlFontFilePaths["Arial"] = new Dictionary<FontWeight, string>
+        {
+            { FontWeight.Normal, "C:/Windows/Fonts/arial.ttf" }
+        };
+
+        s_defaultFontsRegistered = true;
+    }
+
+    /// <summary>
+    /// Attempts to retrieve the file path for a registered font variant for SDL_ttf.
+    /// </summary>
+    internal static bool TryGetSdlFontFilePath(string familyName, FontWeight weight, out string? filePath)
+    {
+        filePath = null;
+        if (s_sdlFontFilePaths.TryGetValue(familyName, out var variants))
+        {
+            if (variants.TryGetValue(weight, out filePath))
+            {
+                return true;
+            }
+            // Fallback to Normal weight if specific weight not found
+            if (variants.TryGetValue(FontWeight.Normal, out filePath))
+            {
+                return true;
+            }
+        }
+        // Fallback to Arial if original family not found
+        if (s_sdlFontFilePaths.TryGetValue("Arial", out var arialVariants) && arialVariants.TryGetValue(FontWeight.Normal, out filePath))
+        {
+            Console.WriteLine($"Warning: Font family '{familyName}' (weight {weight}) not found. Falling back to Arial.");
+            return true;
+        }
+        return false;
+    }
+
 
     public nint GetOrCreateFont(string familyName, int fontSize, FontWeight weight)
     {
         FontKey key = new(familyName, fontSize, weight);
-        
+
         if (_fontCache.TryGetValue(key, out nint fontPtr))
         {
             return fontPtr;
         }
 
-        // In a real application, you'd map familyName and weight to actual font file paths.
-        // For simplicity, we'll use a hardcoded fallback or look up via FontManager.
-        // FontManager.GetFont is for Raylib specifically, so we'll do the file path lookup here.
-
-        // Try to get the specific weight first, then fallback to normal
-        if (!FontManager.TryGetFontFilePath(familyName, weight, out string? filePath) &&
-            !FontManager.TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
+        if (!TryGetSdlFontFilePath(familyName, weight, out string? filePath))
         {
-            Console.WriteLine($"Warning: Could not find font file for family '{familyName}' (weight {weight}). Using default.");
-            // Fallback to a common system font if possible
-            filePath = "C:/Windows/Fonts/arial.ttf"; // Example fallback
-        }
-
-        if (filePath == null || !File.Exists(filePath))
-        {
-            Console.WriteLine($"Warning: Font file '{filePath}' not found or no suitable fallback. Cannot load font.");
+            Console.WriteLine($"Warning: Could not find font file for family '{familyName}' (weight {weight}) or a fallback. Returning null font pointer.");
             return nint.Zero;
         }
 
         // Open font using SDL_ttf
         fontPtr = TTF.OpenFont(filePath, fontSize);
-        
+
         if (fontPtr == nint.Zero)
         {
             Console.WriteLine($"Error opening font '{filePath}' at size {fontSize}: {SDL.GetError()}");
@@ -8513,6 +8547,7 @@ public unsafe class SDL3TextService : ITextService
     public void Cleanup()
     {
         Console.WriteLine("SDL3TextService Cleanup: Disposing cached resources...");
+        // Close fonts for this specific instance's cache
         foreach (var fontPtr in _fontCache.Values)
         {
             if (fontPtr != nint.Zero)
@@ -8524,7 +8559,7 @@ public unsafe class SDL3TextService : ITextService
         _textLayoutCache.Clear();
         _textSizeCache.Clear();
 
-        TTF.Quit();
+        // TTF.Quit() is now handled globally by SDL3WindowHost
         Console.WriteLine("SDL3TextService Cleanup finished.");
     }
 }
@@ -8533,6 +8568,7 @@ public unsafe class SDL3TextService : ITextService
 <file path="Backends\SDL3\SDL3WindowHost.cs">
 using System;
 using System.Diagnostics;
+using System.Threading; // Added for Interlocked
 using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
@@ -8546,7 +8582,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private readonly string _title;
     private readonly int _initialWidth;
     private readonly int _initialHeight;
-    private readonly Color4 _backgroundColor;
+    private readonly Color4 _backgroundColor; // Stored here to pass to new modal instances
 
     private nint _windowPtr;
     private nint _rendererPtr;
@@ -8556,11 +8592,16 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private SDL3TextService? _textService;
     private bool _isDisposed;
 
+    // Static counters for global SDL and TTF initialization/cleanup
+    private static int s_sdlInitCount = 0;
+    private static int s_ttfInitCount = 0;
+
+    // Modal Window State
     private SDL3WindowHost? _activeModalWindow;
-    private Action<UIContext>? _modalDrawCallback;
-    private Action<int>? _onModalClosedCallback;
+    private Action<UIContext>? _modalDrawCallback; // Only used by the modal instance itself
+    private Action<int>? _onModalClosedCallback; // Used by the parent to get result from modal
     private int _modalResultCode;
-    private bool _isModalClosing;
+    private bool _isModalClosing; // Flag to prevent re-entry during modal cleanup
 
     public IntPtr Handle => _windowPtr;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
@@ -8581,31 +8622,44 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
     public IModalWindowService ModalWindowService => this;
 
-    public SDL3WindowHost(string title, int width, int height, Color4 backgroundColor)
+    public SDL3WindowHost(string title, int width, int initialHeight, Color4 backgroundColor)
     {
         _title = title;
         _initialWidth = width;
-        _initialHeight = height;
+        _initialHeight = initialHeight;
         _backgroundColor = backgroundColor;
     }
 
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
+        Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
         try
         {
-            if (!SDL.Init(SDL.InitFlags.Video))
+            // Global SDL initialization (guarded by static counters)
+            Interlocked.Increment(ref s_sdlInitCount);
+            if (s_sdlInitCount == 1)
             {
-                Console.WriteLine($"SDL could not initialize! SDL_Error: {SDL.GetError()}");
-                return false;
+                if (!SDL.Init(SDL.InitFlags.Video))
+                {
+                    Console.WriteLine($"SDL could not initialize! SDL_Error: {SDL.GetError()}");
+                    return false;
+                }
             }
 
-            if (!TTF.Init())
+            // Global SDL_ttf initialization (guarded by static counters)
+            Interlocked.Increment(ref s_ttfInitCount);
+            if (s_ttfInitCount == 1)
             {
-                return false;
+                if (!TTF.Init())
+                {
+                    Console.WriteLine($"SDL_ttf could not initialize! SDL_Error: {SDL.GetError()}");
+                    return false;
+                }
+                SDL3TextService.RegisterDefaultFonts(); // Register font paths once globally
             }
 
             _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable);
-            
+
             if (_windowPtr == nint.Zero)
             {
                 Console.WriteLine($"Window could not be created! SDL_Error: {SDL.GetError()}");
@@ -8616,21 +8670,23 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             if (_rendererPtr == nint.Zero)
             {
                 Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
-                SDL.DestroyWindow(_windowPtr);
+                SDL.DestroyWindow(_windowPtr); // Clean up window if renderer fails
                 return false;
             }
 
+            // Create instance-specific DirectUI components
             _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
             _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
             _textService = new SDL3TextService();
             _appEngine.Initialize(_textService, _renderer);
 
+            Console.WriteLine($"SDL3WindowHost '{_title}' initialized successfully. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"An error occurred during initialization: {ex.Message}");
-            Cleanup();
+            Console.WriteLine($"An error occurred during SDL3WindowHost initialization: {ex.Message}");
+            Cleanup(); // Ensure partial initialization is cleaned up
             return false;
         }
     }
@@ -8642,11 +8698,14 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         {
             if (IsModalWindowOpen && _activeModalWindow != null)
             {
+                // Delegate control to the modal window's own run loop
                 _activeModalWindow.ModalRunLoop();
+                // After modal loop finishes, handle its lifecycle (cleanup, callback)
                 HandleModalLifecycle();
             }
             else
             {
+                // Main window loop
                 while (SDL.PollEvent(out SDL.Event ev))
                 {
                     if (ev.Type == (uint)SDL.EventType.Quit)
@@ -8654,11 +8713,52 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                         running = false;
                         break;
                     }
-                    Input.ProcessSDL3Event(ev);
+                    // TODO: Handle main window close event if it's not WM_QUIT
+                    Input.ProcessSDL3Event(ev); // Process input for the main window
                 }
-                RenderFrame();
+
+                this.RenderFrame(); // Explicitly call RenderFrame
             }
         }
+    }
+
+    private void ModalRunLoop()
+    {
+        bool modalRunning = true;
+        while (modalRunning)
+        {
+            while (SDL.PollEvent(out SDL.Event ev))
+            {
+                if (ev.Type == (uint)SDL.EventType.Quit)
+                {
+                    // This generally means the whole application is quitting
+                    modalRunning = false;
+                    _modalResultCode = -1; // Indicate a forced quit
+                    break;
+                }
+                else if (ev.Type == (uint)SDL.EventType.WindowCloseRequested)
+                {
+                    // Check if the event is for THIS modal window and it's a close event
+                    if (ev.Window.WindowID == SDL.GetWindowID(_windowPtr))
+                    {
+                        modalRunning = false; // Exit modal loop
+                        _modalResultCode = -1; // Indicate closure by X button (cancel)
+                        break;
+                    }
+                }
+                // Process input for the modal window
+                Input.ProcessSDL3Event(ev);
+            }
+
+            if (_isModalClosing)
+            {
+                modalRunning = false;
+            }
+
+            ModalRenderFrame();
+        }
+        // When modal loop exits, signal its cleanup to the parent
+        _isModalClosing = true;
     }
 
     private void RenderFrame()
@@ -8674,32 +8774,6 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         SDL.RenderPresent(_rendererPtr);
     }
 
-    private void ModalRunLoop()
-    {
-        bool modalRunning = true;
-        while (modalRunning)
-        {
-            while (SDL.PollEvent(out SDL.Event ev))
-            {
-                if (ev.Type == (uint)SDL.EventType.Quit)
-                {
-                    modalRunning = false;
-                    _modalResultCode = -1;
-                    break;
-                }
-                Input.ProcessSDL3Event(ev);
-            }
-
-            if (_isModalClosing)
-            {
-                modalRunning = false;
-            }
-
-            ModalRenderFrame();
-        }
-        _isModalClosing = true;
-    }
-
     private void ModalRenderFrame()
     {
         SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
@@ -8707,6 +8781,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
         if (_renderer != null && _textService != null && _appEngine != null && _modalDrawCallback != null)
         {
+            // The modal's AppEngine will use its own _renderer and _textService
             _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
         }
 
@@ -8716,29 +8791,45 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public void Cleanup()
     {
         if (_isDisposed) return;
+        Console.WriteLine($"SDL3WindowHost cleanup for '{_title}'...");
 
+        // If this is a parent host and has an active modal, clean it up first
         _activeModalWindow?.Cleanup();
+
+        // Clean up instance-specific DirectUI components
+        _appEngine?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
-        _appEngine?.Cleanup();
 
+        // Destroy SDL renderer and window for THIS instance
         if (_rendererPtr != nint.Zero)
         {
             SDL.DestroyRenderer(_rendererPtr);
             _rendererPtr = nint.Zero;
         }
-
         if (_windowPtr != nint.Zero)
         {
             SDL.DestroyWindow(_windowPtr);
             _windowPtr = nint.Zero;
         }
 
-        TTF.Quit();
-        SDL.Quit();
+        // Global SDL and TTF cleanup (guarded by static counters)
+        Interlocked.Decrement(ref s_ttfInitCount);
+        if (s_ttfInitCount == 0)
+        {
+            Console.WriteLine("Final TTF.Quit().");
+            TTF.Quit();
+        }
+        Interlocked.Decrement(ref s_sdlInitCount);
+        if (s_sdlInitCount == 0)
+        {
+            Console.WriteLine("Final SDL.Quit().");
+            SDL.Quit();
+        }
 
         _isDisposed = true;
         GC.SuppressFinalize(this);
+        Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
 
     public void Dispose()
@@ -8746,6 +8837,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         Cleanup();
     }
 
+    // --- IModalWindowService Implementation ---
     public bool IsModalWindowOpen => _activeModalWindow != null;
 
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
@@ -8756,43 +8848,53 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             return;
         }
 
-        _activeModalWindow = new SDL3WindowHost(title, width, height, _backgroundColor)
-        {
-            _appEngine = this._appEngine,
-            _textService = this._textService,
-            _modalDrawCallback = drawCallback
-        };
-
+        // Create a NEW SDL3WindowHost instance for the modal window
+        _activeModalWindow = new SDL3WindowHost(title, width, height, _backgroundColor);
+        _activeModalWindow._modalDrawCallback = drawCallback; // This callback is for the modal's internal drawing logic
         _onModalClosedCallback = onClosedCallback;
-        _modalResultCode = -1;
+        _modalResultCode = -1; // Default result
 
-        if (!_activeModalWindow.InitializeModal(this))
+        // Initialize the modal window. This will create its own SDL window, renderer, and DirectUI components.
+        // Important: this call creates the modal window, but without a parent specified in SDL_CreateWindow flags.
+        if (!_activeModalWindow.InitializeModalInternal()) // Use internal helper that just calls Initialize()
         {
+            Console.WriteLine("Failed to initialize modal SDL window.");
+            _activeModalWindow.Dispose(); // Dispose failed modal
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1); // Indicate failure to the caller
+            return;
+        }
+
+        // Now that _activeModalWindow._windowPtr is valid, set its parent.
+        // This is crucial to satisfy the "Window must have a parent..." requirement for SDL.SetWindowModal().
+        if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, this._windowPtr))
+        {
+            Console.WriteLine($"Failed to set window parent: {SDL.GetError()}");
             _activeModalWindow.Dispose();
             _activeModalWindow = null;
             onClosedCallback?.Invoke(-1);
+            return;
         }
+
+        // Now that it has a parent, set it as modal.
+        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true)) // Assume 0 is success for SDL functions
+        {
+            Console.WriteLine($"Failed to set modal flag on window: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
+        Console.WriteLine("Modal window opened successfully.");
     }
 
-    private bool InitializeModal(SDL3WindowHost parent)
+    /// <summary>
+    /// Internal helper to initialize the modal window's DirectUI components.
+    /// This simply calls the main `Initialize` method with the modal's own draw callback.
+    /// </summary>
+    private bool InitializeModalInternal()
     {
-        _windowPtr = SDL.CreateWindow(this._title, this._initialWidth, this._initialHeight, SDL.WindowFlags.Modal);
-        if (_windowPtr == nint.Zero)
-        {
-            Console.WriteLine($"Failed to create modal SDL window: {SDL.GetError()}");
-            return false;
-        }
-
-        _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
-        if (_rendererPtr == nint.Zero)
-        {
-            Console.WriteLine($"Failed to create modal SDL renderer: {SDL.GetError()}");
-            SDL.DestroyWindow(_windowPtr);
-            return false;
-        }
-
-        _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
-        return true;
+        return Initialize(_modalDrawCallback!, _backgroundColor);
     }
 
     public void CloseModalWindow(int resultCode = 0)
@@ -8800,18 +8902,34 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         if (_activeModalWindow != null)
         {
             _activeModalWindow._modalResultCode = resultCode;
-            _activeModalWindow._isModalClosing = true;
+            _activeModalWindow._isModalClosing = true; // Signal modal to close gracefully
         }
     }
 
+    /// <summary>
+    /// Manages the lifecycle of the modal window, checking its state each frame.
+    /// </summary>
     private void HandleModalLifecycle()
     {
-        if (_activeModalWindow?._isModalClosing == true)
+        if (_activeModalWindow == null) return;
+
+        if (_activeModalWindow._isModalClosing)
         {
-            _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode);
-            _activeModalWindow.Dispose();
+            Console.WriteLine($"Modal window closed. Result: {_activeModalWindow._modalResultCode}");
+            _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode); // Notify caller of closure and result
+
+            // After modal closes, raise the parent window to ensure it gets focus back.
+            // SDL automatically handles the modal un-setting when the modal window is destroyed.
+            if (this._windowPtr != nint.Zero)
+            {
+                SDL.RaiseWindow(this._windowPtr);
+            }
+
+            _activeModalWindow.Dispose(); // Ensure all managed and unmanaged resources are cleaned up
             _activeModalWindow = null;
             _onModalClosedCallback = null;
+            _modalResultCode = 0;
+            _isModalClosing = false; // Reset flag
         }
     }
 }

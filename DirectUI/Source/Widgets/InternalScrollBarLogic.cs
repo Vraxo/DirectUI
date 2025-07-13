@@ -48,7 +48,7 @@ internal class InternalScrollBarLogic
         _isThumbPressed = state.ActivelyPressedElementId == _id;
         ThumbTheme.UpdateCurrentStyle(_isThumbHovered, _isThumbPressed, false, _isFocused);
 
-        if (renderer != null) // Check if renderer is available
+        if (renderer is not null) // Check if renderer is available
         {
             Draw(renderer, newScrollOffset); // Pass the renderer instance
         }

@@ -96,7 +96,7 @@ internal class InputText
 
             // Use ITextService to get the text layout
             var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-            if (textLayout != null)
+            if (textLayout is not null)
             {
                 float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
                 float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
@@ -308,7 +308,7 @@ internal class InputText
 
         // Use ITextService to get the text layout
         var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-        if (textLayout == null) return;
+        if (textLayout is null) return;
 
         // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
@@ -332,7 +332,7 @@ internal class InputText
         var style = new ButtonStyle(); // A default style is fine for measuring
 
         var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-        if (textLayout == null) return;
+        if (textLayout is null) return;
 
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
         float caretAbsoluteX = hitTestMetrics.Point.X;

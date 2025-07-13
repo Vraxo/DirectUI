@@ -33,7 +33,7 @@ public class RaylibWindowHost : IWindowHost
     public bool ShowFpsCounter
     {
         get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+        set { if (_appEngine is not null) _appEngine.ShowFpsCounter = value; }
     }
 
     public IModalWindowService ModalWindowService { get; } = new RaylibDummyModalWindowService();
