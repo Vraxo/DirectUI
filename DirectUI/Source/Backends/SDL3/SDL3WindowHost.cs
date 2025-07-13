@@ -24,12 +24,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private static int s_sdlInitCount = 0;
     private static int s_ttfInitCount = 0;
 
-    // State for managing overlay modals
-    private bool _isModalActive;
-    private Rect _currentModalBounds; // Bounds of the modal overlay relative to the main window
-    private Action<UIContext>? _currentModalDrawCallback;
-    private Action<int>? _currentOnModalClosedCallback;
-    private int _currentModalResultCode;
+    private SDL3WindowHost? _activeModalWindow;
+    private Action<UIContext>? _modalDrawCallback;
+    private Action<int>? _onModalClosedCallback;
+    private int _modalResultCode;
+    private bool _isModalClosing;
 
     public IntPtr Handle => _windowPtr;
     public InputManager Input => _appEngine?.Input ?? new();
@@ -73,11 +72,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
-
+        
         try
         {
             Interlocked.Increment(ref s_sdlInitCount);
-
+            
             if (s_sdlInitCount == 1)
             {
                 if (!SDL.Init(SDL.InitFlags.Video))
@@ -88,7 +87,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             Interlocked.Increment(ref s_ttfInitCount);
-
+            
             if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
@@ -108,7 +107,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
-
+            
             if (_rendererPtr == nint.Zero)
             {
                 Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
@@ -120,12 +119,6 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             _renderer = new(_rendererPtr, _windowPtr);
             _textService = new();
             _appEngine.Initialize(_textService, _renderer);
-
-            _isModalActive = false;
-            _currentModalDrawCallback = null;
-            _currentOnModalClosedCallback = null;
-            _currentModalResultCode = 0;
-            _currentModalBounds = default;
 
             Console.WriteLine($"SDL3WindowHost '{_title}' initialized successfully. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
             return true;
@@ -144,34 +137,65 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
         while (running)
         {
+            if (IsModalWindowOpen && _activeModalWindow is not null)
+            {
+                _activeModalWindow.ModalRunLoop();
+                HandleModalLifecycle();
+            }
+            else
+            {
+                while (SDL.PollEvent(out SDL.Event ev))
+                {
+                    if (ev.Type == (uint)SDL.EventType.Quit)
+                    {
+                        running = false;
+                        break;
+                    }
+
+                    Input.ProcessSDL3Event(ev);
+                }
+
+                RenderFrame();
+            }
+        }
+    }
+
+    private void ModalRunLoop()
+    {
+        bool modalRunning = true;
+        
+        while (modalRunning)
+        {
             while (SDL.PollEvent(out SDL.Event ev))
             {
                 if (ev.Type == (uint)SDL.EventType.Quit)
                 {
-                    running = false;
+                    modalRunning = false;
+                    _modalResultCode = -1;
                     break;
                 }
                 else if (ev.Type == (uint)SDL.EventType.WindowCloseRequested)
                 {
                     if (ev.Window.WindowID == SDL.GetWindowID(_windowPtr))
                     {
-                        if (_isModalActive)
-                        {
-                            CloseModalWindow(-1); // Close modal if main window X-button is pressed
-                        }
-                        else
-                        {
-                            running = false; // Close main loop
-                            break;
-                        }
+                        modalRunning = false;
+                        _modalResultCode = -1;
+                        break;
                     }
                 }
 
                 Input.ProcessSDL3Event(ev);
             }
 
-            RenderFrame();
+            if (_isModalClosing)
+            {
+                modalRunning = false;
+            }
+
+            ModalRenderFrame();
         }
+
+        _isModalClosing = true;
     }
 
     private void RenderFrame()
@@ -181,40 +205,20 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
         if (_renderer is not null && _textService is not null && _appEngine is not null)
         {
-            if (_isModalActive)
-            {
-                // Draw a dimming overlay first, covering the entire window
-                _renderer.DrawBox(
-                    new Rect(0, 0, _renderer.RenderTargetSize.X, _renderer.RenderTargetSize.Y),
-                    new BoxStyle { FillColor = new Color4(0, 0, 0, 0.5f), Roundness = 0f, BorderLength = 0f });
+            _appEngine.UpdateAndRender(_renderer, _textService);
+        }
 
-                // Then, draw the modal's content by providing its specific draw callback to the AppEngine
-                // This call effectively replaces the main UI rendering for this frame.
-                _appEngine.UpdateAndRenderModal(_renderer, _textService,
-                    (ctx) =>
-                    {
-                        // Push a layout origin for the modal's internal UI elements
-                        // to draw relative to 0,0 for its content area.
-                        ctx.Layout.PushLayoutOrigin(_currentModalBounds.TopLeft);
+        SDL.RenderPresent(_rendererPtr);
+    }
 
-                        // Push a clip rect for the modal's content area
-                        ctx.Renderer.PushClipRect(_currentModalBounds);
-                        ctx.Layout.PushClipRect(_currentModalBounds);
+    private void ModalRenderFrame()
+    {
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
 
-                        _currentModalDrawCallback?.Invoke(ctx);
-
-                        // Pop clip rect and layout origin
-                        ctx.Layout.PopClipRect();
-                        ctx.Renderer.PopClipRect();
-                        ctx.Layout.PopLayoutOrigin();
-                    }
-                );
-            }
-            else
-            {
-                // If no modal is active, draw the main UI
-                _appEngine.UpdateAndRender(_renderer, _textService);
-            }
+        if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
+        {
+            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
         }
 
         SDL.RenderPresent(_rendererPtr);
@@ -225,14 +229,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         if (_isDisposed) return;
         Console.WriteLine($"SDL3WindowHost cleanup for '{_title}'...");
 
-        // Ensure the modal state is reset if the main window is destroyed while a modal is active.
-        if (_isModalActive)
-        {
-            _isModalActive = false;
-            _currentModalDrawCallback = null;
-            _currentOnModalClosedCallback = null;
-            _currentModalBounds = default;
-        }
+        _activeModalWindow?.Cleanup();
 
         _appEngine?.Cleanup();
         _renderer?.Cleanup();
@@ -259,7 +256,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         Interlocked.Decrement(ref s_sdlInitCount);
-
+        
         if (s_sdlInitCount == 0)
         {
             Console.WriteLine("Final SDL.Quit()..");
@@ -267,7 +264,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         _isDisposed = true;
-
+        
         GC.SuppressFinalize(this);
         Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
@@ -277,46 +274,97 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         Cleanup();
     }
 
-    public bool IsModalWindowOpen => _isModalActive;
+    public bool IsModalWindowOpen
+    {
+        get
+        {
+            return _activeModalWindow is not null;
+        }
+    }
 
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
     {
-        if (_isModalActive)
+        if (_activeModalWindow is not null)
         {
             Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
+            return;
+        }
+
+        _activeModalWindow = new SDL3WindowHost(title, width, height, _backgroundColor);
+        _activeModalWindow._modalDrawCallback = drawCallback;
+        _onModalClosedCallback = onClosedCallback;
+        _modalResultCode = -1;
+
+        if (!_activeModalWindow.InitializeModalInternal())
+        {
+            Console.WriteLine("Failed to initialize modal SDL window.");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
             onClosedCallback?.Invoke(-1);
             return;
         }
 
-        // Calculate modal position to center it over the main window
-        var clientSize = ClientSize;
-        float modalX = (clientSize.Width - width) / 2f;
-        float modalY = (clientSize.Height - height) / 2f;
-        _currentModalBounds = new Rect(modalX, modalY, width, height);
+        if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, _windowPtr))
+        {
+            Console.WriteLine($"Failed to set window parent: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
 
-        _currentModalDrawCallback = drawCallback;
-        _currentOnModalClosedCallback = onClosedCallback;
-        _currentModalResultCode = -1; // Default to cancel/error
+        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true))
+        {
+            Console.WriteLine($"Failed to set modal flag on window: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
 
-        _isModalActive = true;
-        // SDL does not have a direct equivalent to EnableWindow(hwnd, false) for blocking interaction.
-        // The modal overlay and the fact that we render only the modal will achieve the blocking visually.
+        Console.WriteLine("Modal window opened successfully.");
+    }
+
+    private bool InitializeModalInternal()
+    {
+        return Initialize(_modalDrawCallback!, _backgroundColor);
     }
 
     public void CloseModalWindow(int resultCode = 0)
     {
-        if (!_isModalActive)
+        if (_activeModalWindow is null)
         {
             return;
         }
 
-        _currentModalResultCode = resultCode;
-        _currentOnModalClosedCallback?.Invoke(_currentModalResultCode);
+        _activeModalWindow._modalResultCode = resultCode;
+        _activeModalWindow._isModalClosing = true;
+    }
 
-        // Clear local modal state
-        _isModalActive = false;
-        _currentModalDrawCallback = null;
-        _currentOnModalClosedCallback = null;
-        _currentModalBounds = default;
+    private void HandleModalLifecycle()
+    {
+        if (_activeModalWindow is null)
+        {
+            return;
+        }
+
+        if (!_activeModalWindow._isModalClosing)
+        {
+            return;
+        }
+
+        Console.WriteLine($"Modal window closed. Result: {_activeModalWindow._modalResultCode}");
+        _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode);
+
+        if (_windowPtr != nint.Zero)
+        {
+            SDL.RaiseWindow(_windowPtr);
+        }
+
+        _activeModalWindow.Dispose();
+        _activeModalWindow = null;
+        _onModalClosedCallback = null;
+        _modalResultCode = 0;
+        _isModalClosing = false;
     }
 }
