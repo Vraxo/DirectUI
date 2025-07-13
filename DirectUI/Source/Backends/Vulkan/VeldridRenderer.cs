@@ -25,9 +25,8 @@ public class VeldridRenderer : IRenderer, IDisposable
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
 
-    // Use a single, persistent text renderer.
+    // Font is persistent. Renderer will be created transiently per-frame as a diagnostic.
     private readonly SharpText.Core.Font _font;
-    private readonly VeldridTextRenderer _textRenderer;
 
     // Batched text rendering state
     private readonly struct BatchedText
@@ -67,9 +66,8 @@ public class VeldridRenderer : IRenderer, IDisposable
         _gd = gd;
         _cl = cl;
 
-        // Create persistent font and text renderer resources.
+        // Create persistent font resource.
         _font = new SharpText.Core.Font("C:/Windows/Fonts/consola.ttf", 16);
-        _textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
 
         // Create resources for flat geometry
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -198,6 +196,13 @@ public class VeldridRenderer : IRenderer, IDisposable
             return;
         }
 
+        // DIAGNOSTIC: Create a new renderer each frame to get a clean state.
+        // DO NOT dispose it with `using` as its Dispose method appears to be broken
+        // and interferes with the shared CommandList, causing a black screen.
+        // This will leak memory and is not a permanent solution, but it tests
+        // if state accumulation is the cause of the visual degradation.
+        var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
+
         foreach (var textCall in _textBatch)
         {
             Vector2 measuredSize = MeasureText(textCall.Text, textCall.Style);
@@ -222,12 +227,11 @@ public class VeldridRenderer : IRenderer, IDisposable
             }
 
             var sharpTextColor = new SharpText.Core.Color(textCall.Color.R, textCall.Color.G, textCall.Color.B, textCall.Color.A);
-            _textRenderer.DrawText(textCall.Text, textDrawPos, sharpTextColor, 1);
+            textRenderer.DrawText(textCall.Text, textDrawPos, sharpTextColor, 1);
         }
 
         // Issue a single draw call for all the text added in this frame.
-        // Assuming Draw() clears the internal buffer for the next frame.
-        _textRenderer.Draw();
+        textRenderer.Draw();
 
         _textBatch.Clear();
     }
@@ -262,7 +266,7 @@ public class VeldridRenderer : IRenderer, IDisposable
         _projMatrixBuffer.Dispose();
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
-        _textRenderer.Dispose();
+        // Do not dispose a transient text renderer here.
     }
 
     private bool _disposedValue;
