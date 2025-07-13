@@ -51,6 +51,25 @@ namespace DirectUI.Drawing
         }
 
         /// <summary>
+        /// Attempts to retrieve the file path for a registered font variant.
+        /// </summary>
+        /// <param name="familyName">The logical name for the font family.</param>
+        /// <param name="weight">The desired weight of the font.</param>
+        /// <param name="filePath">When this method returns, contains the file path if found; otherwise, null.</param>
+        /// <returns>True if the font file path was found, false otherwise.</returns>
+        public static bool TryGetFontFilePath(string familyName, FontWeight weight, out string? filePath)
+        {
+            filePath = null;
+            if (!s_isInitialized) return false;
+
+            if (s_fontFamilies.TryGetValue(familyName, out var variants))
+            {
+                return variants.TryGetValue(weight, out filePath);
+            }
+            return false;
+        }
+
+        /// <summary>
         /// Retrieves a font at a specific size and weight. If not cached, it's loaded from its registered path.
         /// </summary>
         /// <param name="familyName">The name of the registered font family.</param>
@@ -74,14 +93,8 @@ namespace DirectUI.Drawing
                 return font;
             }
 
-            if (!s_fontFamilies.TryGetValue(familyName, out var variants))
-            {
-                Console.WriteLine($"Font family '{familyName}' is not registered. Returning default font.");
-                return Raylib.GetFontDefault();
-            }
-
-            // Find the correct file path. Fallback to Normal weight if the requested weight is not available.
-            if (!variants.TryGetValue(weight, out var filePath) && !variants.TryGetValue(FontWeight.Normal, out filePath))
+            string? filePath = null;
+            if (!TryGetFontFilePath(familyName, weight, out filePath) && !TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
             {
                 Console.WriteLine($"Font family '{familyName}' does not have a variant for weight {weight} or a Normal fallback. Returning default font.");
                 return Raylib.GetFontDefault();

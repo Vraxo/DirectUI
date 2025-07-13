@@ -1,9 +1,12 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Collections.Generic;
+using System.Numerics;
 using DirectUI.Core;
 using SDL3;
 using Veldrid.Sdl2;
 using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by SDL
 using Vortice.Mathematics;
+using Vortice.DirectWrite; // For FontWeight, etc.
 
 namespace DirectUI.Backends.SDL3;
 
@@ -16,6 +19,35 @@ public unsafe class SDL3Renderer : IRenderer
     private int _windowHeight;
 
     private readonly Stack<Rect> _clipRectStack = new();
+    private readonly Dictionary<TextRenderCacheKey, nint> _textTextureCache = new();
+
+    // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
+    private const float FONT_SCALE_FACTOR = 1.125f;
+
+    // Cache key for rendered text textures
+    private readonly struct TextRenderCacheKey : IEquatable<TextRenderCacheKey>
+    {
+        public readonly string Text;
+        public readonly float FontSize; // Use original requested size for cache key
+        public readonly FontWeight FontWeight;
+        public readonly FontStyle FontStyle;
+        public readonly FontStretch FontStretch;
+        public readonly Drawing.Color Color;
+
+        public TextRenderCacheKey(string text, ButtonStyle style, Drawing.Color color)
+        {
+            Text = text;
+            FontSize = style.FontSize;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontStretch = style.FontStretch;
+            Color = color;
+        }
+
+        public bool Equals(TextRenderCacheKey other) => Text == other.Text && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch && Color.Equals(other.Color);
+        public override bool Equals(object? obj) => obj is TextRenderCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontSize, FontWeight, FontStyle, FontStretch, Color);
+    }
 
     public Vector2 RenderTargetSize
     {
@@ -142,10 +174,98 @@ public unsafe class SDL3Renderer : IRenderer
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
-        // Not implemented in step 1. Will draw nothing.
-        // For full text rendering, SDL_ttf would be needed, and it's a multi-step process
-        // (load font, render text to surface, create texture from surface, copy texture).
-        // This will be implemented in a later step.
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        var textService = UI.Context.TextService as SDL3TextService;
+        if (textService == null)
+        {
+            Console.WriteLine("Error: SDL3TextService not available for text rendering.");
+            return;
+        }
+
+        // Get the font
+        float effectiveFontSize = style.FontSize * FONT_SCALE_FACTOR;
+        nint fontPtr = textService.GetOrCreateFont(style.FontName, (int)Math.Round(effectiveFontSize), style.FontWeight);
+
+        if (fontPtr == nint.Zero)
+        {
+            Console.WriteLine($"Error: Font '{style.FontName}' could not be loaded.");
+            return;
+        }
+
+        var cacheKey = new TextRenderCacheKey(text, style, color);
+        if (!_textTextureCache.TryGetValue(cacheKey, out nint textTexture))
+        {
+            var sdlColor = new SDL.Color { R = color.R, G = color.G, B = color.B, A = color.A };
+            nint textSurface = TTF.RenderTextBlended(fontPtr, text, 0, sdlColor);
+
+            if (textSurface == nint.Zero)
+            {
+                Console.WriteLine($"Error rendering text surface: {SDL.GetError()}");
+                return;
+            }
+
+            textTexture = SDL.CreateTextureFromSurface(_rendererPtr, textSurface);
+            SDL.DestroySurface(textSurface);
+
+            if (textTexture == nint.Zero)
+            {
+                Console.WriteLine($"Error creating text texture: {SDL.GetError()}");
+                return;
+            }
+
+            _textTextureCache[cacheKey] = textTexture;
+        }
+
+        // ✅ SDL3-compatible way to get texture dimensions
+
+        if (!SDL.GetTextureSize(textTexture, out float texW, out float texH))
+        {
+            Console.WriteLine($"Error getting texture size: {SDL.GetError()}");
+            return;
+        }
+
+        Vector2 measuredSize = new(texW, texH);
+        Vector2 textDrawPos = origin;
+
+        // Horizontal alignment
+        if (maxSize.X > 0 && measuredSize.X < maxSize.X)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += (maxSize.X - measuredSize.X);
+                    break;
+            }
+        }
+
+        // Vertical alignment
+        if (maxSize.Y > 0)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
+                    break;
+            }
+        }
+
+        SDL.FRect dstRect = new()
+        {
+            X = textDrawPos.X,
+            Y = textDrawPos.Y,
+            W = texW,
+            H = texH
+        };
+
+        SDL.RenderTexture(_rendererPtr, textTexture, nint.Zero, dstRect);
     }
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
@@ -156,10 +276,12 @@ public unsafe class SDL3Renderer : IRenderer
 
     public void PopClipRect()
     {
-        if (_clipRectStack.Count > 0)
+        if (_clipRectStack.Count <= 0)
         {
-            _clipRectStack.Pop();
+            return;
         }
+
+        _clipRectStack.Pop();
 
         if (_clipRectStack.Count > 0)
         {
@@ -167,12 +289,13 @@ public unsafe class SDL3Renderer : IRenderer
         }
         else
         {
+            // Clear clip rect
             SDL.Rect rect = new()
             {
                 X = 0,
                 Y = 0,
-                W = 0,
-                H = 0,
+                W = _windowWidth,
+                H = _windowHeight,
             };
 
             SDL.SetRenderClipRect(_rendererPtr, rect);
@@ -201,6 +324,11 @@ public unsafe class SDL3Renderer : IRenderer
     public void Cleanup()
     {
         _clipRectStack.Clear();
+        foreach (var texture in _textTextureCache.Values)
+        {
+            SDL.DestroyTexture(texture);
+        }
+        _textTextureCache.Clear();
         // The renderer and window are managed and destroyed by ApplicationRunner.
     }
 }

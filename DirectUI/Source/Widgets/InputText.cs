@@ -14,7 +14,7 @@ namespace DirectUI;
 // All persistent state is managed in a separate LineEditState object.
 internal class InputText
 {
-    // === MAIN UPDATE & DRAW METHOD ===
+    // === MAIN UPDATE && DRAW METHOD ===
     public bool UpdateAndDraw(
         int intId,
         ref string text,
@@ -65,7 +65,7 @@ internal class InputText
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
         bool textChanged = false;
 
-        // --- Focus Management & Caret Placement on Click ---
+        // --- Focus Management && Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         bool isActive = uiState.ActivelyPressedElementId == intId;
 

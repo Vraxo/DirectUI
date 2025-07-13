@@ -132,27 +132,29 @@ public static class ApplicationRunner
         Console.WriteLine("Using SDL3 Backend.");
 
         SDL.Init(SDL.InitFlags.Video);
+        TTF.Init(); // Initialize SDL_ttf
 
         // Create window
         uint width = 1024;
         uint height = 768;
         string title = "My SDL3 App";
-        
+
         nint window = SDL.CreateWindow(title, (int)width, (int)height, SDL.WindowFlags.Resizable);
 
         // Create renderer
         nint renderer = SDL.CreateRenderer(window, null);
-        
+
         if (renderer == null)
         {
             Console.WriteLine($"Error creating renderer: {SDL.GetError()}");
             SDL.DestroyWindow(window);
             SDL.Quit();
+            TTF.Quit(); // Ensure TTF is quit on error
             return;
         }
 
         MyUILogic appLogic = new(GraphicsBackend.SDL3); // Now instantiate MyUILogic
-        
+
         appLogic.SetOpenProjectWindowHostAction(() =>
         {
             Console.WriteLine("Modal windows not supported for SDL3 yet.");
@@ -162,6 +164,8 @@ public static class ApplicationRunner
         SDL3UIHost host = new(appLogic.DrawUI, backgroundColor, renderer, window);
 
         host.Initialize();
+
+        SDL.StartTextInput(window); // Start receiving text input events
 
         bool running = true;
 
@@ -176,22 +180,26 @@ public static class ApplicationRunner
                     running = false;
                 }
                 else if (ev.Window.WindowID == (uint)SDL.EventType.WindowResized || ev.Window.WindowID == (uint)SDL.EventType.WindowPixelSizeChanged)
-                {    
+                {
                     host.Resize(ev.Window.Data1, ev.Window.Data2);
                 }
                 else if ((SDL.EventType)ev.Type == SDL.EventType.MouseMotion)
                 {
                     // Manual mouse position update since SDL_Event is a raw struct.
-                    host.Input.SetMousePosition((int)ev.Motion.X, (int)ev.Motion.Y);
+                    // This is handled by ProcessSDL3Event, but leaving this as a reminder if there were specific needs for mouse motion outside events.
+                    // For now, it's redundant.
                 }
             }
 
             host.Render();
         }
 
+        SDL.StopTextInput(window); // Stop receiving text input events
+
         host.Cleanup();
         SDL.DestroyRenderer(renderer);
         SDL.DestroyWindow(window);
         SDL.Quit();
+        TTF.Quit(); // Quit SDL_ttf after all resources are cleaned up
     }
 }

@@ -1,13 +1,10 @@
-﻿// Input/InputManager.cs
-using System.Numerics;
+﻿using System.Numerics;
+using System.Runtime.InteropServices; // Added for Marshal
 using Raylib_cs; // Added for Raylib backend
-using static SDL3.SDL; // NEW: Added for SDL3 backend
+using static SDL3.SDL; // Added for SDL3 backend
 
 namespace DirectUI.Input;
 
-/// <summary>
-/// Aggregates raw input events over a frame and provides a snapshot of the input state.
-/// </summary>
 public class InputManager
 {
     // Persistent state (held across frames)
@@ -25,29 +22,23 @@ public class InputManager
     private readonly List<Keys> _releasedKeysThisFrame = new();
     private readonly List<MouseButton> _pressedMouseButtonsThisFrame = new();
 
-    /// <summary>
-    /// Creates a snapshot of the current input state for the UI to process.
-    /// </summary>
     public InputState GetCurrentState()
     {
-        return new InputState(
+        return new(
             _currentMousePos,
             _wasLeftMouseClickedThisFrame,
             _isLeftMouseButtonDown,
             _wasRightMouseClickedThisFrame,
             _isRightMouseButtonDown,
             _scrollDeltaThisFrame,
-            _typedCharsThisFrame.ToList(), // Create a copy for the readonly list
+            [.. _typedCharsThisFrame], // Create a copy for the readonly list
             _pressedKeysThisFrame,
             _releasedKeysThisFrame,
             _heldKeys,
-            _pressedMouseButtonsThisFrame.ToList() // Create a copy for the readonly list
+            [.. _pressedMouseButtonsThisFrame] // Create a copy for the readonly list
         );
     }
 
-    /// <summary>
-    /// Resets the per-frame input state. Should be called after a frame has been rendered.
-    /// </summary>
     public void PrepareNextFrame()
     {
         _wasLeftMouseClickedThisFrame = false;
@@ -58,8 +49,6 @@ public class InputManager
         _releasedKeysThisFrame.Clear();
         _pressedMouseButtonsThisFrame.Clear();
     }
-
-    // --- Raw Event Handlers ---
 
     public void SetMousePosition(int x, int y)
     {
@@ -126,10 +115,6 @@ public class InputManager
         }
     }
 
-    /// <summary>
-    /// Processes Veldrid-specific input events and updates the internal state.
-    /// This method should be called once per frame when using the Veldrid backend.
-    /// </summary>
     public void ProcessVeldridInput(Veldrid.InputSnapshot snapshot)
     {
         SetMousePosition((int)snapshot.MousePosition.X, (int)snapshot.MousePosition.Y);
@@ -169,10 +154,6 @@ public class InputManager
         }
     }
 
-    /// <summary>
-    /// Processes Raylib-specific input events and updates the internal state.
-    /// This method should be called once per frame when using the Raylib backend.
-    /// </summary>
     public void ProcessRaylibInput()
     {
         // Mouse position
@@ -211,11 +192,6 @@ public class InputManager
             charValue = Raylib.GetCharPressed();
         }
     }
-
-    /// <summary>
-    /// Processes SDL3-specific input events and updates the internal state.
-    /// This method should be called once per frame when using the SDL3 backend.
-    /// </summary>
     public unsafe void ProcessSDL3Event(Event sdlEvent)
     {
         switch ((EventType)sdlEvent.Type)
@@ -235,27 +211,26 @@ public class InputManager
             case EventType.KeyDown:
                 Keys mappedKeyDown = MapSDL3ScanCodeToDirectUIKey(sdlEvent.Key.Scancode);
                 if (mappedKeyDown != Keys.Unknown) AddKeyPressed(mappedKeyDown);
-
-                // For character input, SDL has a specific TextInput event.
-                // We'll process basic printable chars from keydown for now.
-                // In a full implementation, you'd listen to EventType.TextInput.
-                char charInput = (char)sdlEvent.Key.Scancode;
-                // Only add if it's a printable ASCII character (rough filter)
-                if (charInput >= 32 && charInput <= 126) // Printable ASCII range
-                {
-                    AddCharacterInput(charInput);
-                }
                 break;
             case EventType.KeyUp:
                 Keys mappedKeyUp = MapSDL3ScanCodeToDirectUIKey(sdlEvent.Key.Scancode);
                 if (mappedKeyUp != Keys.Unknown) AddKeyReleased(mappedKeyUp);
                 break;
+            case EventType.TextInput:
+                // Correct way to get character input from SDL3 when `text` is exposed as `nint`
+                // `sdlEvent.Text.text` is already an unmanaged pointer (`nint`).
+                string typedText = Marshal.PtrToStringUTF8(sdlEvent.Text.Text);
+                if (!string.IsNullOrEmpty(typedText))
+                {
+                    foreach (char c in typedText)
+                    {
+                        AddCharacterInput(c);
+                    }
+                }
+                break;
         }
     }
 
-    /// <summary>
-    /// Maps a Veldrid MouseButton enum to a DirectUI MouseButton enum.
-    /// </summary>
     private static MouseButton MapVeldridMouseButtonToDirectUIButton(Veldrid.MouseButton vdButton)
     {
         return vdButton switch
@@ -269,10 +244,6 @@ public class InputManager
         };
     }
 
-
-    /// <summary>
-    /// Maps a Veldrid Key enum to a DirectUI Keys enum.
-    /// </summary>
     private static Keys MapVeldridKeyToDirectUIKey(Veldrid.Key vdKey)
     {
         return vdKey switch
@@ -355,10 +326,6 @@ public class InputManager
         };
     }
 
-    /// <summary>
-    /// Maps a Raylib KeyboardKey enum to a DirectUI Keys enum.
-    /// This is an internal utility for the Raylib backend.
-    /// </summary>
     private static Keys MapRaylibKeyToDirectUIKey(KeyboardKey rlKey)
     {
         // Updated to use PascalCase enum members without the KEY_ prefix
@@ -439,9 +406,6 @@ public class InputManager
         };
     }
 
-    /// <summary>
-    /// Maps an SDL3 MouseButton enum to a DirectUI MouseButton enum.
-    /// </summary>
     private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButton sdlButton)
     {
         return sdlButton switch
@@ -454,10 +418,6 @@ public class InputManager
             _ => MouseButton.Left, // Default case, though should ideally be unreachable
         };
     }
-
-    /// <summary>
-    /// Maps an SDL3 Scancode enum to a DirectUI Keys enum.
-    /// </summary>
     private static Keys MapSDL3ScanCodeToDirectUIKey(Scancode sdlScancode)
     {
         return sdlScancode switch

@@ -123,7 +123,7 @@ public class UIPersistentState
     }
 
 
-    // --- Input Capture & Targeting ---
+    // --- Input Capture && Targeting ---
     public bool IsElementActive()
     {
         return ActivelyPressedElementId != 0;
