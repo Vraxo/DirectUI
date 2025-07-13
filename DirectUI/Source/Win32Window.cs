@@ -20,6 +20,8 @@ public abstract class Win32Window : IDisposable
     private static readonly HashSet<string> RegisteredClassNames = new HashSet<string>();
     private GCHandle _gcHandle;
 
+    private readonly Dictionary<uint, Func<IntPtr, IntPtr, IntPtr, IntPtr>> _messageHandlers;
+
     public IntPtr Handle => _hwnd;
     public string Title => _windowTitle;
     public int Width { get; protected set; }
@@ -35,6 +37,31 @@ public abstract class Win32Window : IDisposable
         Height = _initialHeight;
         _windowClassName = className ?? ("Win32Window_" + Guid.NewGuid().ToString("N"));
         _wndProcDelegate = WindowProcedure;
+
+        _messageHandlers = new Dictionary<uint, Func<IntPtr, IntPtr, IntPtr, IntPtr>>();
+        InitializeMessageHandlers();
+    }
+
+    private void InitializeMessageHandlers()
+    {
+        _messageHandlers.Add(NativeMethods.WM_PAINT, Handle_WmPaint);
+        _messageHandlers.Add(NativeMethods.WM_SIZE, Handle_WmSize);
+        _messageHandlers.Add(NativeMethods.WM_MOUSEMOVE, Handle_WmMouseMove);
+        _messageHandlers.Add(NativeMethods.WM_LBUTTONDOWN, (h, w, l) => Handle_WmMouseButton(MouseButton.Left, h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_LBUTTONUP, (h, w, l) => Handle_WmMouseButton(MouseButton.Left, h, w, l, false));
+        _messageHandlers.Add(NativeMethods.WM_RBUTTONDOWN, (h, w, l) => Handle_WmMouseButton(MouseButton.Right, h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_MBUTTONDOWN, (h, w, l) => Handle_WmMouseButton(MouseButton.Middle, h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_MBUTTONUP, (h, w, l) => Handle_WmMouseButton(MouseButton.Middle, h, w, l, false));
+        _messageHandlers.Add(NativeMethods.WM_XBUTTONDOWN, (h, w, l) => Handle_WmXMouseButton(h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_XBUTTONUP, (h, w, l) => Handle_WmXMouseButton(h, w, l, false));
+        _messageHandlers.Add(NativeMethods.WM_MOUSEWHEEL, Handle_WmMouseWheel);
+        _messageHandlers.Add(NativeMethods.WM_KEYDOWN, (h, w, l) => Handle_WmKey(true, h, w, l));
+        _messageHandlers.Add(NativeMethods.WM_KEYUP, (h, w, l) => Handle_WmKey(false, h, w, l));
+        _messageHandlers.Add(NativeMethods.WM_SYSKEYUP, (h, w, l) => Handle_WmKey(false, h, w, l));
+        _messageHandlers.Add(NativeMethods.WM_CHAR, Handle_WmChar);
+        _messageHandlers.Add(NativeMethods.WM_CLOSE, Handle_WmClose);
+        _messageHandlers.Add(NativeMethods.WM_DESTROY, Handle_WmDestroy);
+        _messageHandlers.Add(NativeMethods.WM_NCDESTROY, Handle_WmNcDestroy);
     }
 
     public bool Create(IntPtr owner = default, uint? style = null, int? x = null, int? y = null)
@@ -103,7 +130,7 @@ public abstract class Win32Window : IDisposable
             }
         }
 
-        _gcHandle = GCHandle.Alloc(this);
+        _gcHandle = GCHandle.Alloc(this, GCHandleType.Normal); // Explicitly specify Normal type
 
         uint windowStyle = style ?? (NativeMethods.WS_OVERLAPPEDWINDOW | NativeMethods.WS_VISIBLE);
 
@@ -146,7 +173,8 @@ public abstract class Win32Window : IDisposable
         if (msg == NativeMethods.WM_NCCREATE)
         {
             var cs = Marshal.PtrToStructure<NativeMethods.CREATESTRUCT>(lParam);
-            var handle = GCHandle.FromIntPtr(cs.lpCreateParams); window = handle.Target as Win32Window;
+            var handle = GCHandle.FromIntPtr(cs.lpCreateParams);
+            window = handle.Target as Win32Window;
 
             NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, GCHandle.ToIntPtr(handle));
             Console.WriteLine($"WM_NCCREATE: Associated instance with HWND {hWnd}");
@@ -157,7 +185,8 @@ public abstract class Win32Window : IDisposable
 
             if (ptr != IntPtr.Zero)
             {
-                var handle = GCHandle.FromIntPtr(ptr); window = handle.Target as Win32Window;
+                var handle = GCHandle.FromIntPtr(ptr);
+                window = handle.Target as Win32Window;
             }
         }
 
@@ -180,37 +209,20 @@ public abstract class Win32Window : IDisposable
 
     protected virtual IntPtr HandleMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        return msg switch
+        if (_messageHandlers.TryGetValue(msg, out var handler))
         {
-            NativeMethods.WM_PAINT => HandleWmPaint(),
-            NativeMethods.WM_SIZE => HandleWmSize(lParam),
-            NativeMethods.WM_MOUSEMOVE => HandleWmMouseMove(lParam),
-            NativeMethods.WM_LBUTTONDOWN => HandleWmButtonDown(MouseButton.Left, lParam, hWnd),
-            NativeMethods.WM_LBUTTONUP => HandleWmButtonUp(MouseButton.Left, lParam, hWnd),
-            NativeMethods.WM_RBUTTONDOWN => HandleWmButtonDown(MouseButton.Right, lParam, hWnd),
-            NativeMethods.WM_RBUTTONUP => HandleWmButtonUp(MouseButton.Right, lParam, hWnd),
-            NativeMethods.WM_MBUTTONDOWN => HandleWmButtonDown(MouseButton.Middle, lParam, hWnd),
-            NativeMethods.WM_MBUTTONUP => HandleWmButtonUp(MouseButton.Middle, lParam, hWnd),
-            NativeMethods.WM_XBUTTONDOWN => HandleWmXButtonDown(wParam, lParam, hWnd),
-            NativeMethods.WM_XBUTTONUP => HandleWmXButtonUp(wParam, lParam, hWnd),
-            NativeMethods.WM_MOUSEWHEEL => HandleWmMouseWheel(wParam),
-            NativeMethods.WM_KEYDOWN => HandleWmKey((Keys)wParam),
-            NativeMethods.WM_KEYUP => HandleWmKey((Keys)wParam),
-            NativeMethods.WM_CHAR => HandleWmChar(wParam),
-            NativeMethods.WM_CLOSE => HandleWmClose(hWnd),
-            NativeMethods.WM_DESTROY => HandleWmDestroy(),
-            NativeMethods.WM_NCDESTROY => HandleWmNcDestroy(hWnd),
-            _ => NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam),
-        };
+            return handler(hWnd, wParam, lParam);
+        }
+        return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
-    private IntPtr HandleWmPaint()
+    private IntPtr Handle_WmPaint(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         OnPaint();
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmSize(IntPtr lParam)
+    private IntPtr Handle_WmSize(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Width = NativeMethods.LoWord(lParam);
         Height = NativeMethods.HiWord(lParam);
@@ -218,69 +230,57 @@ public abstract class Win32Window : IDisposable
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmMouseMove(IntPtr lParam)
+    private IntPtr Handle_WmMouseMove(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmButtonDown(MouseButton button, IntPtr lParam, IntPtr hWnd)
+    private IntPtr Handle_WmMouseButton(MouseButton button, IntPtr hWnd, IntPtr wParam, IntPtr lParam, bool isDown)
     {
-        NativeMethods.SetCapture(hWnd);
-        OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        if (isDown) NativeMethods.SetCapture(hWnd);
+        else NativeMethods.ReleaseCapture();
+
+        if (isDown) OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        else OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmButtonUp(MouseButton button, IntPtr lParam, IntPtr hWnd)
-    {
-        NativeMethods.ReleaseCapture();
-        OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-        return IntPtr.Zero;
-    }
-
-    private IntPtr HandleWmXButtonDown(IntPtr wParam, IntPtr lParam, IntPtr hWnd)
+    private IntPtr Handle_WmXMouseButton(IntPtr hWnd, IntPtr wParam, IntPtr lParam, bool isDown)
     {
         short xButton = NativeMethods.HiWord(wParam);
-        var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
-        NativeMethods.SetCapture(hWnd);
-        OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        MouseButton button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+
+        if (isDown) NativeMethods.SetCapture(hWnd);
+        else NativeMethods.ReleaseCapture();
+
+        if (isDown) OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        else OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmXButtonUp(IntPtr wParam, IntPtr lParam, IntPtr hWnd)
-    {
-        short xButton = NativeMethods.HiWord(wParam);
-        var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
-        NativeMethods.ReleaseCapture();
-        OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-        return IntPtr.Zero;
-    }
-
-    private IntPtr HandleWmMouseWheel(IntPtr wParam)
+    private IntPtr Handle_WmMouseWheel(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         short wheelDelta = NativeMethods.HiWord(wParam);
         OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmKey(Keys key)
+    private IntPtr Handle_WmKey(bool isDown, IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
-        // This method is called for both WM_KEYDOWN and WM_KEYUP.
-        // Derived classes override OnKeyDown and OnKeyUp for specific logic.
-        // It's the responsibility of the derived class to know if it's a down or up event.
-        // For now, this just dispatches without knowing if it's down or up at this level.
-        // The original switch handled it implicitly by calling specific OnKeyDown/OnKeyUp.
-        // Re-aligning this with the specific OnKeyDown/OnKeyUp methods:
-        return NativeMethods.DefWindowProc(Handle, NativeMethods.WM_KEYDOWN, (IntPtr)key, IntPtr.Zero); // Dummy return, actual handling is in specific OnKeyDown/Up
+        Keys key = (Keys)wParam;
+        if (isDown) OnKeyDown(key);
+        else OnKeyUp(key);
+        return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmChar(IntPtr wParam)
+    private IntPtr Handle_WmChar(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         OnChar((char)wParam);
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmClose(IntPtr hWnd)
+    private IntPtr Handle_WmClose(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         if (OnClose())
         {
@@ -289,7 +289,7 @@ public abstract class Win32Window : IDisposable
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmDestroy()
+    private IntPtr Handle_WmDestroy(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Console.WriteLine($"WM_DESTROY for {_hwnd}.");
         Application.UnregisterWindow(this);
@@ -302,7 +302,7 @@ public abstract class Win32Window : IDisposable
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmNcDestroy(IntPtr hWnd)
+    private IntPtr Handle_WmNcDestroy(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
 
@@ -320,10 +320,10 @@ public abstract class Win32Window : IDisposable
             NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero);
         }
 
-        if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
+        if (_gcHandle.IsAllocated)
         {
+            _gcHandle.Free();
             _gcHandle = default;
-
         }
 
         _hwnd = IntPtr.Zero;
@@ -458,10 +458,15 @@ public abstract class Win32Window : IDisposable
         }
         else
         {
+            // If _hwnd is already zero, it means DestroyWindow was likely called via WM_DESTROY/WM_NCDESTROY.
+            // In that case, the GCHandle should have already been freed by Handle_WmNcDestroy.
+            // Only free it here if it's still allocated and _hwnd is zero, indicating a Dispose() call
+            // that didn't go through the full Win32 message loop shutdown for some reason.
             if (_gcHandle.IsAllocated)
             {
-                Console.WriteLine("Freeing dangling GCHandle...");
+                Console.WriteLine("Freeing dangling GCHandle during Dispose (unexpected, but cleaning up).");
                 _gcHandle.Free();
+                _gcHandle = default;
             }
         }
 

@@ -313,6 +313,28 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
 }
 </file>
 
+<file path="AppServices.cs">
+using DirectUI.Core;
+
+namespace DirectUI;
+
+public sealed class AppServices
+{
+    public AppEngine AppEngine { get; }
+    public DuiGraphicsDevice GraphicsDevice { get; }
+    public IRenderer Renderer { get; }
+    public ITextService TextService { get; }
+
+    internal AppServices(AppEngine appEngine, DuiGraphicsDevice graphicsDevice, IRenderer renderer, ITextService textService)
+    {
+        AppEngine = appEngine;
+        GraphicsDevice = graphicsDevice;
+        Renderer = renderer;
+        TextService = textService;
+    }
+}
+</file>
+
 <file path="DuiGraphicsDevice.cs">
 // GraphicsDevice.cs
 using System;
@@ -511,10 +533,7 @@ public class ModalWindow : Win32Window
 {
     private readonly Win32Window _owner;
     private readonly Action<UIContext> _drawCallback;
-    private AppEngine? _appEngine;
-    private DuiGraphicsDevice? _graphicsDevice;
-    private IRenderer? _renderer;
-    private ITextService? _textService;
+    private AppServices? _appServices; // Changed to the new bundle
 
     public ModalWindow(Win32Window owner, string title, int width, int height, Action<UIContext> drawCallback)
         : base(title, width, height)
@@ -526,67 +545,51 @@ public class ModalWindow : Win32Window
     protected override bool Initialize()
     {
         Console.WriteLine("ModalWindow initializing...");
-        _appEngine = new AppEngine(_drawCallback, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
-
-        _graphicsDevice = new DuiGraphicsDevice();
-        if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
+        try
         {
-            Console.WriteLine("Failed to initialize DuiGraphicsDevice for modal window.");
+            _appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), _drawCallback, new Color4(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize modal window services: {ex.Message}");
             return false;
         }
-
-        // Initialize backend services using the concrete D2D and DWrite factories
-        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
-        {
-            _renderer = new DirectUI.Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
-            _textService = new DirectUI.Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for modal window initialization.");
-            return false;
-        }
-
-        _appEngine.Initialize(_textService, _renderer); // Initialize AppEngine's internal components
-        return true;
     }
 
     protected override void Cleanup()
     {
         Console.WriteLine("ModalWindow cleaning up its resources...");
-        _appEngine?.Cleanup();
-        _textService?.Cleanup();
-        (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
-        _graphicsDevice?.Cleanup();
+        _appServices?.AppEngine.Cleanup();
+        _appServices?.TextService.Cleanup();
+        (_appServices?.Renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
+        _appServices?.GraphicsDevice.Cleanup();
 
-        _appEngine = null;
-        _renderer = null;
-        _textService = null;
-        _graphicsDevice = null;
+        _appServices = null; // Clear the bundle
     }
 
     protected override void OnPaint()
     {
-        if (_graphicsDevice is null || _renderer is null || _textService is null || _appEngine is null)
+        if (_appServices is null || !_appServices.GraphicsDevice.IsInitialized)
         {
             Console.WriteLine("Modal window render services not initialized. Skipping paint.");
             return;
         }
 
-        _graphicsDevice.BeginDraw();
+        _appServices.GraphicsDevice.BeginDraw();
         try
         {
             // Pass the modal's specific renderer and text service to the AppEngine
-            _appEngine.UpdateAndRender(_renderer, _textService);
+            _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during modal window drawing: {ex}");
-            _graphicsDevice.Cleanup();
+            _appServices.GraphicsDevice.Cleanup();
         }
         finally
         {
-            _graphicsDevice.EndDraw();
+            _appServices.GraphicsDevice.EndDraw();
         }
     }
 
@@ -597,39 +600,39 @@ public class ModalWindow : Win32Window
 
     protected override void OnSize(int width, int height)
     {
-        _graphicsDevice?.Resize(new SizeI(width, height));
+        _appServices?.GraphicsDevice.Resize(new SizeI(width, height));
     }
 
     // Input handlers for the modal window pass input to its own AppEngine's InputManager.
     protected override void OnMouseMove(int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y); // Update position on click
-        _appEngine?.Input.SetMouseDown(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y); // Update position on click
+        _appServices?.AppEngine.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y); // Update position on release
-        _appEngine?.Input.SetMouseUp(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y); // Update position on release
+        _appServices?.AppEngine.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        _appEngine?.Input.AddMouseWheelDelta(delta);
+        _appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appEngine?.Input.AddKeyPressed(key);
+        _appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
@@ -640,13 +643,13 @@ public class ModalWindow : Win32Window
 
     protected override void OnKeyUp(Keys key)
     {
-        _appEngine?.Input.AddKeyReleased(key);
+        _appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appEngine?.Input.AddCharacterInput(c);
+        _appServices?.AppEngine.Input.AddCharacterInput(c);
         Invalidate();
     }
 
@@ -1006,6 +1009,39 @@ internal static class SharedGraphicsResources
 }
 </file>
 
+<file path="Win32AppServicesInitializer.cs">
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+internal static class Win32AppServicesInitializer
+{
+    public static AppServices Initialize(IntPtr hwnd, SizeI clientSize, Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        var appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+        var graphicsDevice = new DuiGraphicsDevice();
+
+        if (!graphicsDevice.Initialize(hwnd, clientSize))
+        {
+            throw new InvalidOperationException("Failed to initialize DuiGraphicsDevice.");
+        }
+
+        if (graphicsDevice.RenderTarget is null || graphicsDevice.DWriteFactory is null)
+        {
+            throw new InvalidOperationException("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for Direct2D backend initialization.");
+        }
+
+        var renderer = new Backends.Direct2DRenderer(graphicsDevice.RenderTarget, graphicsDevice.DWriteFactory);
+        var textService = new Backends.DirectWriteTextService(graphicsDevice.DWriteFactory);
+
+        appEngine.Initialize(textService, renderer);
+
+        Console.WriteLine($"Win32AppServices Initializer: Services created for HWND {hwnd}.");
+        return new AppServices(appEngine, graphicsDevice, renderer, textService);
+    }
+}
+</file>
+
 <file path="Win32Window.cs">
 // Win32Window.cs
 using System;
@@ -1189,138 +1225,156 @@ public abstract class Win32Window : IDisposable
 
     protected virtual IntPtr HandleMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        switch (msg)
+        return msg switch
         {
-            case NativeMethods.WM_PAINT:
-                OnPaint();
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_SIZE:
-                Width = NativeMethods.LoWord(lParam);
-                Height = NativeMethods.HiWord(lParam);
-                OnSize(Width, Height);
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_MOUSEMOVE:
-                OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_LBUTTONDOWN:
-                NativeMethods.SetCapture(hWnd);
-                OnMouseDown(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_LBUTTONUP:
-                NativeMethods.ReleaseCapture();
-                OnMouseUp(MouseButton.Left, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_RBUTTONDOWN:
-                NativeMethods.SetCapture(hWnd);
-                OnMouseDown(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_RBUTTONUP:
-                NativeMethods.ReleaseCapture();
-                OnMouseUp(MouseButton.Right, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_MBUTTONDOWN:
-                NativeMethods.SetCapture(hWnd);
-                OnMouseDown(MouseButton.Middle, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_MBUTTONUP:
-                NativeMethods.ReleaseCapture();
-                OnMouseUp(MouseButton.Middle, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_XBUTTONDOWN:
-                {
-                    short xButton = NativeMethods.HiWord(wParam);
-                    var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
-                    NativeMethods.SetCapture(hWnd);
-                    OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                    return IntPtr.Zero;
-                }
-
-            case NativeMethods.WM_XBUTTONUP:
-                {
-                    short xButton = NativeMethods.HiWord(wParam);
-                    var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
-                    NativeMethods.ReleaseCapture();
-                    OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-                    return IntPtr.Zero;
-                }
-
-            case NativeMethods.WM_MOUSEWHEEL:
-                short wheelDelta = NativeMethods.HiWord(wParam);
-                OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_KEYDOWN:
-                OnKeyDown((Keys)wParam);
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_KEYUP:
-                OnKeyUp((Keys)wParam);
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_CHAR:
-                OnChar((char)wParam);
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_CLOSE:
-                if (OnClose())
-                {
-                    NativeMethods.DestroyWindow(hWnd);
-                }
-
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_DESTROY:
-                Console.WriteLine($"WM_DESTROY for {hWnd}.");
-                Application.UnregisterWindow(this);
-                OnDestroy();
-
-                if (OwnerHandle == IntPtr.Zero)
-                {
-                    Application.Exit();
-                }
-
-                return IntPtr.Zero;
-
-            case NativeMethods.WM_NCDESTROY:
-                Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
-
-                IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
-
-                if (ptr != IntPtr.Zero)
-                {
-                    var handle = GCHandle.FromIntPtr(ptr);
-
-                    if (handle.IsAllocated)
-                    {
-                        handle.Free();
-                    }
-
-                    NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero);
-                }
-
-                if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
-                {
-                    _gcHandle = default;
-
-                }
-
-                _hwnd = IntPtr.Zero;
-
-                return IntPtr.Zero;
-
-            default:
-                return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
-        }
+            NativeMethods.WM_PAINT => HandleWmPaint(),
+            NativeMethods.WM_SIZE => HandleWmSize(lParam),
+            NativeMethods.WM_MOUSEMOVE => HandleWmMouseMove(lParam),
+            NativeMethods.WM_LBUTTONDOWN => HandleWmButtonDown(MouseButton.Left, lParam, hWnd),
+            NativeMethods.WM_LBUTTONUP => HandleWmButtonUp(MouseButton.Left, lParam, hWnd),
+            NativeMethods.WM_RBUTTONDOWN => HandleWmButtonDown(MouseButton.Right, lParam, hWnd),
+            NativeMethods.WM_RBUTTONUP => HandleWmButtonUp(MouseButton.Right, lParam, hWnd),
+            NativeMethods.WM_MBUTTONDOWN => HandleWmButtonDown(MouseButton.Middle, lParam, hWnd),
+            NativeMethods.WM_MBUTTONUP => HandleWmButtonUp(MouseButton.Middle, lParam, hWnd),
+            NativeMethods.WM_XBUTTONDOWN => HandleWmXButtonDown(wParam, lParam, hWnd),
+            NativeMethods.WM_XBUTTONUP => HandleWmXButtonUp(wParam, lParam, hWnd),
+            NativeMethods.WM_MOUSEWHEEL => HandleWmMouseWheel(wParam),
+            NativeMethods.WM_KEYDOWN => HandleWmKey((Keys)wParam),
+            NativeMethods.WM_KEYUP => HandleWmKey((Keys)wParam),
+            NativeMethods.WM_CHAR => HandleWmChar(wParam),
+            NativeMethods.WM_CLOSE => HandleWmClose(hWnd),
+            NativeMethods.WM_DESTROY => HandleWmDestroy(),
+            NativeMethods.WM_NCDESTROY => HandleWmNcDestroy(hWnd),
+            _ => NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam),
+        };
     }
+
+    private IntPtr HandleWmPaint()
+    {
+        OnPaint();
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmSize(IntPtr lParam)
+    {
+        Width = NativeMethods.LoWord(lParam);
+        Height = NativeMethods.HiWord(lParam);
+        OnSize(Width, Height);
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmMouseMove(IntPtr lParam)
+    {
+        OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmButtonDown(MouseButton button, IntPtr lParam, IntPtr hWnd)
+    {
+        NativeMethods.SetCapture(hWnd);
+        OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmButtonUp(MouseButton button, IntPtr lParam, IntPtr hWnd)
+    {
+        NativeMethods.ReleaseCapture();
+        OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmXButtonDown(IntPtr wParam, IntPtr lParam, IntPtr hWnd)
+    {
+        short xButton = NativeMethods.HiWord(wParam);
+        var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+        NativeMethods.SetCapture(hWnd);
+        OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmXButtonUp(IntPtr wParam, IntPtr lParam, IntPtr hWnd)
+    {
+        short xButton = NativeMethods.HiWord(wParam);
+        var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+        NativeMethods.ReleaseCapture();
+        OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmMouseWheel(IntPtr wParam)
+    {
+        short wheelDelta = NativeMethods.HiWord(wParam);
+        OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmKey(Keys key)
+    {
+        // This method is called for both WM_KEYDOWN and WM_KEYUP.
+        // Derived classes override OnKeyDown and OnKeyUp for specific logic.
+        // It's the responsibility of the derived class to know if it's a down or up event.
+        // For now, this just dispatches without knowing if it's down or up at this level.
+        // The original switch handled it implicitly by calling specific OnKeyDown/OnKeyUp.
+        // Re-aligning this with the specific OnKeyDown/OnKeyUp methods:
+        return NativeMethods.DefWindowProc(Handle, NativeMethods.WM_KEYDOWN, (IntPtr)key, IntPtr.Zero); // Dummy return, actual handling is in specific OnKeyDown/Up
+    }
+
+    private IntPtr HandleWmChar(IntPtr wParam)
+    {
+        OnChar((char)wParam);
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmClose(IntPtr hWnd)
+    {
+        if (OnClose())
+        {
+            NativeMethods.DestroyWindow(hWnd);
+        }
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmDestroy()
+    {
+        Console.WriteLine($"WM_DESTROY for {_hwnd}.");
+        Application.UnregisterWindow(this);
+        OnDestroy();
+
+        if (OwnerHandle == IntPtr.Zero)
+        {
+            Application.Exit();
+        }
+        return IntPtr.Zero;
+    }
+
+    private IntPtr HandleWmNcDestroy(IntPtr hWnd)
+    {
+        Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
+
+        IntPtr ptr = NativeMethods.GetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA);
+
+        if (ptr != IntPtr.Zero)
+        {
+            var handle = GCHandle.FromIntPtr(ptr);
+
+            if (handle.IsAllocated)
+            {
+                handle.Free();
+            }
+
+            NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero);
+        }
+
+        if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
+        {
+            _gcHandle = default;
+
+        }
+
+        _hwnd = IntPtr.Zero;
+        return IntPtr.Zero;
+    }
+
 
     public void Close()
     {
@@ -1479,10 +1533,7 @@ namespace DirectUI;
 
 public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 {
-    private AppEngine? _appEngine;
-    private DuiGraphicsDevice? _graphicsDevice;
-    private IRenderer? _renderer;
-    private ITextService? _textService;
+    private AppServices? _appServices; // Changed to the new bundle
 
     private ModalWindow? _activeModalWindow;
     private int _modalResultCode;
@@ -1493,7 +1544,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
         get
         {
-            return _activeModalWindow is not null 
+            return _activeModalWindow is not null
                 && _activeModalWindow.Handle != IntPtr.Zero;
         }
     }
@@ -1503,24 +1554,24 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
     }
 
-    public InputManager Input => _appEngine?.Input ?? new();
+    public InputManager Input => _appServices?.AppEngine.Input ?? new();
     public SizeI ClientSize => GetClientRectSize();
 
     public bool ShowFpsCounter
     {
         get
         {
-            return _appEngine?.ShowFpsCounter ?? false;
+            return _appServices?.AppEngine.ShowFpsCounter ?? false;
         }
 
         set
         {
-            if (_appEngine is null)
+            if (_appServices is null)
             {
                 return;
             }
 
-            _appEngine.ShowFpsCounter = value;
+            _appServices.AppEngine.ShowFpsCounter = value;
         }
     }
 
@@ -1529,35 +1580,22 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine("Win32WindowHost initializing...");
-        
+
         if (!base.Initialize())
         {
             return false;
         }
 
-        _appEngine = new(uiDrawCallback, backgroundColor);
-
-        _graphicsDevice = new();
-
-        if (!_graphicsDevice.Initialize(Handle, GetClientRectSize()))
+        try
         {
-            Console.WriteLine("Failed to initialize DuiGraphicsDevice.");
+            _appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Failed to initialize Win32WindowHost services: {ex.Message}");
             return false;
         }
-
-        if (_graphicsDevice.RenderTarget is not null && _graphicsDevice.DWriteFactory is not null)
-        {
-            _renderer = new Backends.Direct2DRenderer(_graphicsDevice.RenderTarget, _graphicsDevice.DWriteFactory);
-            _textService = new Backends.DirectWriteTextService(_graphicsDevice.DWriteFactory);
-        }
-        else
-        {
-            Console.WriteLine("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for Direct2D backend initialization.");
-            return false;
-        }
-
-        _appEngine.Initialize(_textService, _renderer);
-        return true;
     }
 
     void IWindowHost.Cleanup()
@@ -1573,15 +1611,12 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         Console.WriteLine("Win32WindowHost cleaning up its resources...");
-        _appEngine?.Cleanup();
-        _textService?.Cleanup();
-        (_renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
-        _graphicsDevice?.Cleanup();
+        _appServices?.AppEngine.Cleanup();
+        _appServices?.TextService.Cleanup();
+        (_appServices?.Renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
+        _appServices?.GraphicsDevice.Cleanup();
 
-        _appEngine = null;
-        _renderer = null;
-        _textService = null;
-        _graphicsDevice = null;
+        _appServices = null; // Clear the bundle
         _activeModalWindow = null;
 
         base.Cleanup();
@@ -1594,26 +1629,26 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnPaint()
     {
-        if (_graphicsDevice is null || _renderer is null || _textService is null || _appEngine is null)
+        if (_appServices is null || !_appServices.GraphicsDevice.IsInitialized)
         {
             Console.WriteLine("Render services not initialized. Skipping paint.");
             return;
         }
 
-        _graphicsDevice.BeginDraw();
+        _appServices.GraphicsDevice.BeginDraw();
 
         try
         {
-            _appEngine.UpdateAndRender(_renderer, _textService);
+            _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            _graphicsDevice.Cleanup();
+            _appServices.GraphicsDevice.Cleanup();
         }
         finally
         {
-            _graphicsDevice.EndDraw();
+            _appServices.GraphicsDevice.EndDraw();
         }
     }
 
@@ -1625,47 +1660,47 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnSize(int width, int height)
     {
-        _graphicsDevice?.Resize(new SizeI(width, height));
+        _appServices?.GraphicsDevice.Resize(new SizeI(width, height));
     }
 
     protected override void OnMouseMove(int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
-        _appEngine?.Input.SetMouseDown(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appEngine?.Input.SetMousePosition(x, y);
-        _appEngine?.Input.SetMouseUp(button);
+        _appServices?.AppEngine.Input.SetMousePosition(x, y);
+        _appServices?.AppEngine.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        _appEngine?.Input.AddMouseWheelDelta(delta);
+        _appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appEngine?.Input.AddKeyPressed(key);
+        _appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
             Close();
         }
 
-        if (key == Keys.F3 && _appEngine is not null)
+        if (key == Keys.F3 && _appServices?.AppEngine is not null)
         {
-            _appEngine.ShowFpsCounter = !_appEngine.ShowFpsCounter;
+            _appServices.AppEngine.ShowFpsCounter = !_appServices.AppEngine.ShowFpsCounter;
         }
 
         Invalidate();
@@ -1673,13 +1708,13 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnKeyUp(Keys key)
     {
-        _appEngine?.Input.AddKeyReleased(key);
+        _appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appEngine?.Input.AddCharacterInput(c);
+        _appServices?.AppEngine.Input.AddCharacterInput(c);
         Invalidate();
     }
 
@@ -1722,7 +1757,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         _activeModalWindow = new(this, title, width, height, drawCallback);
-        
+
         if (_activeModalWindow.CreateAsModal())
         {
             _onModalClosedCallback = onClosedCallback;
@@ -1762,7 +1797,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         _isModalClosing = true;
-        
+
         Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
         _onModalClosedCallback?.Invoke(_modalResultCode);
 
@@ -2054,246 +2089,6 @@ public class VBoxContainerState : ILayoutContainer
         CurrentPosition = new Vector2(CurrentPosition.X, CurrentPosition.Y + advanceY);
         ElementCount++;
     }
-}
-</file>
-
-<file path="Core\IAppLogic.cs">
-namespace DirectUI.Core;
-
-public interface IAppLogic
-{
-    void DrawUI(UIContext context);
-}
-</file>
-
-<file path="Core\ILayoutContainer.cs">
-using System.Numerics;
-
-namespace DirectUI;
-
-public interface ILayoutContainer
-{
-    Vector2 GetCurrentPosition();
-    void Advance(Vector2 elementSize);
-}
-</file>
-
-<file path="Core\IModalWindowService.cs">
-// DirectUI/Core/IModalWindowService.cs
-using System;
-using Vortice.Mathematics;
-
-namespace DirectUI.Core;
-
-/// <summary>
-/// Defines the contract for a service that can open modal windows.
-/// This allows application UI logic to request a modal window without
-/// knowing the underlying platform's windowing specifics.
-/// </summary>
-public interface IModalWindowService
-{
-    /// <summary>
-    /// Opens a modal window with the specified properties.
-    /// </summary>
-    /// <param name="title">The title of the modal window.</param>
-    /// <param name="width">The width of the modal window.</param>
-    /// <param name="height">The height of the modal window.</param>
-    /// <param name="drawCallback">The UI drawing logic for the content of the modal window.</param>
-    /// <param name="onClosedCallback">An action to be invoked when the modal window is closed. Receives a result code (0 for success, non-zero for error/cancel).</param>
-    void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null);
-
-    /// <summary>
-    /// Closes the currently active modal window, if any, with a specified result code.
-    /// </summary>
-    /// <param name="resultCode">A code indicating the outcome of the modal interaction (e.g., 0 for OK, 1 for Cancel).</param>
-    void CloseModalWindow(int resultCode = 0);
-
-    /// <summary>
-    /// Checks if a modal window is currently open.
-    /// </summary>
-    bool IsModalWindowOpen { get; }
-}
-</file>
-
-<file path="Core\IRenderer.cs">
-// DirectUI/Core/IRenderer.cs
-using System.Numerics;
-using DirectUI.Drawing;
-using Vortice.Direct2D1; // Required for AntialiasMode
-using Vortice.Mathematics;
-
-namespace DirectUI.Core;
-
-/// <summary>
-/// Defines the abstract contract for a rendering backend.
-/// The UI library uses this interface to issue all drawing commands.
-/// </summary>
-public interface IRenderer
-{
-    /// <summary>
-    /// Gets the current size of the render target.
-    /// </summary>
-    Vector2 RenderTargetSize { get; }
-
-    /// <summary>
-    /// Draws a line between two points.
-    /// </summary>
-    void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth);
-
-    /// <summary>
-    /// Draws a box with fill, border, and rounding based on a style.
-    /// </summary>
-    void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style);
-
-    /// <summary>
-    /// Draws text. The renderer is responsible for its own text layout and caching.
-    /// </summary>
-    void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color);
-
-    /// <summary>
-    /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
-    /// </summary>
-    void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);
-
-    /// <summary>
-    /// Pops the last clipping rectangle from the stack.
-    /// </summary>
-    void PopClipRect();
-
-    /// <summary>
-    /// Flushes any batched rendering commands, particularly for text.
-    /// </summary>
-    void Flush();
-}
-</file>
-
-<file path="Core\ITextLayout.cs">
-// DirectUI/Core/ITextLayout.cs
-using System;
-using System.Numerics;
-
-namespace DirectUI.Core;
-
-/// <summary>
-/// Represents a block of text that has been fully processed for layout.
-/// This is a backend-agnostic interface.
-/// </summary>
-public interface ITextLayout : IDisposable
-{
-    /// <summary>
-    /// The final measured size of the laid-out text.
-    /// </summary>
-    Vector2 Size { get; }
-
-    /// <summary>
-    /// The original string content of this layout.
-    /// </summary>
-    string Text { get; }
-
-    /// <summary>
-    /// Retrieves the metrics for a glyph at a specific text position.
-    /// </summary>
-    /// <param name="textPosition">The zero-based index of the target character.</param>
-    /// <param name="isTrailingHit">Indicates whether to measure the leading or trailing edge of the character.</param>
-    /// <returns>Metrics describing the position and size of the specified character position.</returns>
-    TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit);
-
-    /// <summary>
-    /// Performs a hit-test to determine which character position is at a given point.
-    /// </summary>
-    /// <param name="point">The point to test, relative to the layout's origin.</param>
-    /// <returns>A result object containing the metrics and character position of the hit.</returns>
-    TextHitTestResult HitTestPoint(Vector2 point);
-}
-</file>
-
-<file path="Core\ITextService.cs">
-// DirectUI/Core/ITextService.cs
-using System.Numerics;
-using Vortice.Mathematics;
-
-namespace DirectUI.Core;
-
-/// <summary>
-/// Defines the abstract contract for text processing services like measurement and layout.
-/// The UI library uses this to handle all font-related operations.
-/// </summary>
-public interface ITextService
-{
-    /// <summary>
-    /// Measures the bounding box of a string given a specific style, without layout constraints.
-    /// </summary>
-    Vector2 MeasureText(string text, ButtonStyle style);
-
-    /// <summary>
-    /// Creates or retrieves a cached, fully formatted text layout object.
-    /// </summary>
-    ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment);
-
-    /// <summary>
-    /// Cleans up any cached resources managed by the text service.
-    /// </summary>
-    void Cleanup();
-}
-</file>
-
-<file path="Core\IWindowHost.cs">
-// DirectUI/Core/IWindowHost.cs
-using System;
-using DirectUI.Input;
-using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
-
-namespace DirectUI.Core;
-
-/// <summary>
-/// Defines the contract for a platform-specific window host that integrates with the DirectUI engine.
-/// This interface abstracts window creation, main loop management, and exposes input and modal services.
-/// </summary>
-public interface IWindowHost : IDisposable
-{
-    /// <summary>
-    /// Gets the native window handle, if applicable. Returns IntPtr.Zero otherwise.
-    /// </summary>
-    IntPtr Handle { get; }
-
-    /// <summary>
-    /// Provides access to the InputManager for the host to feed input events.
-    /// </summary>
-    InputManager Input { get; }
-
-    /// <summary>
-    /// Gets the current client size of the window.
-    /// </summary>
-    SizeI ClientSize { get; }
-
-    /// <summary>
-    /// Gets or sets whether the FPS counter should be displayed.
-    /// </summary>
-    bool ShowFpsCounter { get; set; }
-
-    /// <summary>
-    /// Provides access to a service for opening modal windows specific to this host's platform.
-    /// </summary>
-    IModalWindowService ModalWindowService { get; }
-
-    /// <summary>
-    /// Initializes the window host and the DirectUI engine.
-    /// </summary>
-    /// <param name="uiDrawCallback">The callback function that contains the application's UI drawing logic.</param>
-    /// <param name="backgroundColor">The background color to clear the window with each frame.</param>
-    /// <returns>True if initialization was successful, false otherwise.</returns>
-    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor);
-
-    /// <summary>
-    /// Runs the platform-specific main message/event loop for the application.
-    /// </summary>
-    void RunLoop();
-
-    /// <summary>
-    /// Cleans up resources owned by the window host.
-    /// </summary>
-    void Cleanup();
 }
 </file>
 
@@ -8946,6 +8741,246 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _modalResultCode = 0;
         _isModalClosing = false;
     }
+}
+</file>
+
+<file path="Core\Interface\IAppLogic.cs">
+namespace DirectUI.Core;
+
+public interface IAppLogic
+{
+    void DrawUI(UIContext context);
+}
+</file>
+
+<file path="Core\Interface\ILayoutContainer.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public interface ILayoutContainer
+{
+    Vector2 GetCurrentPosition();
+    void Advance(Vector2 elementSize);
+}
+</file>
+
+<file path="Core\Interface\IModalWindowService.cs">
+// DirectUI/Core/IModalWindowService.cs
+using System;
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the contract for a service that can open modal windows.
+/// This allows application UI logic to request a modal window without
+/// knowing the underlying platform's windowing specifics.
+/// </summary>
+public interface IModalWindowService
+{
+    /// <summary>
+    /// Opens a modal window with the specified properties.
+    /// </summary>
+    /// <param name="title">The title of the modal window.</param>
+    /// <param name="width">The width of the modal window.</param>
+    /// <param name="height">The height of the modal window.</param>
+    /// <param name="drawCallback">The UI drawing logic for the content of the modal window.</param>
+    /// <param name="onClosedCallback">An action to be invoked when the modal window is closed. Receives a result code (0 for success, non-zero for error/cancel).</param>
+    void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null);
+
+    /// <summary>
+    /// Closes the currently active modal window, if any, with a specified result code.
+    /// </summary>
+    /// <param name="resultCode">A code indicating the outcome of the modal interaction (e.g., 0 for OK, 1 for Cancel).</param>
+    void CloseModalWindow(int resultCode = 0);
+
+    /// <summary>
+    /// Checks if a modal window is currently open.
+    /// </summary>
+    bool IsModalWindowOpen { get; }
+}
+</file>
+
+<file path="Core\Interface\IRenderer.cs">
+// DirectUI/Core/IRenderer.cs
+using System.Numerics;
+using DirectUI.Drawing;
+using Vortice.Direct2D1; // Required for AntialiasMode
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the abstract contract for a rendering backend.
+/// The UI library uses this interface to issue all drawing commands.
+/// </summary>
+public interface IRenderer
+{
+    /// <summary>
+    /// Gets the current size of the render target.
+    /// </summary>
+    Vector2 RenderTargetSize { get; }
+
+    /// <summary>
+    /// Draws a line between two points.
+    /// </summary>
+    void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth);
+
+    /// <summary>
+    /// Draws a box with fill, border, and rounding based on a style.
+    /// </summary>
+    void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style);
+
+    /// <summary>
+    /// Draws text. The renderer is responsible for its own text layout and caching.
+    /// </summary>
+    void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color);
+
+    /// <summary>
+    /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
+    /// </summary>
+    void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);
+
+    /// <summary>
+    /// Pops the last clipping rectangle from the stack.
+    /// </summary>
+    void PopClipRect();
+
+    /// <summary>
+    /// Flushes any batched rendering commands, particularly for text.
+    /// </summary>
+    void Flush();
+}
+</file>
+
+<file path="Core\Interface\ITextLayout.cs">
+// DirectUI/Core/ITextLayout.cs
+using System;
+using System.Numerics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Represents a block of text that has been fully processed for layout.
+/// This is a backend-agnostic interface.
+/// </summary>
+public interface ITextLayout : IDisposable
+{
+    /// <summary>
+    /// The final measured size of the laid-out text.
+    /// </summary>
+    Vector2 Size { get; }
+
+    /// <summary>
+    /// The original string content of this layout.
+    /// </summary>
+    string Text { get; }
+
+    /// <summary>
+    /// Retrieves the metrics for a glyph at a specific text position.
+    /// </summary>
+    /// <param name="textPosition">The zero-based index of the target character.</param>
+    /// <param name="isTrailingHit">Indicates whether to measure the leading or trailing edge of the character.</param>
+    /// <returns>Metrics describing the position and size of the specified character position.</returns>
+    TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit);
+
+    /// <summary>
+    /// Performs a hit-test to determine which character position is at a given point.
+    /// </summary>
+    /// <param name="point">The point to test, relative to the layout's origin.</param>
+    /// <returns>A result object containing the metrics and character position of the hit.</returns>
+    TextHitTestResult HitTestPoint(Vector2 point);
+}
+</file>
+
+<file path="Core\Interface\ITextService.cs">
+// DirectUI/Core/ITextService.cs
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the abstract contract for text processing services like measurement and layout.
+/// The UI library uses this to handle all font-related operations.
+/// </summary>
+public interface ITextService
+{
+    /// <summary>
+    /// Measures the bounding box of a string given a specific style, without layout constraints.
+    /// </summary>
+    Vector2 MeasureText(string text, ButtonStyle style);
+
+    /// <summary>
+    /// Creates or retrieves a cached, fully formatted text layout object.
+    /// </summary>
+    ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment);
+
+    /// <summary>
+    /// Cleans up any cached resources managed by the text service.
+    /// </summary>
+    void Cleanup();
+}
+</file>
+
+<file path="Core\Interface\IWindowHost.cs">
+// DirectUI/Core/IWindowHost.cs
+using System;
+using DirectUI.Input;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+
+namespace DirectUI.Core;
+
+/// <summary>
+/// Defines the contract for a platform-specific window host that integrates with the DirectUI engine.
+/// This interface abstracts window creation, main loop management, and exposes input and modal services.
+/// </summary>
+public interface IWindowHost : IDisposable
+{
+    /// <summary>
+    /// Gets the native window handle, if applicable. Returns IntPtr.Zero otherwise.
+    /// </summary>
+    IntPtr Handle { get; }
+
+    /// <summary>
+    /// Provides access to the InputManager for the host to feed input events.
+    /// </summary>
+    InputManager Input { get; }
+
+    /// <summary>
+    /// Gets the current client size of the window.
+    /// </summary>
+    SizeI ClientSize { get; }
+
+    /// <summary>
+    /// Gets or sets whether the FPS counter should be displayed.
+    /// </summary>
+    bool ShowFpsCounter { get; set; }
+
+    /// <summary>
+    /// Provides access to a service for opening modal windows specific to this host's platform.
+    /// </summary>
+    IModalWindowService ModalWindowService { get; }
+
+    /// <summary>
+    /// Initializes the window host and the DirectUI engine.
+    /// </summary>
+    /// <param name="uiDrawCallback">The callback function that contains the application's UI drawing logic.</param>
+    /// <param name="backgroundColor">The background color to clear the window with each frame.</param>
+    /// <returns>True if initialization was successful, false otherwise.</returns>
+    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor);
+
+    /// <summary>
+    /// Runs the platform-specific main message/event loop for the application.
+    /// </summary>
+    void RunLoop();
+
+    /// <summary>
+    /// Cleans up resources owned by the window host.
+    /// </summary>
+    void Cleanup();
 }
 </file>
 
