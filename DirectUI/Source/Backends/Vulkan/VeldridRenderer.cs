@@ -1,14 +1,4 @@
-﻿using DirectUI.Backends.Vulkan;
-using DirectUI.Core;
-using SharpText.Veldrid;
-using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Text;
-using System.Threading.Channels;
-using Veldrid;
-using Vortice.Direct2D1;
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
@@ -35,8 +25,9 @@ public class VeldridRenderer : IRenderer, IDisposable
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
 
-    // Font is persistent, but the renderer will be created per-batch.
+    // Use a single, persistent text renderer.
     private readonly SharpText.Core.Font _font;
+    private readonly VeldridTextRenderer _textRenderer;
 
     // Batched text rendering state
     private readonly struct BatchedText
@@ -76,9 +67,9 @@ public class VeldridRenderer : IRenderer, IDisposable
         _gd = gd;
         _cl = cl;
 
-        // Create persistent font resource. The renderer will be transient.
-        // Switched to a simpler font to diagnose the SharpText crash.
+        // Create persistent font and text renderer resources.
         _font = new SharpText.Core.Font("C:/Windows/Fonts/consola.ttf", 16);
+        _textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
 
         // Create resources for flat geometry
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -207,57 +198,9 @@ public class VeldridRenderer : IRenderer, IDisposable
             return;
         }
 
-        // The SharpText renderer has a default internal buffer limit of 1024 glyphs.
-        // We batch our text calls to respect this limit.
-        const int maxCharsPerBatch = 1000;
-
-        var currentMiniBatch = new List<BatchedText>();
-        int currentMiniBatchCharCount = 0;
-
         foreach (var textCall in _textBatch)
         {
-            string textForLen = textCall.Text;
-            if (textForLen.Length > maxCharsPerBatch)
-            {
-                textForLen = textForLen.Substring(0, maxCharsPerBatch);
-            }
-
-            // If the current text call would overflow the mini-batch, process the current one first.
-            if (currentMiniBatch.Count > 0 && currentMiniBatchCharCount + textForLen.Length > maxCharsPerBatch)
-            {
-                ProcessMiniBatch(currentMiniBatch);
-                currentMiniBatch.Clear();
-                currentMiniBatchCharCount = 0;
-            }
-
-            currentMiniBatch.Add(textCall);
-            currentMiniBatchCharCount += textForLen.Length;
-        }
-
-        // Process the final mini-batch if it has any content.
-        if (currentMiniBatch.Count > 0)
-        {
-            ProcessMiniBatch(currentMiniBatch);
-        }
-
-        _textBatch.Clear();
-    }
-
-    private void ProcessMiniBatch(List<BatchedText> batch)
-    {
-        // Create a new, clean renderer for each batch. This is the key to preventing state corruption.
-        using var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
-
-        foreach (var textCall in batch)
-        {
-            string textToDraw = textCall.Text;
-            // The text must still be truncated here as its original form is stored in the BatchedText struct.
-            if (textToDraw.Length > 1000)
-            {
-                textToDraw = textToDraw.Substring(0, 1000);
-            }
-
-            Vector2 measuredSize = MeasureText(textToDraw, textCall.Style);
+            Vector2 measuredSize = MeasureText(textCall.Text, textCall.Style);
             Vector2 textDrawPos = textCall.Origin;
 
             // Alignment logic
@@ -279,11 +222,14 @@ public class VeldridRenderer : IRenderer, IDisposable
             }
 
             var sharpTextColor = new SharpText.Core.Color(textCall.Color.R, textCall.Color.G, textCall.Color.B, textCall.Color.A);
-            textRenderer.DrawText(textToDraw, textDrawPos, sharpTextColor, 1);
+            _textRenderer.DrawText(textCall.Text, textDrawPos, sharpTextColor, 1);
         }
 
-        // Issue the single draw call for this entire mini-batch.
-        textRenderer.Draw();
+        // Issue a single draw call for all the text added in this frame.
+        // Assuming Draw() clears the internal buffer for the next frame.
+        _textRenderer.Draw();
+
+        _textBatch.Clear();
     }
 
 
@@ -316,6 +262,7 @@ public class VeldridRenderer : IRenderer, IDisposable
         _projMatrixBuffer.Dispose();
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
+        _textRenderer.Dispose();
     }
 
     private bool _disposedValue;
