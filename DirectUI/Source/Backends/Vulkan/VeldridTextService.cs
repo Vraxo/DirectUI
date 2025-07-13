@@ -5,16 +5,12 @@ namespace DirectUI.Backends.Vulkan;
 
 /// <summary>
 /// A Veldrid-specific implementation of the ITextService interface.
-/// This implementation uses a font manager to get font atlases for measurement.
+/// NOTE: This is a placeholder implementation. A real implementation would require
+/// a font rasterizer (like StbTrueTypeSharp) to generate a font atlas texture.
 /// </summary>
 public class VeldridTextService : ITextService
 {
-    private readonly VulkanFontManager _fontManager;
-
-    public VeldridTextService(VulkanFontManager fontManager)
-    {
-        _fontManager = fontManager;
-    }
+    public VeldridTextService() { }
 
     public Vector2 MeasureText(string text, ButtonStyle style)
     {
@@ -22,21 +18,19 @@ public class VeldridTextService : ITextService
         {
             return Vector2.Zero;
         }
-
-        var fontAtlas = _fontManager.GetAtlas(style.FontName, style.FontSize);
-        return fontAtlas.MeasureText(text);
+        // Placeholder: return a rough estimate based on character count and font size.
+        return new Vector2(text.Length * style.FontSize * 0.6f, style.FontSize);
     }
 
     public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
     {
-        // This is a simplified implementation that doesn't handle wrapping or advanced layout.
-        // It returns a layout object with the measured size of the entire string.
-        var size = MeasureText(text, style);
-        return new VeldridTextLayout(text, size);
+        // Placeholder: returns null. A full implementation would create a layout object
+        // with metrics derived from a real font atlas.
+        return null!;
     }
 
     public void Cleanup()
     {
-        // FontManager is owned by VeldridUIHost, so we don't dispose it here.
+        // No resources to clean up in this placeholder implementation.
     }
 }

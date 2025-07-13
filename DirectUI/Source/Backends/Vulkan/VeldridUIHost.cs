@@ -27,7 +27,6 @@ public class VeldridUIHost
 
     private VeldridRenderer? _renderer;
     private VeldridTextService? _textService;
-    private VulkanFontManager? _fontManager;
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
@@ -48,9 +47,8 @@ public class VeldridUIHost
 
     public bool Initialize()
     {
-        _fontManager = new VulkanFontManager(_gd);
-        _renderer = new VeldridRenderer(_gd, _cl, _fontManager);
-        _textService = new VeldridTextService(_fontManager);
+        _renderer = new VeldridRenderer(_gd, _cl);
+        _textService = new VeldridTextService();
         _fpsCounter.Initialize(_textService, _renderer);
         return true;
     }
@@ -60,7 +58,6 @@ public class VeldridUIHost
         _fpsCounter.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
-        _fontManager?.Dispose();
         _cl.Dispose();
     }
 

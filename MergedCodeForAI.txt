@@ -4302,7 +4302,7 @@ public class InputManager
             }
         }
 
-        foreach (char c in snapshot.KeyCharPresses)
+        foreach (char c in snapshot.TypedCharacters)
         {
             AddCharacterInput(c);
         }
@@ -4375,7 +4375,7 @@ public class InputManager
     {
         return vdKey switch
         {
-            Veldrid.Key.BackSpace => Keys.Backspace,
+            Veldrid.Key.Backspace => Keys.Backspace,
             Veldrid.Key.Tab => Keys.Tab,
             Veldrid.Key.Enter => Keys.Enter,
             Veldrid.Key.ShiftLeft => Keys.Shift,
