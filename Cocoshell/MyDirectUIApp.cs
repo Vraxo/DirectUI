@@ -42,10 +42,9 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     /// </summary>
     public bool Create()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan)
         {
-            // For Raylib, we bypass the base Create and call Initialize directly
-            // which handles Raylib.InitWindow.
+            // For Raylib and Vulkan, we bypass the base Create and call Initialize directly
             return Initialize();
         }
         else
@@ -60,46 +59,46 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // The AppHost will handle the Raylib window management.
     protected override bool Initialize()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        switch (_backend)
         {
-            // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
-            // We just need to initialize AppHost.
-            Console.WriteLine("Initializing with Raylib backend...");
+            case GraphicsBackend.Raylib:
+                Console.WriteLine("Initializing with Raylib backend...");
+                Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+                Raylib.InitWindow(Width, Height, Title);
+                Raylib.SetTargetFPS(60);
+                _appHost = CreateAppHost();
+                return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
 
-            // Enable MSAA 4X for smooth edges on geometry and fonts.
-            // This flag must be set *before* the window is initialized.
-            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+            case GraphicsBackend.Vulkan:
+                // This logic is now handled by ApplicationRunner.
+                // The class instance is created, but its windowing is not used.
+                return true;
 
-            Raylib.InitWindow(Width, Height, Title);
-            Raylib.SetTargetFPS(60); // Control FPS for Raylib
-
-            // AppHost expects an IntPtr HWND even for Raylib.
-            // It will ignore it if _backend == GraphicsBackend.Raylib is true.
-            _appHost = CreateAppHost();
-            return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
-        }
-        else
-        {
-            Console.WriteLine("Direct2DAppWindow initializing...");
-            _appHost = CreateAppHost();
-            return _appHost.Initialize(Handle, GetClientRectSize());
+            case GraphicsBackend.Direct2D:
+            default:
+                return base.Initialize();
         }
     }
 
     protected override void Cleanup()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        switch (_backend)
         {
-            Console.WriteLine("RaylibAppWindow cleaning up its resources...");
-            _appHost?.Cleanup();
-            _appHost = null;
-            Raylib.CloseWindow(); // Close the Raylib window
-        }
-        else
-        {
-            Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
-            _appHost?.Cleanup();
-            _appHost = null;
+            case GraphicsBackend.Raylib:
+                Console.WriteLine("RaylibAppWindow cleaning up its resources...");
+                _appHost?.Cleanup();
+                _appHost = null;
+                Raylib.CloseWindow();
+                break;
+
+            case GraphicsBackend.Vulkan:
+                // Nothing to do here, ApplicationRunner handles Veldrid cleanup.
+                break;
+
+            case GraphicsBackend.Direct2D:
+            default:
+                base.Cleanup();
+                break;
         }
     }
 
@@ -115,24 +114,27 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     public override void FrameUpdate()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        switch (_backend)
         {
-            // For Raylib, Raylib.WindowShouldClose() is the equivalent of WM_QUIT.
-            if (Raylib.WindowShouldClose())
-            {
-                Application.Exit(); // Signal main loop to exit
-                return;
-            }
+            case GraphicsBackend.Raylib:
+                if (Raylib.WindowShouldClose())
+                {
+                    Application.Exit();
+                    return;
+                }
+                _appHost?.Input.ProcessRaylibInput();
+                _appHost?.Render();
+                break;
 
-            // Manually process input and render loop for Raylib
-            // Input is managed by Raylib directly, so we need to pump it into AppHost's InputManager.
-            _appHost?.Input.ProcessRaylibInput(); // Call the new method to update input state
-            _appHost?.Render(); // Render the UI for this frame
-        }
-        else
-        {
-            // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
-            Invalidate();
+            case GraphicsBackend.Vulkan:
+                // This is not called in the Veldrid loop.
+                break;
+
+            case GraphicsBackend.Direct2D:
+            default:
+                // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
+                Invalidate();
+                break;
         }
     }
 
@@ -150,10 +152,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
         if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
         if (key == Keys.F3)
         {
-            if (_appHost != null)
-            {
-                _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
-            }
+            if (_appHost != null) _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
         }
     }
 
@@ -191,7 +190,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     /// The primary drawing callback for the main application window. It delegates
     /// drawing to the main view after handling any window state management.
     /// </summary>
-    private void DrawUI(UIContext context)
+    public void DrawUI(UIContext context)
     {
         ManageModalWindowState();
         _mainView.Draw(context, OpenProjectWindow);
@@ -248,12 +247,10 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     {
         if (_isProjectWindowOpen) return;
 
-        // For Raylib backend, modal windows are not handled by Win32Window directly.
-        // Implementing true modal behavior (disabling owner window, blocking loop) would
-        // require a different approach or a Raylib-specific modal window class.
-        if (_backend == GraphicsBackend.Raylib)
+        // For Raylib/Vulkan backends, modal windows are not handled by Win32Window directly.
+        if (_backend != GraphicsBackend.Direct2D)
         {
-            Console.WriteLine("Modal windows are not yet implemented for Raylib backend.");
+            Console.WriteLine($"Modal windows are not yet implemented for the {_backend} backend.");
             return;
         }
 
@@ -272,7 +269,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     private void ManageModalWindowState()
     {
-        if (_backend == GraphicsBackend.Raylib) return; // Modal window management is D2D-specific
+        if (_backend != GraphicsBackend.Direct2D) return; // Modal window management is D2D-specific
 
         if (_projectWindow == null) return;
 

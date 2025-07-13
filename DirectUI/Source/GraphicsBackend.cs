@@ -1,8 +1,8 @@
-namespace DirectUI
+namespace DirectUI;
+
+public enum GraphicsBackend
 {
-    public enum GraphicsBackend
-    {
-        Direct2D,
-        Raylib
-    }
+    Direct2D,
+    Raylib,
+    Vulkan
 }

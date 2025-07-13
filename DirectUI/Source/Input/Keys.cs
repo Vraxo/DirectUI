@@ -154,4 +154,12 @@ public enum Keys
     F11 = 0x7A,
     /// <summary>The F12 key.</summary>
     F12 = 0x7B,
+
+    // Special Keys
+    /// <summary>The left Windows logo key (Microsoft Natural Keyboard).</summary>
+    LeftWindows = 0x5B,
+    /// <summary>The right Windows logo key (Microsoft Natural Keyboard).</summary>
+    RightWindows = 0x5C,
+    /// <summary>The Application key (Microsoft Natural Keyboard).</summary>
+    Menu = 0x5D,
 }

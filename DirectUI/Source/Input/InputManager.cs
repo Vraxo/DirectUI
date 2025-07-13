@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Raylib_cs; // Added for Raylib backend
+using Veldrid; // Added for Veldrid backend
 
 namespace DirectUI.Input;
 
@@ -129,6 +130,49 @@ public class InputManager
     }
 
     /// <summary>
+    /// Processes Veldrid-specific input events and updates the internal state.
+    /// This method should be called once per frame when using the Veldrid backend.
+    /// </summary>
+    public void ProcessVeldridInput(Veldrid.InputSnapshot snapshot)
+    {
+        SetMousePosition((int)snapshot.MousePosition.X, (int)snapshot.MousePosition.Y);
+        AddMouseWheelDelta(snapshot.WheelDelta);
+
+        foreach (var keyEvent in snapshot.KeyEvents)
+        {
+            Keys mappedKey = MapVeldridKeyToDirectUIKey(keyEvent.Key);
+            if (mappedKey == Keys.Unknown) continue;
+
+            if (keyEvent.Down)
+            {
+                AddKeyPressed(mappedKey);
+            }
+            else
+            {
+                AddKeyReleased(mappedKey);
+            }
+        }
+
+        foreach (var mouseEvent in snapshot.MouseEvents)
+        {
+            MouseButton mappedButton = MapVeldridMouseButtonToDirectUIButton(mouseEvent.MouseButton);
+            if (mouseEvent.Down)
+            {
+                SetMouseDown(mappedButton);
+            }
+            else
+            {
+                SetMouseUp(mappedButton);
+            }
+        }
+
+        foreach (char c in snapshot.KeyCharPresses)
+        {
+            AddCharacterInput(c);
+        }
+    }
+
+    /// <summary>
     /// Processes Raylib-specific input events and updates the internal state.
     /// This method should be called once per frame when using the Raylib backend.
     /// </summary>
@@ -169,6 +213,108 @@ public class InputManager
             AddCharacterInput((char)charValue);
             charValue = Raylib.GetCharPressed();
         }
+    }
+
+    /// <summary>
+    /// Maps a Veldrid MouseButton enum to a DirectUI MouseButton enum.
+    /// </summary>
+    private static MouseButton MapVeldridMouseButtonToDirectUIButton(Veldrid.MouseButton vdButton)
+    {
+        return vdButton switch
+        {
+            Veldrid.MouseButton.Left => MouseButton.Left,
+            Veldrid.MouseButton.Right => MouseButton.Right,
+            Veldrid.MouseButton.Middle => MouseButton.Middle,
+            Veldrid.MouseButton.Button1 => MouseButton.XButton1, // Assuming Button1 is XButton1
+            Veldrid.MouseButton.Button2 => MouseButton.XButton2, // Assuming Button2 is XButton2
+            _ => MouseButton.Left, // Default case
+        };
+    }
+
+
+    /// <summary>
+    /// Maps a Veldrid Key enum to a DirectUI Keys enum.
+    /// </summary>
+    private static Keys MapVeldridKeyToDirectUIKey(Veldrid.Key vdKey)
+    {
+        return vdKey switch
+        {
+            Veldrid.Key.BackSpace => Keys.Backspace,
+            Veldrid.Key.Tab => Keys.Tab,
+            Veldrid.Key.Enter => Keys.Enter,
+            Veldrid.Key.ShiftLeft => Keys.Shift,
+            Veldrid.Key.ShiftRight => Keys.Shift,
+            Veldrid.Key.ControlLeft => Keys.Control,
+            Veldrid.Key.ControlRight => Keys.Control,
+            Veldrid.Key.AltLeft => Keys.Alt,
+            Veldrid.Key.AltRight => Keys.Alt,
+            Veldrid.Key.Pause => Keys.Pause,
+            Veldrid.Key.CapsLock => Keys.CapsLock,
+            Veldrid.Key.Escape => Keys.Escape,
+            Veldrid.Key.Space => Keys.Space,
+            Veldrid.Key.PageUp => Keys.PageUp,
+            Veldrid.Key.PageDown => Keys.PageDown,
+            Veldrid.Key.End => Keys.End,
+            Veldrid.Key.Home => Keys.Home,
+            Veldrid.Key.Left => Keys.LeftArrow,
+            Veldrid.Key.Up => Keys.UpArrow,
+            Veldrid.Key.Right => Keys.RightArrow,
+            Veldrid.Key.Down => Keys.DownArrow,
+            Veldrid.Key.Insert => Keys.Insert,
+            Veldrid.Key.Delete => Keys.Delete,
+            Veldrid.Key.Number0 => Keys.D0,
+            Veldrid.Key.Number1 => Keys.D1,
+            Veldrid.Key.Number2 => Keys.D2,
+            Veldrid.Key.Number3 => Keys.D3,
+            Veldrid.Key.Number4 => Keys.D4,
+            Veldrid.Key.Number5 => Keys.D5,
+            Veldrid.Key.Number6 => Keys.D6,
+            Veldrid.Key.Number7 => Keys.D7,
+            Veldrid.Key.Number8 => Keys.D8,
+            Veldrid.Key.Number9 => Keys.D9,
+            Veldrid.Key.A => Keys.A,
+            Veldrid.Key.B => Keys.B,
+            Veldrid.Key.C => Keys.C,
+            Veldrid.Key.D => Keys.D,
+            Veldrid.Key.E => Keys.E,
+            Veldrid.Key.F => Keys.F,
+            Veldrid.Key.G => Keys.G,
+            Veldrid.Key.H => Keys.H,
+            Veldrid.Key.I => Keys.I,
+            Veldrid.Key.J => Keys.J,
+            Veldrid.Key.K => Keys.K,
+            Veldrid.Key.L => Keys.L,
+            Veldrid.Key.M => Keys.M,
+            Veldrid.Key.N => Keys.N,
+            Veldrid.Key.O => Keys.O,
+            Veldrid.Key.P => Keys.P,
+            Veldrid.Key.Q => Keys.Q,
+            Veldrid.Key.R => Keys.R,
+            Veldrid.Key.S => Keys.S,
+            Veldrid.Key.T => Keys.T,
+            Veldrid.Key.U => Keys.U,
+            Veldrid.Key.V => Keys.V,
+            Veldrid.Key.W => Keys.W,
+            Veldrid.Key.X => Keys.X,
+            Veldrid.Key.Y => Keys.Y,
+            Veldrid.Key.Z => Keys.Z,
+            Veldrid.Key.F1 => Keys.F1,
+            Veldrid.Key.F2 => Keys.F2,
+            Veldrid.Key.F3 => Keys.F3,
+            Veldrid.Key.F4 => Keys.F4,
+            Veldrid.Key.F5 => Keys.F5,
+            Veldrid.Key.F6 => Keys.F6,
+            Veldrid.Key.F7 => Keys.F7,
+            Veldrid.Key.F8 => Keys.F8,
+            Veldrid.Key.F9 => Keys.F9,
+            Veldrid.Key.F10 => Keys.F10,
+            Veldrid.Key.F11 => Keys.F11,
+            Veldrid.Key.F12 => Keys.F12,
+            Veldrid.Key.LWin => Keys.LeftWindows,
+            Veldrid.Key.RWin => Keys.RightWindows,
+            Veldrid.Key.Menu => Keys.Menu,
+            _ => Keys.Unknown,
+        };
     }
 
     /// <summary>

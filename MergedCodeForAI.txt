@@ -502,13 +502,13 @@ global using Color = DirectUI.Drawing.Color;
 </file>
 
 <file path="GraphicsBackend.cs">
-namespace DirectUI
+namespace DirectUI;
+
+public enum GraphicsBackend
 {
-    public enum GraphicsBackend
-    {
-        Direct2D,
-        Raylib
-    }
+    Direct2D,
+    Raylib,
+    Vulkan
 }
 </file>
 
@@ -4140,6 +4140,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using Raylib_cs; // Added for Raylib backend
+using Veldrid; // Added for Veldrid backend
 
 namespace DirectUI.Input;
 
@@ -4265,6 +4266,49 @@ public class InputManager
     }
 
     /// <summary>
+    /// Processes Veldrid-specific input events and updates the internal state.
+    /// This method should be called once per frame when using the Veldrid backend.
+    /// </summary>
+    public void ProcessVeldridInput(Veldrid.InputSnapshot snapshot)
+    {
+        SetMousePosition((int)snapshot.MousePosition.X, (int)snapshot.MousePosition.Y);
+        AddMouseWheelDelta(snapshot.WheelDelta);
+
+        foreach (var keyEvent in snapshot.KeyEvents)
+        {
+            Keys mappedKey = MapVeldridKeyToDirectUIKey(keyEvent.Key);
+            if (mappedKey == Keys.Unknown) continue;
+
+            if (keyEvent.Down)
+            {
+                AddKeyPressed(mappedKey);
+            }
+            else
+            {
+                AddKeyReleased(mappedKey);
+            }
+        }
+
+        foreach (var mouseEvent in snapshot.MouseEvents)
+        {
+            MouseButton mappedButton = MapVeldridMouseButtonToDirectUIButton(mouseEvent.MouseButton);
+            if (mouseEvent.Down)
+            {
+                SetMouseDown(mappedButton);
+            }
+            else
+            {
+                SetMouseUp(mappedButton);
+            }
+        }
+
+        foreach (char c in snapshot.TypedCharacters)
+        {
+            AddCharacterInput(c);
+        }
+    }
+
+    /// <summary>
     /// Processes Raylib-specific input events and updates the internal state.
     /// This method should be called once per frame when using the Raylib backend.
     /// </summary>
@@ -4305,6 +4349,108 @@ public class InputManager
             AddCharacterInput((char)charValue);
             charValue = Raylib.GetCharPressed();
         }
+    }
+
+    /// <summary>
+    /// Maps a Veldrid MouseButton enum to a DirectUI MouseButton enum.
+    /// </summary>
+    private static MouseButton MapVeldridMouseButtonToDirectUIButton(Veldrid.MouseButton vdButton)
+    {
+        return vdButton switch
+        {
+            Veldrid.MouseButton.Left => MouseButton.Left,
+            Veldrid.MouseButton.Right => MouseButton.Right,
+            Veldrid.MouseButton.Middle => MouseButton.Middle,
+            Veldrid.MouseButton.Button1 => MouseButton.XButton1, // Assuming Button1 is XButton1
+            Veldrid.MouseButton.Button2 => MouseButton.XButton2, // Assuming Button2 is XButton2
+            _ => MouseButton.Left, // Default case
+        };
+    }
+
+
+    /// <summary>
+    /// Maps a Veldrid Key enum to a DirectUI Keys enum.
+    /// </summary>
+    private static Keys MapVeldridKeyToDirectUIKey(Veldrid.Key vdKey)
+    {
+        return vdKey switch
+        {
+            Veldrid.Key.Backspace => Keys.Backspace,
+            Veldrid.Key.Tab => Keys.Tab,
+            Veldrid.Key.Enter => Keys.Enter,
+            Veldrid.Key.ShiftLeft => Keys.Shift,
+            Veldrid.Key.ShiftRight => Keys.Shift,
+            Veldrid.Key.ControlLeft => Keys.Control,
+            Veldrid.Key.ControlRight => Keys.Control,
+            Veldrid.Key.AltLeft => Keys.Alt,
+            Veldrid.Key.AltRight => Keys.Alt,
+            Veldrid.Key.Pause => Keys.Pause,
+            Veldrid.Key.CapsLock => Keys.CapsLock,
+            Veldrid.Key.Escape => Keys.Escape,
+            Veldrid.Key.Space => Keys.Space,
+            Veldrid.Key.PageUp => Keys.PageUp,
+            Veldrid.Key.PageDown => Keys.PageDown,
+            Veldrid.Key.End => Keys.End,
+            Veldrid.Key.Home => Keys.Home,
+            Veldrid.Key.Left => Keys.LeftArrow,
+            Veldrid.Key.Up => Keys.UpArrow,
+            Veldrid.Key.Right => Keys.RightArrow,
+            Veldrid.Key.Down => Keys.DownArrow,
+            Veldrid.Key.Insert => Keys.Insert,
+            Veldrid.Key.Delete => Keys.Delete,
+            Veldrid.Key.Number0 => Keys.D0,
+            Veldrid.Key.Number1 => Keys.D1,
+            Veldrid.Key.Number2 => Keys.D2,
+            Veldrid.Key.Number3 => Keys.D3,
+            Veldrid.Key.Number4 => Keys.D4,
+            Veldrid.Key.Number5 => Keys.D5,
+            Veldrid.Key.Number6 => Keys.D6,
+            Veldrid.Key.Number7 => Keys.D7,
+            Veldrid.Key.Number8 => Keys.D8,
+            Veldrid.Key.Number9 => Keys.D9,
+            Veldrid.Key.A => Keys.A,
+            Veldrid.Key.B => Keys.B,
+            Veldrid.Key.C => Keys.C,
+            Veldrid.Key.D => Keys.D,
+            Veldrid.Key.E => Keys.E,
+            Veldrid.Key.F => Keys.F,
+            Veldrid.Key.G => Keys.G,
+            Veldrid.Key.H => Keys.H,
+            Veldrid.Key.I => Keys.I,
+            Veldrid.Key.J => Keys.J,
+            Veldrid.Key.K => Keys.K,
+            Veldrid.Key.L => Keys.L,
+            Veldrid.Key.M => Keys.M,
+            Veldrid.Key.N => Keys.N,
+            Veldrid.Key.O => Keys.O,
+            Veldrid.Key.P => Keys.P,
+            Veldrid.Key.Q => Keys.Q,
+            Veldrid.Key.R => Keys.R,
+            Veldrid.Key.S => Keys.S,
+            Veldrid.Key.T => Keys.T,
+            Veldrid.Key.U => Keys.U,
+            Veldrid.Key.V => Keys.V,
+            Veldrid.Key.W => Keys.W,
+            Veldrid.Key.X => Keys.X,
+            Veldrid.Key.Y => Keys.Y,
+            Veldrid.Key.Z => Keys.Z,
+            Veldrid.Key.F1 => Keys.F1,
+            Veldrid.Key.F2 => Keys.F2,
+            Veldrid.Key.F3 => Keys.F3,
+            Veldrid.Key.F4 => Keys.F4,
+            Veldrid.Key.F5 => Keys.F5,
+            Veldrid.Key.F6 => Keys.F6,
+            Veldrid.Key.F7 => Keys.F7,
+            Veldrid.Key.F8 => Keys.F8,
+            Veldrid.Key.F9 => Keys.F9,
+            Veldrid.Key.F10 => Keys.F10,
+            Veldrid.Key.F11 => Keys.F11,
+            Veldrid.Key.F12 => Keys.F12,
+            Veldrid.Key.LWin => Keys.LeftWindows,
+            Veldrid.Key.RWin => Keys.RightWindows,
+            Veldrid.Key.Menu => Keys.Menu,
+            _ => Keys.Unknown,
+        };
     }
 
     /// <summary>
@@ -4600,6 +4746,14 @@ public enum Keys
     F11 = 0x7A,
     /// <summary>The F12 key.</summary>
     F12 = 0x7B,
+
+    // Special Keys
+    /// <summary>The left Windows logo key (Microsoft Natural Keyboard).</summary>
+    LeftWindows = 0x5B,
+    /// <summary>The right Windows logo key (Microsoft Natural Keyboard).</summary>
+    RightWindows = 0x5C,
+    /// <summary>The Application key (Microsoft Natural Keyboard).</summary>
+    Menu = 0x5D,
 }
 </file>
 
@@ -7187,9 +7341,432 @@ public class RaylibTextService : ITextService
 }
 </file>
 
+<file path="Backends\Vulkan\VeldridRenderer.cs">
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Text;
+using DirectUI.Core;
+using Veldrid;
+using Vortice.Direct2D1;
+using Rect = Vortice.Mathematics.Rect;
+
+namespace DirectUI.Backends.Vulkan;
+
+public class VeldridRenderer : IRenderer
+{
+    private readonly Veldrid.GraphicsDevice _gd;
+    private readonly CommandList _cl;
+    private readonly Pipeline _pipeline;
+    private readonly ResourceLayout _projMatrixLayout;
+    private readonly ResourceSet _projMatrixSet;
+    private readonly DeviceBuffer _projMatrixBuffer;
+    private readonly DeviceBuffer _vertexBuffer;
+    private readonly DeviceBuffer _indexBuffer;
+    private readonly uint _vertexBufferSize = 2048;
+    private readonly uint _indexBufferSize = 4096;
+
+    public Vector2 RenderTargetSize
+    {
+        get
+        {
+            return new(
+                _gd.MainSwapchain.Framebuffer.Width,
+                _gd.MainSwapchain.Framebuffer.Height);
+        }
+    }
+
+    public VeldridRenderer(Veldrid.GraphicsDevice gd, CommandList cl)
+    {
+        _gd = gd;
+        _cl = cl;
+
+        // Create resources
+        _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
+        _indexBuffer = _gd.ResourceFactory.CreateBuffer(new(_indexBufferSize, BufferUsage.IndexBuffer | BufferUsage.Dynamic));
+        _projMatrixBuffer = _gd.ResourceFactory.CreateBuffer(new((uint)Unsafe.SizeOf<Matrix4x4>(), BufferUsage.UniformBuffer | BufferUsage.Dynamic));
+
+        _projMatrixLayout = _gd.ResourceFactory.CreateResourceLayout(
+            new(
+                new ResourceLayoutElementDescription("ProjectionMatrix", ResourceKind.UniformBuffer, ShaderStages.Vertex)
+            )
+        );
+
+        _projMatrixSet = _gd.ResourceFactory.CreateResourceSet(
+            new ResourceSetDescription(_projMatrixLayout, _projMatrixBuffer)
+        );
+
+        ShaderDescription vertexShaderDesc = new(ShaderStages.Vertex, Encoding.UTF8.GetBytes(VeldridShaders.FlatVertexShader), "main");
+        ShaderDescription fragmentShaderDesc = new(ShaderStages.Fragment, Encoding.UTF8.GetBytes(VeldridShaders.FlatFragmentShader), "main");
+
+        var vertexShader = _gd.ResourceFactory.CreateShader(vertexShaderDesc);
+        var fragmentShader = _gd.ResourceFactory.CreateShader(fragmentShaderDesc);
+        Shader[] shaders = { vertexShader, fragmentShader };
+
+        GraphicsPipelineDescription pipelineDesc = new()
+        {
+            BlendState = BlendStateDescription.SingleAlphaBlend,
+            DepthStencilState = DepthStencilStateDescription.Disabled,
+            RasterizerState = RasterizerStateDescription.Default,
+            PrimitiveTopology = PrimitiveTopology.TriangleList,
+            ResourceLayouts = [_projMatrixLayout],
+            ShaderSet = new ShaderSetDescription(
+                [
+                    new VertexLayoutDescription(
+                        (uint)Unsafe.SizeOf<VertexPositionColor>(),
+                        new VertexElementDescription("a_position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2),
+                        new VertexElementDescription("a_color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4)
+                    )
+                ],
+                shaders
+            ),
+            Outputs = _gd.MainSwapchain.Framebuffer.OutputDescription
+        };
+
+        _pipeline = _gd.ResourceFactory.CreateGraphicsPipeline(pipelineDesc);
+
+        vertexShader.Dispose();
+        fragmentShader.Dispose();
+    }
+
+    public void BeginFrame()
+    {
+        var projectionMatrix = Matrix4x4.CreateOrthographicOffCenter(
+            0,
+            _gd.MainSwapchain.Framebuffer.Width,
+            _gd.MainSwapchain.Framebuffer.Height,
+            0,
+            -1.0f,
+            1.0f);
+
+        _cl.UpdateBuffer(_projMatrixBuffer, 0, ref projectionMatrix);
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
+    {
+        // TODO: Implement line drawing, e.g., by creating a thin quad.
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        Vortice.Mathematics.Color4 fillColor = style.FillColor;
+
+        VertexPositionColor[] vertices =
+        [
+            new(new(rect.Left, rect.Top), fillColor),
+            new(new(rect.Right, rect.Top), fillColor),
+            new(new(rect.Right, rect.Bottom), fillColor),
+            new(new(rect.Left, rect.Bottom), fillColor),
+        ];
+
+        ushort[] indices = [0, 1, 2, 0, 2, 3];
+
+        _cl.UpdateBuffer(_vertexBuffer, 0, vertices);
+        _cl.UpdateBuffer(_indexBuffer, 0, indices);
+
+        _cl.SetVertexBuffer(0, _vertexBuffer);
+        _cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
+        _cl.SetPipeline(_pipeline);
+        _cl.SetGraphicsResourceSet(0, _projMatrixSet);
+
+        _cl.DrawIndexed(
+            indexCount: (uint)indices.Length,
+            instanceCount: 1,
+            indexStart: 0,
+            vertexOffset: 0,
+            instanceStart: 0);
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
+    {
+        // Placeholder: a full implementation needs a font atlas texture, a different pipeline/shader,
+        // and logic to generate vertices for each character quad.
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        _cl.SetScissorRect(
+            0,
+            (uint)rect.X,
+            (uint)rect.Y,
+            (uint)rect.Width,
+            (uint)rect.Height);
+    }
+
+    public void PopClipRect()
+    {
+        _cl.SetScissorRect(
+            0,
+            0,
+            0,
+            _gd.MainSwapchain.Framebuffer.Width,
+            _gd.MainSwapchain.Framebuffer.Height);
+    }
+
+    public void Cleanup()
+    {
+        _pipeline.Dispose();
+        _projMatrixLayout.Dispose();
+        _projMatrixSet.Dispose();
+        _projMatrixBuffer.Dispose();
+        _vertexBuffer.Dispose();
+        _indexBuffer.Dispose();
+    }
+}
+</file>
+
+<file path="Backends\Vulkan\VeldridShaders.cs">
+namespace DirectUI.Backends.Vulkan;
+
+public static class VeldridShaders
+{
+    public const string FlatVertexShader = @"
+#version 450
+layout(location = 0) in vec2 a_position;
+layout(location = 1) in vec4 a_color;
+
+layout(set = 0, binding = 0) uniform ProjectionMatrix
+{
+    mat4 u_matrix;
+};
+
+layout(location = 0) out vec4 v_color;
+
+void main()
+{
+    gl_Position = u_matrix * vec4(a_position, 0.0, 1.0);
+    v_color = a_color;
+}";
+
+    public const string FlatFragmentShader = @"
+#version 450
+layout(location = 0) in vec4 v_color;
+layout(location = 0) out vec4 o_color;
+
+void main()
+{
+    o_color = v_color;
+}";
+
+    public const string TexturedVertexShader = @"
+#version 450
+layout(location = 0) in vec2 a_position;
+layout(location = 1) in vec2 a_texCoord;
+
+layout(set = 0, binding = 0) uniform ProjectionMatrix
+{
+    mat4 u_matrix;
+};
+
+layout(location = 0) out vec2 v_texCoord;
+
+void main()
+{
+    gl_Position = u_matrix * vec4(a_position, 0.0, 1.0);
+    v_texCoord = a_texCoord;
+}";
+
+    public const string TexturedFragmentShader = @"
+#version 450
+layout(location = 0) in vec2 v_texCoord;
+
+layout(set = 1, binding = 0) uniform texture2D u_texture;
+layout(set = 1, binding = 1) uniform sampler u_sampler;
+
+layout(location = 0) out vec4 o_color;
+
+void main()
+{
+    o_color = texture(sampler2D(u_texture, u_sampler), v_texCoord);
+}";
+}
+</file>
+
+<file path="Backends\Vulkan\VeldridTextService.cs">
+using System.Numerics;
+using DirectUI.Core;
+
+namespace DirectUI.Backends.Vulkan;
+
+/// <summary>
+/// A Veldrid-specific implementation of the ITextService interface.
+/// NOTE: This is a placeholder implementation. A real implementation would require
+/// a font rasterizer (like StbTrueTypeSharp) to generate a font atlas texture.
+/// </summary>
+public class VeldridTextService : ITextService
+{
+    public VeldridTextService() { }
+
+    public Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return Vector2.Zero;
+        }
+        // Placeholder: return a rough estimate based on character count and font size.
+        return new Vector2(text.Length * style.FontSize * 0.6f, style.FontSize);
+    }
+
+    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+    {
+        // Placeholder: returns null. A full implementation would create a layout object
+        // with metrics derived from a real font atlas.
+        return null!;
+    }
+
+    public void Cleanup()
+    {
+        // No resources to clean up in this placeholder implementation.
+    }
+}
+</file>
+
+<file path="Backends\Vulkan\VeldridUIHost.cs">
+using System;
+using System.Diagnostics;
+using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Diagnostics;
+using DirectUI.Input;
+using Veldrid;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends.Vulkan;
+
+/// <summary>
+/// Manages the application's rendering lifecycle for the Veldrid backend.
+/// This is the Veldrid equivalent of AppHost.
+/// </summary>
+public class VeldridUIHost
+{
+    private readonly Action<UIContext> _drawCallback;
+    private readonly Color4 _backgroundColor;
+    private readonly Veldrid.GraphicsDevice _gd;
+    private readonly CommandList _cl;
+
+    private readonly FpsCounter _fpsCounter;
+    private readonly InputManager _inputManager;
+    private readonly Stopwatch _frameTimer = new();
+    private long _lastFrameTicks;
+
+    private VeldridRenderer? _renderer;
+    private VeldridTextService? _textService;
+
+    public bool ShowFpsCounter { get; set; } = true;
+    public InputManager Input => _inputManager;
+
+    public VeldridUIHost(Action<UIContext> drawCallback, Color4 backgroundColor, Veldrid.GraphicsDevice gd)
+    {
+        _drawCallback = drawCallback;
+        _backgroundColor = backgroundColor;
+        _gd = gd;
+        _cl = gd.ResourceFactory.CreateCommandList();
+
+        _fpsCounter = new FpsCounter();
+        _inputManager = new InputManager();
+
+        _frameTimer.Start();
+        _lastFrameTicks = _frameTimer.ElapsedTicks;
+    }
+
+    public bool Initialize()
+    {
+        _renderer = new VeldridRenderer(_gd, _cl);
+        _textService = new VeldridTextService();
+        _fpsCounter.Initialize(_textService, _renderer);
+        return true;
+    }
+
+    public void Cleanup()
+    {
+        _fpsCounter.Cleanup();
+        _renderer?.Cleanup();
+        _textService?.Cleanup();
+        _cl.Dispose();
+    }
+
+    public void Resize(uint width, uint height)
+    {
+        _gd.ResizeMainWindow(width, height);
+    }
+
+    public void Render()
+    {
+        if (UI.IsRendering) return;
+        if (_renderer is null || _textService is null) return;
+
+        long currentTicks = _frameTimer.ElapsedTicks;
+        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
+        _lastFrameTicks = currentTicks;
+        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
+
+        _fpsCounter.Update();
+
+        _cl.Begin();
+        _cl.SetFramebuffer(_gd.MainSwapchain.Framebuffer);
+
+        var clearColor = new RgbaFloat(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+        _cl.ClearColorTarget(0, clearColor);
+
+        try
+        {
+            _renderer.BeginFrame();
+
+            var inputState = _inputManager.GetCurrentState();
+            var uiContext = new UIContext(_renderer, _textService, inputState, deltaTime);
+            UI.BeginFrame(uiContext);
+
+            _drawCallback(uiContext);
+
+            if (ShowFpsCounter)
+            {
+                _fpsCounter.Draw();
+            }
+
+            UI.EndFrame();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during Veldrid drawing: {ex}");
+        }
+        finally
+        {
+            _cl.End();
+            _gd.SubmitCommands(_cl);
+            _gd.SwapBuffers();
+            _inputManager.PrepareNextFrame();
+        }
+    }
+}
+</file>
+
+<file path="Backends\Vulkan\VertexPositionColor.cs">
+using System.Numerics;
+using System.Runtime.InteropServices;
+
+namespace DirectUI.Backends.Vulkan;
+
+[StructLayout(LayoutKind.Sequential, Pack = 4)]
+public struct VertexPositionColor
+{
+    public Vector2 Position;
+    public Vector4 Color;
+
+    public VertexPositionColor(Vector2 position, Vector4 color)
+    {
+        Position = position;
+        Color = color;
+    }
+}
+</file>
+
 <file path="ApplicationRunner.cs">
 using DirectUI;
+using DirectUI.Backends.Vulkan;
 using Raylib_cs;
+using Veldrid;
+using Veldrid.Sdl2;
+using Veldrid.StartupUtilities;
+using GraphicsBackend = DirectUI.GraphicsBackend;
 
 namespace Cocoshell;
 
@@ -7205,6 +7782,9 @@ public static class ApplicationRunner
             case GraphicsBackend.Direct2D:
                 RunDirect2D();
                 break;
+            case GraphicsBackend.Vulkan:
+                RunVulkan();
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(backend), backend, null);
         }
@@ -7213,9 +7793,9 @@ public static class ApplicationRunner
     private static void RunRaylib()
     {
         Console.WriteLine("Using Raylib Backend.");
-        
+
         using MyDirectUIApp app = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
-        
+
         if (app.Create())
         {
             while (!Raylib.WindowShouldClose())
@@ -7234,7 +7814,7 @@ public static class ApplicationRunner
         Console.WriteLine("Using Direct2D Backend.");
 
         using MyDirectUIApp appWindow = new("My Refactored D2D App", 1024, 768, GraphicsBackend.Direct2D);
-        
+
         try
         {
             if (appWindow.Create())
@@ -7246,6 +7826,60 @@ public static class ApplicationRunner
         {
             Console.WriteLine($"Unhandled exception in D2D Run: {ex}");
         }
+    }
+
+    private static void RunVulkan()
+    {
+        Console.WriteLine("Using Vulkan (Veldrid) Backend.");
+        
+        WindowCreateInfo windowCI = new()
+        {
+            X = 100,
+            Y = 100,
+            WindowWidth = 1024,
+            WindowHeight = 768,
+            WindowTitle = "My Veldrid App"
+        };
+
+        Sdl2Window window = VeldridStartup.CreateWindow(ref windowCI);
+
+        GraphicsDeviceOptions options = new(false, null, true, ResourceBindingModel.Improved, true, true);
+        Veldrid.GraphicsDevice gd = VeldridStartup.CreateGraphicsDevice(window, options, Veldrid.GraphicsBackend.Vulkan);
+
+        using MyDirectUIApp appLogic = new("Veldrid App Logic", 1024, 768, GraphicsBackend.Vulkan);
+
+        Vortice.Mathematics.Color4 backgroundColor = new(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
+        VeldridUIHost host = new(appLogic.DrawUI, backgroundColor, gd);
+        
+        host.Initialize();
+
+        window.Resized += () => host.Resize((uint)window.Width, (uint)window.Height);
+
+        while (window.Exists)
+        {
+            InputSnapshot snapshot = window.PumpEvents();
+            
+            if (!window.Exists)
+            {
+                break;
+            }
+
+            host.Input.ProcessVeldridInput(snapshot);
+
+            foreach (KeyEvent keyEvent in snapshot.KeyEvents)
+            {
+                if (keyEvent.Key == Veldrid.Key.F3 && keyEvent.Down)
+                {
+                    host.ShowFpsCounter = !host.ShowFpsCounter;
+                }
+            }
+
+            host.Render();
+        }
+
+        host.Cleanup();
+        gd.Dispose();
+        window.Close();
     }
 }
 </file>
@@ -7685,10 +8319,9 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     /// </summary>
     public bool Create()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan)
         {
-            // For Raylib, we bypass the base Create and call Initialize directly
-            // which handles Raylib.InitWindow.
+            // For Raylib and Vulkan, we bypass the base Create and call Initialize directly
             return Initialize();
         }
         else
@@ -7703,46 +8336,46 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     // The AppHost will handle the Raylib window management.
     protected override bool Initialize()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        switch (_backend)
         {
-            // For Raylib, the window is created/managed by Raylib-cs directly, not Win32Window.
-            // We just need to initialize AppHost.
-            Console.WriteLine("Initializing with Raylib backend...");
+            case GraphicsBackend.Raylib:
+                Console.WriteLine("Initializing with Raylib backend...");
+                Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+                Raylib.InitWindow(Width, Height, Title);
+                Raylib.SetTargetFPS(60);
+                _appHost = CreateAppHost();
+                return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
 
-            // Enable MSAA 4X for smooth edges on geometry and fonts.
-            // This flag must be set *before* the window is initialized.
-            Raylib.SetConfigFlags(ConfigFlags.Msaa4xHint);
+            case GraphicsBackend.Vulkan:
+                // This logic is now handled by ApplicationRunner.
+                // The class instance is created, but its windowing is not used.
+                return true;
 
-            Raylib.InitWindow(Width, Height, Title);
-            Raylib.SetTargetFPS(60); // Control FPS for Raylib
-
-            // AppHost expects an IntPtr HWND even for Raylib.
-            // It will ignore it if _backend == GraphicsBackend.Raylib is true.
-            _appHost = CreateAppHost();
-            return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
-        }
-        else
-        {
-            Console.WriteLine("Direct2DAppWindow initializing...");
-            _appHost = CreateAppHost();
-            return _appHost.Initialize(Handle, GetClientRectSize());
+            case GraphicsBackend.Direct2D:
+            default:
+                return base.Initialize();
         }
     }
 
     protected override void Cleanup()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        switch (_backend)
         {
-            Console.WriteLine("RaylibAppWindow cleaning up its resources...");
-            _appHost?.Cleanup();
-            _appHost = null;
-            Raylib.CloseWindow(); // Close the Raylib window
-        }
-        else
-        {
-            Console.WriteLine("Direct2DAppWindow cleaning up its resources...");
-            _appHost?.Cleanup();
-            _appHost = null;
+            case GraphicsBackend.Raylib:
+                Console.WriteLine("RaylibAppWindow cleaning up its resources...");
+                _appHost?.Cleanup();
+                _appHost = null;
+                Raylib.CloseWindow();
+                break;
+
+            case GraphicsBackend.Vulkan:
+                // Nothing to do here, ApplicationRunner handles Veldrid cleanup.
+                break;
+
+            case GraphicsBackend.Direct2D:
+            default:
+                base.Cleanup();
+                break;
         }
     }
 
@@ -7758,24 +8391,27 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     public override void FrameUpdate()
     {
-        if (_backend == GraphicsBackend.Raylib)
+        switch (_backend)
         {
-            // For Raylib, Raylib.WindowShouldClose() is the equivalent of WM_QUIT.
-            if (Raylib.WindowShouldClose())
-            {
-                Application.Exit(); // Signal main loop to exit
-                return;
-            }
+            case GraphicsBackend.Raylib:
+                if (Raylib.WindowShouldClose())
+                {
+                    Application.Exit();
+                    return;
+                }
+                _appHost?.Input.ProcessRaylibInput();
+                _appHost?.Render();
+                break;
 
-            // Manually process input and render loop for Raylib
-            // Input is managed by Raylib directly, so we need to pump it into AppHost's InputManager.
-            _appHost?.Input.ProcessRaylibInput(); // Call the new method to update input state
-            _appHost?.Render(); // Render the UI for this frame
-        }
-        else
-        {
-            // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
-            Invalidate();
+            case GraphicsBackend.Vulkan:
+                // This is not called in the Veldrid loop.
+                break;
+
+            case GraphicsBackend.Direct2D:
+            default:
+                // For D2D, Invalidate is enough to trigger WM_PAINT for continuous loop.
+                Invalidate();
+                break;
         }
     }
 
@@ -7793,10 +8429,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
         if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
         if (key == Keys.F3)
         {
-            if (_appHost != null)
-            {
-                _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
-            }
+            if (_appHost != null) _appHost.ShowFpsCounter = !_appHost.ShowFpsCounter;
         }
     }
 
@@ -7834,7 +8467,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     /// The primary drawing callback for the main application window. It delegates
     /// drawing to the main view after handling any window state management.
     /// </summary>
-    private void DrawUI(UIContext context)
+    public void DrawUI(UIContext context)
     {
         ManageModalWindowState();
         _mainView.Draw(context, OpenProjectWindow);
@@ -7891,12 +8524,10 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     {
         if (_isProjectWindowOpen) return;
 
-        // For Raylib backend, modal windows are not handled by Win32Window directly.
-        // Implementing true modal behavior (disabling owner window, blocking loop) would
-        // require a different approach or a Raylib-specific modal window class.
-        if (_backend == GraphicsBackend.Raylib)
+        // For Raylib/Vulkan backends, modal windows are not handled by Win32Window directly.
+        if (_backend != GraphicsBackend.Direct2D)
         {
-            Console.WriteLine("Modal windows are not yet implemented for Raylib backend.");
+            Console.WriteLine($"Modal windows are not yet implemented for the {_backend} backend.");
             return;
         }
 
@@ -7915,7 +8546,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
     private void ManageModalWindowState()
     {
-        if (_backend == GraphicsBackend.Raylib) return; // Modal window management is D2D-specific
+        if (_backend != GraphicsBackend.Direct2D) return; // Modal window management is D2D-specific
 
         if (_projectWindow == null) return;
 
@@ -7953,8 +8584,9 @@ public class Program
     [STAThread]
     static void Main()
     {
-        var backend = GraphicsBackend.Raylib;
+        //var backend = GraphicsBackend.Raylib;
         //var backend = GraphicsBackend.Direct2D;
+        var backend = GraphicsBackend.Vulkan;
 
         ApplicationRunner.Run(backend);
     }
@@ -8431,32 +9063,48 @@ public class InspectorView
     private static void DrawPropertyEditor(Node node, PropertyInfo prop, object? value, float editorWidth)
     {
         string propId = $"prop_value_{prop.Name}";
+        var lineEditSize = new Vector2(editorWidth, 24); // Default size for editors
 
-        switch (value)
+        if (prop.PropertyType.IsEnum && prop.CanWrite)
         {
-            case bool b when prop.CanWrite:
-                bool isChecked = b;
-                if (UI.Checkbox(propId, "", ref isChecked, size: new Vector2(0, 24)))
-                {
-                    prop.SetValue(node, isChecked);
-                }
-                break;
+            string[] enumNames = Enum.GetNames(prop.PropertyType);
+            int selectedIndex = Array.IndexOf(enumNames, value?.ToString());
+            if (selectedIndex == -1) selectedIndex = 0; // Default to first if not found
 
-            case Vector2 v:
-                if (prop.CanWrite)
-                {
-                    DrawVector2Editor(node, prop, v, propId, editorWidth);
-                }
-                else
-                {
-                    UI.Button($"{propId}_display", $"X:{v.X:F2}, Y:{v.Y:F2}", size: new(editorWidth, 24), disabled: true);
-                }
-                break;
+            if (UI.Combobox(propId, ref selectedIndex, enumNames, lineEditSize))
+            {
+                object? newValue = Enum.ToObject(prop.PropertyType, selectedIndex);
+                prop.SetValue(node, newValue);
+            }
+        }
+        else
+        {
+            switch (value)
+            {
+                case bool b when prop.CanWrite:
+                    bool isChecked = b;
+                    if (UI.Checkbox(propId, "", ref isChecked, size: new Vector2(0, 24)))
+                    {
+                        prop.SetValue(node, isChecked);
+                    }
+                    break;
 
-            default:
-                string defaultString = value?.ToString() ?? "null";
-                UI.Button($"{propId}_display", defaultString, size: new(editorWidth, 24), disabled: true);
-                break;
+                case Vector2 v:
+                    if (prop.CanWrite)
+                    {
+                        DrawVector2Editor(node, prop, v, propId, editorWidth);
+                    }
+                    else
+                    {
+                        UI.Button($"{propId}_display", $"X:{v.X:F2}, Y:{v.Y:F2}", size: new(editorWidth, 24), disabled: true);
+                    }
+                    break;
+
+                default:
+                    string defaultString = value?.ToString() ?? "null";
+                    UI.Button($"{propId}_display", defaultString, size: new(editorWidth, 24), disabled: true);
+                    break;
+            }
         }
     }
 
