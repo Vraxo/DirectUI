@@ -678,7 +678,6 @@ public enum GraphicsBackend
 {
     Direct2D,
     Raylib,
-    Vulkan,
     SDL3
 }
 </file>
@@ -4276,7 +4275,7 @@ public class InputManager
         SetMousePosition((int)snapshot.MousePosition.X, (int)snapshot.MousePosition.Y);
         AddMouseWheelDelta(snapshot.WheelDelta);
 
-        foreach (var keyEvent in snapshot.KeyEvents)
+        foreach (Veldrid.KeyEvent keyEvent in snapshot.KeyEvents)
         {
             Keys mappedKey = MapVeldridKeyToDirectUIKey(keyEvent.Key);
             if (mappedKey == Keys.Unknown) continue;
@@ -4308,6 +4307,11 @@ public class InputManager
         {
             AddCharacterInput(c);
         }
+    }
+
+    private Keys MapVeldridKeyToDirectUIKey(Veldrid.Key key)
+    {
+        throw new NotImplementedException();
     }
 
     public void ProcessRaylibInput()
@@ -4354,11 +4358,11 @@ public class InputManager
         {
             case EventType.MouseButtonDown:
                 SetMousePosition((int)sdlEvent.Button.X, (int)sdlEvent.Button.Y); // Update position on click
-                SetMouseDown(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                SetMouseDown(MapSDL3MouseButtonToDirectUIButton(sdlEvent.Button.Button)); // Pass byte directly
                 break;
             case EventType.MouseButtonUp:
                 SetMousePosition((int)sdlEvent.Button.X, (int)sdlEvent.Button.Y); // Update position on release
-                SetMouseUp(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                SetMouseUp(MapSDL3MouseButtonToDirectUIButton(sdlEvent.Button.Button)); // Pass byte directly
                 break;
             case EventType.MouseMotion: // ADDED: Handle mouse motion to update position
                 SetMousePosition((int)sdlEvent.Motion.X, (int)sdlEvent.Motion.Y);
@@ -4402,88 +4406,6 @@ public class InputManager
             Veldrid.MouseButton.Button1 => MouseButton.XButton1, // Assuming Button1 is XButton1
             Veldrid.MouseButton.Button2 => MouseButton.XButton2, // Assuming Button2 is XButton2
             _ => MouseButton.Left, // Default case
-        };
-    }
-
-    private static Keys MapVeldridKeyToDirectUIKey(Veldrid.Key vdKey)
-    {
-        return vdKey switch
-        {
-            Veldrid.Key.BackSpace => Keys.Backspace,
-            Veldrid.Key.Tab => Keys.Tab,
-            Veldrid.Key.Enter => Keys.Enter,
-            Veldrid.Key.ShiftLeft => Keys.Shift,
-            Veldrid.Key.ShiftRight => Keys.Shift,
-            Veldrid.Key.ControlLeft => Keys.Control,
-            Veldrid.Key.ControlRight => Keys.Control,
-            Veldrid.Key.AltLeft => Keys.Alt,
-            Veldrid.Key.AltRight => Keys.Alt,
-            Veldrid.Key.Pause => Keys.Pause,
-            Veldrid.Key.CapsLock => Keys.CapsLock,
-            Veldrid.Key.Escape => Keys.Escape,
-            Veldrid.Key.Space => Keys.Space,
-            Veldrid.Key.PageUp => Keys.PageUp,
-            Veldrid.Key.PageDown => Keys.PageDown,
-            Veldrid.Key.End => Keys.End,
-            Veldrid.Key.Home => Keys.Home,
-            Veldrid.Key.Left => Keys.LeftArrow,
-            Veldrid.Key.Up => Keys.UpArrow,
-            Veldrid.Key.Right => Keys.RightArrow,
-            Veldrid.Key.Down => Keys.DownArrow,
-            Veldrid.Key.Insert => Keys.Insert,
-            Veldrid.Key.Delete => Keys.Delete,
-            Veldrid.Key.Number0 => Keys.D0,
-            Veldrid.Key.Number1 => Keys.D1,
-            Veldrid.Key.Number2 => Keys.D2,
-            Veldrid.Key.Number3 => Keys.D3,
-            Veldrid.Key.Number4 => Keys.D4,
-            Veldrid.Key.Number5 => Keys.D5,
-            Veldrid.Key.Number6 => Keys.D6,
-            Veldrid.Key.Number7 => Keys.D7,
-            Veldrid.Key.Number8 => Keys.D8,
-            Veldrid.Key.Number9 => Keys.D9,
-            Veldrid.Key.A => Keys.A,
-            Veldrid.Key.B => Keys.B,
-            Veldrid.Key.C => Keys.C,
-            Veldrid.Key.D => Keys.D,
-            Veldrid.Key.E => Keys.E,
-            Veldrid.Key.F => Keys.F,
-            Veldrid.Key.G => Keys.G,
-            Veldrid.Key.H => Keys.H,
-            Veldrid.Key.I => Keys.I,
-            Veldrid.Key.J => Keys.J,
-            Veldrid.Key.K => Keys.K,
-            Veldrid.Key.L => Keys.L,
-            Veldrid.Key.M => Keys.M,
-            Veldrid.Key.N => Keys.N,
-            Veldrid.Key.O => Keys.O,
-            Veldrid.Key.P => Keys.P,
-            Veldrid.Key.Q => Keys.Q,
-            Veldrid.Key.R => Keys.R,
-            Veldrid.Key.S => Keys.S,
-            Veldrid.Key.T => Keys.T,
-            Veldrid.Key.U => Keys.U,
-            Veldrid.Key.V => Keys.V,
-            Veldrid.Key.W => Keys.W,
-            Veldrid.Key.X => Keys.X,
-            Veldrid.Key.Y => Keys.Y,
-            Veldrid.Key.Z => Keys.Z,
-            Veldrid.Key.F1 => Keys.F1,
-            Veldrid.Key.F2 => Keys.F2,
-            Veldrid.Key.F3 => Keys.F3,
-            Veldrid.Key.F4 => Keys.F4,
-            Veldrid.Key.F5 => Keys.F5,
-            Veldrid.Key.F6 => Keys.F6,
-            Veldrid.Key.F7 => Keys.F7,
-            Veldrid.Key.F8 => Keys.F8,
-            Veldrid.Key.F9 => Keys.F9,
-            Veldrid.Key.F10 => Keys.F10,
-            Veldrid.Key.F11 => Keys.F11,
-            Veldrid.Key.F12 => Keys.F12,
-            Veldrid.Key.LWin => Keys.LeftWindows,
-            Veldrid.Key.RWin => Keys.RightWindows,
-            Veldrid.Key.Menu => Keys.Menu,
-            _ => Keys.Unknown,
         };
     }
 
@@ -4567,16 +4489,16 @@ public class InputManager
         };
     }
 
-    private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButtonFlags sdlButton)
+    private static MouseButton MapSDL3MouseButtonToDirectUIButton(byte sdlButton) // Changed parameter type to byte
     {
         return sdlButton switch
         {
-            MouseButtonFlags.Left => MouseButton.Left,
-            MouseButtonFlags.Right => MouseButton.Right,
-            MouseButtonFlags.Middle => MouseButton.Middle,
-            MouseButtonFlags.X1 => MouseButton.XButton1,
-            MouseButtonFlags.X2 => MouseButton.XButton2,
-            _ => MouseButton.Left, // Default case, though should ideally be unreachable
+            SDL.ButtonLeft => MouseButton.Left,
+            SDL.ButtonMiddle => MouseButton.Middle,
+            SDL.ButtonRight => MouseButton.Right,
+            SDL.ButtonX1 => MouseButton.XButton1,
+            SDL.ButtonX2 => MouseButton.XButton2,
+            _ => MouseButton.Left, // Fallback, though ideally all used buttons are mapped.
         };
     }
     private static Keys MapSDL3ScanCodeToDirectUIKey(Scancode sdlScancode)
@@ -8208,595 +8130,12 @@ public unsafe class SDL3UIHost
 }
 </file>
 
-<file path="Backends\Vulkan\VeldridRenderer.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
-using System.Runtime.CompilerServices;
-using System.Text;
-using DirectUI.Core;
-using SharpText.Core;
-using SharpText.Veldrid;
-using Veldrid;
-using Vortice.Direct2D1;
-using Rect = Vortice.Mathematics.Rect;
-
-namespace DirectUI.Backends.Vulkan;
-
-public class VeldridRenderer : IRenderer, IDisposable
-{
-    private readonly Veldrid.GraphicsDevice _gd;
-    private readonly CommandList _cl;
-    private readonly Pipeline _pipeline;
-    private readonly ResourceLayout _projMatrixLayout;
-    private readonly ResourceSet _projMatrixSet;
-    private readonly DeviceBuffer _projMatrixBuffer;
-    private readonly DeviceBuffer _vertexBuffer;
-    private readonly DeviceBuffer _indexBuffer;
-    private readonly uint _vertexBufferSize = 2048;
-    private readonly uint _indexBufferSize = 4096;
-
-    // Font is persistent. Renderer will be created transiently per-frame as a diagnostic.
-    private readonly SharpText.Core.Font _font;
-
-    // Batched text rendering state
-    private readonly struct BatchedText
-    {
-        public readonly Vector2 Origin;
-        public readonly string Text;
-        public readonly ButtonStyle Style;
-        public readonly Alignment Alignment;
-        public readonly Vector2 MaxSize;
-        public readonly Drawing.Color Color;
-
-        public BatchedText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
-        {
-            Origin = origin;
-            Text = text;
-            Style = style;
-            Alignment = alignment;
-            MaxSize = maxSize;
-            Color = color;
-        }
-    }
-    private readonly List<BatchedText> _textBatch = new();
-
-
-    public Vector2 RenderTargetSize
-    {
-        get
-        {
-            return new(
-                _gd.MainSwapchain.Framebuffer.Width,
-                _gd.MainSwapchain.Framebuffer.Height);
-        }
-    }
-
-    public VeldridRenderer(Veldrid.GraphicsDevice gd, CommandList cl)
-    {
-        _gd = gd;
-        _cl = cl;
-
-        // Create persistent font resource.
-        _font = new SharpText.Core.Font("C:/Windows/Fonts/consola.ttf", 16);
-
-        // Create resources for flat geometry
-        _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
-        _indexBuffer = _gd.ResourceFactory.CreateBuffer(new(_indexBufferSize, BufferUsage.IndexBuffer | BufferUsage.Dynamic));
-        _projMatrixBuffer = _gd.ResourceFactory.CreateBuffer(new((uint)Unsafe.SizeOf<Matrix4x4>(), BufferUsage.UniformBuffer | BufferUsage.Dynamic));
-
-        _projMatrixLayout = _gd.ResourceFactory.CreateResourceLayout(
-            new(
-                new ResourceLayoutElementDescription("ProjectionMatrix", ResourceKind.UniformBuffer, ShaderStages.Vertex)
-            )
-        );
-
-        _projMatrixSet = _gd.ResourceFactory.CreateResourceSet(
-            new ResourceSetDescription(_projMatrixLayout, _projMatrixBuffer)
-        );
-
-        ShaderDescription vertexShaderDesc = new(ShaderStages.Vertex, Encoding.UTF8.GetBytes(VeldridShaders.FlatVertexShader), "main");
-        ShaderDescription fragmentShaderDesc = new(ShaderStages.Fragment, Encoding.UTF8.GetBytes(VeldridShaders.FlatFragmentShader), "main");
-
-        var vertexShader = _gd.ResourceFactory.CreateShader(vertexShaderDesc);
-        var fragmentShader = _gd.ResourceFactory.CreateShader(fragmentShaderDesc);
-        Shader[] shaders = { vertexShader, fragmentShader };
-
-        GraphicsPipelineDescription pipelineDesc = new()
-        {
-            BlendState = BlendStateDescription.SingleAlphaBlend,
-            DepthStencilState = DepthStencilStateDescription.Disabled,
-            RasterizerState = RasterizerStateDescription.Default,
-            PrimitiveTopology = PrimitiveTopology.TriangleList,
-            ResourceLayouts = [_projMatrixLayout],
-            ShaderSet = new ShaderSetDescription(
-                [
-                    new VertexLayoutDescription(
-                        (uint)Unsafe.SizeOf<VertexPositionColor>(),
-                        new VertexElementDescription("a_position", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float2),
-                        new VertexElementDescription("a_color", VertexElementSemantic.TextureCoordinate, VertexElementFormat.Float4)
-                    )
-                ],
-                shaders
-            ),
-            Outputs = _gd.MainSwapchain.Framebuffer.OutputDescription
-        };
-
-        _pipeline = _gd.ResourceFactory.CreateGraphicsPipeline(pipelineDesc);
-
-        vertexShader.Dispose();
-        fragmentShader.Dispose();
-    }
-
-    public void BeginFrame()
-    {
-        var projectionMatrix = Matrix4x4.CreateOrthographicOffCenter(
-            0,
-            _gd.MainSwapchain.Framebuffer.Width,
-            _gd.MainSwapchain.Framebuffer.Height,
-            0,
-            -1.0f,
-            1.0f);
-
-        _cl.UpdateBuffer(_projMatrixBuffer, 0, ref projectionMatrix);
-    }
-
-    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
-    {
-        // TODO: Implement line drawing, e.g., by creating a thin quad.
-    }
-
-    public void DrawBox(Rect rect, BoxStyle style)
-    {
-        Vortice.Mathematics.Color4 fillColor = style.FillColor;
-
-        VertexPositionColor[] vertices =
-        [
-            new(new(rect.Left, rect.Top), fillColor),
-            new(new(rect.Right, rect.Top), fillColor),
-            new(new(rect.Right, rect.Bottom), fillColor),
-            new(new(rect.Left, rect.Bottom), fillColor),
-        ];
-
-        ushort[] indices = [0, 1, 2, 0, 2, 3];
-
-        _cl.UpdateBuffer(_vertexBuffer, 0, vertices);
-        _cl.UpdateBuffer(_indexBuffer, 0, indices);
-
-        _cl.SetVertexBuffer(0, _vertexBuffer);
-        _cl.SetIndexBuffer(_indexBuffer, IndexFormat.UInt16);
-        _cl.SetPipeline(_pipeline);
-        _cl.SetGraphicsResourceSet(0, _projMatrixSet);
-
-        _cl.DrawIndexed(
-            indexCount: (uint)indices.Length,
-            instanceCount: 1,
-            indexStart: 0,
-            vertexOffset: 0,
-            instanceStart: 0);
-    }
-
-    private Vector2 MeasureText(string text, ButtonStyle style)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return Vector2.Zero;
-        }
-
-        const float characterWidthApproximationFactor = 0.6f; // Heuristic value
-        float width = text.Length * style.FontSize * characterWidthApproximationFactor;
-        float height = style.FontSize;
-        return new Vector2(width, height);
-    }
-
-    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        // Add the text call to the batch to be processed later in Flush().
-        _textBatch.Add(new BatchedText(origin, text, style, alignment, maxSize, color));
-    }
-
-    public void Flush()
-    {
-        if (_textBatch.Count == 0)
-        {
-            return;
-        }
-
-        // DIAGNOSTIC: Create a new renderer each frame to get a clean state.
-        // DO NOT dispose it with `using` as its Dispose method appears to be broken
-        // and interferes with the shared CommandList, causing a black screen.
-        // This will leak memory and is not a permanent solution, but it tests
-        // if state accumulation is the cause of the visual degradation.
-        var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
-
-        foreach (var textCall in _textBatch)
-        {
-            Vector2 measuredSize = MeasureText(textCall.Text, textCall.Style);
-            Vector2 textDrawPos = textCall.Origin;
-
-            // Alignment logic
-            if (textCall.MaxSize.X > 0)
-            {
-                switch (textCall.Alignment.Horizontal)
-                {
-                    case HAlignment.Center: textDrawPos.X += (textCall.MaxSize.X - measuredSize.X) / 2f; break;
-                    case HAlignment.Right: textDrawPos.X += (textCall.MaxSize.X - measuredSize.X); break;
-                }
-            }
-            if (textCall.MaxSize.Y > 0)
-            {
-                switch (textCall.Alignment.Vertical)
-                {
-                    case VAlignment.Center: textDrawPos.Y += (textCall.MaxSize.Y - measuredSize.Y) / 2f; break;
-                    case VAlignment.Bottom: textDrawPos.Y += (textCall.MaxSize.Y - measuredSize.Y); break;
-                }
-            }
-
-            var sharpTextColor = new SharpText.Core.Color(textCall.Color.R, textCall.Color.G, textCall.Color.B, textCall.Color.A);
-            textRenderer.DrawText(textCall.Text, textDrawPos, sharpTextColor, 1);
-        }
-
-        // Issue a single draw call for all the text added in this frame.
-        textRenderer.Draw();
-
-        _textBatch.Clear();
-    }
-
-
-    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
-    {
-        _cl.SetScissorRect(
-            0,
-            (uint)rect.X,
-            (uint)rect.Y,
-            (uint)rect.Width,
-            (uint)rect.Height);
-    }
-
-    public void PopClipRect()
-    {
-        _cl.SetScissorRect(
-            0,
-            0,
-            0,
-            _gd.MainSwapchain.Framebuffer.Width,
-            _gd.MainSwapchain.Framebuffer.Height);
-    }
-
-    public void Cleanup()
-    {
-        _textBatch.Clear();
-        _pipeline.Dispose();
-        _projMatrixLayout.Dispose();
-        _projMatrixSet.Dispose();
-        _projMatrixBuffer.Dispose();
-        _vertexBuffer.Dispose();
-        _indexBuffer.Dispose();
-        // Do not dispose a transient text renderer here.
-    }
-
-    private bool _disposedValue;
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposedValue)
-        {
-            if (disposing)
-            {
-                Cleanup();
-            }
-            _disposedValue = true;
-        }
-    }
-    public void Dispose()
-    {
-        Dispose(disposing: true);
-        GC.SuppressFinalize(this);
-    }
-}
-</file>
-
-<file path="Backends\Vulkan\VeldridShaders.cs">
-namespace DirectUI.Backends.Vulkan;
-
-public static class VeldridShaders
-{
-    public const string FlatVertexShader = @"
-#version 450
-layout(location = 0) in vec2 a_position;
-layout(location = 1) in vec4 a_color;
-
-layout(set = 0, binding = 0) uniform ProjectionMatrix
-{
-    mat4 u_matrix;
-};
-
-layout(location = 0) out vec4 v_color;
-
-void main()
-{
-    gl_Position = u_matrix * vec4(a_position, 0.0, 1.0);
-    v_color = a_color;
-}";
-
-    public const string FlatFragmentShader = @"
-#version 450
-layout(location = 0) in vec4 v_color;
-layout(location = 0) out vec4 o_color;
-
-void main()
-{
-    o_color = v_color;
-}";
-
-    public const string TexturedVertexShader = @"
-#version 450
-layout(location = 0) in vec2 a_position;
-layout(location = 1) in vec2 a_texCoord;
-
-layout(set = 0, binding = 0) uniform ProjectionMatrix
-{
-    mat4 u_matrix;
-};
-
-layout(location = 0) out vec2 v_texCoord;
-
-void main()
-{
-    gl_Position = u_matrix * vec4(a_position, 0.0, 1.0);
-    v_texCoord = a_texCoord;
-}";
-
-    public const string TexturedFragmentShader = @"
-#version 450
-layout(location = 0) in vec2 v_texCoord;
-
-layout(set = 1, binding = 0) uniform texture2D u_texture;
-layout(set = 1, binding = 1) uniform sampler u_sampler;
-
-layout(location = 0) out vec4 o_color;
-
-void main()
-{
-    o_color = texture(sampler2D(u_texture, u_sampler), v_texCoord);
-}";
-}
-</file>
-
-<file path="Backends\Vulkan\VeldridTextService.cs">
-using System;
-using System.Numerics;
-using DirectUI.Core;
-using Veldrid;
-
-namespace DirectUI.Backends.Vulkan;
-
-/// <summary>
-/// A Veldrid-specific implementation of the ITextService interface using SharpText.
-/// </summary>
-public class VeldridTextService : ITextService, IDisposable
-{
-    private bool _disposed;
-
-    // The service now takes a GraphicsDevice to create its own text renderer for measurements.
-    public VeldridTextService(GraphicsDevice gd)
-    {
-        // The VeldridTextRenderer is not instantiated here as it's not used by the placeholder
-        // measurement logic and this service lacks the required CommandList and Font.
-    }
-
-    public Vector2 MeasureText(string text, ButtonStyle style)
-    {
-        if (string.IsNullOrEmpty(text))
-        {
-            return Vector2.Zero;
-        }
-
-        // Placeholder implementation since SharpText.Veldrid seems to lack a public MeasureText method.
-        // This provides a rough estimate for layout purposes.
-        // A more accurate implementation would require access to font metrics from SharpText.
-        const float characterWidthApproximationFactor = 0.6f; // Heuristic value
-        float width = text.Length * style.FontSize * characterWidthApproximationFactor;
-        float height = style.FontSize;
-        return new Vector2(width, height);
-    }
-
-    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
-    {
-        // SharpText may not provide a detailed layout object for hit-testing.
-        // Returning null is consistent with the previous placeholder behavior.
-        return null!;
-    }
-
-    public void Cleanup()
-    {
-        Dispose(true);
-        GC.SuppressFinalize(this);
-    }
-
-    protected virtual void Dispose(bool disposing)
-    {
-        if (!_disposed)
-        {
-            if (disposing)
-            {
-                // Nothing to dispose
-            }
-            _disposed = true;
-        }
-    }
-
-    public void Dispose()
-    {
-        Cleanup();
-    }
-}
-</file>
-
-<file path="Backends\Vulkan\VeldridUIHost.cs">
-using DirectUI.Backends.Vulkan;
-using DirectUI.Diagnostics;
-using DirectUI.Input;
-using System.Diagnostics;
-using System;
-using Veldrid;
-using Vortice.Mathematics;
-
-using System;
-using System.Diagnostics;
-using System.Numerics;
-using DirectUI.Core;
-using DirectUI.Diagnostics;
-using DirectUI.Input;
-using Veldrid;
-using Vortice.Mathematics;
-
-namespace DirectUI.Backends.Vulkan;
-
-/// <summary>
-/// Manages the application's rendering lifecycle for the Veldrid backend.
-/// This is the Veldrid equivalent of AppHost.
-/// </summary>
-public class VeldridUIHost
-{
-    private readonly Action<UIContext> _drawCallback;
-    private readonly Color4 _backgroundColor;
-    private readonly Veldrid.GraphicsDevice _gd;
-    private readonly CommandList _cl;
-
-    private readonly FpsCounter _fpsCounter;
-    private readonly InputManager _inputManager;
-    private readonly Stopwatch _frameTimer = new();
-    private long _lastFrameTicks;
-
-    private VeldridRenderer? _renderer;
-    private VeldridTextService? _textService;
-
-    public bool ShowFpsCounter { get; set; } = true;
-    public InputManager Input => _inputManager;
-
-    public VeldridUIHost(Action<UIContext> drawCallback, Color4 backgroundColor, Veldrid.GraphicsDevice gd)
-    {
-        _drawCallback = drawCallback;
-        _backgroundColor = backgroundColor;
-        _gd = gd;
-        _cl = gd.ResourceFactory.CreateCommandList();
-
-        _fpsCounter = new FpsCounter();
-        _inputManager = new InputManager();
-
-        _frameTimer.Start();
-        _lastFrameTicks = _frameTimer.ElapsedTicks;
-    }
-
-    public bool Initialize()
-    {
-        _renderer = new VeldridRenderer(_gd, _cl);
-        _textService = new VeldridTextService(_gd);
-        _fpsCounter.Initialize(_textService, _renderer);
-        return true;
-    }
-
-    public void Cleanup()
-    {
-        _fpsCounter.Cleanup();
-        _renderer?.Cleanup();
-        _textService?.Cleanup();
-        _cl.Dispose();
-    }
-
-    public void Resize(uint width, uint height)
-    {
-        _gd.ResizeMainWindow(width, height);
-    }
-
-    public void Render()
-    {
-        if (UI.IsRendering) return;
-        if (_renderer is null || _textService is null) return;
-
-        long currentTicks = _frameTimer.ElapsedTicks;
-        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
-        _lastFrameTicks = currentTicks;
-        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
-
-        _fpsCounter.Update();
-
-        _cl.Begin();
-        _cl.SetFramebuffer(_gd.MainSwapchain.Framebuffer);
-
-        var clearColor = new RgbaFloat(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
-        _cl.ClearColorTarget(0, clearColor);
-
-        try
-        {
-            _renderer.BeginFrame();
-
-            var inputState = _inputManager.GetCurrentState();
-            var uiContext = new UIContext(_renderer, _textService, inputState, deltaTime);
-            UI.BeginFrame(uiContext);
-
-            _drawCallback(uiContext);
-
-            if (ShowFpsCounter)
-            {
-                _fpsCounter.Draw();
-            }
-
-            UI.EndFrame();
-
-            // This is the critical fix. It tells the renderer to flush any batched text commands.
-            _renderer.Flush();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An error occurred during Veldrid drawing: {ex}");
-        }
-        finally
-        {
-            _cl.End();
-            _gd.SubmitCommands(_cl);
-            _gd.SwapBuffers();
-            _inputManager.PrepareNextFrame();
-        }
-    }
-}
-</file>
-
-<file path="Backends\Vulkan\VertexPositionColor.cs">
-using System.Numerics;
-using System.Runtime.InteropServices;
-
-namespace DirectUI.Backends.Vulkan;
-
-[StructLayout(LayoutKind.Sequential, Pack = 4)]
-public struct VertexPositionColor
-{
-    public Vector2 Position;
-    public Vector4 Color;
-
-    public VertexPositionColor(Vector2 position, Vector4 color)
-    {
-        Position = position;
-        Color = color;
-    }
-}
-</file>
-
 <file path="ApplicationRunner.cs">
 using DirectUI;
-using DirectUI.Backends.Vulkan;
-using DirectUI.Backends.SDL3; // NEW: Added for SDL3 UI Host
+using DirectUI.Backends.SDL3;
 using Raylib_cs;
-using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
-using GraphicsBackend = DirectUI.GraphicsBackend;
 using SDL3;
+using GraphicsBackend = DirectUI.GraphicsBackend;
 
 namespace Cocoshell;
 
@@ -8809,15 +8148,15 @@ public static class ApplicationRunner
             case GraphicsBackend.Raylib:
                 RunRaylib();
                 break;
+
             case GraphicsBackend.Direct2D:
                 RunDirect2D();
                 break;
-            case GraphicsBackend.Vulkan:
-                RunVulkan();
-                break;
+
             case GraphicsBackend.SDL3: // NEW
                 RunSDL3();
                 break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(backend), backend, null);
         }
@@ -8827,10 +8166,9 @@ public static class ApplicationRunner
     {
         Console.WriteLine("Using Raylib Backend.");
 
-        // MyDesktopAppWindow manages the Raylib window internally.
         using MyDesktopAppWindow appWindow = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
 
-        if (appWindow.CreateHostWindow()) // Call the new creation method
+        if (appWindow.CreateHostWindow())
         {
             while (!Raylib.WindowShouldClose())
             {
@@ -8862,61 +8200,6 @@ public static class ApplicationRunner
         }
     }
 
-    private static void RunVulkan()
-    {
-        Console.WriteLine("Using Vulkan (Veldrid) Backend.");
-
-        WindowCreateInfo windowCI = new()
-        {
-            X = 100,
-            Y = 100,
-            WindowWidth = 1024,
-            WindowHeight = 768,
-            WindowTitle = "My Veldrid App"
-        };
-
-        Sdl2Window window = VeldridStartup.CreateWindow(ref windowCI);
-
-        GraphicsDeviceOptions options = new(false, null, true, ResourceBindingModel.Improved, true, true);
-        Veldrid.GraphicsDevice gd = VeldridStartup.CreateGraphicsDevice(window, options, Veldrid.GraphicsBackend.Vulkan);
-
-        MyUILogic appLogic = new(GraphicsBackend.Vulkan); // Now instantiate MyUILogic
-        appLogic.SetOpenProjectWindowHostAction(() => Console.WriteLine("Modal windows not supported for Veldrid yet.")); // Provide dummy action
-
-        Vortice.Mathematics.Color4 backgroundColor = new(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        VeldridUIHost host = new(appLogic.DrawUI, backgroundColor, gd);
-
-        host.Initialize();
-
-        window.Resized += () => host.Resize((uint)window.Width, (uint)window.Height);
-
-        while (window.Exists)
-        {
-            InputSnapshot snapshot = window.PumpEvents();
-
-            if (!window.Exists)
-            {
-                break;
-            }
-
-            host.Input.ProcessVeldridInput(snapshot);
-
-            foreach (KeyEvent keyEvent in snapshot.KeyEvents)
-            {
-                if (keyEvent.Key == Veldrid.Key.F3 && keyEvent.Down)
-                {
-                    host.ShowFpsCounter = !host.ShowFpsCounter;
-                }
-            }
-
-            host.Render();
-        }
-
-        host.Cleanup();
-        gd.Dispose();
-        window.Close();
-    }
-
     private unsafe static void RunSDL3() // NEW method, similar structure to Vulkan
     {
         Console.WriteLine("Using SDL3 Backend.");
@@ -8933,15 +8216,6 @@ public static class ApplicationRunner
 
         // Create renderer
         nint renderer = SDL.CreateRenderer(window, null);
-
-        if (renderer == null)
-        {
-            Console.WriteLine($"Error creating renderer: {SDL.GetError()}");
-            SDL.DestroyWindow(window);
-            SDL.Quit();
-            TTF.Quit(); // Ensure TTF is quit on error
-            return;
-        }
 
         MyUILogic appLogic = new(GraphicsBackend.SDL3); // Now instantiate MyUILogic
 

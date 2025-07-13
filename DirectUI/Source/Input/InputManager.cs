@@ -121,7 +121,7 @@ public class InputManager
         SetMousePosition((int)snapshot.MousePosition.X, (int)snapshot.MousePosition.Y);
         AddMouseWheelDelta(snapshot.WheelDelta);
 
-        foreach (var keyEvent in snapshot.KeyEvents)
+        foreach (Veldrid.KeyEvent keyEvent in snapshot.KeyEvents)
         {
             Keys mappedKey = MapVeldridKeyToDirectUIKey(keyEvent.Key);
             if (mappedKey == Keys.Unknown) continue;

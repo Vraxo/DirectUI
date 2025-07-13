@@ -1,12 +1,8 @@
 using DirectUI;
-using DirectUI.Backends.Vulkan;
-using DirectUI.Backends.SDL3; // NEW: Added for SDL3 UI Host
+using DirectUI.Backends.SDL3;
 using Raylib_cs;
-using Veldrid;
-using Veldrid.Sdl2;
-using Veldrid.StartupUtilities;
-using GraphicsBackend = DirectUI.GraphicsBackend;
 using SDL3;
+using GraphicsBackend = DirectUI.GraphicsBackend;
 
 namespace Cocoshell;
 
@@ -19,15 +15,15 @@ public static class ApplicationRunner
             case GraphicsBackend.Raylib:
                 RunRaylib();
                 break;
+
             case GraphicsBackend.Direct2D:
                 RunDirect2D();
                 break;
-            case GraphicsBackend.Vulkan:
-                RunVulkan();
-                break;
+
             case GraphicsBackend.SDL3: // NEW
                 RunSDL3();
                 break;
+
             default:
                 throw new ArgumentOutOfRangeException(nameof(backend), backend, null);
         }
@@ -37,10 +33,9 @@ public static class ApplicationRunner
     {
         Console.WriteLine("Using Raylib Backend.");
 
-        // MyDesktopAppWindow manages the Raylib window internally.
         using MyDesktopAppWindow appWindow = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
 
-        if (appWindow.CreateHostWindow()) // Call the new creation method
+        if (appWindow.CreateHostWindow())
         {
             while (!Raylib.WindowShouldClose())
             {
@@ -72,61 +67,6 @@ public static class ApplicationRunner
         }
     }
 
-    private static void RunVulkan()
-    {
-        Console.WriteLine("Using Vulkan (Veldrid) Backend.");
-
-        WindowCreateInfo windowCI = new()
-        {
-            X = 100,
-            Y = 100,
-            WindowWidth = 1024,
-            WindowHeight = 768,
-            WindowTitle = "My Veldrid App"
-        };
-
-        Sdl2Window window = VeldridStartup.CreateWindow(ref windowCI);
-
-        GraphicsDeviceOptions options = new(false, null, true, ResourceBindingModel.Improved, true, true);
-        Veldrid.GraphicsDevice gd = VeldridStartup.CreateGraphicsDevice(window, options, Veldrid.GraphicsBackend.Vulkan);
-
-        MyUILogic appLogic = new(GraphicsBackend.Vulkan); // Now instantiate MyUILogic
-        appLogic.SetOpenProjectWindowHostAction(() => Console.WriteLine("Modal windows not supported for Veldrid yet.")); // Provide dummy action
-
-        Vortice.Mathematics.Color4 backgroundColor = new(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        VeldridUIHost host = new(appLogic.DrawUI, backgroundColor, gd);
-
-        host.Initialize();
-
-        window.Resized += () => host.Resize((uint)window.Width, (uint)window.Height);
-
-        while (window.Exists)
-        {
-            InputSnapshot snapshot = window.PumpEvents();
-
-            if (!window.Exists)
-            {
-                break;
-            }
-
-            host.Input.ProcessVeldridInput(snapshot);
-
-            foreach (KeyEvent keyEvent in snapshot.KeyEvents)
-            {
-                if (keyEvent.Key == Veldrid.Key.F3 && keyEvent.Down)
-                {
-                    host.ShowFpsCounter = !host.ShowFpsCounter;
-                }
-            }
-
-            host.Render();
-        }
-
-        host.Cleanup();
-        gd.Dispose();
-        window.Close();
-    }
-
     private unsafe static void RunSDL3() // NEW method, similar structure to Vulkan
     {
         Console.WriteLine("Using SDL3 Backend.");
@@ -143,15 +83,6 @@ public static class ApplicationRunner
 
         // Create renderer
         nint renderer = SDL.CreateRenderer(window, null);
-
-        if (renderer == null)
-        {
-            Console.WriteLine($"Error creating renderer: {SDL.GetError()}");
-            SDL.DestroyWindow(window);
-            SDL.Quit();
-            TTF.Quit(); // Ensure TTF is quit on error
-            return;
-        }
 
         MyUILogic appLogic = new(GraphicsBackend.SDL3); // Now instantiate MyUILogic
 

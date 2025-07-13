@@ -31,7 +31,7 @@ public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Ra
     /// </summary>
     public bool CreateHostWindow()
     {
-        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan or GraphicsBackend.SDL3)
+        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.SDL3)
         {
             // For Raylib/Vulkan/SDL3, we bypass the Win32 window creation here.
             // SDL3 and Vulkan are handled by ApplicationRunner directly.
@@ -41,7 +41,7 @@ public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Ra
         else
         {
             // For D2D, use the standard Win32 window creation from the base class.
-            return base.Create();
+            return Create();
         }
     }
 
@@ -58,7 +58,6 @@ public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Ra
                 _appHost = CreateAppHost();
                 return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
 
-            case GraphicsBackend.Vulkan:
             case GraphicsBackend.SDL3:
                 // This logic is now handled by ApplicationRunner and their respective hosts.
                 // This MyDesktopAppWindow should not be instantiated for these backends.
@@ -82,7 +81,6 @@ public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Ra
                 Raylib.CloseWindow();
                 break;
 
-            case GraphicsBackend.Vulkan:
             case GraphicsBackend.SDL3:
                 // Nothing to do here, ApplicationRunner/Host handles cleanup for these.
                 break;
@@ -118,7 +116,6 @@ public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Ra
                 _appHost?.Render();
                 break;
 
-            case GraphicsBackend.Vulkan:
             case GraphicsBackend.SDL3:
                 // This method should not be called for Veldrid/SDL3 backends, as their loop is in ApplicationRunner.
                 break;
