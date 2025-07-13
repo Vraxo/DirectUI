@@ -41,4 +41,9 @@ public interface IRenderer
     /// Pops the last clipping rectangle from the stack.
     /// </summary>
     void PopClipRect();
+
+    /// <summary>
+    /// Flushes any batched rendering commands, particularly for text.
+    /// </summary>
+    void Flush();
 }

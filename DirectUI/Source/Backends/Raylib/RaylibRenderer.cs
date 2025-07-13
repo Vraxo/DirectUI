@@ -225,6 +225,11 @@ public class RaylibRenderer : IRenderer
         Raylib.BeginScissorMode(x, y, width, height);
     }
 
+    public void Flush()
+    {
+        // Raylib is an immediate-mode API, no flush needed.
+    }
+
     // Raylib specific cleanup (if any resources like fonts were loaded dynamically)
     public void Cleanup()
     {

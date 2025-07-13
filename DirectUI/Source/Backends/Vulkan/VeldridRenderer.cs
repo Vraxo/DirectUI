@@ -1,4 +1,15 @@
-﻿using System;
+﻿using DirectUI.Backends.Vulkan;
+using DirectUI.Core;
+using SharpText.Veldrid;
+using System.Numerics;
+using System.Runtime.CompilerServices;
+using System.Text;
+using System.Threading.Channels;
+using Veldrid;
+using Vortice.Direct2D1;
+
+using System;
+using System.Collections.Generic;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
@@ -23,8 +34,32 @@ public class VeldridRenderer : IRenderer, IDisposable
     private readonly DeviceBuffer _indexBuffer;
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
-    private readonly VeldridTextRenderer _VeldridTextRenderer;
+
+    // Font is persistent, but the renderer will be created per-batch.
     private readonly SharpText.Core.Font _font;
+
+    // Batched text rendering state
+    private readonly struct BatchedText
+    {
+        public readonly Vector2 Origin;
+        public readonly string Text;
+        public readonly ButtonStyle Style;
+        public readonly Alignment Alignment;
+        public readonly Vector2 MaxSize;
+        public readonly Drawing.Color Color;
+
+        public BatchedText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
+        {
+            Origin = origin;
+            Text = text;
+            Style = style;
+            Alignment = alignment;
+            MaxSize = maxSize;
+            Color = color;
+        }
+    }
+    private readonly List<BatchedText> _textBatch = new();
+
 
     public Vector2 RenderTargetSize
     {
@@ -41,13 +76,11 @@ public class VeldridRenderer : IRenderer, IDisposable
         _gd = gd;
         _cl = cl;
 
-        // Load a default font. Assuming SharpText.Veldrid.Font has this constructor.
-        _font = new SharpText.Core.Font("C:/Windows/Fonts/segoeui.ttf", 16);
+        // Create persistent font resource. The renderer will be transient.
+        // Switched to a simpler font to diagnose the SharpText crash.
+        _font = new SharpText.Core.Font("C:/Windows/Fonts/consola.ttf", 16);
 
-        // Pass the required GraphicsDevice, CommandList, and Font to the VeldridTextRenderer constructor.
-        _VeldridTextRenderer = new VeldridTextRenderer(gd, cl, _font);
-
-        // Create resources
+        // Create resources for flat geometry
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
         _indexBuffer = _gd.ResourceFactory.CreateBuffer(new(_indexBufferSize, BufferUsage.IndexBuffer | BufferUsage.Dynamic));
         _projMatrixBuffer = _gd.ResourceFactory.CreateBuffer(new((uint)Unsafe.SizeOf<Matrix4x4>(), BufferUsage.UniformBuffer | BufferUsage.Dynamic));
@@ -150,9 +183,6 @@ public class VeldridRenderer : IRenderer, IDisposable
             return Vector2.Zero;
         }
 
-        // Placeholder implementation since SharpText.Veldrid seems to lack a public MeasureText method.
-        // This provides a rough estimate for layout purposes.
-        // A more accurate implementation would require access to font metrics from SharpText.
         const float characterWidthApproximationFactor = 0.6f; // Heuristic value
         float width = text.Length * style.FontSize * characterWidthApproximationFactor;
         float height = style.FontSize;
@@ -166,47 +196,96 @@ public class VeldridRenderer : IRenderer, IDisposable
             return;
         }
 
-        // 1. Measure text to handle alignment.
-        Vector2 measuredSize = MeasureText(text, style);
-
-        Vector2 textDrawPos = origin;
-
-        // 2. Apply alignment within maxSize bounds
-        if (maxSize.X > 0)
-        {
-            switch (alignment.Horizontal)
-            {
-                case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
-                    break;
-                case HAlignment.Right:
-                    textDrawPos.X += (maxSize.X - measuredSize.X);
-                    break;
-            }
-        }
-
-        if (maxSize.Y > 0)
-        {
-            switch (alignment.Vertical)
-            {
-                case VAlignment.Center:
-                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
-                    break;
-                case VAlignment.Bottom:
-                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
-                    break;
-            }
-        }
-
-        // 3. Convert color and draw
-        var sharpTextColor = new SharpText.Core.Color(color.R, color.G, color.B, color.A);
-
-        _VeldridTextRenderer.DrawText(
-            text,
-            textDrawPos,
-            sharpTextColor,
-            1);
+        // Add the text call to the batch to be processed later in Flush().
+        _textBatch.Add(new BatchedText(origin, text, style, alignment, maxSize, color));
     }
+
+    public void Flush()
+    {
+        if (_textBatch.Count == 0)
+        {
+            return;
+        }
+
+        // The SharpText renderer has a default internal buffer limit of 1024 glyphs.
+        // We batch our text calls to respect this limit.
+        const int maxCharsPerBatch = 1000;
+
+        var currentMiniBatch = new List<BatchedText>();
+        int currentMiniBatchCharCount = 0;
+
+        foreach (var textCall in _textBatch)
+        {
+            string textForLen = textCall.Text;
+            if (textForLen.Length > maxCharsPerBatch)
+            {
+                textForLen = textForLen.Substring(0, maxCharsPerBatch);
+            }
+
+            // If the current text call would overflow the mini-batch, process the current one first.
+            if (currentMiniBatch.Count > 0 && currentMiniBatchCharCount + textForLen.Length > maxCharsPerBatch)
+            {
+                ProcessMiniBatch(currentMiniBatch);
+                currentMiniBatch.Clear();
+                currentMiniBatchCharCount = 0;
+            }
+
+            currentMiniBatch.Add(textCall);
+            currentMiniBatchCharCount += textForLen.Length;
+        }
+
+        // Process the final mini-batch if it has any content.
+        if (currentMiniBatch.Count > 0)
+        {
+            ProcessMiniBatch(currentMiniBatch);
+        }
+
+        _textBatch.Clear();
+    }
+
+    private void ProcessMiniBatch(List<BatchedText> batch)
+    {
+        // Create a new, clean renderer for each batch. This is the key to preventing state corruption.
+        using var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
+
+        foreach (var textCall in batch)
+        {
+            string textToDraw = textCall.Text;
+            // The text must still be truncated here as its original form is stored in the BatchedText struct.
+            if (textToDraw.Length > 1000)
+            {
+                textToDraw = textToDraw.Substring(0, 1000);
+            }
+
+            Vector2 measuredSize = MeasureText(textToDraw, textCall.Style);
+            Vector2 textDrawPos = textCall.Origin;
+
+            // Alignment logic
+            if (textCall.MaxSize.X > 0)
+            {
+                switch (textCall.Alignment.Horizontal)
+                {
+                    case HAlignment.Center: textDrawPos.X += (textCall.MaxSize.X - measuredSize.X) / 2f; break;
+                    case HAlignment.Right: textDrawPos.X += (textCall.MaxSize.X - measuredSize.X); break;
+                }
+            }
+            if (textCall.MaxSize.Y > 0)
+            {
+                switch (textCall.Alignment.Vertical)
+                {
+                    case VAlignment.Center: textDrawPos.Y += (textCall.MaxSize.Y - measuredSize.Y) / 2f; break;
+                    case VAlignment.Bottom: textDrawPos.Y += (textCall.MaxSize.Y - measuredSize.Y); break;
+                }
+            }
+
+            var sharpTextColor = new SharpText.Core.Color(textCall.Color.R, textCall.Color.G, textCall.Color.B, textCall.Color.A);
+            textRenderer.DrawText(textToDraw, textDrawPos, sharpTextColor, 1);
+        }
+
+        // Issue the single draw call for this entire mini-batch.
+        textRenderer.Draw();
+    }
+
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
     {
@@ -230,7 +309,7 @@ public class VeldridRenderer : IRenderer, IDisposable
 
     public void Cleanup()
     {
-        _VeldridTextRenderer.Dispose();
+        _textBatch.Clear();
         _pipeline.Dispose();
         _projMatrixLayout.Dispose();
         _projMatrixSet.Dispose();

@@ -39,7 +39,7 @@ public class BottomPanelView
         _labelStyle = new ButtonStyle
         {
             FontColor = DefaultTheme.Text,
-            FontSize = 24f
+            FontSize = 12f // Corrected font size for labels to fit better
         };
 
         _pathLabelStyle = new ButtonStyle
@@ -92,6 +92,20 @@ public class BottomPanelView
         }
     }
 
+    private static string TruncatePathForDisplay(string path, int maxLength)
+    {
+        if (string.IsNullOrEmpty(path) || path.Length <= maxLength)
+        {
+            return path;
+        }
+        // A more robust truncation that handles short max lengths gracefully.
+        if (maxLength <= 3)
+        {
+            return path.Substring(0, maxLength);
+        }
+        return "..." + path.Substring(path.Length - maxLength + 3);
+    }
+
     public void Draw()
     {
         _pathToNavigateTo = null; // Reset deferred action at the start of the frame
@@ -105,12 +119,15 @@ public class BottomPanelView
 
         UI.BeginVBoxContainer("bottom_panel_main_vbox", UI.Context.Layout.GetCurrentPosition(), 5);
 
-        // Display current path
-        UI.Text("current_path_label", _currentPath, style: _pathLabelStyle);
+        // Truncate the path label to a safe length before rendering.
+        string displayPath = TruncatePathForDisplay(_currentPath, 60);
+        UI.Text("current_path_label", displayPath, style: _pathLabelStyle);
 
         if (!string.IsNullOrEmpty(_errorMessage))
         {
-            UI.Text("bottom_panel_error", _errorMessage);
+            // Truncate the error message as well.
+            string displayError = TruncatePathForDisplay(_errorMessage, 60);
+            UI.Text("bottom_panel_error", displayError);
         }
         else
         {
@@ -155,7 +172,7 @@ public class BottomPanelView
     {
         string id = (isDirectory ? "dir_" : "file_") + name;
         var iconSize = new Vector2(64, 64);
-        var labelSize = new Vector2(iconSize.X + 10, 30);
+        var labelSize = new Vector2(iconSize.X + 10, 20); // Reduced height for smaller font
 
         UI.BeginVBoxContainer(id + "_vbox", UI.Context.Layout.GetCurrentPosition(), 4);
         {
@@ -189,9 +206,12 @@ public class BottomPanelView
                 }
             }
 
+            // Truncate the display name before rendering to prevent buffer overflow.
+            string displayName = TruncatePathForDisplay(name, 12);
+
             UI.Text(
                 id + "_label",
-                name,
+                displayName, // Use the truncated name
                 size: labelSize,
                 style: _labelStyle,
                 textAlignment: new Alignment(HAlignment.Center, VAlignment.Top)

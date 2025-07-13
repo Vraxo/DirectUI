@@ -206,6 +206,11 @@ public class Direct2DRenderer : IRenderer
         _renderTarget.PopAxisAlignedClip();
     }
 
+    public void Flush()
+    {
+        // Direct2D is an immediate-mode API in this context, no flush needed.
+    }
+
     public void Cleanup()
     {
         foreach (var pair in _brushCache)

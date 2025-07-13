@@ -1,4 +1,12 @@
-﻿using System;
+﻿using DirectUI.Backends.Vulkan;
+using DirectUI.Diagnostics;
+using DirectUI.Input;
+using System.Diagnostics;
+using System;
+using Veldrid;
+using Vortice.Mathematics;
+
+using System;
 using System.Diagnostics;
 using System.Numerics;
 using DirectUI.Core;
@@ -100,6 +108,9 @@ public class VeldridUIHost
             }
 
             UI.EndFrame();
+
+            // This is the critical fix. It tells the renderer to flush any batched text commands.
+            _renderer.Flush();
         }
         catch (Exception ex)
         {
