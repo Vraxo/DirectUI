@@ -41,7 +41,7 @@ public unsafe class SDL3UIHost
     public bool Initialize()
     {
         _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
-        _textService = new SDL3TextService(); // Minimal for now
+        _textService = new SDL3TextService();
         _fpsCounter.Initialize(_textService, _renderer);
         return true;
     }
@@ -66,9 +66,8 @@ public unsafe class SDL3UIHost
         if (UI.IsRendering) return;
         if (_renderer is null || _textService is null) return;
 
-        // Get mouse position at the start of each frame using window-relative float coordinates
-        SDL.GetMouseState(out float mouseX, out float mouseY);
-        _inputManager.SetMousePosition((int)mouseX, (int)mouseY);
+        // Mouse position is now handled by InputManager.ProcessSDL3Event (specifically MouseMotion events)
+        // No need to poll it directly here every frame, as it's event-driven.
 
         long currentTicks = _frameTimer.ElapsedTicks;
         float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;

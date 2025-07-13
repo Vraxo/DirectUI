@@ -165,7 +165,7 @@ public static class ApplicationRunner
 
         host.Initialize();
 
-        SDL.StartTextInput(window); // Start receiving text input events
+        // SDL.StartTextInput(window); // Removed to prevent potential mouse event interference
 
         bool running = true;
 
@@ -179,22 +179,16 @@ public static class ApplicationRunner
                 {
                     running = false;
                 }
-                else if (ev.Window.WindowID == (uint)SDL.EventType.WindowResized || ev.Window.WindowID == (uint)SDL.EventType.WindowPixelSizeChanged)
+                else if ((SDL.EventType)ev.Type == SDL.EventType.WindowResized || (SDL.EventType)ev.Type == SDL.EventType.WindowPixelSizeChanged)
                 {
                     host.Resize(ev.Window.Data1, ev.Window.Data2);
-                }
-                else if ((SDL.EventType)ev.Type == SDL.EventType.MouseMotion)
-                {
-                    // Manual mouse position update since SDL_Event is a raw struct.
-                    // This is handled by ProcessSDL3Event, but leaving this as a reminder if there were specific needs for mouse motion outside events.
-                    // For now, it's redundant.
                 }
             }
 
             host.Render();
         }
 
-        SDL.StopTextInput(window); // Stop receiving text input events
+        // SDL.StopTextInput(window); // Removed
 
         host.Cleanup();
         SDL.DestroyRenderer(renderer);

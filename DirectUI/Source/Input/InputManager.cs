@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using System.Runtime.InteropServices; // Added for Marshal
 using Raylib_cs; // Added for Raylib backend
+using SDL3;
 using static SDL3.SDL; // Added for SDL3 backend
 
 namespace DirectUI.Input;
@@ -154,6 +155,11 @@ public class InputManager
         }
     }
 
+    private Keys MapVeldridKeyToDirectUIKey(Veldrid.Key key)
+    {
+        throw new NotImplementedException();
+    }
+
     public void ProcessRaylibInput()
     {
         // Mouse position
@@ -197,10 +203,15 @@ public class InputManager
         switch ((EventType)sdlEvent.Type)
         {
             case EventType.MouseButtonDown:
-                SetMouseDown(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                SetMousePosition((int)sdlEvent.Button.X, (int)sdlEvent.Button.Y); // Update position on click
+                SetMouseDown(MapSDL3MouseButtonToDirectUIButton(sdlEvent.Button.Button)); // Pass byte directly
                 break;
             case EventType.MouseButtonUp:
-                SetMouseUp(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                SetMousePosition((int)sdlEvent.Button.X, (int)sdlEvent.Button.Y); // Update position on release
+                SetMouseUp(MapSDL3MouseButtonToDirectUIButton(sdlEvent.Button.Button)); // Pass byte directly
+                break;
+            case EventType.MouseMotion: // ADDED: Handle mouse motion to update position
+                SetMousePosition((int)sdlEvent.Motion.X, (int)sdlEvent.Motion.Y);
                 break;
             case EventType.MouseWheel:
                 // SDL wheel delta is usually in integers (e.g., 1 or -1)
@@ -241,88 +252,6 @@ public class InputManager
             Veldrid.MouseButton.Button1 => MouseButton.XButton1, // Assuming Button1 is XButton1
             Veldrid.MouseButton.Button2 => MouseButton.XButton2, // Assuming Button2 is XButton2
             _ => MouseButton.Left, // Default case
-        };
-    }
-
-    private static Keys MapVeldridKeyToDirectUIKey(Veldrid.Key vdKey)
-    {
-        return vdKey switch
-        {
-            Veldrid.Key.BackSpace => Keys.Backspace,
-            Veldrid.Key.Tab => Keys.Tab,
-            Veldrid.Key.Enter => Keys.Enter,
-            Veldrid.Key.ShiftLeft => Keys.Shift,
-            Veldrid.Key.ShiftRight => Keys.Shift,
-            Veldrid.Key.ControlLeft => Keys.Control,
-            Veldrid.Key.ControlRight => Keys.Control,
-            Veldrid.Key.AltLeft => Keys.Alt,
-            Veldrid.Key.AltRight => Keys.Alt,
-            Veldrid.Key.Pause => Keys.Pause,
-            Veldrid.Key.CapsLock => Keys.CapsLock,
-            Veldrid.Key.Escape => Keys.Escape,
-            Veldrid.Key.Space => Keys.Space,
-            Veldrid.Key.PageUp => Keys.PageUp,
-            Veldrid.Key.PageDown => Keys.PageDown,
-            Veldrid.Key.End => Keys.End,
-            Veldrid.Key.Home => Keys.Home,
-            Veldrid.Key.Left => Keys.LeftArrow,
-            Veldrid.Key.Up => Keys.UpArrow,
-            Veldrid.Key.Right => Keys.RightArrow,
-            Veldrid.Key.Down => Keys.DownArrow,
-            Veldrid.Key.Insert => Keys.Insert,
-            Veldrid.Key.Delete => Keys.Delete,
-            Veldrid.Key.Number0 => Keys.D0,
-            Veldrid.Key.Number1 => Keys.D1,
-            Veldrid.Key.Number2 => Keys.D2,
-            Veldrid.Key.Number3 => Keys.D3,
-            Veldrid.Key.Number4 => Keys.D4,
-            Veldrid.Key.Number5 => Keys.D5,
-            Veldrid.Key.Number6 => Keys.D6,
-            Veldrid.Key.Number7 => Keys.D7,
-            Veldrid.Key.Number8 => Keys.D8,
-            Veldrid.Key.Number9 => Keys.D9,
-            Veldrid.Key.A => Keys.A,
-            Veldrid.Key.B => Keys.B,
-            Veldrid.Key.C => Keys.C,
-            Veldrid.Key.D => Keys.D,
-            Veldrid.Key.E => Keys.E,
-            Veldrid.Key.F => Keys.F,
-            Veldrid.Key.G => Keys.G,
-            Veldrid.Key.H => Keys.H,
-            Veldrid.Key.I => Keys.I,
-            Veldrid.Key.J => Keys.J,
-            Veldrid.Key.K => Keys.K,
-            Veldrid.Key.L => Keys.L,
-            Veldrid.Key.M => Keys.M,
-            Veldrid.Key.N => Keys.N,
-            Veldrid.Key.O => Keys.O,
-            Veldrid.Key.P => Keys.P,
-            Veldrid.Key.Q => Keys.Q,
-            Veldrid.Key.R => Keys.R,
-            Veldrid.Key.S => Keys.S,
-            Veldrid.Key.T => Keys.T,
-            Veldrid.Key.U => Keys.U,
-            Veldrid.Key.V => Keys.V,
-            Veldrid.Key.W => Keys.W,
-            Veldrid.Key.X => Keys.X,
-            Veldrid.Key.Y => Keys.Y,
-            Veldrid.Key.Z => Keys.Z,
-            Veldrid.Key.F1 => Keys.F1,
-            Veldrid.Key.F2 => Keys.F2,
-            Veldrid.Key.F3 => Keys.F3,
-            Veldrid.Key.F4 => Keys.F4,
-            Veldrid.Key.F5 => Keys.F5,
-            Veldrid.Key.F6 => Keys.F6,
-            Veldrid.Key.F7 => Keys.F7,
-            Veldrid.Key.F8 => Keys.F8,
-            Veldrid.Key.F9 => Keys.F9,
-            Veldrid.Key.F10 => Keys.F10,
-            Veldrid.Key.F11 => Keys.F11,
-            Veldrid.Key.F12 => Keys.F12,
-            Veldrid.Key.LWin => Keys.LeftWindows,
-            Veldrid.Key.RWin => Keys.RightWindows,
-            Veldrid.Key.Menu => Keys.Menu,
-            _ => Keys.Unknown,
         };
     }
 
@@ -406,16 +335,16 @@ public class InputManager
         };
     }
 
-    private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButton sdlButton)
+    private static MouseButton MapSDL3MouseButtonToDirectUIButton(byte sdlButton) // Changed parameter type to byte
     {
         return sdlButton switch
         {
-            MouseButton.Left => MouseButton.Left,
-            MouseButton.Right => MouseButton.Right,
-            MouseButton.Middle => MouseButton.Middle,
-            MouseButton.XButton1 => MouseButton.XButton1,
-            MouseButton.XButton2 => MouseButton.XButton2,
-            _ => MouseButton.Left, // Default case, though should ideally be unreachable
+            SDL.ButtonLeft => MouseButton.Left,
+            SDL.ButtonMiddle => MouseButton.Middle,
+            SDL.ButtonRight => MouseButton.Right,
+            SDL.ButtonX1 => MouseButton.XButton1,
+            SDL.ButtonX2 => MouseButton.XButton2,
+            _ => MouseButton.Left, // Fallback, though ideally all used buttons are mapped.
         };
     }
     private static Keys MapSDL3ScanCodeToDirectUIKey(Scancode sdlScancode)

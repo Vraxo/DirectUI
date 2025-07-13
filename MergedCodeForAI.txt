@@ -4156,6 +4156,7 @@ namespace DirectUI.Drawing
 using System.Numerics;
 using System.Runtime.InteropServices; // Added for Marshal
 using Raylib_cs; // Added for Raylib backend
+using SDL3;
 using static SDL3.SDL; // Added for SDL3 backend
 
 namespace DirectUI.Input;
@@ -4352,10 +4353,15 @@ public class InputManager
         switch ((EventType)sdlEvent.Type)
         {
             case EventType.MouseButtonDown:
+                SetMousePosition((int)sdlEvent.Button.X, (int)sdlEvent.Button.Y); // Update position on click
                 SetMouseDown(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
                 break;
             case EventType.MouseButtonUp:
+                SetMousePosition((int)sdlEvent.Button.X, (int)sdlEvent.Button.Y); // Update position on release
                 SetMouseUp(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                break;
+            case EventType.MouseMotion: // ADDED: Handle mouse motion to update position
+                SetMousePosition((int)sdlEvent.Motion.X, (int)sdlEvent.Motion.Y);
                 break;
             case EventType.MouseWheel:
                 // SDL wheel delta is usually in integers (e.g., 1 or -1)
@@ -4561,15 +4567,15 @@ public class InputManager
         };
     }
 
-    private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButton sdlButton)
+    private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButtonFlags sdlButton)
     {
         return sdlButton switch
         {
-            MouseButton.Left => MouseButton.Left,
-            MouseButton.Right => MouseButton.Right,
-            MouseButton.Middle => MouseButton.Middle,
-            MouseButton.XButton1 => MouseButton.XButton1,
-            MouseButton.XButton2 => MouseButton.XButton2,
+            MouseButtonFlags.Left => MouseButton.Left,
+            MouseButtonFlags.Right => MouseButton.Right,
+            MouseButtonFlags.Middle => MouseButton.Middle,
+            MouseButtonFlags.X1 => MouseButton.XButton1,
+            MouseButtonFlags.X2 => MouseButton.XButton2,
             _ => MouseButton.Left, // Default case, though should ideally be unreachable
         };
     }
@@ -8133,7 +8139,7 @@ public unsafe class SDL3UIHost
     public bool Initialize()
     {
         _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
-        _textService = new SDL3TextService(); // Minimal for now
+        _textService = new SDL3TextService();
         _fpsCounter.Initialize(_textService, _renderer);
         return true;
     }
@@ -8158,6 +8164,9 @@ public unsafe class SDL3UIHost
         if (UI.IsRendering) return;
         if (_renderer is null || _textService is null) return;
 
+        // Mouse position is now handled by InputManager.ProcessSDL3Event (specifically MouseMotion events)
+        // No need to poll it directly here every frame, as it's event-driven.
+
         long currentTicks = _frameTimer.ElapsedTicks;
         float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
         _lastFrameTicks = currentTicks;
@@ -8166,8 +8175,8 @@ public unsafe class SDL3UIHost
         _fpsCounter.Update();
 
         // Clear the renderer buffer
-       SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
-       SDL.RenderClear(_rendererPtr);
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
 
         try
         {
@@ -8192,7 +8201,7 @@ public unsafe class SDL3UIHost
         }
         finally
         {
-           SDL.RenderPresent(_rendererPtr); // Present the rendered frame
+            SDL.RenderPresent(_rendererPtr); // Present the rendered frame
             _inputManager.PrepareNextFrame();
         }
     }
@@ -8946,7 +8955,7 @@ public static class ApplicationRunner
 
         host.Initialize();
 
-        SDL.StartTextInput(window); // Start receiving text input events
+        // SDL.StartTextInput(window); // Removed to prevent potential mouse event interference
 
         bool running = true;
 
@@ -8960,22 +8969,16 @@ public static class ApplicationRunner
                 {
                     running = false;
                 }
-                else if (ev.Window.WindowID == (uint)SDL.EventType.WindowResized || ev.Window.WindowID == (uint)SDL.EventType.WindowPixelSizeChanged)
+                else if ((SDL.EventType)ev.Type == SDL.EventType.WindowResized || (SDL.EventType)ev.Type == SDL.EventType.WindowPixelSizeChanged)
                 {
                     host.Resize(ev.Window.Data1, ev.Window.Data2);
-                }
-                else if ((SDL.EventType)ev.Type == SDL.EventType.MouseMotion)
-                {
-                    // Manual mouse position update since SDL_Event is a raw struct.
-                    // This is handled by ProcessSDL3Event, but leaving this as a reminder if there were specific needs for mouse motion outside events.
-                    // For now, it's redundant.
                 }
             }
 
             host.Render();
         }
 
-        SDL.StopTextInput(window); // Stop receiving text input events
+        // SDL.StopTextInput(window); // Removed
 
         host.Cleanup();
         SDL.DestroyRenderer(renderer);
@@ -10232,7 +10235,7 @@ public class InspectorView
     {
         UI.Text(
             "inspector_title",
-            "Inspector",
+            "اینسپکتور",
             size: new(availableWidth, 0),
             style: _titleStyle,
             textAlignment: new(HAlignment.Center, VAlignment.Center)
