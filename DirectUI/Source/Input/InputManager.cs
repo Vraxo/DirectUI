@@ -1,10 +1,7 @@
 ﻿// Input/InputManager.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Raylib_cs; // Added for Raylib backend
-using Veldrid; // Added for Veldrid backend
+using static SDL3.SDL; // NEW: Added for SDL3 backend
 
 namespace DirectUI.Input;
 
@@ -216,6 +213,47 @@ public class InputManager
     }
 
     /// <summary>
+    /// Processes SDL3-specific input events and updates the internal state.
+    /// This method should be called once per frame when using the SDL3 backend.
+    /// </summary>
+    public unsafe void ProcessSDL3Event(Event sdlEvent)
+    {
+        switch ((EventType)sdlEvent.Type)
+        {
+            case EventType.MouseButtonDown:
+                SetMouseDown(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                break;
+            case EventType.MouseButtonUp:
+                SetMouseUp(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                break;
+            case EventType.MouseWheel:
+                // SDL wheel delta is usually in integers (e.g., 1 or -1)
+                // Normalize it similar to Win32/Veldrid
+                float deltaY = sdlEvent.Wheel.Y;
+                AddMouseWheelDelta(deltaY);
+                break;
+            case EventType.KeyDown:
+                Keys mappedKeyDown = MapSDL3ScanCodeToDirectUIKey(sdlEvent.Key.Scancode);
+                if (mappedKeyDown != Keys.Unknown) AddKeyPressed(mappedKeyDown);
+
+                // For character input, SDL has a specific TextInput event.
+                // We'll process basic printable chars from keydown for now.
+                // In a full implementation, you'd listen to EventType.TextInput.
+                char charInput = (char)sdlEvent.Key.Scancode;
+                // Only add if it's a printable ASCII character (rough filter)
+                if (charInput >= 32 && charInput <= 126) // Printable ASCII range
+                {
+                    AddCharacterInput(charInput);
+                }
+                break;
+            case EventType.KeyUp:
+                Keys mappedKeyUp = MapSDL3ScanCodeToDirectUIKey(sdlEvent.Key.Scancode);
+                if (mappedKeyUp != Keys.Unknown) AddKeyReleased(mappedKeyUp);
+                break;
+        }
+    }
+
+    /// <summary>
     /// Maps a Veldrid MouseButton enum to a DirectUI MouseButton enum.
     /// </summary>
     private static MouseButton MapVeldridMouseButtonToDirectUIButton(Veldrid.MouseButton vdButton)
@@ -397,6 +435,107 @@ public class InputManager
             KeyboardKey.F10 => Keys.F10,
             KeyboardKey.F11 => Keys.F11,
             KeyboardKey.F12 => Keys.F12,
+            _ => Keys.Unknown,
+        };
+    }
+
+    /// <summary>
+    /// Maps an SDL3 MouseButton enum to a DirectUI MouseButton enum.
+    /// </summary>
+    private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButton sdlButton)
+    {
+        return sdlButton switch
+        {
+            MouseButton.Left => MouseButton.Left,
+            MouseButton.Right => MouseButton.Right,
+            MouseButton.Middle => MouseButton.Middle,
+            MouseButton.XButton1 => MouseButton.XButton1,
+            MouseButton.XButton2 => MouseButton.XButton2,
+            _ => MouseButton.Left, // Default case, though should ideally be unreachable
+        };
+    }
+
+    /// <summary>
+    /// Maps an SDL3 Scancode enum to a DirectUI Keys enum.
+    /// </summary>
+    private static Keys MapSDL3ScanCodeToDirectUIKey(Scancode sdlScancode)
+    {
+        return sdlScancode switch
+        {
+            Scancode.Backspace => Keys.Backspace,
+            Scancode.Tab => Keys.Tab,
+            Scancode.Return => Keys.Enter, // RETURN is Enter
+            Scancode.LShift => Keys.Shift,
+            Scancode.RShift => Keys.Shift,
+            Scancode.LCtrl => Keys.Control,
+            Scancode.RCtrl => Keys.Control,
+            Scancode.LAlt => Keys.Alt,
+            Scancode.RAlt => Keys.Alt,
+            Scancode.Pause => Keys.Pause,
+            Scancode.Capslock => Keys.CapsLock,
+            Scancode.Escape => Keys.Escape,
+            Scancode.Space => Keys.Space,
+            Scancode.Pageup => Keys.PageUp,
+            Scancode.Pagedown => Keys.PageDown,
+            Scancode.End => Keys.End,
+            Scancode.Home => Keys.Home,
+            Scancode.Left => Keys.LeftArrow,
+            Scancode.Up => Keys.UpArrow,
+            Scancode.Right => Keys.RightArrow,
+            Scancode.Down => Keys.DownArrow,
+            Scancode.Insert => Keys.Insert,
+            Scancode.Delete => Keys.Delete,
+            //Scancode.Num0 => Keys.D0,
+            //Scancode.Num1 => Keys.D1,
+            //Scancode.Num2 => Keys.D2,
+            //Scancode.Num3 => Keys.D3,
+            //Scancode.Num4 => Keys.D4,
+            //Scancode.Num5 => Keys.D5,
+            //Scancode.Num6 => Keys.D6,
+            //Scancode.Num7 => Keys.D7,
+            //Scancode.Num8 => Keys.D8,
+            //Scancode.Num9 => Keys.D9,
+            Scancode.A => Keys.A,
+            Scancode.B => Keys.B,
+            Scancode.C => Keys.C,
+            Scancode.D => Keys.D,
+            Scancode.E => Keys.E,
+            Scancode.F => Keys.F,
+            Scancode.G => Keys.G,
+            Scancode.H => Keys.H,
+            Scancode.I => Keys.I,
+            Scancode.J => Keys.J,
+            Scancode.K => Keys.K,
+            Scancode.L => Keys.L,
+            Scancode.M => Keys.M,
+            Scancode.N => Keys.N,
+            Scancode.O => Keys.O,
+            Scancode.P => Keys.P,
+            Scancode.Q => Keys.Q,
+            Scancode.R => Keys.R,
+            Scancode.S => Keys.S,
+            Scancode.T => Keys.T,
+            Scancode.U => Keys.U,
+            Scancode.V => Keys.V,
+            Scancode.W => Keys.W,
+            Scancode.X => Keys.X,
+            Scancode.Y => Keys.Y,
+            Scancode.Z => Keys.Z,
+            Scancode.F1 => Keys.F1,
+            Scancode.F2 => Keys.F2,
+            Scancode.F3 => Keys.F3,
+            Scancode.F4 => Keys.F4,
+            Scancode.F5 => Keys.F5,
+            Scancode.F6 => Keys.F6,
+            Scancode.F7 => Keys.F7,
+            Scancode.F8 => Keys.F8,
+            Scancode.F9 => Keys.F9,
+            Scancode.F10 => Keys.F10,
+            Scancode.F11 => Keys.F11,
+            Scancode.F12 => Keys.F12,
+            Scancode.LGUI => Keys.LeftWindows, // Left GUI key (Windows, Command, etc.)
+            Scancode.RGUI => Keys.RightWindows, // Right GUI key
+            Scancode.Application => Keys.Menu, // Application key (right-click menu)
             _ => Keys.Unknown,
         };
     }

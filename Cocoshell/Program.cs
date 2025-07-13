@@ -1,6 +1,5 @@
 ﻿using DirectUI;
-
-namespace Cocoshell;
+using Cocoshell; // Use the namespace for ApplicationRunner
 
 public class Program
 {
@@ -9,7 +8,8 @@ public class Program
     {
         //var backend = GraphicsBackend.Raylib;
         //var backend = GraphicsBackend.Direct2D;
-        var backend = GraphicsBackend.Vulkan;
+        //var backend = GraphicsBackend.Vulkan;
+        var backend = GraphicsBackend.SDL3; // Set to SDL3 for testing
 
         ApplicationRunner.Run(backend);
     }

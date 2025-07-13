@@ -4,5 +4,6 @@ public enum GraphicsBackend
 {
     Direct2D,
     Raylib,
-    Vulkan
+    Vulkan,
+    SDL3
 }

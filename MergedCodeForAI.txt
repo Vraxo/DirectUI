@@ -678,7 +678,8 @@ public enum GraphicsBackend
 {
     Direct2D,
     Raylib,
-    Vulkan
+    Vulkan,
+    SDL3
 }
 </file>
 
@@ -4140,12 +4141,9 @@ namespace DirectUI.Drawing
 
 <file path="Input\InputManager.cs">
 // Input/InputManager.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using Raylib_cs; // Added for Raylib backend
-using Veldrid; // Added for Veldrid backend
+using static SDL3.SDL; // NEW: Added for SDL3 backend
 
 namespace DirectUI.Input;
 
@@ -4357,6 +4355,47 @@ public class InputManager
     }
 
     /// <summary>
+    /// Processes SDL3-specific input events and updates the internal state.
+    /// This method should be called once per frame when using the SDL3 backend.
+    /// </summary>
+    public unsafe void ProcessSDL3Event(Event sdlEvent)
+    {
+        switch ((EventType)sdlEvent.Type)
+        {
+            case EventType.MouseButtonDown:
+                SetMouseDown(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                break;
+            case EventType.MouseButtonUp:
+                SetMouseUp(MapSDL3MouseButtonToDirectUIButton((MouseButton)sdlEvent.Button.Button));
+                break;
+            case EventType.MouseWheel:
+                // SDL wheel delta is usually in integers (e.g., 1 or -1)
+                // Normalize it similar to Win32/Veldrid
+                float deltaY = sdlEvent.Wheel.Y;
+                AddMouseWheelDelta(deltaY);
+                break;
+            case EventType.KeyDown:
+                Keys mappedKeyDown = MapSDL3ScanCodeToDirectUIKey(sdlEvent.Key.Scancode);
+                if (mappedKeyDown != Keys.Unknown) AddKeyPressed(mappedKeyDown);
+
+                // For character input, SDL has a specific TextInput event.
+                // We'll process basic printable chars from keydown for now.
+                // In a full implementation, you'd listen to EventType.TextInput.
+                char charInput = (char)sdlEvent.Key.Scancode;
+                // Only add if it's a printable ASCII character (rough filter)
+                if (charInput >= 32 && charInput <= 126) // Printable ASCII range
+                {
+                    AddCharacterInput(charInput);
+                }
+                break;
+            case EventType.KeyUp:
+                Keys mappedKeyUp = MapSDL3ScanCodeToDirectUIKey(sdlEvent.Key.Scancode);
+                if (mappedKeyUp != Keys.Unknown) AddKeyReleased(mappedKeyUp);
+                break;
+        }
+    }
+
+    /// <summary>
     /// Maps a Veldrid MouseButton enum to a DirectUI MouseButton enum.
     /// </summary>
     private static MouseButton MapVeldridMouseButtonToDirectUIButton(Veldrid.MouseButton vdButton)
@@ -4538,6 +4577,107 @@ public class InputManager
             KeyboardKey.F10 => Keys.F10,
             KeyboardKey.F11 => Keys.F11,
             KeyboardKey.F12 => Keys.F12,
+            _ => Keys.Unknown,
+        };
+    }
+
+    /// <summary>
+    /// Maps an SDL3 MouseButton enum to a DirectUI MouseButton enum.
+    /// </summary>
+    private static MouseButton MapSDL3MouseButtonToDirectUIButton(MouseButton sdlButton)
+    {
+        return sdlButton switch
+        {
+            MouseButton.Left => MouseButton.Left,
+            MouseButton.Right => MouseButton.Right,
+            MouseButton.Middle => MouseButton.Middle,
+            MouseButton.XButton1 => MouseButton.XButton1,
+            MouseButton.XButton2 => MouseButton.XButton2,
+            _ => MouseButton.Left, // Default case, though should ideally be unreachable
+        };
+    }
+
+    /// <summary>
+    /// Maps an SDL3 Scancode enum to a DirectUI Keys enum.
+    /// </summary>
+    private static Keys MapSDL3ScanCodeToDirectUIKey(Scancode sdlScancode)
+    {
+        return sdlScancode switch
+        {
+            Scancode.Backspace => Keys.Backspace,
+            Scancode.Tab => Keys.Tab,
+            Scancode.Return => Keys.Enter, // RETURN is Enter
+            Scancode.LShift => Keys.Shift,
+            Scancode.RShift => Keys.Shift,
+            Scancode.LCtrl => Keys.Control,
+            Scancode.RCtrl => Keys.Control,
+            Scancode.LAlt => Keys.Alt,
+            Scancode.RAlt => Keys.Alt,
+            Scancode.Pause => Keys.Pause,
+            Scancode.Capslock => Keys.CapsLock,
+            Scancode.Escape => Keys.Escape,
+            Scancode.Space => Keys.Space,
+            Scancode.Pageup => Keys.PageUp,
+            Scancode.Pagedown => Keys.PageDown,
+            Scancode.End => Keys.End,
+            Scancode.Home => Keys.Home,
+            Scancode.Left => Keys.LeftArrow,
+            Scancode.Up => Keys.UpArrow,
+            Scancode.Right => Keys.RightArrow,
+            Scancode.Down => Keys.DownArrow,
+            Scancode.Insert => Keys.Insert,
+            Scancode.Delete => Keys.Delete,
+            //Scancode.Num0 => Keys.D0,
+            //Scancode.Num1 => Keys.D1,
+            //Scancode.Num2 => Keys.D2,
+            //Scancode.Num3 => Keys.D3,
+            //Scancode.Num4 => Keys.D4,
+            //Scancode.Num5 => Keys.D5,
+            //Scancode.Num6 => Keys.D6,
+            //Scancode.Num7 => Keys.D7,
+            //Scancode.Num8 => Keys.D8,
+            //Scancode.Num9 => Keys.D9,
+            Scancode.A => Keys.A,
+            Scancode.B => Keys.B,
+            Scancode.C => Keys.C,
+            Scancode.D => Keys.D,
+            Scancode.E => Keys.E,
+            Scancode.F => Keys.F,
+            Scancode.G => Keys.G,
+            Scancode.H => Keys.H,
+            Scancode.I => Keys.I,
+            Scancode.J => Keys.J,
+            Scancode.K => Keys.K,
+            Scancode.L => Keys.L,
+            Scancode.M => Keys.M,
+            Scancode.N => Keys.N,
+            Scancode.O => Keys.O,
+            Scancode.P => Keys.P,
+            Scancode.Q => Keys.Q,
+            Scancode.R => Keys.R,
+            Scancode.S => Keys.S,
+            Scancode.T => Keys.T,
+            Scancode.U => Keys.U,
+            Scancode.V => Keys.V,
+            Scancode.W => Keys.W,
+            Scancode.X => Keys.X,
+            Scancode.Y => Keys.Y,
+            Scancode.Z => Keys.Z,
+            Scancode.F1 => Keys.F1,
+            Scancode.F2 => Keys.F2,
+            Scancode.F3 => Keys.F3,
+            Scancode.F4 => Keys.F4,
+            Scancode.F5 => Keys.F5,
+            Scancode.F6 => Keys.F6,
+            Scancode.F7 => Keys.F7,
+            Scancode.F8 => Keys.F8,
+            Scancode.F9 => Keys.F9,
+            Scancode.F10 => Keys.F10,
+            Scancode.F11 => Keys.F11,
+            Scancode.F12 => Keys.F12,
+            Scancode.LGUI => Keys.LeftWindows, // Left GUI key (Windows, Command, etc.)
+            Scancode.RGUI => Keys.RightWindows, // Right GUI key
+            Scancode.Application => Keys.Menu, // Application key (right-click menu)
             _ => Keys.Unknown,
         };
     }
@@ -7356,6 +7496,402 @@ public class RaylibTextService : ITextService
 }
 </file>
 
+<file path="Backends\SDL3\SDL3Renderer.cs">
+using System.Numerics;
+using DirectUI.Core;
+using SDL3;
+using Veldrid.Sdl2;
+using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by SDL
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends.SDL3;
+
+public unsafe class SDL3Renderer : IRenderer
+{
+    private readonly nint _rendererPtr;
+    private readonly nint _windowPtr;
+
+    private int _windowWidth;
+    private int _windowHeight;
+
+    private readonly Stack<Rect> _clipRectStack = new();
+
+    public Vector2 RenderTargetSize
+    {
+        get
+        {
+            // SDL_GetWindowSizeInPixels should be used if DPI scaling is a concern.
+            SDL.GetWindowSize(_windowPtr, out _windowWidth, out _windowHeight);
+            return new(_windowWidth, _windowHeight);
+        }
+    }
+
+    public SDL3Renderer(nint rendererPtr, nint windowPtr)
+    {
+        _rendererPtr = rendererPtr;
+        _windowPtr = windowPtr;
+
+        SDL.GetWindowSize(_windowPtr, out _windowWidth, out _windowHeight);
+    }
+
+    internal void UpdateWindowSize(int width, int height)
+    {
+        _windowWidth = width;
+        _windowHeight = height;
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
+    {
+        SDL.SetRenderDrawColor(_rendererPtr, color.R, color.G, color.B, color.A);
+
+        if (strokeWidth <= 1.0f)
+        {
+            // Draw 1-pixel thin line
+            SDL.RenderLine(_rendererPtr, (int)p1.X, (int)p1.Y, (int)p2.X, (int)p2.Y);
+        }
+        else
+        {
+            // For thicker lines, approximate with a filled rectangle.
+            // This is a basic approximation, primarily for axis-aligned or near-axis-aligned lines.
+            // For general diagonal lines with thickness, more complex geometry (like a rotated rectangle or two triangles)
+            // or a dedicated library (e.g., SDL_gfx or custom shader) would be required.
+
+            float halfStroke = strokeWidth / 2f;
+            float dx = p2.X - p1.X;
+            float dy = p2.Y - p1.Y;
+
+            // If it's more horizontal
+            if (Math.Abs(dx) >= Math.Abs(dy))
+            {
+                SDL.FRect rectangle = new()
+                {
+                    X = Math.Min(p1.X, p2.X),
+                    Y = (p1.Y + p2.Y) / 2f - halfStroke, // Center Y on the line's average Y
+                    W = Math.Abs(dx),
+                    H = strokeWidth
+                };
+                SDL.RenderFillRect(_rendererPtr, rectangle);
+            }
+            // If it's more vertical
+            else
+            {
+                SDL.FRect rectangle = new()
+                {
+                    X = (p1.X + p2.X) / 2f - halfStroke, // Center X on the line's average X
+                    Y = Math.Min(p1.Y, p2.Y),
+                    W = strokeWidth,
+                    H = Math.Abs(dy)
+                };
+                SDL.RenderFillRect(_rendererPtr, rectangle);
+            }
+        }
+    }
+
+    public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
+    {
+        // Convert Vortice.Mathematics.Rect to SDL.FRect for drawing
+        SDL.FRect outerRect = new()
+        {
+            X = rect.X,
+            Y = rect.Y,
+            W = rect.Width,
+            H = rect.Height
+        };
+
+        // 1. Draw the border background (entire rectangle with border color)
+        // If border color is transparent or all border lengths are zero, this step effectively does nothing visually.
+        if (style.BorderColor.A > 0 && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0))
+        {
+            SDL.SetRenderDrawColor(_rendererPtr, style.BorderColor.R, style.BorderColor.G, style.BorderColor.B, style.BorderColor.A);
+            SDL.RenderFillRect(_rendererPtr, outerRect);
+        }
+
+        // 2. Draw the inner fill rectangle (inset by border lengths)
+        if (style.FillColor.A > 0)
+        {
+            float fillX = rect.X + style.BorderLengthLeft;
+            float fillY = rect.Y + style.BorderLengthTop;
+            float fillWidth = Math.Max(0f, rect.Width - style.BorderLengthLeft - style.BorderLengthRight);
+            float fillHeight = Math.Max(0f, rect.Height - style.BorderLengthTop - style.BorderLengthBottom);
+
+            if (fillWidth > 0 && fillHeight > 0)
+            {
+                SDL.FRect fillRect = new()
+                {
+                    X = fillX,
+                    Y = fillY,
+                    W = fillWidth,
+                    H = fillHeight
+                };
+
+                SDL.SetRenderDrawColor(_rendererPtr, style.FillColor.R, style.FillColor.G, style.FillColor.B, style.FillColor.A);
+                SDL.RenderFillRect(_rendererPtr, fillRect);
+            }
+            // Special case: If no border is defined (all lengths 0) and the fill itself is opaque,
+            // the above fillRect might be invalid (e.g. if original rect had 0 width/height)
+            // In such a scenario, we still want to draw the full outerRect with the fill color if it's visible.
+            else if (style.BorderLengthTop == 0 && style.BorderLengthRight == 0 && style.BorderLengthBottom == 0 && style.BorderLengthLeft == 0 && (outerRect.W > 0 && outerRect.H > 0))
+            {
+                SDL.SetRenderDrawColor(_rendererPtr, style.FillColor.R, style.FillColor.G, style.FillColor.B, style.FillColor.A);
+                SDL.RenderFillRect(_rendererPtr, outerRect);
+            }
+        }
+        // Roundness is not natively supported by SDL's basic renderer. It will be drawn as square corners.
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
+    {
+        // Not implemented in step 1. Will draw nothing.
+        // For full text rendering, SDL_ttf would be needed, and it's a multi-step process
+        // (load font, render text to surface, create texture from surface, copy texture).
+        // This will be implemented in a later step.
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        _clipRectStack.Push(rect);
+        ApplyClipRect(rect);
+    }
+
+    public void PopClipRect()
+    {
+        if (_clipRectStack.Count > 0)
+        {
+            _clipRectStack.Pop();
+        }
+
+        if (_clipRectStack.Count > 0)
+        {
+            ApplyClipRect(_clipRectStack.Peek());
+        }
+        else
+        {
+            SDL.Rect rect = new()
+            {
+                X = 0,
+                Y = 0,
+                W = 0,
+                H = 0,
+            };
+
+            SDL.SetRenderClipRect(_rendererPtr, rect);
+        }
+    }
+
+    private void ApplyClipRect(Rect rect)
+    {
+        SDL.Rect clipRect = new()
+        {
+            X = (int)float.Floor(rect.X),
+            Y = (int)float.Floor(rect.Y),
+            W = (int)float.Ceiling(rect.Width + (rect.X - float.Floor(rect.X))),
+            H = (int)float.Ceiling(rect.Height + (rect.Y - float.Floor(rect.Y)))
+        };
+
+        SDL.SetRenderClipRect(_rendererPtr, clipRect);
+    }
+
+    public void Flush()
+    {
+        // SDL's 2D renderer typically renders commands immediately to an internal buffer.
+        // The SDL_RenderPresent call (handled by SDL3UIHost) does the actual flush to screen.
+    }
+
+    public void Cleanup()
+    {
+        _clipRectStack.Clear();
+        // The renderer and window are managed and destroyed by ApplicationRunner.
+    }
+}
+</file>
+
+<file path="Backends\SDL3\SDL3TextLayout.cs">
+using System;
+using System.Numerics;
+using DirectUI.Core;
+
+namespace DirectUI.Backends.SDL3;
+
+/// <summary>
+/// A minimal implementation of ITextLayout for SDL3.
+/// This will be expanded in a later step.
+/// </summary>
+internal class SDL3TextLayout : ITextLayout
+{
+    public Vector2 Size { get; }
+    public string Text { get; }
+
+    public SDL3TextLayout(string text, Vector2 size)
+    {
+        Text = text;
+        Size = size;
+    }
+
+    public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
+    {
+        // Placeholder
+        float approxCharWidth = Size.X / Math.Max(1, Text.Length);
+        return new TextHitTestMetrics(new Vector2(textPosition * approxCharWidth, 0), new Vector2(approxCharWidth, Size.Y));
+    }
+
+    public TextHitTestResult HitTestPoint(Vector2 point)
+    {
+        // Placeholder
+        bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
+        int textPosition = (int)(point.X / (Size.X / Math.Max(1, Text.Length)));
+        bool isTrailingHit = false; // Simple for now
+        return new TextHitTestResult(textPosition, isTrailingHit, isInside, HitTestTextPosition(textPosition, isTrailingHit));
+    }
+
+    public void Dispose()
+    {
+        // No unmanaged resources currently held by this class
+    }
+}
+</file>
+
+<file path="Backends\SDL3\SDL3TextService.cs">
+using System.Numerics;
+using DirectUI.Core;
+
+namespace DirectUI.Backends.SDL3;
+
+public class SDL3TextService : ITextService
+{
+    public SDL3TextService()
+    {
+        // TTF_Init() will be called here in a later step.
+    }
+
+    public Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        // Placeholder: return a fixed size for now
+        return new Vector2(text.Length * style.FontSize * 0.5f, style.FontSize);
+    }
+
+    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+    {
+        // Placeholder: return a dummy layout object
+        return new SDL3TextLayout(text, MeasureText(text, style));
+    }
+
+    public void Cleanup()
+    {
+        // TTF_Quit() will be called here in a later step.
+    }
+}
+</file>
+
+<file path="Backends\SDL3\SDL3UIHost.cs">
+using System.Diagnostics;
+using DirectUI.Diagnostics;
+using DirectUI.Input;
+using SDL3;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends.SDL3;
+
+public unsafe class SDL3UIHost
+{
+    private readonly Action<UIContext> _drawCallback;
+    private readonly Color4 _backgroundColor;
+    private readonly nint _rendererPtr;
+    private readonly nint _windowPtr;
+
+    private readonly FpsCounter _fpsCounter;
+    private readonly InputManager _inputManager;
+    private readonly Stopwatch _frameTimer = new();
+    private long _lastFrameTicks;
+
+    private SDL3Renderer? _renderer;
+    private SDL3TextService? _textService;
+
+    public bool ShowFpsCounter { get; set; } = true;
+    public InputManager Input => _inputManager;
+
+    public SDL3UIHost(Action<UIContext> drawCallback, Color4 backgroundColor, nint rendererPtr, nint windowPtr)
+    {
+        _drawCallback = drawCallback;
+        _backgroundColor = backgroundColor;
+        _rendererPtr = rendererPtr;
+        _windowPtr = windowPtr;
+
+        _fpsCounter = new FpsCounter();
+        _inputManager = new InputManager();
+
+        _frameTimer.Start();
+        _lastFrameTicks = _frameTimer.ElapsedTicks;
+    }
+
+    public bool Initialize()
+    {
+        _renderer = new SDL3Renderer(_rendererPtr, _windowPtr);
+        _textService = new SDL3TextService(); // Minimal for now
+        _fpsCounter.Initialize(_textService, _renderer);
+        return true;
+    }
+
+    public void Cleanup()
+    {
+        _fpsCounter.Cleanup();
+        _renderer?.Cleanup();
+        _textService?.Cleanup();
+        // The SDL renderer and window are destroyed in ApplicationRunner.
+    }
+
+    public void Resize(int width, int height)
+    {
+        // For SDL, resizing window usually updates renderer automatically,
+        // but we might need to tell our renderer implementation the new size.
+        _renderer?.UpdateWindowSize(width, height);
+    }
+
+    public void Render()
+    {
+        if (UI.IsRendering) return;
+        if (_renderer is null || _textService is null) return;
+
+        long currentTicks = _frameTimer.ElapsedTicks;
+        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
+        _lastFrameTicks = currentTicks;
+        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
+
+        _fpsCounter.Update();
+
+        // Clear the renderer buffer
+       SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+       SDL.RenderClear(_rendererPtr);
+
+        try
+        {
+            var inputState = _inputManager.GetCurrentState();
+            var uiContext = new UIContext(_renderer, _textService, inputState, deltaTime);
+            UI.BeginFrame(uiContext);
+
+            _drawCallback(uiContext);
+
+            if (ShowFpsCounter)
+            {
+                _fpsCounter.Draw();
+            }
+
+            UI.EndFrame();
+
+            _renderer.Flush(); // Flush batched commands, if any (not implemented yet for SDL)
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"An error occurred during SDL3 drawing: {ex}");
+        }
+        finally
+        {
+           SDL.RenderPresent(_rendererPtr); // Present the rendered frame
+            _inputManager.PrepareNextFrame();
+        }
+    }
+}
+</file>
+
 <file path="Backends\Vulkan\VeldridRenderer.cs">
 using System;
 using System.Collections.Generic;
@@ -7384,7 +7920,7 @@ public class VeldridRenderer : IRenderer, IDisposable
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
 
-    // Font is persistent, but the renderer will be created per-batch.
+    // Font is persistent. Renderer will be created transiently per-frame as a diagnostic.
     private readonly SharpText.Core.Font _font;
 
     // Batched text rendering state
@@ -7425,8 +7961,8 @@ public class VeldridRenderer : IRenderer, IDisposable
         _gd = gd;
         _cl = cl;
 
-        // Create persistent font resource. The renderer will be transient.
-        _font = new SharpText.Core.Font("C:/Windows/Fonts/segoeui.ttf", 16);
+        // Create persistent font resource.
+        _font = new SharpText.Core.Font("C:/Windows/Fonts/consola.ttf", 16);
 
         // Create resources for flat geometry
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -7555,57 +8091,16 @@ public class VeldridRenderer : IRenderer, IDisposable
             return;
         }
 
-        // The SharpText renderer has a default internal buffer limit of 1024 glyphs.
-        // We batch our text calls to respect this limit.
-        const int maxCharsPerBatch = 1000;
-
-        var currentMiniBatch = new List<BatchedText>();
-        int currentMiniBatchCharCount = 0;
+        // DIAGNOSTIC: Create a new renderer each frame to get a clean state.
+        // DO NOT dispose it with `using` as its Dispose method appears to be broken
+        // and interferes with the shared CommandList, causing a black screen.
+        // This will leak memory and is not a permanent solution, but it tests
+        // if state accumulation is the cause of the visual degradation.
+        var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
 
         foreach (var textCall in _textBatch)
         {
-            string textForLen = textCall.Text;
-            if (textForLen.Length > maxCharsPerBatch)
-            {
-                textForLen = textForLen.Substring(0, maxCharsPerBatch);
-            }
-
-            // If the current text call would overflow the mini-batch, process the current one first.
-            if (currentMiniBatch.Count > 0 && currentMiniBatchCharCount + textForLen.Length > maxCharsPerBatch)
-            {
-                ProcessMiniBatch(currentMiniBatch);
-                currentMiniBatch.Clear();
-                currentMiniBatchCharCount = 0;
-            }
-
-            currentMiniBatch.Add(textCall);
-            currentMiniBatchCharCount += textForLen.Length;
-        }
-
-        // Process the final mini-batch if it has any content.
-        if (currentMiniBatch.Count > 0)
-        {
-            ProcessMiniBatch(currentMiniBatch);
-        }
-
-        _textBatch.Clear();
-    }
-
-    private void ProcessMiniBatch(List<BatchedText> batch)
-    {
-        // Create a new, clean renderer for each batch. This is the key to preventing state corruption.
-        using var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
-
-        foreach (var textCall in batch)
-        {
-            string textToDraw = textCall.Text;
-            // The text must still be truncated here as its original form is stored in the BatchedText struct.
-            if (textToDraw.Length > 1000)
-            {
-                textToDraw = textToDraw.Substring(0, 1000);
-            }
-
-            Vector2 measuredSize = MeasureText(textToDraw, textCall.Style);
+            Vector2 measuredSize = MeasureText(textCall.Text, textCall.Style);
             Vector2 textDrawPos = textCall.Origin;
 
             // Alignment logic
@@ -7627,11 +8122,13 @@ public class VeldridRenderer : IRenderer, IDisposable
             }
 
             var sharpTextColor = new SharpText.Core.Color(textCall.Color.R, textCall.Color.G, textCall.Color.B, textCall.Color.A);
-            textRenderer.DrawText(textToDraw, textDrawPos, sharpTextColor, 1);
+            textRenderer.DrawText(textCall.Text, textDrawPos, sharpTextColor, 1);
         }
 
-        // Issue the single draw call for this entire mini-batch.
+        // Issue a single draw call for all the text added in this frame.
         textRenderer.Draw();
+
+        _textBatch.Clear();
     }
 
 
@@ -7664,6 +8161,7 @@ public class VeldridRenderer : IRenderer, IDisposable
         _projMatrixBuffer.Dispose();
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
+        // Do not dispose a transient text renderer here.
     }
 
     private bool _disposedValue;
@@ -7976,11 +8474,13 @@ public struct VertexPositionColor
 <file path="ApplicationRunner.cs">
 using DirectUI;
 using DirectUI.Backends.Vulkan;
+using DirectUI.Backends.SDL3; // NEW: Added for SDL3 UI Host
 using Raylib_cs;
 using Veldrid;
 using Veldrid.Sdl2;
 using Veldrid.StartupUtilities;
 using GraphicsBackend = DirectUI.GraphicsBackend;
+using SDL3;
 
 namespace Cocoshell;
 
@@ -7999,6 +8499,9 @@ public static class ApplicationRunner
             case GraphicsBackend.Vulkan:
                 RunVulkan();
                 break;
+            case GraphicsBackend.SDL3: // NEW
+                RunSDL3();
+                break;
             default:
                 throw new ArgumentOutOfRangeException(nameof(backend), backend, null);
         }
@@ -8008,13 +8511,14 @@ public static class ApplicationRunner
     {
         Console.WriteLine("Using Raylib Backend.");
 
-        using MyDirectUIApp app = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
+        // MyDesktopAppWindow manages the Raylib window internally.
+        using MyDesktopAppWindow appWindow = new("My Refactored Raylib App", 1024, 768, GraphicsBackend.Raylib);
 
-        if (app.Create())
+        if (appWindow.CreateHostWindow()) // Call the new creation method
         {
             while (!Raylib.WindowShouldClose())
             {
-                app.FrameUpdate();
+                appWindow.FrameUpdate();
             }
         }
         else
@@ -8027,11 +8531,11 @@ public static class ApplicationRunner
     {
         Console.WriteLine("Using Direct2D Backend.");
 
-        using MyDirectUIApp appWindow = new("My Refactored D2D App", 1024, 768, GraphicsBackend.Direct2D);
+        using MyDesktopAppWindow appWindow = new("My Refactored D2D App", 1024, 768, GraphicsBackend.Direct2D);
 
         try
         {
-            if (appWindow.Create())
+            if (appWindow.CreateHostWindow()) // Call the new creation method
             {
                 Application.Run();
             }
@@ -8045,7 +8549,7 @@ public static class ApplicationRunner
     private static void RunVulkan()
     {
         Console.WriteLine("Using Vulkan (Veldrid) Backend.");
-        
+
         WindowCreateInfo windowCI = new()
         {
             X = 100,
@@ -8060,11 +8564,12 @@ public static class ApplicationRunner
         GraphicsDeviceOptions options = new(false, null, true, ResourceBindingModel.Improved, true, true);
         Veldrid.GraphicsDevice gd = VeldridStartup.CreateGraphicsDevice(window, options, Veldrid.GraphicsBackend.Vulkan);
 
-        using MyDirectUIApp appLogic = new("Veldrid App Logic", 1024, 768, GraphicsBackend.Vulkan);
+        MyUILogic appLogic = new(GraphicsBackend.Vulkan); // Now instantiate MyUILogic
+        appLogic.SetOpenProjectWindowHostAction(() => Console.WriteLine("Modal windows not supported for Veldrid yet.")); // Provide dummy action
 
         Vortice.Mathematics.Color4 backgroundColor = new(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
         VeldridUIHost host = new(appLogic.DrawUI, backgroundColor, gd);
-        
+
         host.Initialize();
 
         window.Resized += () => host.Resize((uint)window.Width, (uint)window.Height);
@@ -8072,7 +8577,7 @@ public static class ApplicationRunner
         while (window.Exists)
         {
             InputSnapshot snapshot = window.PumpEvents();
-            
+
             if (!window.Exists)
             {
                 break;
@@ -8095,6 +8600,88 @@ public static class ApplicationRunner
         gd.Dispose();
         window.Close();
     }
+
+    private unsafe static void RunSDL3() // NEW method, similar structure to Vulkan
+    {
+        Console.WriteLine("Using SDL3 Backend.");
+
+        SDL.Init(SDL.InitFlags.Video);
+
+        // Create window
+        uint width = 1024;
+        uint height = 768;
+        string title = "My SDL3 App";
+        
+        nint window = SDL.CreateWindow(title, (int)width, (int)height, SDL.WindowFlags.Resizable);
+
+        // Create renderer
+        nint renderer = SDL.CreateRenderer(window, null);
+        
+        if (renderer == null)
+        {
+            Console.WriteLine($"Error creating renderer: {SDL.GetError()}");
+            SDL.DestroyWindow(window);
+            SDL.Quit();
+            return;
+        }
+
+        MyUILogic appLogic = new(GraphicsBackend.SDL3); // Now instantiate MyUILogic
+        
+        appLogic.SetOpenProjectWindowHostAction(() =>
+        {
+            Console.WriteLine("Modal windows not supported for SDL3 yet.");
+        }); // Provide dummy action
+
+        Vortice.Mathematics.Color4 backgroundColor = new(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
+        SDL3UIHost host = new(appLogic.DrawUI, backgroundColor, renderer, window);
+
+        host.Initialize();
+
+        bool running = true;
+
+        while (running)
+        {
+            while (SDL.PollEvent(out SDL.Event ev))
+            {
+                host.Input.ProcessSDL3Event(ev);
+
+                if ((SDL.EventType)ev.Type == SDL.EventType.Quit)
+                {
+                    running = false;
+                }
+                else if (ev.Window.WindowID == (uint)SDL.EventType.WindowResized || ev.Window.WindowID == (uint)SDL.EventType.WindowPixelSizeChanged)
+                {    
+                    host.Resize(ev.Window.Data1, ev.Window.Data2);
+                }
+                else if ((SDL.EventType)ev.Type == SDL.EventType.MouseMotion)
+                {
+                    // Manual mouse position update since SDL_Event is a raw struct.
+                    host.Input.SetMousePosition((int)ev.Motion.X, (int)ev.Motion.Y);
+                }
+            }
+
+            host.Render();
+        }
+
+        host.Cleanup();
+        SDL.DestroyRenderer(renderer);
+        SDL.DestroyWindow(window);
+        SDL.Quit();
+    }
+}
+</file>
+
+<file path="IAppLogic.cs">
+using System;
+
+namespace DirectUI;
+
+public interface IAppLogic
+{
+    void DrawUI(UIContext context);
+    // Any other common logic that needs to be called by the host.
+    // For this step, just DrawUI.
+    Action OpenProjectWindowAction { get; }
 }
 </file>
 
@@ -8489,7 +9076,7 @@ public class InputMapEditor
 </file>
 
 <file path="MyDirectUIApp.cs">
-// MyDirectUIApp.cs
+// MyDesktopAppWindow.cs (Renamed from MyDirectUIApp.cs)
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -8498,44 +9085,35 @@ using Raylib_cs; // Added for Raylib
 namespace DirectUI;
 
 /// <summary>
-/// The main application window class. This class is responsible for creating and
-/// managing the window, hosting the rendering engine (AppHost), and orchestrating
-/// the different views and modal dialogs.
+/// This class serves as the concrete Win32 window for Direct2D and Raylib backends.
+/// It wraps the core UI logic provided by MyUILogic.
 /// </summary>
-public class MyDirectUIApp : Direct2DAppWindow // This class name might be misleading if we use Raylib
+public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Raylib
 {
-    // View models for different parts of the UI
-    private readonly MainView _mainView;
-    private readonly InputMapEditor _inputMapEditor;
-
-    // State for managing the modal "Project Settings" window
-    private ModalWindow? _projectWindow;
-    private bool _isProjectWindowOpen = false;
-    private int _projectWindowActiveTab = 0;
-    private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
-
-    // Flag to control which backend is used
+    private readonly MyUILogic _uiLogic;
     private readonly GraphicsBackend _backend;
 
-    public MyDirectUIApp(string title, int width, int height, GraphicsBackend backend) : base(title, width, height)
+    public MyDesktopAppWindow(string title, int width, int height, GraphicsBackend backend)
+        : base(title, width, height)
     {
         _backend = backend;
-        _mainView = new MainView();
-
-        // This path would typically come from a config file or service locator
-        string inputMapPath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cherris\Res\Cherris\InputMap.yaml";
-        _inputMapEditor = new InputMapEditor(inputMapPath);
+        _uiLogic = new MyUILogic(backend); // Instantiate the UI logic
+        // Provide a lambda for the UI logic to call to open the project window,
+        // passing 'this' (the Win32Window instance) as the owner.
+        _uiLogic.SetOpenProjectWindowHostAction(() => _uiLogic.OpenProjectWindowInternal(this));
     }
 
     /// <summary>
     /// Creates the window and initializes resources for either D2D or Raylib backend.
     /// This is the primary entry point for starting the application window.
     /// </summary>
-    public bool Create()
+    public bool CreateHostWindow()
     {
-        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan)
+        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan or GraphicsBackend.SDL3)
         {
-            // For Raylib and Vulkan, we bypass the base Create and call Initialize directly
+            // For Raylib/Vulkan/SDL3, we bypass the Win32 window creation here.
+            // SDL3 and Vulkan are handled by ApplicationRunner directly.
+            // Raylib creates its window within AppHost.Initialize, so we just need to call Initialize.
             return Initialize();
         }
         else
@@ -8546,8 +9124,6 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     }
 
     // Override Initialize and Cleanup in Win32Window base if using Raylib
-    // For Raylib, we won't actually create a Win32 window directly.
-    // The AppHost will handle the Raylib window management.
     protected override bool Initialize()
     {
         switch (_backend)
@@ -8561,9 +9137,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
                 return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
 
             case GraphicsBackend.Vulkan:
-                // This logic is now handled by ApplicationRunner.
-                // The class instance is created, but its windowing is not used.
-                return true;
+            case GraphicsBackend.SDL3:
+                // This logic is now handled by ApplicationRunner and their respective hosts.
+                // This MyDesktopAppWindow should not be instantiated for these backends.
+                Console.WriteLine($"Error: MyDesktopAppWindow should not be used with {_backend} backend.");
+                return false;
 
             case GraphicsBackend.Direct2D:
             default:
@@ -8583,7 +9161,8 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
                 break;
 
             case GraphicsBackend.Vulkan:
-                // Nothing to do here, ApplicationRunner handles Veldrid cleanup.
+            case GraphicsBackend.SDL3:
+                // Nothing to do here, ApplicationRunner/Host handles cleanup for these.
                 break;
 
             case GraphicsBackend.Direct2D:
@@ -8618,7 +9197,8 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
                 break;
 
             case GraphicsBackend.Vulkan:
-                // This is not called in the Veldrid loop.
+            case GraphicsBackend.SDL3:
+                // This method should not be called for Veldrid/SDL3 backends, as their loop is in ApplicationRunner.
                 break;
 
             case GraphicsBackend.Direct2D:
@@ -8632,12 +9212,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     protected override AppHost CreateAppHost()
     {
         var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        return new AppHost(DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib); // Pass the backend flag
+        // Pass the DrawUI method from the _uiLogic instance.
+        return new AppHost(_uiLogic.DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib);
     }
 
-    // For Raylib, AppHost's InputManager directly processes Raylib events.
-    // Therefore, Win32Window's OnKeyDown/Move/Up/etc. methods should only call base
-    // if using the D2D backend. Otherwise, they are irrelevant.
+    // Input handlers only call base if D2D backend, because Raylib's input is handled directly by AppHost.
     protected override void OnKeyDown(Keys key)
     {
         if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
@@ -8676,19 +9255,153 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     {
         if (_backend == GraphicsBackend.Direct2D) base.OnChar(c);
     }
+}
+</file>
 
-    /// <summary>
-    /// The primary drawing callback for the main application window. It delegates
-    /// drawing to the main view after handling any window state management.
-    /// </summary>
-    public void DrawUI(UIContext context)
+<file path="MyUILogic.cs">
+// MyUILogic.cs
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+/// <summary>
+/// This class encapsulates the actual UI logic and view management, decoupled from windowing.
+/// It implements the IAppLogic interface.
+/// </summary>
+public class MyUILogic : IAppLogic
+{
+    // --- Constants ---
+    private const float MenuBarHeight = 30f;
+    private const float PanelPadding = 10f;
+    private const float PanelGap = 10f;
+
+    // --- State for layout ---
+    private float _leftPanelWidth = 250f;
+    private float _rightPanelWidth = 300f;
+    private float _bottomPanelHeight = 150f;
+
+    // --- Child Views ---
+    private readonly MenuBarView _menuBarView;
+    private readonly SceneTreeView _sceneTreeView;
+    private readonly InspectorView _inspectorView;
+    private readonly BottomPanelView _bottomPanelView;
+    private readonly InputMapEditor _inputMapEditor;
+
+    // State for managing the modal "Project Settings" window
+    // These are properties on the logic class, but their actual handling
+    // for modal windows will be dependent on the capabilities of the host.
+    private ModalWindow? _projectWindow; // This will only be instantiated by the D2D host
+    private bool _isProjectWindowOpen = false; // Controlled by UI logic
+    private int _projectWindowActiveTab = 0;
+    private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
+
+    // Flag to indicate the backend (for logic branching, e.g., modal window support)
+    private readonly GraphicsBackend _backend;
+
+    // Delegate to call the hosting window's OpenProjectWindow method, which handles platform-specific windowing.
+    public Action OpenProjectWindowAction { get; private set; } = () => { };
+
+    public MyUILogic(GraphicsBackend backend)
     {
-        ManageModalWindowState();
-        _mainView.Draw(context, OpenProjectWindow);
+        _backend = backend;
+        _menuBarView = new MenuBarView();
+        _sceneTreeView = new SceneTreeView();
+        _inspectorView = new InspectorView();
+        _bottomPanelView = new BottomPanelView();
     }
 
     /// <summary>
-    /// The drawing callback passed to the modal window.
+    /// Sets the action that the UI logic should call to request opening the project window.
+    /// This action will be provided by the concrete window/host implementation.
+    /// </summary>
+    public void SetOpenProjectWindowHostAction(Action action)
+    {
+        OpenProjectWindowAction = action;
+    }
+
+    public void DrawUI(UIContext context)
+    {
+        ManageModalWindowState(); // Still manages state for D2D backend
+        _menuBarView.Draw(context, OpenProjectWindowAction); // Pass the host-provided action
+        DrawMainLayoutPanels();
+
+        // After drawing all panels, check if the bottom panel has signalled a scene change.
+        if (_bottomPanelView.SelectedScenePath is not null)
+        {
+            _sceneTreeView.LoadScene(_bottomPanelView.SelectedScenePath);
+        }
+    }
+
+    private void DrawMainLayoutPanels()
+    {
+        DrawLeftPanel();
+        DrawRightPanel();
+        DrawBottomPanel();
+    }
+
+    private void DrawLeftPanel()
+    {
+        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
+        var padding = new Vector2(PanelPadding, PanelPadding);
+
+        UI.BeginResizableVPanel("left_panel", ref _leftPanelWidth, HAlignment.Left, MenuBarHeight,
+            minWidth: 150, maxWidth: 400, padding: padding, gap: PanelGap, panelStyle: panelStyle);
+
+        _sceneTreeView.Draw();
+
+        UI.EndResizableVPanel();
+    }
+
+    private void DrawRightPanel()
+    {
+        var panelStyle = new BoxStyle { BorderLength = 1, Roundness = 0f };
+        var padding = new Vector2(PanelPadding, PanelPadding);
+
+        // Calculate the available content height inside the panel for the inspector view.
+        float panelContentHeight = UI.Context.Renderer.RenderTargetSize.Y - MenuBarHeight - (padding.Y * 2);
+
+        UI.BeginResizableVPanel(
+            "right_panel",
+            ref _rightPanelWidth,
+            HAlignment.Right,
+            MenuBarHeight,
+            minWidth: 150,
+            maxWidth: 400,
+            padding: padding,
+            gap: 0,
+            panelStyle: panelStyle);
+        {
+            _inspectorView.Draw(_sceneTreeView.SelectedNode, _rightPanelWidth, panelContentHeight);
+        }
+        UI.EndResizableVPanel();
+    }
+
+    private void DrawBottomPanel()
+    {
+        BoxStyle panelStyle = new() { BorderLength = 1, Roundness = 0f };
+        Vector2 padding = new(PanelPadding, PanelPadding);
+
+        UI.BeginResizableHPanel(
+            "bottom_panel",
+            ref _bottomPanelHeight,
+            _leftPanelWidth,
+            _rightPanelWidth,
+            MenuBarHeight,
+            minHeight: 50,
+            maxHeight: 300,
+            padding: padding,
+            gap: PanelGap,
+            panelStyle: panelStyle);
+        {
+            _bottomPanelView.Draw();
+        }
+        UI.EndResizableHPanel();
+    }
+
+    /// <summary>
+    /// The drawing callback for the modal window.
     /// </summary>
     private void DrawProjectWindowUI(UIContext context)
     {
@@ -8734,18 +9447,21 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
         UI.EndVBoxContainer();
     }
 
-    private void OpenProjectWindow()
+    // This method is called internally by UI elements (e.g., MenuBarView)
+    // It signals the _host_ to open a project window.
+    // The host (e.g., MyDesktopAppWindow for D2D) then creates the modal window.
+    internal void OpenProjectWindowInternal(Win32Window ownerWindow)
     {
         if (_isProjectWindowOpen) return;
 
-        // For Raylib/Vulkan backends, modal windows are not handled by Win32Window directly.
+        // Only D2D backend supports Win32 modal windows through this path.
         if (_backend != GraphicsBackend.Direct2D)
         {
             Console.WriteLine($"Modal windows are not yet implemented for the {_backend} backend.");
             return;
         }
 
-        _projectWindow = new ModalWindow(this, "Project Settings", 600, 400, DrawProjectWindowUI);
+        _projectWindow = new ModalWindow(ownerWindow, "Project Settings", 600, 400, DrawProjectWindowUI);
         if (_projectWindow.CreateAsModal())
         {
             _isProjectWindowOpen = true;
@@ -8790,8 +9506,7 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
 
 <file path="Program.cs">
 using DirectUI;
-
-namespace Cocoshell;
+using Cocoshell; // Use the namespace for ApplicationRunner
 
 public class Program
 {
@@ -8800,7 +9515,8 @@ public class Program
     {
         //var backend = GraphicsBackend.Raylib;
         //var backend = GraphicsBackend.Direct2D;
-        var backend = GraphicsBackend.Vulkan;
+        //var backend = GraphicsBackend.Vulkan;
+        var backend = GraphicsBackend.SDL3; // Set to SDL3 for testing
 
         ApplicationRunner.Run(backend);
     }

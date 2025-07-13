@@ -1,4 +1,4 @@
-﻿// MyDirectUIApp.cs
+﻿// MyDesktopAppWindow.cs (Renamed from MyDirectUIApp.cs)
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -7,44 +7,35 @@ using Raylib_cs; // Added for Raylib
 namespace DirectUI;
 
 /// <summary>
-/// The main application window class. This class is responsible for creating and
-/// managing the window, hosting the rendering engine (AppHost), and orchestrating
-/// the different views and modal dialogs.
+/// This class serves as the concrete Win32 window for Direct2D and Raylib backends.
+/// It wraps the core UI logic provided by MyUILogic.
 /// </summary>
-public class MyDirectUIApp : Direct2DAppWindow // This class name might be misleading if we use Raylib
+public class MyDesktopAppWindow : Direct2DAppWindow // Still inherits for D2D/Raylib
 {
-    // View models for different parts of the UI
-    private readonly MainView _mainView;
-    private readonly InputMapEditor _inputMapEditor;
-
-    // State for managing the modal "Project Settings" window
-    private ModalWindow? _projectWindow;
-    private bool _isProjectWindowOpen = false;
-    private int _projectWindowActiveTab = 0;
-    private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
-
-    // Flag to control which backend is used
+    private readonly MyUILogic _uiLogic;
     private readonly GraphicsBackend _backend;
 
-    public MyDirectUIApp(string title, int width, int height, GraphicsBackend backend) : base(title, width, height)
+    public MyDesktopAppWindow(string title, int width, int height, GraphicsBackend backend)
+        : base(title, width, height)
     {
         _backend = backend;
-        _mainView = new MainView();
-
-        // This path would typically come from a config file or service locator
-        string inputMapPath = @"D:\Parsa Stuff\Visual Studio\Cosmocrush\Cherris\Res\Cherris\InputMap.yaml";
-        _inputMapEditor = new InputMapEditor(inputMapPath);
+        _uiLogic = new MyUILogic(backend); // Instantiate the UI logic
+        // Provide a lambda for the UI logic to call to open the project window,
+        // passing 'this' (the Win32Window instance) as the owner.
+        _uiLogic.SetOpenProjectWindowHostAction(() => _uiLogic.OpenProjectWindowInternal(this));
     }
 
     /// <summary>
     /// Creates the window and initializes resources for either D2D or Raylib backend.
     /// This is the primary entry point for starting the application window.
     /// </summary>
-    public bool Create()
+    public bool CreateHostWindow()
     {
-        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan)
+        if (_backend is GraphicsBackend.Raylib or GraphicsBackend.Vulkan or GraphicsBackend.SDL3)
         {
-            // For Raylib and Vulkan, we bypass the base Create and call Initialize directly
+            // For Raylib/Vulkan/SDL3, we bypass the Win32 window creation here.
+            // SDL3 and Vulkan are handled by ApplicationRunner directly.
+            // Raylib creates its window within AppHost.Initialize, so we just need to call Initialize.
             return Initialize();
         }
         else
@@ -55,8 +46,6 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     }
 
     // Override Initialize and Cleanup in Win32Window base if using Raylib
-    // For Raylib, we won't actually create a Win32 window directly.
-    // The AppHost will handle the Raylib window management.
     protected override bool Initialize()
     {
         switch (_backend)
@@ -70,9 +59,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
                 return _appHost.Initialize(IntPtr.Zero, new Vortice.Mathematics.SizeI(Width, Height));
 
             case GraphicsBackend.Vulkan:
-                // This logic is now handled by ApplicationRunner.
-                // The class instance is created, but its windowing is not used.
-                return true;
+            case GraphicsBackend.SDL3:
+                // This logic is now handled by ApplicationRunner and their respective hosts.
+                // This MyDesktopAppWindow should not be instantiated for these backends.
+                Console.WriteLine($"Error: MyDesktopAppWindow should not be used with {_backend} backend.");
+                return false;
 
             case GraphicsBackend.Direct2D:
             default:
@@ -92,7 +83,8 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
                 break;
 
             case GraphicsBackend.Vulkan:
-                // Nothing to do here, ApplicationRunner handles Veldrid cleanup.
+            case GraphicsBackend.SDL3:
+                // Nothing to do here, ApplicationRunner/Host handles cleanup for these.
                 break;
 
             case GraphicsBackend.Direct2D:
@@ -127,7 +119,8 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
                 break;
 
             case GraphicsBackend.Vulkan:
-                // This is not called in the Veldrid loop.
+            case GraphicsBackend.SDL3:
+                // This method should not be called for Veldrid/SDL3 backends, as their loop is in ApplicationRunner.
                 break;
 
             case GraphicsBackend.Direct2D:
@@ -141,12 +134,11 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     protected override AppHost CreateAppHost()
     {
         var backgroundColor = new Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f); // #151515
-        return new AppHost(DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib); // Pass the backend flag
+        // Pass the DrawUI method from the _uiLogic instance.
+        return new AppHost(_uiLogic.DrawUI, backgroundColor, _backend == GraphicsBackend.Raylib);
     }
 
-    // For Raylib, AppHost's InputManager directly processes Raylib events.
-    // Therefore, Win32Window's OnKeyDown/Move/Up/etc. methods should only call base
-    // if using the D2D backend. Otherwise, they are irrelevant.
+    // Input handlers only call base if D2D backend, because Raylib's input is handled directly by AppHost.
     protected override void OnKeyDown(Keys key)
     {
         if (_backend == GraphicsBackend.Direct2D) base.OnKeyDown(key);
@@ -184,114 +176,5 @@ public class MyDirectUIApp : Direct2DAppWindow // This class name might be misle
     protected override void OnChar(char c)
     {
         if (_backend == GraphicsBackend.Direct2D) base.OnChar(c);
-    }
-
-    /// <summary>
-    /// The primary drawing callback for the main application window. It delegates
-    /// drawing to the main view after handling any window state management.
-    /// </summary>
-    public void DrawUI(UIContext context)
-    {
-        ManageModalWindowState();
-        _mainView.Draw(context, OpenProjectWindow);
-    }
-
-    /// <summary>
-    /// The drawing callback passed to the modal window.
-    /// </summary>
-    private void DrawProjectWindowUI(UIContext context)
-    {
-        var renderer = context.Renderer;
-        float windowWidth = renderer.RenderTargetSize.X;
-        float windowHeight = renderer.RenderTargetSize.Y;
-        float tabBarHeight = 30f;
-        var contentArea = new Rect(0, tabBarHeight, windowWidth, windowHeight - tabBarHeight);
-
-        // --- Draw Tab Bar ---
-        UI.TabBar("project_tabs", ProjectWindowTabLabels, ref _projectWindowActiveTab);
-
-        // --- Draw Content Panel Background ---
-        var panelStyle = new BoxStyle
-        {
-            FillColor = new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f),
-            BorderColor = DefaultTheme.HoverBorder,
-            BorderLengthTop = 1f,
-            Roundness = 0f
-        };
-        renderer.DrawBox(contentArea, panelStyle);
-
-        // --- Draw Active Tab Content ---
-        if (_projectWindowActiveTab == 0)
-        {
-            DrawGeneralSettingsTab(context, contentArea);
-        }
-        else if (_projectWindowActiveTab == 1)
-        {
-            _inputMapEditor.Draw(context, contentArea);
-        }
-    }
-
-    private void DrawGeneralSettingsTab(UIContext context, Rect contentArea)
-    {
-        var contentPos = contentArea.TopLeft + new Vector2(10, 10);
-        UI.BeginVBoxContainer("tab_general_vbox", contentPos, 10);
-        if (UI.Button("modal_button_1", "A button in a modal")) { /* ... */ }
-        if (UI.Button("modal_button_close", "Close Me"))
-        {
-            _isProjectWindowOpen = false; // Signal the window to close
-        }
-        UI.EndVBoxContainer();
-    }
-
-    private void OpenProjectWindow()
-    {
-        if (_isProjectWindowOpen) return;
-
-        // For Raylib/Vulkan backends, modal windows are not handled by Win32Window directly.
-        if (_backend != GraphicsBackend.Direct2D)
-        {
-            Console.WriteLine($"Modal windows are not yet implemented for the {_backend} backend.");
-            return;
-        }
-
-        _projectWindow = new ModalWindow(this, "Project Settings", 600, 400, DrawProjectWindowUI);
-        if (_projectWindow.CreateAsModal())
-        {
-            _isProjectWindowOpen = true;
-        }
-        else
-        {
-            Console.WriteLine("Failed to create modal window.");
-            _projectWindow.Dispose();
-            _projectWindow = null;
-        }
-    }
-
-    private void ManageModalWindowState()
-    {
-        if (_backend != GraphicsBackend.Direct2D) return; // Modal window management is D2D-specific
-
-        if (_projectWindow == null) return;
-
-        // If the OS window handle is gone (e.g., user clicked the 'X' button),
-        // we must clean up our reference to it.
-        if (_projectWindow.Handle == IntPtr.Zero)
-        {
-            _projectWindow.Dispose();
-            _projectWindow = null;
-            _isProjectWindowOpen = false;
-
-            // Revert any unsaved changes in the editor since the window was closed abruptly.
-            if (_inputMapEditor.IsDirty())
-            {
-                _inputMapEditor.RevertChanges();
-            }
-        }
-        // If our application logic has requested the window to close (e.g., via a button click),
-        // then we tell the window to close itself.
-        else if (!_isProjectWindowOpen)
-        {
-            _projectWindow.Close();
-        }
     }
 }
