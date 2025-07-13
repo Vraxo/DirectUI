@@ -66,6 +66,10 @@ public unsafe class SDL3UIHost
         if (UI.IsRendering) return;
         if (_renderer is null || _textService is null) return;
 
+        // Get mouse position at the start of each frame using window-relative float coordinates
+        SDL.GetMouseState(out float mouseX, out float mouseY);
+        _inputManager.SetMousePosition((int)mouseX, (int)mouseY);
+
         long currentTicks = _frameTimer.ElapsedTicks;
         float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
         _lastFrameTicks = currentTicks;
@@ -74,8 +78,8 @@ public unsafe class SDL3UIHost
         _fpsCounter.Update();
 
         // Clear the renderer buffer
-       SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
-       SDL.RenderClear(_rendererPtr);
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
 
         try
         {
@@ -100,7 +104,7 @@ public unsafe class SDL3UIHost
         }
         finally
         {
-           SDL.RenderPresent(_rendererPtr); // Present the rendered frame
+            SDL.RenderPresent(_rendererPtr); // Present the rendered frame
             _inputManager.PrepareNextFrame();
         }
     }

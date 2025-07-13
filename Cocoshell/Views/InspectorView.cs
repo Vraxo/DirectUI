@@ -79,7 +79,7 @@ public class InspectorView
     {
         UI.Text(
             "inspector_title",
-            "Inspector",
+            "اینسپکتور",
             size: new(availableWidth, 0),
             style: _titleStyle,
             textAlignment: new(HAlignment.Center, VAlignment.Center)
