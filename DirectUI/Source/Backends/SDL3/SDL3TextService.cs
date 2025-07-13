@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
@@ -17,6 +18,10 @@ public unsafe class SDL3TextService : ITextService
     // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
     private const float FONT_SCALE_FACTOR = 1.125f;
 
+    // Internal static dictionary for font file paths for SDL3
+    private static readonly Dictionary<string, Dictionary<FontWeight, string>> s_sdlFontFilePaths = new();
+    private static bool s_defaultFontsRegistered = false; // Flag to ensure registration happens only once
+
     // Internal cache key structs
     internal readonly struct FontKey(string fontName, int fontSize, FontWeight fontWeight) : IEquatable<FontKey>
     {
@@ -25,9 +30,6 @@ public unsafe class SDL3TextService : ITextService
         private readonly FontWeight FontWeight = fontWeight;
         // FontStyle and FontStretch are not directly supported by TTF.OpenFont,
         // so we omit them from the key or map them to file paths.
-        // For simplicity, we're not using them for font selection for now.
-        // private readonly FontStyle FontStyle = style.FontStyle;
-        // private readonly FontStretch FontStretch = style.FontStretch;
 
         public bool Equals(FontKey other) => FontName == other.FontName && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight;
         public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
@@ -48,50 +50,81 @@ public unsafe class SDL3TextService : ITextService
 
     public SDL3TextService()
     {
-        TTF.Init();
-        // Register font variants for SDL3
-        // This needs to be consistent with the font paths used by Direct2D/Raylib AppHost
-        // For SDL_ttf, typically only Normal/Bold weights are distinct font files.
-        // If a specific weight isn't found, TTF will try to simulate it, but it's better to provide the file.
-        // Assuming "Segoe UI" and "Consolas" are available at these paths or system default.
-        FontManager.Initialize(); // Initialize the common FontManager if not already
-        FontManager.RegisterFontVariant("Segoe UI", FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
-        FontManager.RegisterFontVariant("Segoe UI", FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
-        FontManager.RegisterFontVariant("Consolas", FontWeight.Normal, "C:/Windows/Fonts/consola.ttf");
-        FontManager.RegisterFontVariant("Consolas", FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf");
+        // TTF.Init() should be called globally ONCE, not per instance.
+        // It's handled by SDL3WindowHost now.
     }
+
+    /// <summary>
+    /// Registers default font paths for SDL_ttf. This should be called once globally.
+    /// </summary>
+    internal static void RegisterDefaultFonts()
+    {
+        if (s_defaultFontsRegistered) return;
+
+        s_sdlFontFilePaths["Segoe UI"] = new Dictionary<FontWeight, string>
+        {
+            { FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf" },
+            { FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf" }
+        };
+        s_sdlFontFilePaths["Consolas"] = new Dictionary<FontWeight, string>
+        {
+            { FontWeight.Normal, "C:/Windows/Fonts/consola.ttf" },
+            { FontWeight.Bold, "C:/Windows/Fonts/consolab.ttf" }
+        };
+        s_sdlFontFilePaths["Arial"] = new Dictionary<FontWeight, string>
+        {
+            { FontWeight.Normal, "C:/Windows/Fonts/arial.ttf" }
+        };
+
+        s_defaultFontsRegistered = true;
+    }
+
+    /// <summary>
+    /// Attempts to retrieve the file path for a registered font variant for SDL_ttf.
+    /// </summary>
+    internal static bool TryGetSdlFontFilePath(string familyName, FontWeight weight, out string? filePath)
+    {
+        filePath = null;
+        if (s_sdlFontFilePaths.TryGetValue(familyName, out var variants))
+        {
+            if (variants.TryGetValue(weight, out filePath))
+            {
+                return true;
+            }
+            // Fallback to Normal weight if specific weight not found
+            if (variants.TryGetValue(FontWeight.Normal, out filePath))
+            {
+                return true;
+            }
+        }
+        // Fallback to Arial if original family not found
+        if (s_sdlFontFilePaths.TryGetValue("Arial", out var arialVariants) && arialVariants.TryGetValue(FontWeight.Normal, out filePath))
+        {
+            Console.WriteLine($"Warning: Font family '{familyName}' (weight {weight}) not found. Falling back to Arial.");
+            return true;
+        }
+        return false;
+    }
+
 
     public nint GetOrCreateFont(string familyName, int fontSize, FontWeight weight)
     {
         FontKey key = new(familyName, fontSize, weight);
-        
+
         if (_fontCache.TryGetValue(key, out nint fontPtr))
         {
             return fontPtr;
         }
 
-        // In a real application, you'd map familyName and weight to actual font file paths.
-        // For simplicity, we'll use a hardcoded fallback or look up via FontManager.
-        // FontManager.GetFont is for Raylib specifically, so we'll do the file path lookup here.
-
-        // Try to get the specific weight first, then fallback to normal
-        if (!FontManager.TryGetFontFilePath(familyName, weight, out string? filePath) &&
-            !FontManager.TryGetFontFilePath(familyName, FontWeight.Normal, out filePath))
+        if (!TryGetSdlFontFilePath(familyName, weight, out string? filePath))
         {
-            Console.WriteLine($"Warning: Could not find font file for family '{familyName}' (weight {weight}). Using default.");
-            // Fallback to a common system font if possible
-            filePath = "C:/Windows/Fonts/arial.ttf"; // Example fallback
-        }
-
-        if (filePath == null || !File.Exists(filePath))
-        {
-            Console.WriteLine($"Warning: Font file '{filePath}' not found or no suitable fallback. Cannot load font.");
+            Console.WriteLine($"Warning: Could not find font file for family '{familyName}' (weight {weight}) or a fallback. Returning null font pointer.");
             return nint.Zero;
         }
 
         // Open font using SDL_ttf
         fontPtr = TTF.OpenFont(filePath, fontSize);
-        
+
         if (fontPtr == nint.Zero)
         {
             Console.WriteLine($"Error opening font '{filePath}' at size {fontSize}: {SDL.GetError()}");
@@ -159,6 +192,7 @@ public unsafe class SDL3TextService : ITextService
     public void Cleanup()
     {
         Console.WriteLine("SDL3TextService Cleanup: Disposing cached resources...");
+        // Close fonts for this specific instance's cache
         foreach (var fontPtr in _fontCache.Values)
         {
             if (fontPtr != nint.Zero)
@@ -170,7 +204,7 @@ public unsafe class SDL3TextService : ITextService
         _textLayoutCache.Clear();
         _textSizeCache.Clear();
 
-        TTF.Quit();
+        // TTF.Quit() is now handled globally by SDL3WindowHost
         Console.WriteLine("SDL3TextService Cleanup finished.");
     }
 }

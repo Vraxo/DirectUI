@@ -59,6 +59,7 @@ public class RaylibWindowHost : IWindowHost
             _renderer = new DirectUI.Backends.RaylibRenderer();
             _textService = new DirectUI.Backends.RaylibTextService();
 
+            // Raylib-specific font initialization and registration
             FontManager.Initialize();
             FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.Normal, "C:/Windows/Fonts/segoeui.ttf");
             FontManager.RegisterFontVariant("Segoe UI", Vortice.DirectWrite.FontWeight.SemiBold, "C:/Windows/Fonts/seguisb.ttf");
