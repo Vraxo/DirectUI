@@ -7,16 +7,16 @@ namespace DirectUI.Backends.Vulkan;
 
 /// <summary>
 /// A Veldrid-specific implementation of the ITextService interface using SharpText.
+/// NOTE: All text functionality is currently disabled for the Vulkan backend due to
+/// instability in the external SharpText library.
 /// </summary>
 public class VeldridTextService : ITextService, IDisposable
 {
     private bool _disposed;
 
-    // The service now takes a GraphicsDevice to create its own text renderer for measurements.
     public VeldridTextService(GraphicsDevice gd)
     {
-        // The VeldridTextRenderer is not instantiated here as it's not used by the placeholder
-        // measurement logic and this service lacks the required CommandList and Font.
+        // No-op.
     }
 
     public Vector2 MeasureText(string text, ButtonStyle style)
@@ -26,9 +26,8 @@ public class VeldridTextService : ITextService, IDisposable
             return Vector2.Zero;
         }
 
-        // Placeholder implementation since SharpText.Veldrid seems to lack a public MeasureText method.
-        // This provides a rough estimate for layout purposes.
-        // A more accurate implementation would require access to font metrics from SharpText.
+        // Restore placeholder measurement to allow layout to work correctly.
+        // This provides a rough estimate for layout purposes even though text isn't rendered.
         const float characterWidthApproximationFactor = 0.6f; // Heuristic value
         float width = text.Length * style.FontSize * characterWidthApproximationFactor;
         float height = style.FontSize;
@@ -37,8 +36,7 @@ public class VeldridTextService : ITextService, IDisposable
 
     public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
     {
-        // SharpText may not provide a detailed layout object for hit-testing.
-        // Returning null is consistent with the previous placeholder behavior.
+        // Return null as text rendering is disabled and no layout object is available.
         return null!;
     }
 

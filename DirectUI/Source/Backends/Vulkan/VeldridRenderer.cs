@@ -8,6 +8,7 @@ using SharpText.Core;
 using SharpText.Veldrid;
 using Veldrid;
 using Vortice.Direct2D1;
+using static System.Net.Mime.MediaTypeNames;
 using Rect = Vortice.Mathematics.Rect;
 
 namespace DirectUI.Backends.Vulkan;
@@ -24,9 +25,6 @@ public class VeldridRenderer : IRenderer, IDisposable
     private readonly DeviceBuffer _indexBuffer;
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
-
-    // Font is persistent. Renderer will be created transiently per-frame as a diagnostic.
-    private readonly SharpText.Core.Font _font;
 
     // Batched text rendering state
     private readonly struct BatchedText
@@ -66,8 +64,7 @@ public class VeldridRenderer : IRenderer, IDisposable
         _gd = gd;
         _cl = cl;
 
-        // Create persistent font resource.
-        _font = new SharpText.Core.Font("C:/Windows/Fonts/consola.ttf", 16);
+        // NOTE: All font and text renderer creation has been removed.
 
         // Create resources for flat geometry
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -180,59 +177,12 @@ public class VeldridRenderer : IRenderer, IDisposable
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
-        if (string.IsNullOrEmpty(text))
-        {
-            return;
-        }
-
-        // Add the text call to the batch to be processed later in Flush().
-        _textBatch.Add(new BatchedText(origin, text, style, alignment, maxSize, color));
+        // Intentionally does nothing. Text rendering is disabled.
     }
 
     public void Flush()
     {
-        if (_textBatch.Count == 0)
-        {
-            return;
-        }
-
-        // DIAGNOSTIC: Create a new renderer each frame to get a clean state.
-        // DO NOT dispose it with `using` as its Dispose method appears to be broken
-        // and interferes with the shared CommandList, causing a black screen.
-        // This will leak memory and is not a permanent solution, but it tests
-        // if state accumulation is the cause of the visual degradation.
-        var textRenderer = new VeldridTextRenderer(_gd, _cl, _font);
-
-        foreach (var textCall in _textBatch)
-        {
-            Vector2 measuredSize = MeasureText(textCall.Text, textCall.Style);
-            Vector2 textDrawPos = textCall.Origin;
-
-            // Alignment logic
-            if (textCall.MaxSize.X > 0)
-            {
-                switch (textCall.Alignment.Horizontal)
-                {
-                    case HAlignment.Center: textDrawPos.X += (textCall.MaxSize.X - measuredSize.X) / 2f; break;
-                    case HAlignment.Right: textDrawPos.X += (textCall.MaxSize.X - measuredSize.X); break;
-                }
-            }
-            if (textCall.MaxSize.Y > 0)
-            {
-                switch (textCall.Alignment.Vertical)
-                {
-                    case VAlignment.Center: textDrawPos.Y += (textCall.MaxSize.Y - measuredSize.Y) / 2f; break;
-                    case VAlignment.Bottom: textDrawPos.Y += (textCall.MaxSize.Y - measuredSize.Y); break;
-                }
-            }
-
-            var sharpTextColor = new SharpText.Core.Color(textCall.Color.R, textCall.Color.G, textCall.Color.B, textCall.Color.A);
-            textRenderer.DrawText(textCall.Text, textDrawPos, sharpTextColor, 1);
-        }
-
-        // Issue a single draw call for all the text added in this frame.
-        textRenderer.Draw();
-
+        // Intentionally does nothing. Text rendering is disabled.
         _textBatch.Clear();
     }
 
@@ -266,7 +216,6 @@ public class VeldridRenderer : IRenderer, IDisposable
         _projMatrixBuffer.Dispose();
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
-        // Do not dispose a transient text renderer here.
     }
 
     private bool _disposedValue;
