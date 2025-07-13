@@ -273,26 +273,46 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _onModalClosedCallback = onClosedCallback;
         _modalResultCode = -1; // Default result
 
-        // The modal window calls its own Initialize, which will correctly handle the static counters
-        // and create its own AppEngine, Renderer, TextService instances.
-        if (!_activeModalWindow.Initialize(_activeModalWindow._modalDrawCallback, _backgroundColor))
+        // Initialize the modal window. This will create its own SDL window, renderer, and DirectUI components.
+        // Important: this call creates the modal window, but without a parent specified in SDL_CreateWindow flags.
+        if (!_activeModalWindow.InitializeModalInternal()) // Use internal helper that just calls Initialize()
         {
             Console.WriteLine("Failed to initialize modal SDL window.");
             _activeModalWindow.Dispose(); // Dispose failed modal
             _activeModalWindow = null;
             onClosedCallback?.Invoke(-1); // Indicate failure to the caller
+            return;
         }
+
+        // Now that _activeModalWindow._windowPtr is valid, set its parent.
+        // This is the crucial step to satisfy the "Window must have a parent..." requirement for SDL.SetWindowModal().
+        if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, this._windowPtr))
+        {
+            Console.WriteLine($"Failed to set window parent: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
+
+        // Now that it has a parent, set it as modal.
+        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true))
+        {
+            Console.WriteLine($"Failed to set modal flag on window: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
+        Console.WriteLine("Modal window opened successfully.");
     }
 
     /// <summary>
-    /// This method is an internal helper for `OpenModalWindow` and performs modal-specific
-    /// window creation, then calls the standard `Initialize` which handles shared library init.
-    /// It's primarily here to distinguish the initial SDL.CreateWindow flags for modals.
+    /// Internal helper to initialize the modal window's DirectUI components.
+    /// This simply calls the main `Initialize` method with the modal's own draw callback.
     /// </summary>
-    private bool InitializeModal()
+    private bool InitializeModalInternal()
     {
-        // Re-call the main Initialize, passing its own _modalDrawCallback.
-        // This will create its own DirectUI components and correctly manage global SDL/TTF states.
         return Initialize(_modalDrawCallback!, _backgroundColor);
     }
 
@@ -316,6 +336,13 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         {
             Console.WriteLine($"Modal window closed. Result: {_activeModalWindow._modalResultCode}");
             _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode); // Notify caller of closure and result
+
+            // After modal closes, raise the parent window to ensure it gets focus back.
+            // SDL automatically handles the modal un-setting when the modal window is destroyed.
+            if (this._windowPtr != nint.Zero)
+            {
+                SDL.RaiseWindow(this._windowPtr);
+            }
 
             _activeModalWindow.Dispose(); // Ensure all managed and unmanaged resources are cleaned up
             _activeModalWindow = null;
