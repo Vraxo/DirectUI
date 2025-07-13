@@ -29,7 +29,7 @@ public class AppHost
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
 
-    private GraphicsDevice? _graphicsDevice; // Only used for D2D backend
+    private DuiGraphicsDevice? _graphicsDevice; // Only used for D2D backend
     private IntPtr _hwnd; // Only used for D2D backend
 
     private IRenderer? _renderer;
@@ -73,7 +73,7 @@ public class AppHost
             if (_graphicsDevice?.IsInitialized ?? false) return true;
             if (_hwnd == IntPtr.Zero) return false;
 
-            _graphicsDevice ??= new GraphicsDevice();
+            _graphicsDevice ??= new DuiGraphicsDevice();
 
             if (!_graphicsDevice.Initialize(_hwnd, clientSize))
             {

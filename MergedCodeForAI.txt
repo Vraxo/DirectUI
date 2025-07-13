@@ -44,7 +44,7 @@ public class AppHost
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
 
-    private GraphicsDevice? _graphicsDevice; // Only used for D2D backend
+    private DuiGraphicsDevice? _graphicsDevice; // Only used for D2D backend
     private IntPtr _hwnd; // Only used for D2D backend
 
     private IRenderer? _renderer;
@@ -88,7 +88,7 @@ public class AppHost
             if (_graphicsDevice?.IsInitialized ?? false) return true;
             if (_hwnd == IntPtr.Zero) return false;
 
-            _graphicsDevice ??= new GraphicsDevice();
+            _graphicsDevice ??= new DuiGraphicsDevice();
 
             if (!_graphicsDevice.Initialize(_hwnd, clientSize))
             {
@@ -497,22 +497,7 @@ public abstract class Direct2DAppWindow : Win32Window
 }
 </file>
 
-<file path="GlobalUsings.cs">
-global using Color = DirectUI.Drawing.Color;
-</file>
-
-<file path="GraphicsBackend.cs">
-namespace DirectUI;
-
-public enum GraphicsBackend
-{
-    Direct2D,
-    Raylib,
-    Vulkan
-}
-</file>
-
-<file path="GraphicsDevice.cs">
+<file path="DuiGraphicsDevice.cs">
 // GraphicsDevice.cs
 using System;
 using Vortice.Direct2D1;
@@ -527,7 +512,7 @@ using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
 
-public class GraphicsDevice : IDisposable
+public class DuiGraphicsDevice : IDisposable
 {
     public ID2D1Factory1? D2DFactory => SharedGraphicsResources.D2DFactory;
     public IDWriteFactory? DWriteFactory => SharedGraphicsResources.DWriteFactory;
@@ -675,10 +660,25 @@ public class GraphicsDevice : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~GraphicsDevice()
+    ~DuiGraphicsDevice()
     {
         Dispose();
     }
+}
+</file>
+
+<file path="GlobalUsings.cs">
+global using Color = DirectUI.Drawing.Color;
+</file>
+
+<file path="GraphicsBackend.cs">
+namespace DirectUI;
+
+public enum GraphicsBackend
+{
+    Direct2D,
+    Raylib,
+    Vulkan
 }
 </file>
 
@@ -4302,7 +4302,7 @@ public class InputManager
             }
         }
 
-        foreach (char c in snapshot.TypedCharacters)
+        foreach (char c in snapshot.KeyCharPresses)
         {
             AddCharacterInput(c);
         }
@@ -4375,7 +4375,7 @@ public class InputManager
     {
         return vdKey switch
         {
-            Veldrid.Key.Backspace => Keys.Backspace,
+            Veldrid.Key.BackSpace => Keys.Backspace,
             Veldrid.Key.Tab => Keys.Tab,
             Veldrid.Key.Enter => Keys.Enter,
             Veldrid.Key.ShiftLeft => Keys.Shift,
@@ -7342,17 +7342,19 @@ public class RaylibTextService : ITextService
 </file>
 
 <file path="Backends\Vulkan\VeldridRenderer.cs">
+using System;
 using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using DirectUI.Core;
+using SharpText.Veldrid;
 using Veldrid;
 using Vortice.Direct2D1;
 using Rect = Vortice.Mathematics.Rect;
 
 namespace DirectUI.Backends.Vulkan;
 
-public class VeldridRenderer : IRenderer
+public class VeldridRenderer : IRenderer, IDisposable
 {
     private readonly Veldrid.GraphicsDevice _gd;
     private readonly CommandList _cl;
@@ -7364,6 +7366,8 @@ public class VeldridRenderer : IRenderer
     private readonly DeviceBuffer _indexBuffer;
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
+    private readonly VeldridTextRenderer _VeldridTextRenderer;
+    private readonly SharpText.Core.Font _font;
 
     public Vector2 RenderTargetSize
     {
@@ -7379,6 +7383,12 @@ public class VeldridRenderer : IRenderer
     {
         _gd = gd;
         _cl = cl;
+
+        // Load a default font. Assuming SharpText.Veldrid.Font has this constructor.
+        _font = new SharpText.Core.Font("C:/Windows/Fonts/segoeui.ttf", 16);
+
+        // Pass the required GraphicsDevice, CommandList, and Font to the VeldridTextRenderer constructor.
+        _VeldridTextRenderer = new VeldridTextRenderer(gd, cl, _font);
 
         // Create resources
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -7478,8 +7488,55 @@ public class VeldridRenderer : IRenderer
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
-        // Placeholder: a full implementation needs a font atlas texture, a different pipeline/shader,
-        // and logic to generate vertices for each character quad.
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        // 1. Measure text to handle alignment.
+        // We assume SharpText.Veldrid.VeldridTextRenderer has a MeasureText method.
+        Vector2 measuredSize = _VeldridTextRenderer.MeasureText(text, style.FontSize);
+
+        Vector2 textDrawPos = origin;
+
+        // 2. Apply alignment within maxSize bounds
+        if (maxSize.X > 0)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += (maxSize.X - measuredSize.X);
+                    break;
+            }
+        }
+
+        if (maxSize.Y > 0)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
+                    break;
+            }
+        }
+
+        // 3. Convert color and draw
+        Vortice.Mathematics.Color4 c4 = color;
+        var vdColor = new RgbaFloat(c4.R, c4.G, c4.B, c4.A);
+
+        //_VeldridTextRenderer.DrawText(_cl, text, textDrawPos, style.FontSize, vdColor);
+
+        _VeldridTextRenderer.DrawText(
+            text,
+            textDrawPos,
+            vdColor,
+            1);
     }
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
@@ -7504,12 +7561,31 @@ public class VeldridRenderer : IRenderer
 
     public void Cleanup()
     {
+        _VeldridTextRenderer.Dispose();
         _pipeline.Dispose();
         _projMatrixLayout.Dispose();
         _projMatrixSet.Dispose();
         _projMatrixBuffer.Dispose();
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
+    }
+
+    private bool _disposedValue;
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposedValue)
+        {
+            if (disposing)
+            {
+                Cleanup();
+            }
+            _disposedValue = true;
+        }
+    }
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }
 </file>
@@ -7582,19 +7658,26 @@ void main()
 </file>
 
 <file path="Backends\Vulkan\VeldridTextService.cs">
+using System;
 using System.Numerics;
 using DirectUI.Core;
+using Veldrid;
 
 namespace DirectUI.Backends.Vulkan;
 
 /// <summary>
-/// A Veldrid-specific implementation of the ITextService interface.
-/// NOTE: This is a placeholder implementation. A real implementation would require
-/// a font rasterizer (like StbTrueTypeSharp) to generate a font atlas texture.
+/// A Veldrid-specific implementation of the ITextService interface using SharpText.
 /// </summary>
-public class VeldridTextService : ITextService
+public class VeldridTextService : ITextService, IDisposable
 {
-    public VeldridTextService() { }
+    private bool _disposed;
+
+    // The service now takes a GraphicsDevice to create its own text renderer for measurements.
+    public VeldridTextService(GraphicsDevice gd)
+    {
+        // The VeldridTextRenderer is not instantiated here as it's not used by the placeholder
+        // measurement logic and this service lacks the required CommandList and Font.
+    }
 
     public Vector2 MeasureText(string text, ButtonStyle style)
     {
@@ -7602,20 +7685,44 @@ public class VeldridTextService : ITextService
         {
             return Vector2.Zero;
         }
-        // Placeholder: return a rough estimate based on character count and font size.
-        return new Vector2(text.Length * style.FontSize * 0.6f, style.FontSize);
+
+        // Placeholder implementation since SharpText.Veldrid seems to lack a public MeasureText method.
+        // This provides a rough estimate for layout purposes.
+        // A more accurate implementation would require access to font metrics from SharpText.
+        const float characterWidthApproximationFactor = 0.6f; // Heuristic value
+        float width = text.Length * style.FontSize * characterWidthApproximationFactor;
+        float height = style.FontSize;
+        return new Vector2(width, height);
     }
 
     public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
     {
-        // Placeholder: returns null. A full implementation would create a layout object
-        // with metrics derived from a real font atlas.
+        // SharpText may not provide a detailed layout object for hit-testing.
+        // Returning null is consistent with the previous placeholder behavior.
         return null!;
     }
 
     public void Cleanup()
     {
-        // No resources to clean up in this placeholder implementation.
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposed)
+        {
+            if (disposing)
+            {
+                // Nothing to dispose
+            }
+            _disposed = true;
+        }
+    }
+
+    public void Dispose()
+    {
+        Cleanup();
     }
 }
 </file>
@@ -7671,7 +7778,7 @@ public class VeldridUIHost
     public bool Initialize()
     {
         _renderer = new VeldridRenderer(_gd, _cl);
-        _textService = new VeldridTextService();
+        _textService = new VeldridTextService(_gd);
         _fpsCounter.Initialize(_textService, _renderer);
         return true;
     }

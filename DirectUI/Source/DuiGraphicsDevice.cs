@@ -12,7 +12,7 @@ using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
 
-public class GraphicsDevice : IDisposable
+public class DuiGraphicsDevice : IDisposable
 {
     public ID2D1Factory1? D2DFactory => SharedGraphicsResources.D2DFactory;
     public IDWriteFactory? DWriteFactory => SharedGraphicsResources.DWriteFactory;
@@ -160,7 +160,7 @@ public class GraphicsDevice : IDisposable
         GC.SuppressFinalize(this);
     }
 
-    ~GraphicsDevice()
+    ~DuiGraphicsDevice()
     {
         Dispose();
     }

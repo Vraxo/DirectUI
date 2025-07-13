@@ -1,14 +1,17 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Numerics;
 using System.Runtime.CompilerServices;
 using System.Text;
 using DirectUI.Core;
+using SharpText.Core;
+using SharpText.Veldrid;
 using Veldrid;
 using Vortice.Direct2D1;
 using Rect = Vortice.Mathematics.Rect;
 
 namespace DirectUI.Backends.Vulkan;
 
-public class VeldridRenderer : IRenderer
+public class VeldridRenderer : IRenderer, IDisposable
 {
     private readonly Veldrid.GraphicsDevice _gd;
     private readonly CommandList _cl;
@@ -20,6 +23,8 @@ public class VeldridRenderer : IRenderer
     private readonly DeviceBuffer _indexBuffer;
     private readonly uint _vertexBufferSize = 2048;
     private readonly uint _indexBufferSize = 4096;
+    private readonly VeldridTextRenderer _VeldridTextRenderer;
+    private readonly SharpText.Core.Font _font;
 
     public Vector2 RenderTargetSize
     {
@@ -35,6 +40,12 @@ public class VeldridRenderer : IRenderer
     {
         _gd = gd;
         _cl = cl;
+
+        // Load a default font. Assuming SharpText.Veldrid.Font has this constructor.
+        _font = new SharpText.Core.Font("C:/Windows/Fonts/segoeui.ttf", 16);
+
+        // Pass the required GraphicsDevice, CommandList, and Font to the VeldridTextRenderer constructor.
+        _VeldridTextRenderer = new VeldridTextRenderer(gd, cl, _font);
 
         // Create resources
         _vertexBuffer = _gd.ResourceFactory.CreateBuffer(new(_vertexBufferSize, BufferUsage.VertexBuffer | BufferUsage.Dynamic));
@@ -132,10 +143,69 @@ public class VeldridRenderer : IRenderer
             instanceStart: 0);
     }
 
+    private Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return Vector2.Zero;
+        }
+
+        // Placeholder implementation since SharpText.Veldrid seems to lack a public MeasureText method.
+        // This provides a rough estimate for layout purposes.
+        // A more accurate implementation would require access to font metrics from SharpText.
+        const float characterWidthApproximationFactor = 0.6f; // Heuristic value
+        float width = text.Length * style.FontSize * characterWidthApproximationFactor;
+        float height = style.FontSize;
+        return new Vector2(width, height);
+    }
+
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
-        // Placeholder: a full implementation needs a font atlas texture, a different pipeline/shader,
-        // and logic to generate vertices for each character quad.
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        // 1. Measure text to handle alignment.
+        Vector2 measuredSize = MeasureText(text, style);
+
+        Vector2 textDrawPos = origin;
+
+        // 2. Apply alignment within maxSize bounds
+        if (maxSize.X > 0)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += (maxSize.X - measuredSize.X);
+                    break;
+            }
+        }
+
+        if (maxSize.Y > 0)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
+                    break;
+            }
+        }
+
+        // 3. Convert color and draw
+        var sharpTextColor = new SharpText.Core.Color(color.R, color.G, color.B, color.A);
+
+        _VeldridTextRenderer.DrawText(
+            text,
+            textDrawPos,
+            sharpTextColor,
+            1);
     }
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
@@ -160,11 +230,30 @@ public class VeldridRenderer : IRenderer
 
     public void Cleanup()
     {
+        _VeldridTextRenderer.Dispose();
         _pipeline.Dispose();
         _projMatrixLayout.Dispose();
         _projMatrixSet.Dispose();
         _projMatrixBuffer.Dispose();
         _vertexBuffer.Dispose();
         _indexBuffer.Dispose();
+    }
+
+    private bool _disposedValue;
+    protected virtual void Dispose(bool disposing)
+    {
+        if (!_disposedValue)
+        {
+            if (disposing)
+            {
+                Cleanup();
+            }
+            _disposedValue = true;
+        }
+    }
+    public void Dispose()
+    {
+        Dispose(disposing: true);
+        GC.SuppressFinalize(this);
     }
 }

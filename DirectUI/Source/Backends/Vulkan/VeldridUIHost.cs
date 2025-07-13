@@ -48,7 +48,7 @@ public class VeldridUIHost
     public bool Initialize()
     {
         _renderer = new VeldridRenderer(_gd, _cl);
-        _textService = new VeldridTextService();
+        _textService = new VeldridTextService(_gd);
         _fpsCounter.Initialize(_textService, _renderer);
         return true;
     }
