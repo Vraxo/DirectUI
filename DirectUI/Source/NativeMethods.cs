@@ -148,6 +148,9 @@ internal static class NativeMethods
     [DllImport("user32.dll")]
     public static extern IntPtr DispatchMessage([In] ref MSG lpmsg);
     [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)] // Add return type annotation
+    public static extern bool PostMessage(IntPtr hWnd, uint Msg, IntPtr wParam, IntPtr lParam); // Added
+    [DllImport("user32.dll")]
     public static extern bool GetClientRect(IntPtr hWnd, out RECT lpRect);
     [DllImport("kernel32.dll", CharSet = CharSet.Auto, SetLastError = true)]
     public static extern IntPtr GetModuleHandle(string lpModuleName);

@@ -1,4 +1,7 @@
 ﻿// Alignment.cs
+// Alignment.cs
+using DirectUI.Core; // Added using directive
+
 namespace DirectUI;
 
 public enum HAlignment { Left, Center, Right }

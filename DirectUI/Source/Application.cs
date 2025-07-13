@@ -4,7 +4,7 @@ using System.Collections.Generic;
 namespace DirectUI;
 
 /// <summary>
-/// Manages the application's global message loop and window collection.
+/// Manages Win32-specific application concerns, such as window registration and the message pump.
 /// </summary>
 public static class Application
 {
@@ -37,7 +37,7 @@ public static class Application
     public static void UnregisterWindow(Win32Window window)
     {
         s_windows.Remove(window);
-        // If the last window is closed, exit the application.
+        // If the last Win32 window is closed, signal the message loop to exit.
         if (s_windows.Count == 0)
         {
             Exit();
@@ -45,13 +45,14 @@ public static class Application
     }
 
     /// <summary>
-    /// Starts and runs the main application message loop.
+    /// Runs the Win32 main message loop. This method blocks until WM_QUIT is received.
+    /// This is intended for Win32-based applications. Other backends will have their own loops.
     /// </summary>
-    public static void Run()
+    public static void RunMessageLoop()
     {
         if (s_windows.Count == 0)
         {
-            Console.WriteLine("Application.Run() called with no windows registered.");
+            Console.WriteLine("Application.RunMessageLoop() called with no Win32 windows registered.");
             return;
         }
 
@@ -60,27 +61,21 @@ public static class Application
         {
             ProcessMessages();
 
-            if (!s_isRunning) break;
-
-            // Create a copy for safe iteration, as windows can be closed (and removed) during the loop.
-            var windowsToUpdate = new List<Win32Window>(s_windows);
-            foreach (var window in windowsToUpdate)
-            {
-                if (window.Handle != IntPtr.Zero)
-                {
-                    window.FrameUpdate();
-                }
-            }
+            // After processing messages, if no WM_QUIT was posted and there are still windows,
+            // yield control back to the specific Win32WindowHost for its frame update.
+            // Note: In this architecture, the Win32WindowHost's RunLoop will call Application.RunMessageLoop.
+            // The FrameUpdate logic should ideally live within the host's own loop.
+            // For now, this is a simplified message pump.
         }
 
-        // Clean up resources after the main loop has finished.
+        // Clean up shared resources only after the very last Win32 window has closed.
         SharedGraphicsResources.Cleanup();
     }
 
     /// <summary>
     /// Processes all pending window messages in the queue.
     /// </summary>
-    private static void ProcessMessages()
+    internal static void ProcessMessages()
     {
         while (NativeMethods.PeekMessage(out var msg, IntPtr.Zero, 0, 0, NativeMethods.PM_REMOVE))
         {
@@ -96,7 +91,7 @@ public static class Application
     }
 
     /// <summary>
-    /// Signals the application to exit its message loop.
+    /// Signals the Win32 message loop to exit.
     /// </summary>
     public static void Exit()
     {

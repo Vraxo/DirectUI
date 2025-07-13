@@ -2,6 +2,7 @@
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
+using DirectUI.Core; // Added for IModalWindowService
 
 namespace DirectUI;
 
@@ -26,44 +27,32 @@ public class MyUILogic : IAppLogic
     private readonly SceneTreeView _sceneTreeView;
     private readonly InspectorView _inspectorView;
     private readonly BottomPanelView _bottomPanelView;
-    private readonly InputMapEditor _inputMapEditor;
+    private readonly InputMapEditor _inputMapEditor; // Input map editor instance
+    private readonly IModalWindowService _modalWindowService;
 
     // State for managing the modal "Project Settings" window
-    // These are properties on the logic class, but their actual handling
-    // for modal windows will be dependent on the capabilities of the host.
-    private ModalWindow? _projectWindow; // This will only be instantiated by the D2D host
-    private bool _isProjectWindowOpen = false; // Controlled by UI logic
     private int _projectWindowActiveTab = 0;
     private static readonly string[] ProjectWindowTabLabels = { "General", "Input Map" };
 
-    // Flag to indicate the backend (for logic branching, e.g., modal window support)
-    private readonly GraphicsBackend _backend;
 
-    // Delegate to call the hosting window's OpenProjectWindow method, which handles platform-specific windowing.
-    public Action OpenProjectWindowAction { get; private set; } = () => { };
+    public Action OpenProjectWindowAction { get; } // Now just a wrapper for the modal service call
 
-    public MyUILogic(GraphicsBackend backend)
+    public MyUILogic(IModalWindowService modalWindowService)
     {
-        _backend = backend;
+        _modalWindowService = modalWindowService ?? throw new ArgumentNullException(nameof(modalWindowService));
         _menuBarView = new MenuBarView();
         _sceneTreeView = new SceneTreeView();
         _inspectorView = new InspectorView();
         _bottomPanelView = new BottomPanelView();
-    }
+        _inputMapEditor = new InputMapEditor("input_map.yaml"); // Initialize here, if it's part of the app logic
 
-    /// <summary>
-    /// Sets the action that the UI logic should call to request opening the project window.
-    /// This action will be provided by the concrete window/host implementation.
-    /// </summary>
-    public void SetOpenProjectWindowHostAction(Action action)
-    {
-        OpenProjectWindowAction = action;
+        // Provide an action that calls the injected modal service.
+        OpenProjectWindowAction = () => OpenProjectWindowInternal();
     }
 
     public void DrawUI(UIContext context)
     {
-        ManageModalWindowState(); // Still manages state for D2D backend
-        _menuBarView.Draw(context, OpenProjectWindowAction); // Pass the host-provided action
+        _menuBarView.Draw(context, OpenProjectWindowAction);
         DrawMainLayoutPanels();
 
         // After drawing all panels, check if the bottom panel has signalled a scene change.
@@ -181,63 +170,32 @@ public class MyUILogic : IAppLogic
         if (UI.Button("modal_button_1", "A button in a modal")) { /* ... */ }
         if (UI.Button("modal_button_close", "Close Me"))
         {
-            _isProjectWindowOpen = false; // Signal the window to close
+            _modalWindowService.CloseModalWindow(0); // Signal the modal to close with success
         }
         UI.EndVBoxContainer();
     }
 
-    // This method is called internally by UI elements (e.g., MenuBarView)
-    // It signals the _host_ to open a project window.
-    // The host (e.g., MyDesktopAppWindow for D2D) then creates the modal window.
-    internal void OpenProjectWindowInternal(Win32Window ownerWindow)
+    /// <summary>
+    /// Requests the host to open the project settings modal window.
+    /// </summary>
+    private void OpenProjectWindowInternal()
     {
-        if (_isProjectWindowOpen) return;
+        if (_modalWindowService.IsModalWindowOpen) return;
 
-        // Only D2D backend supports Win32 modal windows through this path.
-        if (_backend != GraphicsBackend.Direct2D)
-        {
-            Console.WriteLine($"Modal windows are not yet implemented for the {_backend} backend.");
-            return;
-        }
-
-        _projectWindow = new ModalWindow(ownerWindow, "Project Settings", 600, 400, DrawProjectWindowUI);
-        if (_projectWindow.CreateAsModal())
-        {
-            _isProjectWindowOpen = true;
-        }
-        else
-        {
-            Console.WriteLine("Failed to create modal window.");
-            _projectWindow.Dispose();
-            _projectWindow = null;
-        }
-    }
-
-    private void ManageModalWindowState()
-    {
-        if (_backend != GraphicsBackend.Direct2D) return; // Modal window management is D2D-specific
-
-        if (_projectWindow == null) return;
-
-        // If the OS window handle is gone (e.g., user clicked the 'X' button),
-        // we must clean up our reference to it.
-        if (_projectWindow.Handle == IntPtr.Zero)
-        {
-            _projectWindow.Dispose();
-            _projectWindow = null;
-            _isProjectWindowOpen = false;
-
-            // Revert any unsaved changes in the editor since the window was closed abruptly.
-            if (_inputMapEditor.IsDirty())
-            {
-                _inputMapEditor.RevertChanges();
+        _modalWindowService.OpenModalWindow(
+            "Project Settings",
+            600,
+            400,
+            DrawProjectWindowUI,
+            (result) => {
+                Console.WriteLine($"Project Settings Modal Closed with result: {result}");
+                // If the modal was closed without explicitly saving (e.g., by X button), revert changes.
+                if (result != 0 && _inputMapEditor.IsDirty())
+                {
+                    Console.WriteLine("Modal closed without saving. Reverting Input Map changes.");
+                    _inputMapEditor.RevertChanges();
+                }
             }
-        }
-        // If our application logic has requested the window to close (e.g., via a button click),
-        // then we tell the window to close itself.
-        else if (!_isProjectWindowOpen)
-        {
-            _projectWindow.Close();
-        }
+        );
     }
 }
