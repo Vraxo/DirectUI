@@ -19,7 +19,7 @@ internal static class Win32AppServicesInitializer
             throw new InvalidOperationException("CRITICAL: GraphicsDevice did not provide valid RenderTarget or DWriteFactory for Direct2D backend initialization.");
         }
 
-        var renderer = new Backends.Direct2DRenderer(graphicsDevice.RenderTarget, graphicsDevice.DWriteFactory);
+        var renderer = new Backends.Direct2DRenderer(graphicsDevice.RenderTarget, graphicsDevice.DWriteFactory, graphicsDevice.D3DDevice, graphicsDevice.D3DContext);
         var textService = new Backends.DirectWriteTextService(graphicsDevice.DWriteFactory);
 
         appEngine.Initialize(textService, renderer);

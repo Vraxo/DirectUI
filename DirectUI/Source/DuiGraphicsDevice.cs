@@ -1,6 +1,8 @@
 ﻿// GraphicsDevice.cs
 using System;
 using Vortice.Direct2D1;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
 using Vortice.DirectWrite;
 using Vortice.DXGI;
 using SharpGen.Runtime;
@@ -16,7 +18,10 @@ public class DuiGraphicsDevice : IDisposable
 {
     public ID2D1Factory1? D2DFactory => SharedGraphicsResources.D2DFactory;
     public IDWriteFactory? DWriteFactory => SharedGraphicsResources.DWriteFactory;
-    public ID2D1HwndRenderTarget? RenderTarget { get; private set; }
+    public ID2D1RenderTarget? RenderTarget { get; private set; }
+    public ID3D11Device? D3DDevice { get; private set; }
+    public ID3D11DeviceContext? D3DContext { get; private set; }
+    public IDXGISwapChain? SwapChain { get; private set; }
     public bool IsInitialized { get; private set; } = false;
 
     private bool _isDisposed = false;
@@ -43,16 +48,38 @@ public class DuiGraphicsDevice : IDisposable
                 return false;
             }
 
-            var dxgiPixelFormat = new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied);
-            var renderTargetProperties = new RenderTargetProperties(dxgiPixelFormat);
-            var hwndRenderTargetProperties = new HwndRenderTargetProperties
+            var swapChainDesc = new SwapChainDescription()
             {
-                Hwnd = hwnd,
-                PixelSize = size,
-                PresentOptions = PresentOptions.Immediately
+                BufferCount = 1,
+                BufferDescription = new ModeDescription((uint)size.Width, (uint)size.Height, Format.B8G8R8A8_UNorm),
+                BufferUsage = Usage.RenderTargetOutput,
+                OutputWindow = hwnd,
+                SampleDescription = new SampleDescription(1, 0),
+                Windowed = true
             };
 
-            RenderTarget = D2DFactory.CreateHwndRenderTarget(renderTargetProperties, hwndRenderTargetProperties);
+            D3D11.D3D11CreateDeviceAndSwapChain(
+                null,
+                DriverType.Hardware,
+                DeviceCreationFlags.BgraSupport,
+                null,
+                swapChainDesc,
+                out var swapChain,
+                out var d3dDevice,
+                out _,
+                out var d3dContext).CheckError();
+            
+            SwapChain = swapChain;
+            D3DDevice = d3dDevice;
+            D3DContext = d3dContext;
+
+            using (var backBuffer = SwapChain.GetBuffer<ID3D11Texture2D>(0))
+            using (var surface = backBuffer.QueryInterface<IDXGISurface>())
+            {
+                var renderTargetProperties = new RenderTargetProperties(new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied));
+                RenderTarget = D2DFactory.CreateDxgiSurfaceRenderTarget(surface, renderTargetProperties);
+            }
+
             if (RenderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
 
             RenderTarget.TextAntialiasMode = D2D.TextAntialiasMode.Cleartype;
@@ -71,12 +98,19 @@ public class DuiGraphicsDevice : IDisposable
 
     public void Resize(SizeI newSize)
     {
-        if (!IsInitialized || RenderTarget is null) return;
+        if (!IsInitialized || RenderTarget is null || SwapChain is null) return;
 
         try
         {
             Console.WriteLine($"Resizing render target to {newSize}...");
-            RenderTarget.Resize(newSize);
+            RenderTarget.Dispose();
+            SwapChain.ResizeBuffers(1, (uint)newSize.Width, (uint)newSize.Height, Format.B8G8R8A8_UNorm, 0);
+            using (var backBuffer = SwapChain.GetBuffer<ID3D11Texture2D>(0))
+            using (var surface = backBuffer.QueryInterface<IDXGISurface>())
+            {
+                var renderTargetProperties = new RenderTargetProperties(new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied));
+                RenderTarget = D2DFactory.CreateDxgiSurfaceRenderTarget(surface, renderTargetProperties);
+            }
             Console.WriteLine("Successfully resized render target.");
         }
         catch (SharpGenException ex)
@@ -120,6 +154,7 @@ public class DuiGraphicsDevice : IDisposable
                     MarkAsLost();
                 }
             }
+            SwapChain?.Present(1, 0);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
         {
@@ -147,6 +182,12 @@ public class DuiGraphicsDevice : IDisposable
         if (resourcesExisted) Console.WriteLine("Cleaning up GraphicsDevice instance resources...");
 
         CleanupRenderTarget();
+        D3DContext?.Dispose();
+        D3DContext = null;
+        D3DDevice?.Dispose();
+        D3DDevice = null;
+        SwapChain?.Dispose();
+        SwapChain = null;
         IsInitialized = false;
 
         if (resourcesExisted) Console.WriteLine("Finished cleaning GraphicsDevice instance resources.");

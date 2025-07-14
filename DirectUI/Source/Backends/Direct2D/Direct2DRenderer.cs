@@ -2,7 +2,12 @@
 using DirectUI.Core;
 using SharpGen.Runtime;
 using Vortice.Direct2D1;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
 using Vortice.DirectWrite;
+using Vortice.DXGI;
+using Vortice.Mathematics;
+using InputElementDescription = Vortice.Direct3D11.InputElementDescription;
 
 namespace DirectUI.Backends;
 
@@ -14,6 +19,8 @@ public class Direct2DRenderer : IRenderer
 {
     private readonly ID2D1RenderTarget _renderTarget;
     private readonly IDWriteFactory _dwriteFactory; // Added DirectWrite factory
+    private readonly ID3D11Device _d3dDevice;
+    private readonly ID3D11DeviceContext _d3dContext;
     private readonly Dictionary<Color, ID2D1SolidColorBrush> _brushCache = new();
 
     // Internal text layout cache for DrawText method
@@ -68,10 +75,12 @@ public class Direct2DRenderer : IRenderer
 
     public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
 
-    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory) // Added dwriteFactory
+    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory, ID3D11Device d3dDevice, ID3D11DeviceContext d3dContext) // Added dwriteFactory
     {
         _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
         _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
+        _d3dDevice = d3dDevice;
+        _d3dContext = d3dContext;
     }
 
     public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
@@ -296,5 +305,98 @@ public class Direct2DRenderer : IRenderer
             Console.WriteLine($"Error creating text format for font '{style.FontName}': {ex.Message}");
             return null;
         }
+    }
+
+    public void DrawCube()
+    {
+        var vertices = new[]
+        {
+            new Vector4(-1.0f, 1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f),
+            new Vector4(1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f),
+            new Vector4(1.0f, 1.0f, 1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f),
+            new Vector4(-1.0f, 1.0f, 1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f),
+            new Vector4(1.0f, -1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f),
+            new Vector4(1.0f, -1.0f, 1.0f, 1.0f), new Vector4(1.0f, 1.0f, 1.0f, 1.0f),
+            new Vector4(-1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 0.0f, 0.0f, 1.0f)
+        };
+
+        var indices = new ushort[]
+        {
+            3, 1, 0, 2, 1, 3,
+            0, 5, 4, 1, 5, 0,
+            3, 4, 7, 0, 4, 3,
+            1, 6, 5, 2, 6, 1,
+            2, 7, 6, 3, 7, 2,
+            6, 4, 5, 7, 4, 6
+        };
+
+        var vertexBuffer = _d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
+        var indexBuffer = _d3dDevice.CreateBuffer(indices, BindFlags.IndexBuffer);
+
+        var vertexShaderByteCode = ShaderCompiler.Compile(
+@"
+cbuffer ConstantBuffer : register(b0)
+{
+    matrix WorldViewProjection;
+}
+
+float4 VS(float4 pos : POSITION) : SV_POSITION
+{
+    return mul(pos, WorldViewProjection);
+}
+", "VS", "vs_5_0");
+
+        var pixelShaderByteCode = ShaderCompiler.Compile(
+@"
+float4 PS() : SV_Target
+{
+    return float4(1.0, 1.0, 0.0, 1.0);
+}
+", "PS", "ps_5_0");
+
+        var vertexShader = _d3dDevice.CreateVertexShader(vertexShaderByteCode);
+        var pixelShader = _d3dDevice.CreatePixelShader(pixelShaderByteCode);
+
+        var inputElements = new[]
+        {
+            new InputElementDescription("POSITION", 0, Format.R32G32B32A32_Float, 0, 0)
+        };
+
+        var inputLayout = _d3dDevice.CreateInputLayout(inputElements, vertexShaderByteCode);
+        var constantBuffer = _d3dDevice.CreateBuffer(new BufferDescription(64, BindFlags.ConstantBuffer));
+
+        var view = Matrix4x4.CreateLookAt(new Vector3(0, 0, -5), Vector3.Zero, Vector3.UnitY);
+        var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)Math.PI / 4.0f, RenderTargetSize.X / RenderTargetSize.Y, 0.1f, 100.0f);
+        var world = Matrix4x4.CreateFromYawPitchRoll(
+            (float)DateTime.Now.TimeOfDay.TotalSeconds,
+            (float)DateTime.Now.TimeOfDay.TotalSeconds / 2f,
+            (float)DateTime.Now.TimeOfDay.TotalSeconds / 3f);
+
+        var worldViewProj = Matrix4x4.Transpose(world * view * proj);
+        _d3dContext.UpdateSubresource(worldViewProj, constantBuffer);
+
+        _d3dContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        _d3dContext.IASetInputLayout(inputLayout);
+        _d3dContext.VSSetShader(vertexShader);
+        _d3dContext.VSSetConstantBuffer(0, constantBuffer);
+        _d3dContext.PSSetShader(pixelShader);
+        _d3dContext.IASetVertexBuffer(0, vertexBuffer, 32);
+        _d3dContext.IASetIndexBuffer(indexBuffer, Format.R16_UInt, 0);
+
+        using (var backBuffer = _d3dContext.Device.QueryInterface<IDXGISwapChain>().GetBuffer<ID3D11Texture2D>(0))
+        {
+            var renderTargetView = _d3dDevice.CreateRenderTargetView(backBuffer);
+            _d3dContext.OMSetRenderTargets(renderTargetView);
+            _d3dContext.DrawIndexed(36, 0, 0);
+            renderTargetView.Dispose();
+        }
+
+        vertexBuffer.Dispose();
+        indexBuffer.Dispose();
+        vertexShader.Dispose();
+        pixelShader.Dispose();
+        inputLayout.Dispose();
+        constantBuffer.Dispose();
     }
 }
