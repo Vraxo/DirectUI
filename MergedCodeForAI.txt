@@ -1065,6 +1065,8 @@ public abstract class Win32Window : IDisposable
     private static readonly HashSet<string> RegisteredClassNames = new HashSet<string>();
     private GCHandle _gcHandle;
 
+    private readonly Dictionary<uint, Func<IntPtr, IntPtr, IntPtr, IntPtr>> _messageHandlers;
+
     public IntPtr Handle => _hwnd;
     public string Title => _windowTitle;
     public int Width { get; protected set; }
@@ -1080,6 +1082,31 @@ public abstract class Win32Window : IDisposable
         Height = _initialHeight;
         _windowClassName = className ?? ("Win32Window_" + Guid.NewGuid().ToString("N"));
         _wndProcDelegate = WindowProcedure;
+
+        _messageHandlers = new Dictionary<uint, Func<IntPtr, IntPtr, IntPtr, IntPtr>>();
+        InitializeMessageHandlers();
+    }
+
+    private void InitializeMessageHandlers()
+    {
+        _messageHandlers.Add(NativeMethods.WM_PAINT, Handle_WmPaint);
+        _messageHandlers.Add(NativeMethods.WM_SIZE, Handle_WmSize);
+        _messageHandlers.Add(NativeMethods.WM_MOUSEMOVE, Handle_WmMouseMove);
+        _messageHandlers.Add(NativeMethods.WM_LBUTTONDOWN, (h, w, l) => Handle_WmMouseButton(MouseButton.Left, h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_LBUTTONUP, (h, w, l) => Handle_WmMouseButton(MouseButton.Left, h, w, l, false));
+        _messageHandlers.Add(NativeMethods.WM_RBUTTONDOWN, (h, w, l) => Handle_WmMouseButton(MouseButton.Right, h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_MBUTTONDOWN, (h, w, l) => Handle_WmMouseButton(MouseButton.Middle, h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_MBUTTONUP, (h, w, l) => Handle_WmMouseButton(MouseButton.Middle, h, w, l, false));
+        _messageHandlers.Add(NativeMethods.WM_XBUTTONDOWN, (h, w, l) => Handle_WmXMouseButton(h, w, l, true));
+        _messageHandlers.Add(NativeMethods.WM_XBUTTONUP, (h, w, l) => Handle_WmXMouseButton(h, w, l, false));
+        _messageHandlers.Add(NativeMethods.WM_MOUSEWHEEL, Handle_WmMouseWheel);
+        _messageHandlers.Add(NativeMethods.WM_KEYDOWN, (h, w, l) => Handle_WmKey(true, h, w, l));
+        _messageHandlers.Add(NativeMethods.WM_KEYUP, (h, w, l) => Handle_WmKey(false, h, w, l));
+        _messageHandlers.Add(NativeMethods.WM_SYSKEYUP, (h, w, l) => Handle_WmKey(false, h, w, l));
+        _messageHandlers.Add(NativeMethods.WM_CHAR, Handle_WmChar);
+        _messageHandlers.Add(NativeMethods.WM_CLOSE, Handle_WmClose);
+        _messageHandlers.Add(NativeMethods.WM_DESTROY, Handle_WmDestroy);
+        _messageHandlers.Add(NativeMethods.WM_NCDESTROY, Handle_WmNcDestroy);
     }
 
     public bool Create(IntPtr owner = default, uint? style = null, int? x = null, int? y = null)
@@ -1148,7 +1175,7 @@ public abstract class Win32Window : IDisposable
             }
         }
 
-        _gcHandle = GCHandle.Alloc(this);
+        _gcHandle = GCHandle.Alloc(this, GCHandleType.Normal); // Explicitly specify Normal type
 
         uint windowStyle = style ?? (NativeMethods.WS_OVERLAPPEDWINDOW | NativeMethods.WS_VISIBLE);
 
@@ -1191,7 +1218,8 @@ public abstract class Win32Window : IDisposable
         if (msg == NativeMethods.WM_NCCREATE)
         {
             var cs = Marshal.PtrToStructure<NativeMethods.CREATESTRUCT>(lParam);
-            var handle = GCHandle.FromIntPtr(cs.lpCreateParams); window = handle.Target as Win32Window;
+            var handle = GCHandle.FromIntPtr(cs.lpCreateParams);
+            window = handle.Target as Win32Window;
 
             NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, GCHandle.ToIntPtr(handle));
             Console.WriteLine($"WM_NCCREATE: Associated instance with HWND {hWnd}");
@@ -1202,7 +1230,8 @@ public abstract class Win32Window : IDisposable
 
             if (ptr != IntPtr.Zero)
             {
-                var handle = GCHandle.FromIntPtr(ptr); window = handle.Target as Win32Window;
+                var handle = GCHandle.FromIntPtr(ptr);
+                window = handle.Target as Win32Window;
             }
         }
 
@@ -1225,37 +1254,20 @@ public abstract class Win32Window : IDisposable
 
     protected virtual IntPtr HandleMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam)
     {
-        return msg switch
+        if (_messageHandlers.TryGetValue(msg, out var handler))
         {
-            NativeMethods.WM_PAINT => HandleWmPaint(),
-            NativeMethods.WM_SIZE => HandleWmSize(lParam),
-            NativeMethods.WM_MOUSEMOVE => HandleWmMouseMove(lParam),
-            NativeMethods.WM_LBUTTONDOWN => HandleWmButtonDown(MouseButton.Left, lParam, hWnd),
-            NativeMethods.WM_LBUTTONUP => HandleWmButtonUp(MouseButton.Left, lParam, hWnd),
-            NativeMethods.WM_RBUTTONDOWN => HandleWmButtonDown(MouseButton.Right, lParam, hWnd),
-            NativeMethods.WM_RBUTTONUP => HandleWmButtonUp(MouseButton.Right, lParam, hWnd),
-            NativeMethods.WM_MBUTTONDOWN => HandleWmButtonDown(MouseButton.Middle, lParam, hWnd),
-            NativeMethods.WM_MBUTTONUP => HandleWmButtonUp(MouseButton.Middle, lParam, hWnd),
-            NativeMethods.WM_XBUTTONDOWN => HandleWmXButtonDown(wParam, lParam, hWnd),
-            NativeMethods.WM_XBUTTONUP => HandleWmXButtonUp(wParam, lParam, hWnd),
-            NativeMethods.WM_MOUSEWHEEL => HandleWmMouseWheel(wParam),
-            NativeMethods.WM_KEYDOWN => HandleWmKey((Keys)wParam),
-            NativeMethods.WM_KEYUP => HandleWmKey((Keys)wParam),
-            NativeMethods.WM_CHAR => HandleWmChar(wParam),
-            NativeMethods.WM_CLOSE => HandleWmClose(hWnd),
-            NativeMethods.WM_DESTROY => HandleWmDestroy(),
-            NativeMethods.WM_NCDESTROY => HandleWmNcDestroy(hWnd),
-            _ => NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam),
-        };
+            return handler(hWnd, wParam, lParam);
+        }
+        return NativeMethods.DefWindowProc(hWnd, msg, wParam, lParam);
     }
 
-    private IntPtr HandleWmPaint()
+    private IntPtr Handle_WmPaint(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         OnPaint();
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmSize(IntPtr lParam)
+    private IntPtr Handle_WmSize(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Width = NativeMethods.LoWord(lParam);
         Height = NativeMethods.HiWord(lParam);
@@ -1263,69 +1275,57 @@ public abstract class Win32Window : IDisposable
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmMouseMove(IntPtr lParam)
+    private IntPtr Handle_WmMouseMove(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         OnMouseMove(NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmButtonDown(MouseButton button, IntPtr lParam, IntPtr hWnd)
+    private IntPtr Handle_WmMouseButton(MouseButton button, IntPtr hWnd, IntPtr wParam, IntPtr lParam, bool isDown)
     {
-        NativeMethods.SetCapture(hWnd);
-        OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        if (isDown) NativeMethods.SetCapture(hWnd);
+        else NativeMethods.ReleaseCapture();
+
+        if (isDown) OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        else OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmButtonUp(MouseButton button, IntPtr lParam, IntPtr hWnd)
-    {
-        NativeMethods.ReleaseCapture();
-        OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-        return IntPtr.Zero;
-    }
-
-    private IntPtr HandleWmXButtonDown(IntPtr wParam, IntPtr lParam, IntPtr hWnd)
+    private IntPtr Handle_WmXMouseButton(IntPtr hWnd, IntPtr wParam, IntPtr lParam, bool isDown)
     {
         short xButton = NativeMethods.HiWord(wParam);
-        var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
-        NativeMethods.SetCapture(hWnd);
-        OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        MouseButton button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
+
+        if (isDown) NativeMethods.SetCapture(hWnd);
+        else NativeMethods.ReleaseCapture();
+
+        if (isDown) OnMouseDown(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
+        else OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmXButtonUp(IntPtr wParam, IntPtr lParam, IntPtr hWnd)
-    {
-        short xButton = NativeMethods.HiWord(wParam);
-        var button = (xButton == 1) ? MouseButton.XButton1 : MouseButton.XButton2;
-        NativeMethods.ReleaseCapture();
-        OnMouseUp(button, NativeMethods.LoWord(lParam), NativeMethods.HiWord(lParam));
-        return IntPtr.Zero;
-    }
-
-    private IntPtr HandleWmMouseWheel(IntPtr wParam)
+    private IntPtr Handle_WmMouseWheel(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         short wheelDelta = NativeMethods.HiWord(wParam);
         OnMouseWheel((float)wheelDelta / 120.0f); // Normalize delta
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmKey(Keys key)
+    private IntPtr Handle_WmKey(bool isDown, IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
-        // This method is called for both WM_KEYDOWN and WM_KEYUP.
-        // Derived classes override OnKeyDown and OnKeyUp for specific logic.
-        // It's the responsibility of the derived class to know if it's a down or up event.
-        // For now, this just dispatches without knowing if it's down or up at this level.
-        // The original switch handled it implicitly by calling specific OnKeyDown/OnKeyUp.
-        // Re-aligning this with the specific OnKeyDown/OnKeyUp methods:
-        return NativeMethods.DefWindowProc(Handle, NativeMethods.WM_KEYDOWN, (IntPtr)key, IntPtr.Zero); // Dummy return, actual handling is in specific OnKeyDown/Up
+        Keys key = (Keys)wParam;
+        if (isDown) OnKeyDown(key);
+        else OnKeyUp(key);
+        return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmChar(IntPtr wParam)
+    private IntPtr Handle_WmChar(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         OnChar((char)wParam);
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmClose(IntPtr hWnd)
+    private IntPtr Handle_WmClose(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         if (OnClose())
         {
@@ -1334,7 +1334,7 @@ public abstract class Win32Window : IDisposable
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmDestroy()
+    private IntPtr Handle_WmDestroy(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Console.WriteLine($"WM_DESTROY for {_hwnd}.");
         Application.UnregisterWindow(this);
@@ -1347,7 +1347,7 @@ public abstract class Win32Window : IDisposable
         return IntPtr.Zero;
     }
 
-    private IntPtr HandleWmNcDestroy(IntPtr hWnd)
+    private IntPtr Handle_WmNcDestroy(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Console.WriteLine($"WM_NCDESTROY: Releasing GCHandle for {hWnd}.");
 
@@ -1365,10 +1365,10 @@ public abstract class Win32Window : IDisposable
             NativeMethods.SetWindowLongPtr(hWnd, NativeMethods.GWLP_USERDATA, IntPtr.Zero);
         }
 
-        if (_gcHandle.IsAllocated && GCHandle.ToIntPtr(_gcHandle) == ptr)
+        if (_gcHandle.IsAllocated)
         {
+            _gcHandle.Free();
             _gcHandle = default;
-
         }
 
         _hwnd = IntPtr.Zero;
@@ -1503,10 +1503,15 @@ public abstract class Win32Window : IDisposable
         }
         else
         {
+            // If _hwnd is already zero, it means DestroyWindow was likely called via WM_DESTROY/WM_NCDESTROY.
+            // In that case, the GCHandle should have already been freed by Handle_WmNcDestroy.
+            // Only free it here if it's still allocated and _hwnd is zero, indicating a Dispose() call
+            // that didn't go through the full Win32 message loop shutdown for some reason.
             if (_gcHandle.IsAllocated)
             {
-                Console.WriteLine("Freeing dangling GCHandle...");
+                Console.WriteLine("Freeing dangling GCHandle during Dispose (unexpected, but cleaning up).");
                 _gcHandle.Free();
+                _gcHandle = default;
             }
         }
 
@@ -7716,6 +7721,316 @@ public class RaylibWindowHost : IWindowHost
 }
 </file>
 
+<file path="Backends\SDL3\CubeRenderer.cs">
+using System;
+using System.Diagnostics;
+using System.Numerics;
+using System.Runtime.InteropServices;
+using System.Text;
+using SDL3;
+using Vortice.Mathematics;
+using static SDL3.SDL;
+using Rect = Vortice.Mathematics.Rect;
+
+namespace DirectUI.Backends.SDL3;
+
+// A custom vertex structure for our cube
+[StructLayout(LayoutKind.Sequential)]
+public struct CubeVertex
+{
+    public Vector3 Position;
+    public Color4 Color;
+
+    public CubeVertex(Vector3 position, Color4 color)
+    {
+        Position = position;
+        Color = color;
+    }
+}
+
+public unsafe class CubeRenderer
+{
+    private readonly GPU_Device* _device;
+    private GPU_Shader* _vertexShader;
+    private GPU_Shader* _fragmentShader;
+    private GPU_Pipeline* _pipeline;
+    private GPU_Buffer* _vertexBuffer;
+    private GPU_Buffer* _indexBuffer;
+    private GCHandle _mvpGCHandle;
+    private Matrix4x4 _mvpMatrix;
+
+    private readonly Stopwatch _timer = new();
+    private float _rotationY = 0.0f;
+
+    public CubeRenderer(nint device)
+    {
+        _device = device;
+    }
+
+    public bool Initialize()
+    {
+        // 1. Create Shaders
+        var vsBytes = Encoding.UTF8.GetBytes(Shaders.CubeVertexShader);
+        var fsBytes = Encoding.UTF8.GetBytes(Shaders.CubeFragmentShader);
+
+        fixed (byte* pVsBytes = vsBytes)
+        fixed (byte* pFsBytes = fsBytes)
+        {
+            var vsCreateInfo = new GPU_ShaderCreateInfo
+            {
+                code = (nint)pVsBytes,
+                codeSize = (uint)vsBytes.Length,
+                format = GPUShaderFormat.Glsl,
+                stage = GPUShaderStage.Vertex,
+                entryPointName = "main"
+            };
+            _vertexShader = SDL.GpuCreateShader(_device, &vsCreateInfo);
+
+            var fsCreateInfo = new GPU_ShaderCreateInfo
+            {
+                code = (nint)pFsBytes,
+                codeSize = (uint)fsBytes.Length,
+                format = GPUShaderFormat.Glsl,
+                stage = GPUShaderStage.Fragment,
+                entryPointName = "main"
+            };
+            _fragmentShader = SDL.GpuCreateShader(_device, &fsCreateInfo);
+        }
+
+        if (_vertexShader == null || _fragmentShader == null)
+        {
+            Console.WriteLine($"Failed to create shaders: {SDL.GetError()}");
+            return false;
+        }
+
+        // 2. Create Buffers
+        CreateCubeGeometry(out var vertices, out var indices);
+        var vtxHandle = GCHandle.Alloc(vertices, GCHandleType.Pinned);
+        var idxHandle = GCHandle.Alloc(indices, GCHandleType.Pinned);
+
+        var vtxBufCreateInfo = new GPU_BufferCreateInfo
+        {
+            size = (uint)(vertices.Length * sizeof(CubeVertex)),
+            usageFlags = GPUBufferUsageFlags.Vertex
+        };
+        _vertexBuffer = SDL.GpuCreateBuffer(_device, &vtxBufCreateInfo);
+        SDL.GpuTransferDataToBuffer(
+            SDL.GpuAcquireCommandBuffer(_device),
+            vtxHandle.AddrOfPinnedObject(),
+            _vertexBuffer,
+            0,
+            vtxBufCreateInfo.size,
+        true
+        );
+
+        var idxBufCreateInfo = new GPU_BufferCreateInfo
+        {
+            size = (uint)(indices.Length * sizeof(ushort)),
+            usageFlags = GPUBufferUsageFlags.Index
+        };
+        _indexBuffer = SDL.GpuCreateBuffer(_device, &idxBufCreateInfo);
+        SDL.GpuTransferDataToBuffer(
+            SDL.GpuAcquireCommandBuffer(_device),
+            idxHandle.AddrOfPinnedObject(),
+            _indexBuffer,
+            0,
+            idxBufCreateInfo.size,
+            true
+        );
+
+        vtxHandle.Free();
+        idxHandle.Free();
+
+        // 3. Create Pipeline
+        var vertexBinding = new GPU_VertexBinding
+        {
+            binding = 0,
+            stride = (uint)sizeof(CubeVertex),
+            inputRate = GPUVertexInputRate.Vertex
+        };
+
+        GPU_VertexAttribute* attributes = (GPU_VertexAttribute*)NativeMemory.Alloc(2, (uint)sizeof(GPU_VertexAttribute));
+        attributes[0] = new GPU_VertexAttribute
+        {
+            location = 0,
+            binding = 0,
+            format = GPUVertexElementFormat.Vector3,
+            offset = (uint)Marshal.OffsetOf<CubeVertex>(nameof(CubeVertex.Position))
+        };
+        attributes[1] = new GPU_VertexAttribute
+        {
+            location = 1,
+            binding = 0,
+            format = GPUVertexElementFormat.Vector4,
+            offset = (uint)Marshal.OffsetOf<CubeVertex>(nameof(CubeVertex.Color))
+        };
+
+        var vertexInputState = new GPU_VertexInputState
+        {
+            vertexBindingCount = 1,
+            vertexBindings = &vertexBinding,
+            vertexAttributeCount = 2,
+            vertexAttributes = attributes
+        };
+
+        var shaders = stackalloc nint[2];
+        shaders[0] = (nint)_vertexShader;
+        shaders[1] = (nint)_fragmentShader;
+
+        var colorAttachment = new GPU_ColorAttachmentDescription
+        {
+            format = SDL.GpuGetSwapchainTextureFormat(_device),
+            blendState = new GPU_ColorBlendState() // Default opaque
+        };
+
+        var depthStencilState = new GPU_DepthStencilState
+        {
+            depthTestEnable = true,
+            depthWriteEnable = true,
+            depthCompareOp = GPUCompareOp.LessOrEqual
+        };
+
+        var pipelineCreateInfo = new GPU_GraphicsPipelineCreateInfo
+        {
+            vertexInputState = vertexInputState,
+            shaderCount = 2,
+            shaders = (nint*)shaders,
+            primitiveType = GPUPrimitiveType.TriangleList,
+            rasterizerState = new GPU_RasterizerState { cullMode = GPUCullMode.Back },
+            multisampleState = new GPU_MultisampleState(),
+            depthStencilState = depthStencilState,
+            colorAttachmentCount = 1,
+            colorAttachmentDescriptions = &colorAttachment,
+            depthStencilFormat = GPUTextureFormat.D16Unorm,
+        };
+
+        _pipeline = SDL.GpuCreateGraphicsPipeline(_device, &pipelineCreateInfo);
+        NativeMemory.Free(attributes);
+
+        if (_pipeline == null)
+        {
+            Console.WriteLine($"Failed to create graphics pipeline: {SDL.GetError()}");
+            return false;
+        }
+
+        _mvpMatrix = Matrix4x4.Identity;
+        _mvpGCHandle = GCHandle.Alloc(_mvpMatrix, GCHandleType.Pinned);
+
+        _timer.Start();
+        return true;
+    }
+
+    public void Draw(GPU_CommandBuffer* cmdbuf, Rect viewport)
+    {
+        // Update MVP Matrix for rotation
+        float elapsedSeconds = (float)_timer.Elapsed.TotalSeconds;
+        _rotationY += 45.0f * elapsedSeconds;
+        _timer.Restart();
+
+        var world = Matrix4x4.CreateRotationY(MathHelper.ToRadians(_rotationY));
+        var view = Matrix4x4.CreateLookAtLH(new Vector3(0, 2, -5), Vector3.Zero, Vector3.UnitY);
+        var proj = Matrix4x4.CreatePerspectiveFieldOfViewLH(MathHelper.ToRadians(70f), viewport.Width / viewport.Height, 0.1f, 100f);
+        _mvpMatrix = world * view * proj;
+
+        // Pin the matrix to get its address
+        _mvpGCHandle.Target = _mvpMatrix;
+
+        var viewportGpu = new GPU_Viewport
+        {
+            x = viewport.X,
+            y = viewport.Y,
+            w = viewport.Width,
+            h = viewport.Height
+        };
+
+        SDL.GpuSetViewport(cmdbuf, &viewportGpu);
+        SDL.GpuBindGraphicsPipeline(cmdbuf, _pipeline);
+        SDL.GpuPushGraphicsUniformData(cmdbuf, 0, _mvpGCHandle.AddrOfPinnedObject(), (uint)sizeof(Matrix4x4));
+
+        var vertexBuffBinding = new GPU_BufferBinding { buffer = _vertexBuffer, offset = 0 };
+        SDL.GpuBindVertexBuffers(cmdbuf, 0, &vertexBuffBinding, 1);
+        SDL.GpuBindIndexBuffer(cmdbuf, new GPU_BufferBinding { buffer = _indexBuffer, offset = 0 }, GPUIndexElementSize.Sixteen);
+
+        SDL.GpuDrawIndexedPrimitives(cmdbuf, 36, 1, 0, 0, 0);
+    }
+
+    public void Cleanup()
+    {
+        if (_mvpGCHandle.IsAllocated)
+            _mvpGCHandle.Free();
+
+        if (_pipeline != null) SDL.GpuDestroyPipeline(_device, _pipeline);
+        if (_vertexBuffer != null) SDL.GpuDestroyBuffer(_device, _vertexBuffer);
+        if (_indexBuffer != null) SDL.GpuDestroyBuffer(_device, _indexBuffer);
+        if (_vertexShader != null) SDL.GpuDestroyShader(_device, _vertexShader);
+        if (_fragmentShader != null) SDL.GpuDestroyShader(_device, _fragmentShader);
+    }
+
+    private void CreateCubeGeometry(out CubeVertex[] vertices, out ushort[] indices)
+    {
+        vertices =
+        [
+            // Front Face
+            new CubeVertex(new Vector3(-1.0f, -1.0f,  1.0f), Colors.Red),
+            new CubeVertex(new Vector3( 1.0f, -1.0f,  1.0f), Colors.Red),
+            new CubeVertex(new Vector3( 1.0f,  1.0f,  1.0f), Colors.Red),
+            new CubeVertex(new Vector3(-1.0f,  1.0f,  1.0f), Colors.Red),
+
+            // Back Face
+            new CubeVertex(new Vector3(-1.0f, -1.0f, -1.0f), Colors.Green),
+            new CubeVertex(new Vector3(-1.0f,  1.0f, -1.0f), Colors.Green),
+            new CubeVertex(new Vector3( 1.0f,  1.0f, -1.0f), Colors.Green),
+            new CubeVertex(new Vector3( 1.0f, -1.0f, -1.0f), Colors.Green),
+            
+            // Top Face
+            new CubeVertex(new Vector3(-1.0f, 1.0f, -1.0f), Colors.Blue),
+            new CubeVertex(new Vector3(-1.0f, 1.0f,  1.0f), Colors.Blue),
+            new CubeVertex(new Vector3( 1.0f, 1.0f,  1.0f), Colors.Blue),
+            new CubeVertex(new Vector3( 1.0f, 1.0f, -1.0f), Colors.Blue),
+
+            // Bottom Face
+            new CubeVertex(new Vector3(-1.0f, -1.0f, -1.0f), Colors.Yellow),
+            new CubeVertex(new Vector3( 1.0f, -1.0f, -1.0f), Colors.Yellow),
+            new CubeVertex(new Vector3( 1.0f, -1.0f,  1.0f), Colors.Yellow),
+            new CubeVertex(new Vector3(-1.0f, -1.0f,  1.0f), Colors.Yellow),
+
+            // Right Face
+            new CubeVertex(new Vector3(1.0f, -1.0f, -1.0f), Colors.Cyan),
+            new CubeVertex(new Vector3(1.0f,  1.0f, -1.0f), Colors.Cyan),
+            new CubeVertex(new Vector3(1.0f,  1.0f,  1.0f), Colors.Cyan),
+            new CubeVertex(new Vector3(1.0f, -1.0f,  1.0f), Colors.Cyan),
+
+            // Left Face
+            new CubeVertex(new Vector3(-1.0f, -1.0f, -1.0f), Colors.Magenta),
+            new CubeVertex(new Vector3(-1.0f, -1.0f,  1.0f), Colors.Magenta),
+            new CubeVertex(new Vector3(-1.0f,  1.0f,  1.0f), Colors.Magenta),
+            new CubeVertex(new Vector3(-1.0f,  1.0f, -1.0f), Colors.Magenta),
+        ];
+
+        indices =
+        [
+            // Front
+            0, 1, 2, 0, 2, 3,
+            // Back
+            4, 5, 6, 4, 6, 7,
+            // Top
+            8, 9, 10, 8, 10, 11,
+            // Bottom
+            12, 13, 14, 12, 14, 15,
+            // Right
+            16, 17, 18, 16, 18, 19,
+            // Left
+            20, 21, 22, 20, 22, 23,
+        ];
+    }
+
+    internal void Draw(nint cmdbuf, Rect rect)
+    {
+        throw new NotImplementedException();
+    }
+}
+</file>
+
 <file path="Backends\SDL3\SDL3Renderer.cs">
 using System;
 using System.Collections.Generic;
@@ -7731,56 +8046,24 @@ namespace DirectUI.Backends.SDL3;
 
 public unsafe class SDL3Renderer : IRenderer
 {
-    private readonly nint _rendererPtr;
+    private readonly nint _gpuDevice;
     private readonly nint _windowPtr;
 
     private int _windowWidth;
     private int _windowHeight;
 
-    private readonly Stack<Rect> _clipRectStack = new();
-    private readonly Dictionary<TextRenderCacheKey, nint> _textTextureCache = new();
-
-    // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
-    private const float FONT_SCALE_FACTOR = 1.125f;
-
-    // Cache key for rendered text textures
-    private readonly struct TextRenderCacheKey : IEquatable<TextRenderCacheKey>
-    {
-        public readonly string Text;
-        public readonly float FontSize; // Use original requested size for cache key
-        public readonly FontWeight FontWeight;
-        public readonly FontStyle FontStyle;
-        public readonly FontStretch FontStretch;
-        public readonly Drawing.Color Color;
-
-        public TextRenderCacheKey(string text, ButtonStyle style, Drawing.Color color)
-        {
-            Text = text;
-            FontSize = style.FontSize;
-            FontWeight = style.FontWeight;
-            FontStyle = style.FontStyle;
-            FontStretch = style.FontStretch;
-            Color = color;
-        }
-
-        public bool Equals(TextRenderCacheKey other) => Text == other.Text && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch && Color.Equals(other.Color);
-        public override bool Equals(object? obj) => obj is TextRenderCacheKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Text, FontSize, FontWeight, FontStyle, FontStretch, Color);
-    }
-
     public Vector2 RenderTargetSize
     {
         get
         {
-            // SDL_GetWindowSizeInPixels should be used if DPI scaling is a concern.
             SDL.GetWindowSize(_windowPtr, out _windowWidth, out _windowHeight);
             return new(_windowWidth, _windowHeight);
         }
     }
 
-    public SDL3Renderer(nint rendererPtr, nint windowPtr)
+    public SDL3Renderer(nint gpuDevice, nint windowPtr)
     {
-        _rendererPtr = rendererPtr;
+        _gpuDevice = gpuDevice;
         _windowPtr = windowPtr;
 
         SDL.GetWindowSize(_windowPtr, out _windowWidth, out _windowHeight);
@@ -7794,261 +8077,37 @@ public unsafe class SDL3Renderer : IRenderer
 
     public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
     {
-        SDL.SetRenderDrawColor(_rendererPtr, color.R, color.G, color.B, color.A);
-
-        if (strokeWidth <= 1.0f)
-        {
-            // Draw 1-pixel thin line
-            SDL.RenderLine(_rendererPtr, (int)p1.X, (int)p1.Y, (int)p2.X, (int)p2.Y);
-        }
-        else
-        {
-            // For thicker lines, approximate with a filled rectangle.
-            // This is a basic approximation, primarily for axis-aligned or near-axis-aligned lines.
-            // For general diagonal lines with thickness, more complex geometry (like a rotated rectangle or two triangles)
-            // or a dedicated library (e.g., SDL_gfx or custom shader) would be required.
-
-            float halfStroke = strokeWidth / 2f;
-            float dx = p2.X - p1.X;
-            float dy = p2.Y - p1.Y;
-
-            // If it's more horizontal
-            if (Math.Abs(dx) >= Math.Abs(dy))
-            {
-                SDL.FRect rectangle = new()
-                {
-                    X = Math.Min(p1.X, p2.X),
-                    Y = (p1.Y + p2.Y) / 2f - halfStroke, // Center Y on the line's average Y
-                    W = Math.Abs(dx),
-                    H = strokeWidth
-                };
-                SDL.RenderFillRect(_rendererPtr, rectangle);
-            }
-            // If it's more vertical
-            else
-            {
-                SDL.FRect rectangle = new()
-                {
-                    X = (p1.X + p2.X) / 2f - halfStroke, // Center X on the line's average X
-                    Y = Math.Min(p1.Y, p2.Y),
-                    W = strokeWidth,
-                    H = Math.Abs(dy)
-                };
-                SDL.RenderFillRect(_rendererPtr, rectangle);
-            }
-        }
+        // No-op: 2D UI rendering is disabled for this backend to focus on the 3D cube.
     }
 
     public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
     {
-        // Convert Vortice.Mathematics.Rect to SDL.FRect for drawing
-        SDL.FRect outerRect = new()
-        {
-            X = rect.X,
-            Y = rect.Y,
-            W = rect.Width,
-            H = rect.Height
-        };
-
-        // 1. Draw the border background (entire rectangle with border color)
-        // If border color is transparent or all border lengths are zero, this step effectively does nothing visually.
-        if (style.BorderColor.A > 0 && (style.BorderLengthTop > 0 || style.BorderLengthRight > 0 || style.BorderLengthBottom > 0 || style.BorderLengthLeft > 0))
-        {
-            SDL.SetRenderDrawColor(_rendererPtr, style.BorderColor.R, style.BorderColor.G, style.BorderColor.B, style.BorderColor.A);
-            SDL.RenderFillRect(_rendererPtr, outerRect);
-        }
-
-        // 2. Draw the inner fill rectangle (inset by border lengths)
-        if (style.FillColor.A > 0)
-        {
-            float fillX = rect.X + style.BorderLengthLeft;
-            float fillY = rect.Y + style.BorderLengthTop;
-            float fillWidth = Math.Max(0f, rect.Width - style.BorderLengthLeft - style.BorderLengthRight);
-            float fillHeight = Math.Max(0f, rect.Height - style.BorderLengthTop - style.BorderLengthBottom);
-
-            if (fillWidth > 0 && fillHeight > 0)
-            {
-                SDL.FRect fillRect = new()
-                {
-                    X = fillX,
-                    Y = fillY,
-                    W = fillWidth,
-                    H = fillHeight
-                };
-
-                SDL.SetRenderDrawColor(_rendererPtr, style.FillColor.R, style.FillColor.G, style.FillColor.B, style.FillColor.A);
-                SDL.RenderFillRect(_rendererPtr, fillRect);
-            }
-            // Special case: If no border is defined (all lengths 0) and the fill itself is opaque,
-            // the above fillRect might be invalid (e.g. if original rect had 0 width/height)
-            // In such a scenario, we still want to draw the full outerRect with the fill color if it's visible.
-            else if (style.BorderLengthTop == 0 && style.BorderLengthRight == 0 && style.BorderLengthBottom == 0 && style.BorderLengthLeft == 0 && (outerRect.W > 0 && outerRect.H > 0))
-            {
-                SDL.SetRenderDrawColor(_rendererPtr, style.FillColor.R, style.FillColor.G, style.FillColor.B, style.FillColor.A);
-                SDL.RenderFillRect(_rendererPtr, outerRect);
-            }
-        }
-        // Roundness is not natively supported by SDL's basic renderer. It will be drawn as square corners.
+        // No-op: 2D UI rendering is disabled for this backend to focus on the 3D cube.
     }
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
-        if (string.IsNullOrEmpty(text))
-            return;
-
-        var textService = UI.Context.TextService as SDL3TextService;
-        if (textService is null)
-        {
-            Console.WriteLine("Error: SDL3TextService not available for text rendering.");
-            return;
-        }
-
-        // Get the font
-        float effectiveFontSize = style.FontSize * FONT_SCALE_FACTOR;
-        nint fontPtr = textService.GetOrCreateFont(style.FontName, (int)Math.Round(effectiveFontSize), style.FontWeight);
-
-        if (fontPtr == nint.Zero)
-        {
-            Console.WriteLine($"Error: Font '{style.FontName}' could not be loaded.");
-            return;
-        }
-
-        var cacheKey = new TextRenderCacheKey(text, style, color);
-        if (!_textTextureCache.TryGetValue(cacheKey, out nint textTexture))
-        {
-            var sdlColor = new SDL.Color { R = color.R, G = color.G, B = color.B, A = color.A };
-            nint textSurface = TTF.RenderTextBlended(fontPtr, text, 0, sdlColor);
-
-            if (textSurface == nint.Zero)
-            {
-                Console.WriteLine($"Error rendering text surface: {SDL.GetError()}");
-                return;
-            }
-
-            textTexture = SDL.CreateTextureFromSurface(_rendererPtr, textSurface);
-            SDL.DestroySurface(textSurface);
-
-            if (textTexture == nint.Zero)
-            {
-                Console.WriteLine($"Error creating text texture: {SDL.GetError()}");
-                return;
-            }
-
-            _textTextureCache[cacheKey] = textTexture;
-        }
-
-        // ✅ SDL3-compatible way to get texture dimensions
-
-        if (!SDL.GetTextureSize(textTexture, out float texW, out float texH))
-        {
-            Console.WriteLine($"Error getting texture size: {SDL.GetError()}");
-            return;
-        }
-
-        Vector2 measuredSize = new(texW, texH);
-        Vector2 textDrawPos = origin;
-
-        // Horizontal alignment
-        if (maxSize.X > 0 && measuredSize.X < maxSize.X)
-        {
-            switch (alignment.Horizontal)
-            {
-                case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - measuredSize.X) / 2f;
-                    break;
-                case HAlignment.Right:
-                    textDrawPos.X += (maxSize.X - measuredSize.X);
-                    break;
-            }
-        }
-
-        // Vertical alignment
-        if (maxSize.Y > 0)
-        {
-            switch (alignment.Vertical)
-            {
-                case VAlignment.Center:
-                    textDrawPos.Y += (maxSize.Y - measuredSize.Y) / 2f;
-                    break;
-                case VAlignment.Bottom:
-                    textDrawPos.Y += (maxSize.Y - measuredSize.Y);
-                    break;
-            }
-        }
-
-        SDL.FRect dstRect = new()
-        {
-            X = textDrawPos.X,
-            Y = textDrawPos.Y,
-            W = texW,
-            H = texH
-        };
-
-        SDL.RenderTexture(_rendererPtr, textTexture, nint.Zero, dstRect);
+        // No-op: 2D UI rendering is disabled for this backend to focus on the 3D cube.
     }
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
     {
-        _clipRectStack.Push(rect);
-        ApplyClipRect(rect);
+        // No-op
     }
 
     public void PopClipRect()
     {
-        if (_clipRectStack.Count <= 0)
-        {
-            return;
-        }
-
-        _clipRectStack.Pop();
-
-        if (_clipRectStack.Count > 0)
-        {
-            ApplyClipRect(_clipRectStack.Peek());
-        }
-        else
-        {
-            // Clear clip rect
-            SDL.Rect rect = new()
-            {
-                X = 0,
-                Y = 0,
-                W = _windowWidth,
-                H = _windowHeight,
-            };
-
-            SDL.SetRenderClipRect(_rendererPtr, rect);
-        }
-    }
-
-    private void ApplyClipRect(Rect rect)
-    {
-        SDL.Rect clipRect = new()
-        {
-            X = (int)float.Floor(rect.X),
-            Y = (int)float.Floor(rect.Y),
-            W = (int)float.Ceiling(rect.Width + (rect.X - float.Floor(rect.X))),
-            H = (int)float.Ceiling(rect.Height + (rect.Y - float.Floor(rect.Y)))
-        };
-
-        SDL.SetRenderClipRect(_rendererPtr, clipRect);
+        // No-op
     }
 
     public void Flush()
     {
-        // SDL's 2D renderer typically renders commands immediately to an internal buffer.
-        // The SDL_RenderPresent call (handled by SDL3UIHost) does the actual flush to screen.
+        // No-op
     }
 
     public void Cleanup()
     {
-        _clipRectStack.Clear();
-        foreach (var texture in _textTextureCache.Values)
-        {
-            SDL.DestroyTexture(texture);
-        }
-        _textTextureCache.Clear();
-        // The renderer and window are managed and destroyed by ApplicationRunner.
+        // No resources are created in this version of the renderer.
     }
 }
 </file>
@@ -8376,6 +8435,7 @@ using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
 using Vortice.Mathematics;
+using static SDL3.SDL;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SDL3;
@@ -8388,11 +8448,13 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private readonly Color4 _backgroundColor;
 
     private nint _windowPtr;
-    private nint _rendererPtr;
+    private nint _gpuDevice;
+    private nint _depthTexture;
 
     private AppEngine? _appEngine;
     private SDL3Renderer? _renderer;
     private SDL3TextService? _textService;
+    private CubeRenderer? _cubeRenderer;
     private bool _isDisposed;
 
     private static int s_sdlInitCount = 0;
@@ -8446,11 +8508,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
-        
+
         try
         {
             Interlocked.Increment(ref s_sdlInitCount);
-            
+
             if (s_sdlInitCount == 1)
             {
                 if (!SDL.Init(SDL.InitFlags.Video))
@@ -8461,7 +8523,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             Interlocked.Increment(ref s_ttfInitCount);
-            
+
             if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
@@ -8472,7 +8534,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                 SDL3TextService.RegisterDefaultFonts();
             }
 
-            _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable);
+            _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable | SDL.WindowFlags.Vulkan);
 
             if (_windowPtr == nint.Zero)
             {
@@ -8480,18 +8542,28 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                 return false;
             }
 
-            _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
-            
-            if (_rendererPtr == nint.Zero)
+            _gpuDevice = SDL.CreateGPUDevice(GPUShaderFormat.SPIRV, true, "Hi"); ;
+
+            if (_gpuDevice == null)
             {
-                Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
+                Console.WriteLine($"GPU Device could not be created! SDL Error: {SDL.GetError()}");
                 SDL.DestroyWindow(_windowPtr);
                 return false;
             }
 
+            CreateDepthBuffer();
+
             _appEngine = new(uiDrawCallback, backgroundColor);
-            _renderer = new(_rendererPtr, _windowPtr);
+            _renderer = new(_gpuDevice, _windowPtr);
             _textService = new();
+            _cubeRenderer = new CubeRenderer(_gpuDevice);
+
+            if (!_cubeRenderer.Initialize())
+            {
+                Console.WriteLine("Could not initialize CubeRenderer.");
+                return false;
+            }
+
             _appEngine.Initialize(_textService, _renderer);
 
             Console.WriteLine($"SDL3WindowHost '{_title}' initialized successfully. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
@@ -8525,6 +8597,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                         running = false;
                         break;
                     }
+                    else if (ev.Type == (uint)SDL.EventType.WindowResized)
+                    {
+                        CreateDepthBuffer();
+                    }
+
 
                     Input.ProcessSDL3Event(ev);
                 }
@@ -8537,7 +8614,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private void ModalRunLoop()
     {
         bool modalRunning = true;
-        
+
         while (modalRunning)
         {
             while (SDL.PollEvent(out SDL.Event ev))
@@ -8574,28 +8651,83 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
     private void RenderFrame()
     {
-        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
-        SDL.RenderClear(_rendererPtr);
+        nint cmdbuf = SDL.AcquireGPUCommandBuffer((nint)_gpuDevice);
 
-        if (_renderer is not null && _textService is not null && _appEngine is not null)
+        if (!SDL.AcquireGPUSwapchainTexture((nint)cmdbuf, _windowPtr, out nint t, out uint w, out uint h))
         {
-            _appEngine.UpdateAndRender(_renderer, _textService);
+            var colorAttachment = new GPU_ColorAttachmentInfo
+            {
+                texture = swapchainTexture,
+                clearColor = new SDL.Color { R = (byte)_backgroundColor.R, G = (byte)_backgroundColor.G, B = (byte)_backgroundColor.B, A = (byte)_backgroundColor.A },
+                loadOp = GPULoadOp.Clear,
+                storeOp = GPUStoreOp.Store
+            };
+
+            var depthAttachment = new SDL.GPUDepthStencilTargetInfo
+            {
+                Texture = _depthTexture,
+                LoadOp = GPULoadOp.Clear,
+                StoreOp = GPUStoreOp.DontCare,
+                ClearDepth = 1.0f,
+            };
+
+            SDL.BeginGPURenderPass(cmdbuf, &colorAttachment, 1, &depthAttachment);
+
+            // Run UI logic (for input processing, etc.), but rendering is disabled in SDL3Renderer
+            if (_renderer is not null && _textService is not null && _appEngine is not null)
+            {
+                _appEngine.UpdateAndRender(_renderer, _textService);
+            }
+
+            // Draw the 3D cube
+            _cubeRenderer?.Draw(cmdbuf, new Vortice.Mathematics.Rect() { X = 0, Y = 0, Width = w, Height = h });
+
+            SDL.EndGPURenderPass((nint)cmdbuf);
         }
 
-        SDL.RenderPresent(_rendererPtr);
+        SDL.SubmitGPUCommandBuffer((nint)cmdbuf);
     }
 
     private void ModalRenderFrame()
     {
-        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
-        SDL.RenderClear(_rendererPtr);
-
-        if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
+        // Modal rendering with SDL_gpu not implemented in this step.
+        // For now, it will be a blank window.
+        nint cmdbuf = SDL.AcquireGPUCommandBuffer((nint)_gpuDevice);
+        
+        if (!SDL.AcquireGPUSwapchainTexture(cmdbuf, _windowPtr, out nint bruh, out uint w, out uint h))
         {
-            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
+            var colorAttachment = new GPU_ColorAttachmentInfo
+            {
+                texture = swapchainTexture,
+                clearColor = new SDL.Color { R = (byte)_backgroundColor.R, G = (byte)_backgroundColor.G, B = (byte)_backgroundColor.B, A = (byte)_backgroundColor.A },
+                loadOp = GPULoadOp.Clear,
+                storeOp = GPUStoreOp.Store
+            };
+            SDL.BeginGPURenderPass(cmdbuf, &colorAttachment, 1, null);
+            SDL.EndGPURenderPass((nint)cmdbuf);
         }
 
-        SDL.RenderPresent(_rendererPtr);
+        SDL.SubmitGPUCommandBuffer((nint)cmdbuf);
+    }
+
+    private void CreateDepthBuffer()
+    {
+        if (_depthTexture != null)
+        {
+            SDL.DestroyTexture((nint)_depthTexture);
+        }
+
+        SDL.GetWindowSizeInPixels(_windowPtr, out int w, out int h);
+        var depthCreateInfo = new SDL.GPUTextureCreateInfo
+        {
+            Width = (uint)w,
+            Height = (uint)h,
+            Format = GPUTextureFormat.D16Unorm,
+            LayerCountOrDepth = 1,
+            NumLevels = 1,
+            Usage = GPUTextureUsageFlags.DepthStencilTarget
+        };
+        _depthTexture = SDL.CreateGPUTexture((nint)_gpuDevice, depthCreateInfo);
     }
 
     public void Cleanup()
@@ -8604,15 +8736,22 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         Console.WriteLine($"SDL3WindowHost cleanup for '{_title}'...");
 
         _activeModalWindow?.Cleanup();
+        _cubeRenderer?.Cleanup();
 
         _appEngine?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
 
-        if (_rendererPtr != nint.Zero)
+        if (_depthTexture != null)
         {
-            SDL.DestroyRenderer(_rendererPtr);
-            _rendererPtr = nint.Zero;
+            SDL.DestroyTexture((nint)_depthTexture);
+            _depthTexture = null;
+        }
+
+        if (_gpuDevice != null)
+        {
+            SDL.DestroyGPUDevice((nint)_gpuDevice);
+            _gpuDevice = null;
         }
 
         if (_windowPtr != nint.Zero)
@@ -8630,7 +8769,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         Interlocked.Decrement(ref s_sdlInitCount);
-        
+
         if (s_sdlInitCount == 0)
         {
             Console.WriteLine("Final SDL.Quit()..");
@@ -8638,7 +8777,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         _isDisposed = true;
-        
+
         GC.SuppressFinalize(this);
         Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
@@ -8741,6 +8880,42 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _modalResultCode = 0;
         _isModalClosing = false;
     }
+}
+</file>
+
+<file path="Backends\SDL3\Shaders.cs">
+namespace DirectUI.Backends.SDL3;
+
+public static class Shaders
+{
+    public const string CubeVertexShader = @"#version 450
+layout(location = 0) in vec3 a_position;
+layout(location = 1) in vec4 a_color;
+
+layout(location = 0) out vec4 v_color;
+
+layout(push_constant) uniform Uniforms
+{
+    mat4 mvp;
+} ubo;
+
+void main()
+{
+    gl_Position = ubo.mvp * vec4(a_position, 1.0);
+    v_color = a_color;
+}
+";
+
+    public const string CubeFragmentShader = @"#version 450
+layout(location = 0) in vec4 v_color;
+
+layout(location = 0) out vec4 o_color;
+
+void main()
+{
+    o_color = v_color;
+}
+";
 }
 </file>
 
