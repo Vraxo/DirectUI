@@ -1,12 +1,9 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Numerics;
+﻿using System.Numerics;
 using DirectUI.Core;
 using SDL3;
-using Veldrid.Sdl2;
-using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by SDL
+using Vortice.Direct2D1;
+using Vortice.DirectWrite;
 using Vortice.Mathematics;
-using Vortice.DirectWrite; // For FontWeight, etc.
 
 namespace DirectUI.Backends.SDL3;
 
@@ -21,20 +18,18 @@ public unsafe class SDL3Renderer : IRenderer
     private readonly Stack<Rect> _clipRectStack = new();
     private readonly Dictionary<TextRenderCacheKey, nint> _textTextureCache = new();
 
-    // This factor compensates for the perceptual size difference between DirectWrite and FreeType rendering.
     private const float FONT_SCALE_FACTOR = 1.125f;
 
-    // Cache key for rendered text textures
     private readonly struct TextRenderCacheKey : IEquatable<TextRenderCacheKey>
     {
         public readonly string Text;
-        public readonly float FontSize; // Use original requested size for cache key
+        public readonly float FontSize;
         public readonly FontWeight FontWeight;
         public readonly FontStyle FontStyle;
         public readonly FontStretch FontStretch;
-        public readonly Drawing.Color Color;
+        public readonly Color Color;
 
-        public TextRenderCacheKey(string text, ButtonStyle style, Drawing.Color color)
+        public TextRenderCacheKey(string text, ButtonStyle style, Color color)
         {
             Text = text;
             FontSize = style.FontSize;
@@ -44,16 +39,37 @@ public unsafe class SDL3Renderer : IRenderer
             Color = color;
         }
 
-        public bool Equals(TextRenderCacheKey other) => Text == other.Text && FontSize.Equals(other.FontSize) && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontStretch == other.FontStretch && Color.Equals(other.Color);
-        public override bool Equals(object? obj) => obj is TextRenderCacheKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Text, FontSize, FontWeight, FontStyle, FontStretch, Color);
+        public bool Equals(TextRenderCacheKey other)
+        {
+            return Text == other.Text 
+                && FontSize.Equals(other.FontSize) 
+                && FontWeight == other.FontWeight 
+                && FontStyle == other.FontStyle 
+                && FontStretch == other.FontStretch 
+                && Color.Equals(other.Color);
+        }
+
+        public override bool Equals(object? obj)
+        {
+            return obj is TextRenderCacheKey other && Equals(other);
+        }
+
+        public override int GetHashCode()
+        {
+            return HashCode.Combine(
+                Text,
+                FontSize,
+                FontWeight,
+                FontStyle,
+                FontStretch,
+                Color);
+        }
     }
 
     public Vector2 RenderTargetSize
     {
         get
         {
-            // SDL_GetWindowSizeInPixels should be used if DPI scaling is a concern.
             SDL.GetWindowSize(_windowPtr, out _windowWidth, out _windowHeight);
             return new(_windowWidth, _windowHeight);
         }
@@ -175,10 +191,11 @@ public unsafe class SDL3Renderer : IRenderer
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
         if (string.IsNullOrEmpty(text))
+        {
             return;
+        }
 
-        var textService = UI.Context.TextService as SDL3TextService;
-        if (textService is null)
+        if (UI.Context.TextService is not SDL3TextService textService)
         {
             Console.WriteLine("Error: SDL3TextService not available for text rendering.");
             return;
@@ -194,10 +211,11 @@ public unsafe class SDL3Renderer : IRenderer
             return;
         }
 
-        var cacheKey = new TextRenderCacheKey(text, style, color);
+        TextRenderCacheKey cacheKey = new(text, style, color);
+        
         if (!_textTextureCache.TryGetValue(cacheKey, out nint textTexture))
         {
-            var sdlColor = new SDL.Color { R = color.R, G = color.G, B = color.B, A = color.A };
+            SDL.Color sdlColor = new() { R = color.R, G = color.G, B = color.B, A = color.A };
             nint textSurface = TTF.RenderTextBlended(fontPtr, text, 0, sdlColor);
 
             if (textSurface == nint.Zero)
@@ -324,10 +342,12 @@ public unsafe class SDL3Renderer : IRenderer
     public void Cleanup()
     {
         _clipRectStack.Clear();
-        foreach (var texture in _textTextureCache.Values)
+
+        foreach (nint texture in _textTextureCache.Values)
         {
             SDL.DestroyTexture(texture);
         }
+
         _textTextureCache.Clear();
         // The renderer and window are managed and destroyed by ApplicationRunner.
     }

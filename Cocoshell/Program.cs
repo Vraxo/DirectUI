@@ -8,9 +8,8 @@ public class Program
     static void Main()
     {
         //var backend = GraphicsBackend.Raylib;
-        //var backend = GraphicsBackend.Direct2D;
-        //var backend = GraphicsBackend.Vulkan;
-        var backend = GraphicsBackend.SDL3; // Set to SDL3 for testing
+        var backend = GraphicsBackend.Direct2D;
+        //var backend = GraphicsBackend.SDL3; // Set to SDL3 for testing
 
         ApplicationRunner.Run(backend, host => new MyUILogic(host.ModalWindowService));
     }
