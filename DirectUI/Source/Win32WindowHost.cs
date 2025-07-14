@@ -55,8 +55,10 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
         Console.WriteLine("Win32WindowHost initializing...");
 
-        if (!base.Initialize())
+        // Create the window before initializing services, as the window handle is required.
+        if (!base.Create())
         {
+            Console.WriteLine("Win32WindowHost failed to create its window handle.");
             return false;
         }
 
