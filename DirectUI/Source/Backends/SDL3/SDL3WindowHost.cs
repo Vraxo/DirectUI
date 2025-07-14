@@ -2,7 +2,6 @@
 using DirectUI.Input;
 using SDL3;
 using Vortice.Mathematics;
-using static SDL3.SDL;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SDL3;
@@ -15,13 +14,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private readonly Color4 _backgroundColor;
 
     private nint _windowPtr;
-    private nint _gpuDevice;
-    private nint _depthTexture;
+    private nint _rendererPtr;
 
     private AppEngine? _appEngine;
     private SDL3Renderer? _renderer;
     private SDL3TextService? _textService;
-    private CubeRenderer? _cubeRenderer;
     private bool _isDisposed;
 
     private static int s_sdlInitCount = 0;
@@ -75,11 +72,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
-
+        
         try
         {
             Interlocked.Increment(ref s_sdlInitCount);
-
+            
             if (s_sdlInitCount == 1)
             {
                 if (!SDL.Init(SDL.InitFlags.Video))
@@ -90,7 +87,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             Interlocked.Increment(ref s_ttfInitCount);
-
+            
             if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
@@ -101,7 +98,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                 SDL3TextService.RegisterDefaultFonts();
             }
 
-            _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable | SDL.WindowFlags.Vulkan);
+            _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable);
 
             if (_windowPtr == nint.Zero)
             {
@@ -109,28 +106,18 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                 return false;
             }
 
-            _gpuDevice = SDL.CreateGPUDevice(GPUShaderFormat.SPIRV, true, "Hi"); ;
-
-            if (_gpuDevice == null)
+            _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
+            
+            if (_rendererPtr == nint.Zero)
             {
-                Console.WriteLine($"GPU Device could not be created! SDL Error: {SDL.GetError()}");
+                Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
                 SDL.DestroyWindow(_windowPtr);
                 return false;
             }
 
-            CreateDepthBuffer();
-
             _appEngine = new(uiDrawCallback, backgroundColor);
-            _renderer = new(_gpuDevice, _windowPtr);
+            _renderer = new(_rendererPtr, _windowPtr);
             _textService = new();
-            _cubeRenderer = new CubeRenderer(_gpuDevice);
-
-            if (!_cubeRenderer.Initialize())
-            {
-                Console.WriteLine("Could not initialize CubeRenderer.");
-                return false;
-            }
-
             _appEngine.Initialize(_textService, _renderer);
 
             Console.WriteLine($"SDL3WindowHost '{_title}' initialized successfully. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
@@ -164,11 +151,6 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                         running = false;
                         break;
                     }
-                    else if (ev.Type == (uint)SDL.EventType.WindowResized)
-                    {
-                        CreateDepthBuffer();
-                    }
-
 
                     Input.ProcessSDL3Event(ev);
                 }
@@ -181,7 +163,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private void ModalRunLoop()
     {
         bool modalRunning = true;
-
+        
         while (modalRunning)
         {
             while (SDL.PollEvent(out SDL.Event ev))
@@ -218,79 +200,28 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
     private void RenderFrame()
     {
-        nint cmdbuf = SDL.AcquireGPUCommandBuffer((nint)_gpuDevice);
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
 
-        if (!SDL.AcquireGPUSwapchainTexture((nint)cmdbuf, _windowPtr, out nint t, out uint w, out uint h))
+        if (_renderer is not null && _textService is not null && _appEngine is not null)
         {
-            var colorAttachment = new SDL.GPUColorTargetInfo
-            {
-                //Texture = SDL.WaitAndAcquireGPUSwapchainTexture
-                ClearColor = new SDL.FColor { R = (byte)_backgroundColor.R, G = (byte)_backgroundColor.G, B = (byte)_backgroundColor.B, A = (byte)_backgroundColor.A },
-                LoadOp = GPULoadOp.Clear,
-                StoreOp = GPUStoreOp.Store
-            };
-
-            var depthAttachment = new SDL.GPUDepthStencilTargetInfo
-            {
-                Texture = _depthTexture,
-                LoadOp = GPULoadOp.Clear,
-                StoreOp = GPUStoreOp.DontCare,
-                ClearDepth = 1.0f,
-            };
-
-            SDL.BeginGPURenderPass(cmdbuf, &colorAttachment, 1, &depthAttachment);
-
-            // Run UI logic (for input processing, etc.), but rendering is disabled in SDL3Renderer
-            if (_renderer is not null && _textService is not null && _appEngine is not null)
-            {
-                _appEngine.UpdateAndRender(_renderer, _textService);
-            }
-
-            // Draw the 3D cube
-            _cubeRenderer?.Draw(cmdbuf, new Vortice.Mathematics.Rect() { X = 0, Y = 0, Width = w, Height = h });
-
-            SDL.EndGPURenderPass((nint)cmdbuf);
+            _appEngine.UpdateAndRender(_renderer, _textService);
         }
 
-        SDL.SubmitGPUCommandBuffer((nint)cmdbuf);
+        SDL.RenderPresent(_rendererPtr);
     }
 
     private void ModalRenderFrame()
     {
-        // Modal rendering with SDL_gpu not implemented in this step.
-        // For now, it will be a blank window.
-        nint cmdbuf = SDL.AcquireGPUCommandBuffer((nint)_gpuDevice);
-        
-        if (!SDL.AcquireGPUSwapchainTexture(cmdbuf, _windowPtr, out nint bruh, out uint w, out uint h))
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
+
+        if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
         {
-            var colorAttachment = new SDL.GPUColorTargetInfo()
-            {
-                //Texture = swapchainTexture,
-                ClearColor = new SDL.FColor { R = (byte)_backgroundColor.R, G = (byte)_backgroundColor.G, B = (byte)_backgroundColor.B, A = (byte)_backgroundColor.A },
-                LoadOp = GPULoadOp.Clear,
-                StoreOp = GPUStoreOp.Store
-            };
-            //SDL.BeginGPURenderPass(cmdbuf, colorAttachment, 1, nint.Zero);
-            SDL.BeginGPURenderPass(cmdbuf, nint.Zero, 1, nint.Zero);
-            SDL.EndGPURenderPass(cmdbuf);
+            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
         }
 
-        SDL.SubmitGPUCommandBuffer((nint)cmdbuf);
-    }
-
-    private void CreateDepthBuffer()
-    {
-        SDL.GetWindowSizeInPixels(_windowPtr, out int w, out int h);
-        var depthCreateInfo = new SDL.GPUTextureCreateInfo
-        {
-            Width = (uint)w,
-            Height = (uint)h,
-            Format = GPUTextureFormat.D16Unorm,
-            LayerCountOrDepth = 1,
-            NumLevels = 1,
-            Usage = GPUTextureUsageFlags.DepthStencilTarget
-        };
-        _depthTexture = SDL.CreateGPUTexture((nint)_gpuDevice, depthCreateInfo);
+        SDL.RenderPresent(_rendererPtr);
     }
 
     public void Cleanup()
@@ -299,22 +230,15 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         Console.WriteLine($"SDL3WindowHost cleanup for '{_title}'...");
 
         _activeModalWindow?.Cleanup();
-        _cubeRenderer?.Cleanup();
 
         _appEngine?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
 
-        if (_depthTexture != null)
+        if (_rendererPtr != nint.Zero)
         {
-            SDL.DestroyTexture((nint)_depthTexture);
-            _depthTexture = null;
-        }
-
-        if (_gpuDevice != null)
-        {
-            SDL.DestroyGPUDevice((nint)_gpuDevice);
-            _gpuDevice = null;
+            SDL.DestroyRenderer(_rendererPtr);
+            _rendererPtr = nint.Zero;
         }
 
         if (_windowPtr != nint.Zero)
@@ -332,7 +256,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         Interlocked.Decrement(ref s_sdlInitCount);
-
+        
         if (s_sdlInitCount == 0)
         {
             Console.WriteLine("Final SDL.Quit()..");
@@ -340,7 +264,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         _isDisposed = true;
-
+        
         GC.SuppressFinalize(this);
         Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
