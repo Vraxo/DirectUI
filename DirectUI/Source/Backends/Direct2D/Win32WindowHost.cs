@@ -115,6 +115,12 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         try
         {
+            // Clear the background before drawing anything else. This fixes smearing artifacts.
+            if (_appServices.AppEngine is not null && _appServices.GraphicsDevice.RenderTarget is not null)
+            {
+                _appServices.GraphicsDevice.RenderTarget.Clear(_appServices.AppEngine.BackgroundColor);
+            }
+
             _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
         }
         catch (Exception ex)

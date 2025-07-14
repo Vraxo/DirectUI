@@ -1,6 +1,6 @@
-﻿using Cocoshell;
-using DirectUI;
-using DirectUI.Core;
+﻿using DirectUI;
+
+namespace Cocoshell;
 
 public class Program
 {

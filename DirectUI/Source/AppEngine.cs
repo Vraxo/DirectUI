@@ -17,7 +17,6 @@ namespace DirectUI;
 public class AppEngine
 {
     private readonly Action<UIContext> _drawCallback;
-    private readonly Color4 _backgroundColor;
     private readonly FpsCounter _fpsCounter;
     private readonly InputManager _inputManager;
     private readonly Stopwatch _frameTimer = new();
@@ -25,11 +24,12 @@ public class AppEngine
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
+    public Color4 BackgroundColor { get; }
 
     public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
-        _backgroundColor = backgroundColor;
+        BackgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _inputManager = new InputManager();
 

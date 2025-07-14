@@ -56,6 +56,12 @@ public class ModalWindow : Win32Window
         _appServices.GraphicsDevice.BeginDraw();
         try
         {
+            // Clear the background before drawing anything else. This fixes smearing artifacts.
+            if (_appServices.AppEngine is not null && _appServices.GraphicsDevice.RenderTarget is not null)
+            {
+                _appServices.GraphicsDevice.RenderTarget.Clear(_appServices.AppEngine.BackgroundColor);
+            }
+
             // Pass the modal's specific renderer and text service to the AppEngine
             _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
         }
