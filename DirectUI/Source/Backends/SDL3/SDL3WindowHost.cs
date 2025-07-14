@@ -1,111 +1,131 @@
-﻿using System;
-using System.Threading;
-using DirectUI.Core;
+﻿using DirectUI.Core;
 using DirectUI.Input;
-using SDL;
-using SDL.SDL3;
-using SDL_ttf;
+using SDL3;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SDL3;
 
-public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService, IDisposable
+public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 {
     private readonly string _title;
     private readonly int _initialWidth;
     private readonly int _initialHeight;
     private readonly Color4 _backgroundColor;
 
-    private SDL_Window* _window;
-    private SDL_Renderer* _renderer;
+    private nint _windowPtr;
+    private nint _rendererPtr;
 
-    private AppEngine? _engine;
-    private SDL3Renderer? _gfx;
-    private SDL3TextService? _text;
-    private bool _disposed;
+    private AppEngine? _appEngine;
+    private SDL3Renderer? _renderer;
+    private SDL3TextService? _textService;
+    private bool _isDisposed;
 
-    private static int sdlInitCount = 0;
-    private static int ttfInitCount = 0;
+    private static int s_sdlInitCount = 0;
+    private static int s_ttfInitCount = 0;
 
-    private SDL3WindowHost? _modal;
-    private Action<UIContext>? _modalDraw;
-    private Action<int>? _modalClose;
-    private int _modalResult;
-    private bool _modalClosing;
+    private SDL3WindowHost? _activeModalWindow;
+    private Action<UIContext>? _modalDrawCallback;
+    private Action<int>? _onModalClosedCallback;
+    private int _modalResultCode;
+    private bool _isModalClosing;
 
-    public IntPtr Handle => (IntPtr)_window;
-    public InputManager Input => _engine?.Input ?? new();
+    public IntPtr Handle => _windowPtr;
+    public InputManager Input => _appEngine?.Input ?? new();
     public SizeI ClientSize
     {
         get
         {
-            SDL.GetWindowSize(_window, out int w, out int h);
+            SDL.GetWindowSize(_windowPtr, out int w, out int h);
             return new SizeI(w, h);
         }
     }
 
     public bool ShowFpsCounter
     {
-        get => _engine?.ShowFpsCounter ?? false;
-        set { if (_engine != null) _engine.ShowFpsCounter = value; }
+        get
+        {
+            return _appEngine?.ShowFpsCounter ?? false;
+        }
+
+        set
+        {
+            if (_appEngine is null)
+            {
+                return;
+            }
+
+            _appEngine.ShowFpsCounter = value;
+        }
     }
 
     public IModalWindowService ModalWindowService => this;
 
-    public SDL3WindowHost(string title, int width, int height, Color4 background)
+    public SDL3WindowHost(string title, int width, int initialHeight, Color4 backgroundColor)
     {
         _title = title;
         _initialWidth = width;
-        _initialHeight = height;
-        _backgroundColor = background;
+        _initialHeight = initialHeight;
+        _backgroundColor = backgroundColor;
     }
 
-    public bool Initialize(Action<UIContext> draw, Color4 background)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
+        Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
+        
         try
         {
-            if (Interlocked.Increment(ref sdlInitCount) == 1)
+            Interlocked.Increment(ref s_sdlInitCount);
+            
+            if (s_sdlInitCount == 1)
             {
-                if (!SDL.Init(InitFlags.Video))
-                    throw new Exception($"SDL_Init failed: {SDL.GetError()}");
+                if (!SDL.Init(SDL.InitFlags.Video))
+                {
+                    Console.WriteLine($"SDL could not initialize! SDL_Error: {SDL.GetError()}");
+                    return false;
+                }
             }
 
-            if (Interlocked.Increment(ref ttfInitCount) == 1)
+            Interlocked.Increment(ref s_ttfInitCount);
+            
+            if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
-                    throw new Exception($"TTF_Init failed: {SDL.GetError()}");
+                {
+                    Console.WriteLine($"SDL_ttf could not initialize! SDL_Error: {SDL.GetError()}");
+                    return false;
+                }
                 SDL3TextService.RegisterDefaultFonts();
             }
 
-            _window = SDL.CreateWindow(
-                _title,
-                SDL.WindowPosCentered,
-                SDL.WindowPosCentered,
-                _initialWidth,
-                _initialHeight,
-                WindowFlags.Resizable
-            );
+            _windowPtr = SDL.CreateWindow(_title, _initialWidth, _initialHeight, SDL.WindowFlags.Resizable);
 
-            if (_window == null)
-                throw new Exception($"Window creation failed: {SDL.GetError()}");
+            if (_windowPtr == nint.Zero)
+            {
+                Console.WriteLine($"Window could not be created! SDL_Error: {SDL.GetError()}");
+                return false;
+            }
 
-            _renderer = SDL.CreateRenderer(_window, -1, RendererFlags.Accelerated);
+            _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
+            
+            if (_rendererPtr == nint.Zero)
+            {
+                Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
+                SDL.DestroyWindow(_windowPtr);
+                return false;
+            }
 
-            if (_renderer == null)
-                throw new Exception($"Renderer creation failed: {SDL.GetError()}");
+            _appEngine = new(uiDrawCallback, backgroundColor);
+            _renderer = new(_rendererPtr, _windowPtr);
+            _textService = new();
+            _appEngine.Initialize(_textService, _renderer);
 
-            _engine = new(draw, background);
-            _gfx = new SDL3Renderer(_renderer, _window);
-            _text = new SDL3TextService();
-
-            _engine.Initialize(_text, _gfx);
-
+            Console.WriteLine($"SDL3WindowHost '{_title}' initialized successfully. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
             return true;
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Init failed: {ex.Message}");
+            Console.WriteLine($"An error occurred during SDL3WindowHost initialization: {ex.Message}");
             Cleanup();
             return false;
         }
@@ -117,159 +137,234 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService, IDisposab
 
         while (running)
         {
-            if (IsModalWindowOpen && _modal != null)
+            if (IsModalWindowOpen && _activeModalWindow is not null)
             {
-                _modal.ModalRunLoop();
-                ProcessModalExit();
-                continue;
+                _activeModalWindow.ModalRunLoop();
+                HandleModalLifecycle();
             }
-
-            while (SDL.PollEvent(out var ev) == 1)
+            else
             {
-                if (ev.Type == EventType.Quit)
+                while (SDL.PollEvent(out SDL.Event ev))
                 {
-                    running = false;
-                    break;
+                    if (ev.Type == (uint)SDL.EventType.Quit)
+                    {
+                        running = false;
+                        break;
+                    }
+
+                    Input.ProcessSDL3Event(ev);
                 }
 
-                Input.ProcessSDL3Event(ev);
+                RenderFrame();
             }
-
-            RenderFrame();
         }
     }
 
     private void ModalRunLoop()
     {
-        bool modalActive = true;
-
-        while (modalActive)
+        bool modalRunning = true;
+        
+        while (modalRunning)
         {
-            SDL_Event @event;
-
-            while (SDL.SDL3.SDL_PollEvent((SDL_Event*)@event) == 1)
+            while (SDL.PollEvent(out SDL.Event ev))
             {
-                if (ev.typ == EventType.Quit ||
-                    (ev.Type == EventType.WindowEvent && ev.Window.WindowEventID == WindowEventID.Close))
+                if (ev.Type == (uint)SDL.EventType.Quit)
                 {
-                    modalActive = false;
-                    _modalResult = -1;
+                    modalRunning = false;
+                    _modalResultCode = -1;
                     break;
+                }
+                else if (ev.Type == (uint)SDL.EventType.WindowCloseRequested)
+                {
+                    if (ev.Window.WindowID == SDL.GetWindowID(_windowPtr))
+                    {
+                        modalRunning = false;
+                        _modalResultCode = -1;
+                        break;
+                    }
                 }
 
                 Input.ProcessSDL3Event(ev);
             }
 
-            if (_modalClosing)
-                modalActive = false;
+            if (_isModalClosing)
+            {
+                modalRunning = false;
+            }
 
-            RenderModalFrame();
+            ModalRenderFrame();
         }
 
-        _modalClosing = true;
+        _isModalClosing = true;
     }
 
     private void RenderFrame()
     {
-        SDL.SDL3.SDL_SetRenderDrawColor((SDL.SDL_Renderer*)_renderer,
-            (byte)(_backgroundColor.R * 255),
-            (byte)(_backgroundColor.G * 255),
-            (byte)(_backgroundColor.B * 255),
-            (byte)(_backgroundColor.A * 255));
-        SDL.SDL3.SDL_RenderClear((SDL.SDL_Renderer*)_renderer);
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
 
-        _engine?.UpdateAndRender(_gfx!, _text!);
-
-        SDL.SDL3.SDL_RenderPresent((SDL.SDL_Renderer*)_renderer);
-    }
-
-    private void RenderModalFrame()
-    {
-        SDL.SDL3.SDL_SetRenderDrawColor((SDL.SDL_Renderer*)_renderer,
-            (byte)(_backgroundColor.R * 255),
-            (byte)(_backgroundColor.G * 255),
-            (byte)(_backgroundColor.B * 255),
-            (byte)(_backgroundColor.A * 255));
-        SDL.SDL3.SDL_RenderClear((SDL.SDL_Renderer*)_renderer);
-
-        _engine?.UpdateAndRenderModal(_gfx!, _text!, _modalDraw!);
-
-        SDL.SDL3.SDL_RenderPresent((SDL.SDL_Renderer*)_renderer);
-    }
-
-    public void OpenModalWindow(string title, int width, int height, Action<UIContext> draw, Action<int>? onClose = null)
-    {
-        if (_modal != null)
+        if (_renderer is not null && _textService is not null && _appEngine is not null)
         {
-            Console.WriteLine("Modal window already open.");
-            return;
+            _appEngine.UpdateAndRender(_renderer, _textService);
         }
 
-        _modal = new SDL3WindowHost(title, width, height, _backgroundColor)
-        {
-            _modalDraw = draw,
-            _modalClose = onClose
-        };
+        SDL.RenderPresent(_rendererPtr);
+    }
 
-        if (!_modal.Initialize(draw, _backgroundColor))
+    private void ModalRenderFrame()
+    {
+        SDL.SetRenderDrawColor(_rendererPtr, (byte)(_backgroundColor.R * 255), (byte)(_backgroundColor.G * 255), (byte)(_backgroundColor.B * 255), (byte)(_backgroundColor.A * 255));
+        SDL.RenderClear(_rendererPtr);
+
+        if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
         {
-            Console.WriteLine("Failed to init modal.");
-            _modal.Dispose();
-            _modal = null;
-            onClose?.Invoke(-1);
-            return;
+            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
         }
 
-        SDL.SDL3.SDL_SetWindowParent((SDL.SDL_Window*)_modal._window, (SDL.SDL_Window*)_window);
-        SDL.SDL3.SDL_SetWindowModal((SDL.SDL_Window*)_modal._window, true);
-    }
-
-    public void CloseModalWindow(int result = 0)
-    {
-        if (_modal == null) return;
-        _modal._modalResult = result;
-        _modal._modalClosing = true;
-    }
-
-    private void ProcessModalExit()
-    {
-        if (_modal == null || !_modal._modalClosing)
-            return;
-
-        _modalClose?.Invoke(_modal._modalResult);
-
-        SDL.SDL3.SDL_RaiseWindow((SDL.SDL_Window*)_window);
-        _modal.Dispose();
-        _modal = null;
-        _modalClose = null;
-        _modalClosing = false;
+        SDL.RenderPresent(_rendererPtr);
     }
 
     public void Cleanup()
     {
-        if (_disposed) return;
+        if (_isDisposed) return;
+        Console.WriteLine($"SDL3WindowHost cleanup for '{_title}'...");
 
-        _modal?.Cleanup();
-        _engine?.Cleanup();
-        _gfx?.Cleanup();
-        _text?.Cleanup();
+        _activeModalWindow?.Cleanup();
 
-        if (_renderer != null)
-            SDL.SDL3.SDL_DestroyRenderer((SDL.SDL_Renderer*)_renderer);
+        _appEngine?.Cleanup();
+        _renderer?.Cleanup();
+        _textService?.Cleanup();
 
-        if (_window != null)
-            SDL.SDL3.SDL_DestroyWindow((SDL.SDL_Window*)_window);
+        if (_rendererPtr != nint.Zero)
+        {
+            SDL.DestroyRenderer(_rendererPtr);
+            _rendererPtr = nint.Zero;
+        }
 
-        if (Interlocked.Decrement(ref ttfInitCount) == 0)
-            SDL.SDL3_ttf.TTF_Quit();
+        if (_windowPtr != nint.Zero)
+        {
+            SDL.DestroyWindow(_windowPtr);
+            _windowPtr = nint.Zero;
+        }
 
-        if (Interlocked.Decrement(ref sdlInitCount) == 0)
-            SDL.SDL3.SDL_Quit();
+        Interlocked.Decrement(ref s_ttfInitCount);
 
-        _disposed = true;
+        if (s_ttfInitCount == 0)
+        {
+            Console.WriteLine("Final TTF.Quit().");
+            TTF.Quit();
+        }
+
+        Interlocked.Decrement(ref s_sdlInitCount);
+        
+        if (s_sdlInitCount == 0)
+        {
+            Console.WriteLine("Final SDL.Quit()..");
+            SDL.Quit();
+        }
+
+        _isDisposed = true;
+        
+        GC.SuppressFinalize(this);
+        Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
 
-    public void Dispose() => Cleanup();
+    public void Dispose()
+    {
+        Cleanup();
+    }
 
-    public bool IsModalWindowOpen => _modal != null;
+    public bool IsModalWindowOpen
+    {
+        get
+        {
+            return _activeModalWindow is not null;
+        }
+    }
+
+    public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+    {
+        if (_activeModalWindow is not null)
+        {
+            Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
+            return;
+        }
+
+        _activeModalWindow = new SDL3WindowHost(title, width, height, _backgroundColor);
+        _activeModalWindow._modalDrawCallback = drawCallback;
+        _onModalClosedCallback = onClosedCallback;
+        _modalResultCode = -1;
+
+        if (!_activeModalWindow.InitializeModalInternal())
+        {
+            Console.WriteLine("Failed to initialize modal SDL window.");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
+
+        if (!SDL.SetWindowParent(_activeModalWindow._windowPtr, _windowPtr))
+        {
+            Console.WriteLine($"Failed to set window parent: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
+
+        if (!SDL.SetWindowModal(_activeModalWindow._windowPtr, true))
+        {
+            Console.WriteLine($"Failed to set modal flag on window: {SDL.GetError()}");
+            _activeModalWindow.Dispose();
+            _activeModalWindow = null;
+            onClosedCallback?.Invoke(-1);
+            return;
+        }
+
+        Console.WriteLine("Modal window opened successfully.");
+    }
+
+    private bool InitializeModalInternal()
+    {
+        return Initialize(_modalDrawCallback!, _backgroundColor);
+    }
+
+    public void CloseModalWindow(int resultCode = 0)
+    {
+        if (_activeModalWindow is null)
+        {
+            return;
+        }
+
+        _activeModalWindow._modalResultCode = resultCode;
+        _activeModalWindow._isModalClosing = true;
+    }
+
+    private void HandleModalLifecycle()
+    {
+        if (_activeModalWindow is null)
+        {
+            return;
+        }
+
+        if (!_activeModalWindow._isModalClosing)
+        {
+            return;
+        }
+
+        Console.WriteLine($"Modal window closed. Result: {_activeModalWindow._modalResultCode}");
+        _onModalClosedCallback?.Invoke(_activeModalWindow._modalResultCode);
+
+        if (_windowPtr != nint.Zero)
+        {
+            SDL.RaiseWindow(_windowPtr);
+        }
+
+        _activeModalWindow.Dispose();
+        _activeModalWindow = null;
+        _onModalClosedCallback = null;
+        _modalResultCode = 0;
+        _isModalClosing = false;
+    }
 }
