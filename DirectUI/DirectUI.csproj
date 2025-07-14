@@ -9,8 +9,9 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="ppy.SDL3-CS" Version="2025.703.0" />
+    <PackageReference Include="ppy.SDL3_ttf-CS" Version="2025.703.0" />
     <PackageReference Include="Raylib-cs" Version="7.0.1" />
-    <PackageReference Include="SDL3-CS" Version="3.2.16.7" />
     <PackageReference Include="SDL3-CS.Native" Version="3.2.16" />
     <PackageReference Include="SharpText.Veldrid" Version="0.3.1" />
     <PackageReference Include="Veldrid" Version="4.9.0" />
