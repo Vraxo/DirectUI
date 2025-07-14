@@ -7,19 +7,19 @@ namespace DirectUI;
 
 public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 {
-    private AppServices? _appServices; // Changed to the new bundle
+    private AppServices? appServices;
 
-    private ModalWindow? _activeModalWindow;
-    private int _modalResultCode;
-    private Action<int>? _onModalClosedCallback;
+    private ModalWindow? activeModalWindow;
+    private int modalResultCode;
+    private Action<int>? onModalClosedCallback;
     private bool _isModalClosing;
 
     public bool IsModalWindowOpen
     {
         get
         {
-            return _activeModalWindow is not null
-                && _activeModalWindow.Handle != IntPtr.Zero;
+            return activeModalWindow is not null
+                && activeModalWindow.Handle != IntPtr.Zero;
         }
     }
 
@@ -28,24 +28,24 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
     }
 
-    public InputManager Input => _appServices?.AppEngine.Input ?? new();
+    public InputManager Input => appServices?.AppEngine.Input ?? new();
     public SizeI ClientSize => GetClientRectSize();
 
     public bool ShowFpsCounter
     {
         get
         {
-            return _appServices?.AppEngine.ShowFpsCounter ?? false;
+            return appServices?.AppEngine.ShowFpsCounter ?? false;
         }
 
         set
         {
-            if (_appServices is null)
+            if (appServices is null)
             {
                 return;
             }
 
-            _appServices.AppEngine.ShowFpsCounter = value;
+            appServices.AppEngine.ShowFpsCounter = value;
         }
     }
 
@@ -64,7 +64,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         try
         {
-            _appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
+            appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
             return true;
         }
         catch (Exception ex)
@@ -87,13 +87,13 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         }
 
         Console.WriteLine("Win32WindowHost cleaning up its resources...");
-        _appServices?.AppEngine.Cleanup();
-        _appServices?.TextService.Cleanup();
-        (_appServices?.Renderer as DirectUI.Backends.Direct2DRenderer)?.Cleanup();
-        _appServices?.GraphicsDevice.Cleanup();
+        appServices?.AppEngine.Cleanup();
+        appServices?.TextService.Cleanup();
+        (appServices?.Renderer as Backends.Direct2DRenderer)?.Cleanup();
+        appServices?.GraphicsDevice.Cleanup();
 
-        _appServices = null; // Clear the bundle
-        _activeModalWindow = null;
+        appServices = null;
+        activeModalWindow = null;
 
         base.Cleanup();
     }
@@ -105,32 +105,31 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnPaint()
     {
-        if (_appServices is null || !_appServices.GraphicsDevice.IsInitialized)
+        if (appServices is null || !appServices.GraphicsDevice.IsInitialized)
         {
             Console.WriteLine("Render services not initialized. Skipping paint.");
             return;
         }
 
-        _appServices.GraphicsDevice.BeginDraw();
+        appServices.GraphicsDevice.BeginDraw();
 
         try
         {
-            // Clear the background before drawing anything else. This fixes smearing artifacts.
-            if (_appServices.AppEngine is not null && _appServices.GraphicsDevice.RenderTarget is not null)
+            if (appServices.AppEngine is not null && appServices.GraphicsDevice.RenderTarget is not null)
             {
-                _appServices.GraphicsDevice.RenderTarget.Clear(_appServices.AppEngine.BackgroundColor);
+                appServices.GraphicsDevice.RenderTarget.Clear(appServices.AppEngine.BackgroundColor);
             }
 
-            _appServices.AppEngine.UpdateAndRender(_appServices.Renderer, _appServices.TextService);
+            appServices?.AppEngine?.UpdateAndRender(appServices.Renderer, appServices.TextService);
         }
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during drawing: {ex}");
-            _appServices.GraphicsDevice.Cleanup();
+            appServices.GraphicsDevice.Cleanup();
         }
         finally
         {
-            _appServices.GraphicsDevice.EndDraw();
+            appServices.GraphicsDevice.EndDraw();
         }
     }
 
@@ -142,47 +141,47 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnSize(int width, int height)
     {
-        _appServices?.GraphicsDevice.Resize(new SizeI(width, height));
+        appServices?.GraphicsDevice.Resize(new SizeI(width, height));
     }
 
     protected override void OnMouseMove(int x, int y)
     {
-        _appServices?.AppEngine.Input.SetMousePosition(x, y);
+        appServices?.AppEngine.Input.SetMousePosition(x, y);
         Invalidate();
     }
 
     protected override void OnMouseDown(MouseButton button, int x, int y)
     {
-        _appServices?.AppEngine.Input.SetMousePosition(x, y);
-        _appServices?.AppEngine.Input.SetMouseDown(button);
+        appServices?.AppEngine.Input.SetMousePosition(x, y);
+        appServices?.AppEngine.Input.SetMouseDown(button);
         Invalidate();
     }
 
     protected override void OnMouseUp(MouseButton button, int x, int y)
     {
-        _appServices?.AppEngine.Input.SetMousePosition(x, y);
-        _appServices?.AppEngine.Input.SetMouseUp(button);
+        appServices?.AppEngine.Input.SetMousePosition(x, y);
+        appServices?.AppEngine.Input.SetMouseUp(button);
         Invalidate();
     }
 
     protected override void OnMouseWheel(float delta)
     {
-        _appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
+        appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
-        _appServices?.AppEngine.Input.AddKeyPressed(key);
+        appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
         {
             Close();
         }
 
-        if (key == Keys.F3 && _appServices?.AppEngine is not null)
+        if (key == Keys.F3 && appServices?.AppEngine is not null)
         {
-            _appServices.AppEngine.ShowFpsCounter = !_appServices.AppEngine.ShowFpsCounter;
+            appServices.AppEngine.ShowFpsCounter = !appServices.AppEngine.ShowFpsCounter;
         }
 
         Invalidate();
@@ -190,13 +189,13 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnKeyUp(Keys key)
     {
-        _appServices?.AppEngine.Input.AddKeyReleased(key);
+        appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }
 
     protected override void OnChar(char c)
     {
-        _appServices?.AppEngine.Input.AddCharacterInput(c);
+        appServices?.AppEngine.Input.AddCharacterInput(c);
         Invalidate();
     }
 
@@ -209,12 +208,12 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
         base.OnDestroy();
 
-        if (_activeModalWindow is null || _activeModalWindow.Handle == IntPtr.Zero)
+        if (activeModalWindow is null || activeModalWindow.Handle == IntPtr.Zero)
         {
             return;
         }
 
-        _activeModalWindow.Close();
+        activeModalWindow.Close();
     }
 
     private SizeI GetClientRectSize()
@@ -224,69 +223,69 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             return new(Width, Height);
         }
 
-        int width = Math.Max(1, r.right - r.left);
-        int height = Math.Max(1, r.bottom - r.top);
+        int width = int.Max(1, r.right - r.left);
+        int height = int.Max(1, r.bottom - r.top);
 
         return new(width, height);
     }
 
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
     {
-        if (_activeModalWindow is not null && _activeModalWindow.Handle != IntPtr.Zero)
+        if (activeModalWindow is not null && activeModalWindow.Handle != IntPtr.Zero)
         {
             Console.WriteLine("Warning: Cannot open a new modal window while another is already active.");
             return;
         }
 
-        _activeModalWindow = new(this, title, width, height, drawCallback);
+        activeModalWindow = new(this, title, width, height, drawCallback);
 
-        if (_activeModalWindow.CreateAsModal())
+        if (activeModalWindow.CreateAsModal())
         {
-            _onModalClosedCallback = onClosedCallback;
-            _modalResultCode = -1;
+            onModalClosedCallback = onClosedCallback;
+            modalResultCode = -1;
             Console.WriteLine("Modal window opened successfully.");
         }
         else
         {
             Console.WriteLine("Failed to create modal window.");
-            _activeModalWindow.Dispose();
-            _activeModalWindow = null;
+            activeModalWindow.Dispose();
+            activeModalWindow = null;
             onClosedCallback?.Invoke(-1);
         }
     }
 
     public void CloseModalWindow(int resultCode = 0)
     {
-        if (_activeModalWindow is null || _activeModalWindow.Handle == IntPtr.Zero)
+        if (activeModalWindow is null || activeModalWindow.Handle == IntPtr.Zero)
         {
             return;
         }
 
-        _modalResultCode = resultCode;
-        _activeModalWindow.Close();
+        modalResultCode = resultCode;
+        activeModalWindow.Close();
     }
 
     private void HandleModalLifecycle()
     {
-        if (_activeModalWindow is null)
+        if (activeModalWindow is null)
         {
             return;
         }
 
-        if (_activeModalWindow.Handle != IntPtr.Zero || _isModalClosing)
+        if (activeModalWindow.Handle != IntPtr.Zero || _isModalClosing)
         {
             return;
         }
 
         _isModalClosing = true;
 
-        Console.WriteLine($"Modal window closed. Result: {_modalResultCode}");
-        _onModalClosedCallback?.Invoke(_modalResultCode);
+        Console.WriteLine($"Modal window closed. Result: {modalResultCode}");
+        onModalClosedCallback?.Invoke(modalResultCode);
 
-        _activeModalWindow.Dispose();
-        _activeModalWindow = null;
-        _onModalClosedCallback = null;
-        _modalResultCode = 0;
+        activeModalWindow.Dispose();
+        activeModalWindow = null;
+        onModalClosedCallback = null;
+        modalResultCode = 0;
         _isModalClosing = false;
     }
 }
