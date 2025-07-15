@@ -1,0 +1,6 @@
+﻿<?xml version="1.0"?>
+<Node xmlns:xsi="http:      xsi:noNamespaceSchemaLocation="schema.xsd" name="hi">
+
+	<Child name="Son" type="Node2D"></Child>
+
+</Node>

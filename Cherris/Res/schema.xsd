@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<xs:schema xmlns:xs="http:
+  <xs:element name="Node">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element name="Child" type="ChildType" minOccurs="0" maxOccurs="unbounded"/>
+      </xs:sequence>
+      <xs:attribute name="name" type="xs:string" use="required"/>
+      <xs:attribute name="type" type="xs:string" use="required"/>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:complexType name="ChildType">
+    <xs:sequence>
+      <xs:element name="Text" type="xs:string" minOccurs="0"/>
+      <xs:element name="Position" type="Vector2" minOccurs="0"/>
+      <xs:element name="Scale" type="Vector2" minOccurs="0"/>
+      <xs:element name="Size" type="Vector2" minOccurs="0"/>
+      <xs:element name="FilePath" type="xs:string" minOccurs="0"/>
+      <xs:element name="AutoPlay" type="xs:boolean" minOccurs="0"/>
+    </xs:sequence>
+    <xs:attribute name="name" type="xs:string" use="required"/>
+    <xs:attribute name="type" type="xs:string" use="required"/>
+  </xs:complexType>
+
+  <xs:complexType name="Vector2">
+    <xs:attribute name="x" type="xs:decimal" use="required"/>
+    <xs:attribute name="y" type="xs:decimal" use="required"/>
+  </xs:complexType>
+
+</xs:schema>

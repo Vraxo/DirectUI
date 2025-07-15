@@ -1,0 +1,48 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AnalysisLevel>preview</AnalysisLevel>
+    <LangVersion>preview</LangVersion>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+
+    <!-- NuGet package metadata -->
+    <Version>1.0.0</Version>
+    <Authors>YourName</Authors>
+    <Company>YourCompanyOrName</Company>
+    <PackageId>YourLibraryName</PackageId>
+    <Description>This is my reusable library for multiple projects.</Description>
+    <PackageTags>library;shared;utility</PackageTags>
+    <RepositoryUrl>https:  </RepositoryUrl>  
+	<PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageProjectUrl>https:</PackageProjectUrl>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="LibVLCSharp" Version="3.9.3" />
+    <PackageReference Include="Raylib-cs" Version="7.0.1" />
+    <PackageReference Include="Spectre.Console" Version="0.50.1-preview.0.5" />
+    <PackageReference Include="Vortice.Direct2D1" Version="3.7.4-beta" />
+    <PackageReference Include="Vortice.DirectX" Version="3.7.4-beta" />
+    <PackageReference Include="Vortice.DXGI" Version="3.7.4-beta" />
+    <PackageReference Include="Vortice.Mathematics" Version="1.9.3" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="Res\Cherris\Config.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>True</Pack>
+      <PackagePath>contentFiles\any\net8.0\Res\Cherris\</PackagePath>
+    </None>
+    <None Update="Res\Main.yaml">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Pack>True</Pack>
+      <PackagePath>contentFiles\any\net8.0\Res\</PackagePath>
+    </None>
+  </ItemGroup>
+
+</Project>
