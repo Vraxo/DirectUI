@@ -18,9 +18,10 @@ namespace DirectUI.Backends;
 public class Direct2DRenderer : IRenderer
 {
     private readonly ID2D1RenderTarget _renderTarget;
-    private readonly IDWriteFactory _dwriteFactory; // Added DirectWrite factory
+    private readonly IDWriteFactory _dwriteFactory;
     private readonly ID3D11Device _d3dDevice;
     private readonly ID3D11DeviceContext _d3dContext;
+    private readonly IDXGISwapChain _swapChain;
     private readonly Dictionary<Color, ID2D1SolidColorBrush> _brushCache = new();
 
     // Internal text layout cache for DrawText method
@@ -75,12 +76,13 @@ public class Direct2DRenderer : IRenderer
 
     public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
 
-    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory, ID3D11Device d3dDevice, ID3D11DeviceContext d3dContext) // Added dwriteFactory
+    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory, ID3D11Device d3dDevice, ID3D11DeviceContext d3dContext, IDXGISwapChain swapChain)
     {
         _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
         _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
-        _d3dDevice = d3dDevice;
-        _d3dContext = d3dContext;
+        _d3dDevice = d3dDevice ?? throw new ArgumentNullException(nameof(d3dDevice));
+        _d3dContext = d3dContext ?? throw new ArgumentNullException(nameof(d3dContext));
+        _swapChain = swapChain ?? throw new ArgumentNullException(nameof(swapChain));
     }
 
     public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
@@ -334,36 +336,63 @@ public class Direct2DRenderer : IRenderer
         var vertexBuffer = _d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
         var indexBuffer = _d3dDevice.CreateBuffer(indices, BindFlags.IndexBuffer);
 
-        var vertexShaderByteCode = ShaderCompiler.Compile(
+        using var vertexShaderByteCode = ShaderCompiler.Compile(
 @"
 cbuffer ConstantBuffer : register(b0)
 {
     matrix WorldViewProjection;
 }
 
-float4 VS(float4 pos : POSITION) : SV_POSITION
+struct VS_Input
 {
-    return mul(pos, WorldViewProjection);
+    float4 Position : POSITION;
+    float4 Color : COLOR;
+};
+
+struct PS_Input
+{
+    float4 Position : SV_POSITION;
+    float4 Color : COLOR;
+};
+
+PS_Input VS(VS_Input input)
+{
+    PS_Input output;
+    output.Position = mul(input.Position, WorldViewProjection);
+    output.Color = input.Color;
+    return output;
 }
 ", "VS", "vs_5_0");
 
-        var pixelShaderByteCode = ShaderCompiler.Compile(
+        using var pixelShaderByteCode = ShaderCompiler.Compile(
 @"
-float4 PS() : SV_Target
+struct PS_Input
 {
-    return float4(1.0, 1.0, 0.0, 1.0);
+    float4 Position : SV_POSITION;
+    float4 Color : COLOR;
+};
+
+float4 PS(PS_Input input) : SV_TARGET
+{
+    return input.Color;
 }
 ", "PS", "ps_5_0");
 
-        var vertexShader = _d3dDevice.CreateVertexShader(vertexShaderByteCode);
-        var pixelShader = _d3dDevice.CreatePixelShader(pixelShaderByteCode);
+        // Convert Blob to byte[] to avoid versioning issues with the Blob class itself.
+        byte[] vsBytes = vertexShaderByteCode.AsBytes();
+        byte[] psBytes = pixelShaderByteCode.AsBytes();
+
+        var vertexShader = _d3dDevice.CreateVertexShader(vsBytes);
+        var pixelShader = _d3dDevice.CreatePixelShader(psBytes);
 
         var inputElements = new[]
         {
-            new InputElementDescription("POSITION", 0, Format.R32G32B32A32_Float, 0, 0)
+            new InputElementDescription("POSITION", 0, Format.R32G32B32A32_Float, 0, 0),
+            new InputElementDescription("COLOR", 0, Format.R32G32B32A32_Float, 16, 0)
         };
 
-        var inputLayout = _d3dDevice.CreateInputLayout(inputElements, vertexShaderByteCode);
+        var inputLayout = _d3dDevice.CreateInputLayout(inputElements, vsBytes);
+
         var constantBuffer = _d3dDevice.CreateBuffer(new BufferDescription(64, BindFlags.ConstantBuffer));
 
         var view = Matrix4x4.CreateLookAt(new Vector3(0, 0, -5), Vector3.Zero, Vector3.UnitY);
@@ -384,7 +413,7 @@ float4 PS() : SV_Target
         _d3dContext.IASetVertexBuffer(0, vertexBuffer, 32);
         _d3dContext.IASetIndexBuffer(indexBuffer, Format.R16_UInt, 0);
 
-        using (var backBuffer = _d3dContext.Device.QueryInterface<IDXGISwapChain>().GetBuffer<ID3D11Texture2D>(0))
+        using (var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0))
         {
             var renderTargetView = _d3dDevice.CreateRenderTargetView(backBuffer);
             _d3dContext.OMSetRenderTargets(renderTargetView);
