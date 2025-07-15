@@ -13,16 +13,11 @@ namespace DirectUI.Backends;
 
 /// <summary>
 /// A rendering backend that uses Direct2D to implement the IRenderer interface.
-/// It manages its own cache of Direct2D brushes and text layouts.
+/// It now holds a reference to the DuiGraphicsDevice to ensure it always uses a valid render target.
 /// </summary>
 public class Direct2DRenderer : IRenderer
 {
-    private readonly ID2D1RenderTarget _renderTarget;
-    private readonly IDWriteFactory _dwriteFactory;
-    private readonly ID3D11Device _d3dDevice;
-    private readonly ID3D11DeviceContext _d3dContext;
-    private readonly IDXGISwapChain _swapChain;
-    private readonly ID3D11DepthStencilView _depthStencilView;
+    private readonly DuiGraphicsDevice _graphicsDevice;
     private readonly Dictionary<Color, ID2D1SolidColorBrush> _brushCache = new();
 
     // D3D resources for the cube
@@ -38,7 +33,7 @@ public class Direct2DRenderer : IRenderer
 
     // Internal text layout cache for DrawText method
     private readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> _textLayoutCache = new();
-    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new(); // Added text format cache
+    private readonly Dictionary<FontKey, IDWriteTextFormat> _textFormatCache = new();
 
     // Internal cache key for text layouts (similar to UIResources.TextLayoutCacheKey)
     private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
@@ -86,30 +81,39 @@ public class Direct2DRenderer : IRenderer
     }
 
 
-    public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
-
-    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory, ID3D11Device d3dDevice, ID3D11DeviceContext d3dContext, IDXGISwapChain swapChain, ID3D11DepthStencilView depthStencilView)
+    public Vector2 RenderTargetSize
     {
-        _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
-        _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
-        _d3dDevice = d3dDevice ?? throw new ArgumentNullException(nameof(d3dDevice));
-        _d3dContext = d3dContext ?? throw new ArgumentNullException(nameof(d3dContext));
-        _swapChain = swapChain ?? throw new ArgumentNullException(nameof(swapChain));
-        _depthStencilView = depthStencilView ?? throw new ArgumentNullException(nameof(depthStencilView));
+        get
+        {
+            if (_graphicsDevice.RenderTarget is null)
+            {
+                return Vector2.Zero;
+            }
+            var size = _graphicsDevice.RenderTarget.Size;
+            return new Vector2(size.Width, size.Height);
+        }
+    }
 
+    public Direct2DRenderer(DuiGraphicsDevice graphicsDevice)
+    {
+        _graphicsDevice = graphicsDevice ?? throw new ArgumentNullException(nameof(graphicsDevice));
         CreateCubeResources();
     }
 
     public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
     {
+        var renderTarget = _graphicsDevice.RenderTarget;
+        if (renderTarget is null) return;
+
         var brush = GetOrCreateBrush(color);
         if (brush is null) return;
-        _renderTarget.DrawLine(p1, p2, brush, strokeWidth);
+        renderTarget.DrawLine(p1, p2, brush, strokeWidth);
     }
 
     public void DrawBox(Vortice.Mathematics.Rect rect, BoxStyle style)
     {
-        if (_renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
+        var renderTarget = _graphicsDevice.RenderTarget;
+        if (renderTarget is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
 
         var pos = rect.TopLeft;
         var size = new Vector2(rect.Width, rect.Height);
@@ -138,7 +142,7 @@ public class Direct2DRenderer : IRenderer
                 if (hasVisibleBorder)
                 {
                     System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                    _renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), borderBrush);
+                    renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), borderBrush);
                 }
                 if (hasVisibleFill)
                 {
@@ -153,12 +157,12 @@ public class Direct2DRenderer : IRenderer
                         float innerRadiusX = Math.Max(0f, radius - avgBorderX);
                         float innerRadiusY = Math.Max(0f, radius - avgBorderY);
                         System.Drawing.RectangleF fillRectF = new(fillX, fillY, fillWidth, fillHeight);
-                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(fillRectF, innerRadiusX, innerRadiusY), fillBrush);
+                        renderTarget.FillRoundedRectangle(new RoundedRectangle(fillRectF, innerRadiusX, innerRadiusY), fillBrush);
                     }
                     else if (!hasVisibleBorder && fillBrush is not null)
                     {
                         System.Drawing.RectangleF outerRectF = new(outerBounds.X, outerBounds.Y, outerBounds.Width, outerBounds.Height);
-                        _renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), fillBrush);
+                        renderTarget.FillRoundedRectangle(new RoundedRectangle(outerRectF, radius, radius), fillBrush);
                     }
                 }
                 return;
@@ -166,7 +170,7 @@ public class Direct2DRenderer : IRenderer
         }
         if (hasVisibleBorder && borderBrush is not null)
         {
-            _renderTarget.FillRectangle(rect, borderBrush);
+            renderTarget.FillRectangle(rect, borderBrush);
         }
         if (hasVisibleFill)
         {
@@ -176,18 +180,19 @@ public class Direct2DRenderer : IRenderer
             float fillHeight = Math.Max(0f, size.Y - borderTop - borderBottom);
             if (fillWidth > 0 && fillHeight > 0)
             {
-                _renderTarget.FillRectangle(new Vortice.Mathematics.Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
+                renderTarget.FillRectangle(new Vortice.Mathematics.Rect(fillX, fillY, fillWidth, fillHeight), fillBrush);
             }
             else if (!hasVisibleBorder && fillBrush is not null)
             {
-                _renderTarget.FillRectangle(rect, fillBrush);
+                renderTarget.FillRectangle(rect, fillBrush);
             }
         }
     }
 
     public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Drawing.Color color)
     {
-        if (string.IsNullOrEmpty(text)) return;
+        var renderTarget = _graphicsDevice.RenderTarget;
+        if (renderTarget is null || string.IsNullOrEmpty(text)) return;
 
         var textBrush = GetOrCreateBrush(color);
         if (textBrush is null) return;
@@ -196,9 +201,9 @@ public class Direct2DRenderer : IRenderer
         if (!_textLayoutCache.TryGetValue(layoutKey, out var textLayout))
         {
             var textFormat = GetOrCreateTextFormat(style);
-            if (textFormat is null) return;
+            if (textFormat is null || _graphicsDevice.DWriteFactory is null) return;
 
-            textLayout = _dwriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
+            textLayout = _graphicsDevice.DWriteFactory.CreateTextLayout(text, textFormat, maxSize.X, maxSize.Y);
             textLayout.TextAlignment = alignment.Horizontal switch
             {
                 HAlignment.Left => Vortice.DirectWrite.TextAlignment.Leading,
@@ -219,17 +224,17 @@ public class Direct2DRenderer : IRenderer
         // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         float yOffsetCorrection = (alignment.Vertical == VAlignment.Center) ? -1.5f : 0f;
 
-        _renderTarget.DrawTextLayout(new Vector2(origin.X, origin.Y + yOffsetCorrection), textLayout, textBrush, Vortice.Direct2D1.DrawTextOptions.None);
+        renderTarget.DrawTextLayout(new Vector2(origin.X, origin.Y + yOffsetCorrection), textLayout, textBrush, Vortice.Direct2D1.DrawTextOptions.None);
     }
 
     public void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode)
     {
-        _renderTarget.PushAxisAlignedClip(rect, antialiasMode);
+        _graphicsDevice.RenderTarget?.PushAxisAlignedClip(rect, antialiasMode);
     }
 
     public void PopClipRect()
     {
-        _renderTarget.PopAxisAlignedClip();
+        _graphicsDevice.RenderTarget?.PopAxisAlignedClip();
     }
 
     public void Flush()
@@ -251,7 +256,7 @@ public class Direct2DRenderer : IRenderer
         }
         _textLayoutCache.Clear();
 
-        foreach (var pair in _textFormatCache) // Dispose text formats
+        foreach (var pair in _textFormatCache)
         {
             pair.Value?.Dispose();
         }
@@ -269,9 +274,10 @@ public class Direct2DRenderer : IRenderer
 
     private ID2D1SolidColorBrush? GetOrCreateBrush(Drawing.Color color)
     {
-        if (_renderTarget is null)
+        var renderTarget = _graphicsDevice.RenderTarget;
+        if (renderTarget is null)
         {
-            Console.WriteLine("Error: GetOrCreateBrush called with no active render target.");
+            // Don't log here to avoid spam on resize. The caller will just not draw.
             return null;
         }
 
@@ -288,7 +294,7 @@ public class Direct2DRenderer : IRenderer
         try
         {
             Vortice.Mathematics.Color4 color4 = color;
-            brush = _renderTarget.CreateSolidColorBrush(color4);
+            brush = renderTarget.CreateSolidColorBrush(color4);
             if (brush is not null)
             {
                 _brushCache[color] = brush;
@@ -312,18 +318,19 @@ public class Direct2DRenderer : IRenderer
 
     private IDWriteTextFormat? GetOrCreateTextFormat(ButtonStyle style)
     {
-        if (_dwriteFactory is null) return null;
+        var dwriteFactory = _graphicsDevice.DWriteFactory;
+        if (dwriteFactory is null) return null;
 
         var key = new FontKey(style);
-        if (_textFormatCache.TryGetValue(key, out var format)) // Use the member field
+        if (_textFormatCache.TryGetValue(key, out var format))
         {
             return format;
         }
 
         try
         {
-            var newFormat = _dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
-            if (newFormat is not null) { _textFormatCache[key] = newFormat; } // Add to the member field
+            var newFormat = dwriteFactory.CreateTextFormat(style.FontName, null, style.FontWeight, style.FontStyle, style.FontStretch, style.FontSize, "en-us");
+            if (newFormat is not null) { _textFormatCache[key] = newFormat; }
             return newFormat;
         }
         catch (Exception ex)
@@ -335,6 +342,13 @@ public class Direct2DRenderer : IRenderer
 
     private void CreateCubeResources()
     {
+        var d3dDevice = _graphicsDevice.D3DDevice;
+        if (d3dDevice is null)
+        {
+            Console.WriteLine("Cannot create cube resources: D3DDevice is null.");
+            return;
+        }
+
         var vertices = new[]
         {
             new Vector4(-1.0f, 1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f),
@@ -357,8 +371,8 @@ public class Direct2DRenderer : IRenderer
             6, 4, 5, 7, 4, 6
         };
 
-        _cubeVertexBuffer = _d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
-        _cubeIndexBuffer = _d3dDevice.CreateBuffer(indices, BindFlags.IndexBuffer);
+        _cubeVertexBuffer = d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
+        _cubeIndexBuffer = d3dDevice.CreateBuffer(indices, BindFlags.IndexBuffer);
 
         using var vertexShaderByteCode = ShaderCompiler.Compile(
 @"
@@ -405,8 +419,8 @@ float4 PS(PS_Input input) : SV_TARGET
         byte[] vsBytes = vertexShaderByteCode.AsBytes();
         byte[] psBytes = pixelShaderByteCode.AsBytes();
 
-        _cubeVertexShader = _d3dDevice.CreateVertexShader(vsBytes);
-        _cubePixelShader = _d3dDevice.CreatePixelShader(psBytes);
+        _cubeVertexShader = d3dDevice.CreateVertexShader(vsBytes);
+        _cubePixelShader = d3dDevice.CreatePixelShader(psBytes);
 
         var inputElements = new[]
         {
@@ -414,11 +428,11 @@ float4 PS(PS_Input input) : SV_TARGET
             new InputElementDescription("COLOR", 0, Format.R32G32B32A32_Float, 16, 0)
         };
 
-        _cubeInputLayout = _d3dDevice.CreateInputLayout(inputElements, vsBytes);
-        _cubeConstantBuffer = _d3dDevice.CreateBuffer(new BufferDescription(64, BindFlags.ConstantBuffer));
+        _cubeInputLayout = d3dDevice.CreateInputLayout(inputElements, vsBytes);
+        _cubeConstantBuffer = d3dDevice.CreateBuffer(new BufferDescription(64, BindFlags.ConstantBuffer));
 
         var rasterizerDesc = new RasterizerDescription(CullMode.Back, Vortice.Direct3D11.FillMode.Solid);
-        _cubeRasterizerState = _d3dDevice.CreateRasterizerState(rasterizerDesc);
+        _cubeRasterizerState = d3dDevice.CreateRasterizerState(rasterizerDesc);
 
         var depthStencilDesc = new DepthStencilDescription
         {
@@ -427,12 +441,18 @@ float4 PS(PS_Input input) : SV_TARGET
             DepthFunc = ComparisonFunction.Less,
             StencilEnable = false
         };
-        _cubeDepthStencilState = _d3dDevice.CreateDepthStencilState(depthStencilDesc);
+        _cubeDepthStencilState = d3dDevice.CreateDepthStencilState(depthStencilDesc);
     }
 
 
     public void DrawCube()
     {
+        var d3dDevice = _graphicsDevice.D3DDevice;
+        var d3dContext = _graphicsDevice.D3DContext;
+        var swapChain = _graphicsDevice.SwapChain;
+        var depthStencilView = _graphicsDevice.DepthStencilView;
+
+        if (d3dDevice is null || d3dContext is null || swapChain is null || depthStencilView is null) return;
         if (_cubeConstantBuffer is null || _cubeInputLayout is null || _cubeVertexShader is null || _cubePixelShader is null || _cubeVertexBuffer is null || _cubeIndexBuffer is null || _cubeRasterizerState is null || _cubeDepthStencilState is null)
         {
             return;
@@ -446,33 +466,33 @@ float4 PS(PS_Input input) : SV_TARGET
             (float)DateTime.Now.TimeOfDay.TotalSeconds / 3f);
 
         var worldViewProj = Matrix4x4.Transpose(world * view * proj);
-        _d3dContext.UpdateSubresource(worldViewProj, _cubeConstantBuffer);
+        d3dContext.UpdateSubresource(worldViewProj, _cubeConstantBuffer);
 
-        _d3dContext.RSSetViewport(new Viewport(RenderTargetSize.X, RenderTargetSize.Y));
-        _d3dContext.RSSetState(_cubeRasterizerState);
-        _d3dContext.OMSetDepthStencilState(_cubeDepthStencilState);
+        d3dContext.RSSetViewport(new Viewport(RenderTargetSize.X, RenderTargetSize.Y));
+        d3dContext.RSSetState(_cubeRasterizerState);
+        d3dContext.OMSetDepthStencilState(_cubeDepthStencilState);
 
-        _d3dContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        _d3dContext.IASetInputLayout(_cubeInputLayout);
-        _d3dContext.VSSetShader(_cubeVertexShader);
-        _d3dContext.VSSetConstantBuffer(0, _cubeConstantBuffer);
-        _d3dContext.PSSetShader(_cubePixelShader);
-        _d3dContext.IASetVertexBuffer(0, _cubeVertexBuffer, 32);
-        _d3dContext.IASetIndexBuffer(_cubeIndexBuffer, Format.R16_UInt, 0);
+        d3dContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
+        d3dContext.IASetInputLayout(_cubeInputLayout);
+        d3dContext.VSSetShader(_cubeVertexShader);
+        d3dContext.VSSetConstantBuffer(0, _cubeConstantBuffer);
+        d3dContext.PSSetShader(_cubePixelShader);
+        d3dContext.IASetVertexBuffer(0, _cubeVertexBuffer, 32);
+        d3dContext.IASetIndexBuffer(_cubeIndexBuffer, Format.R16_UInt, 0);
 
-        using (var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0))
+        using (var backBuffer = swapChain.GetBuffer<ID3D11Texture2D>(0))
         {
-            using var renderTargetView = _d3dDevice.CreateRenderTargetView(backBuffer);
-            _d3dContext.ClearRenderTargetView(renderTargetView, Colors.CornflowerBlue);
-            _d3dContext.ClearDepthStencilView(_depthStencilView, DepthStencilClearFlags.Depth, 1.0f, 0);
-            _d3dContext.OMSetRenderTargets([renderTargetView], _depthStencilView);
-            _d3dContext.DrawIndexed(36, 0, 0);
+            using var renderTargetView = d3dDevice.CreateRenderTargetView(backBuffer);
+            d3dContext.ClearRenderTargetView(renderTargetView, Colors.CornflowerBlue);
+            d3dContext.ClearDepthStencilView(depthStencilView, DepthStencilClearFlags.Depth, 1.0f, 0);
+            d3dContext.OMSetRenderTargets([renderTargetView], depthStencilView);
+            d3dContext.DrawIndexed(36, 0, 0);
         }
 
         // Unbind render targets before flushing, to release control for Direct2D
-        _d3dContext.OMSetRenderTargets(new ID3D11RenderTargetView(0));
+        d3dContext.OMSetRenderTargets(new ID3D11RenderTargetView(0));
 
         // Flush the 3D commands to ensure they are executed before D2D begins drawing.
-        _d3dContext.Flush();
+        d3dContext.Flush();
     }
 }

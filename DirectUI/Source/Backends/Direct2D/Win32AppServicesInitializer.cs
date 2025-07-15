@@ -14,12 +14,14 @@ public static class Win32AppServicesInitializer
             throw new InvalidOperationException("Failed to initialize DuiGraphicsDevice.");
         }
 
-        if (graphicsDevice.RenderTarget is null || graphicsDevice.DWriteFactory is null || graphicsDevice.D3DDevice is null || graphicsDevice.D3DContext is null || graphicsDevice.SwapChain is null || graphicsDevice.DepthStencilView is null)
+        if (graphicsDevice.DWriteFactory is null)
         {
-            throw new InvalidOperationException("CRITICAL: GraphicsDevice did not provide valid RenderTarget, DWriteFactory, D3DDevice, D3DContext, SwapChain, or DepthStencilView for Direct2D backend initialization.");
+            throw new InvalidOperationException("CRITICAL: GraphicsDevice did not provide a valid DWriteFactory for TextService initialization.");
         }
 
-        var renderer = new Backends.Direct2DRenderer(graphicsDevice.RenderTarget, graphicsDevice.DWriteFactory, graphicsDevice.D3DDevice, graphicsDevice.D3DContext, graphicsDevice.SwapChain, graphicsDevice.DepthStencilView);
+        // Pass the entire graphics device to the renderer. This ensures the renderer
+        // always has access to the current, valid render target, even after a resize.
+        var renderer = new Backends.Direct2DRenderer(graphicsDevice);
         var textService = new Backends.DirectWriteTextService(graphicsDevice.DWriteFactory);
 
         appEngine.Initialize(textService, renderer);
