@@ -1,4 +1,12 @@
-﻿// GraphicsDevice.cs
+﻿using DirectUI;
+using SharpGen.Runtime;
+using Vortice.Direct2D1;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
+using Vortice.DirectWrite;
+using Vortice.DXGI;
+using Vortice.Mathematics;
+
 using System;
 using Vortice.Direct2D1;
 using Vortice.Direct3D;
@@ -27,6 +35,8 @@ public class DuiGraphicsDevice : IDisposable
 
     private ID3D11Texture2D? _depthStencilBuffer; // Added
     private bool _isDisposed = false;
+
+    public bool VSync { get; set; } = false;
 
     public bool Initialize(IntPtr hwnd, SizeI size)
     {
@@ -191,7 +201,7 @@ public class DuiGraphicsDevice : IDisposable
                     MarkAsLost();
                 }
             }
-            SwapChain?.Present(1, 0);
+            SwapChain?.Present((uint)(VSync ? 1 : 0), 0);
         }
         catch (SharpGenException ex) when (ex.ResultCode.Code == D2D.ResultCode.RecreateTarget.Code)
         {

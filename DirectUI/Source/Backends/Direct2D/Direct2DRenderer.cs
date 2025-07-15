@@ -363,12 +363,29 @@ public class Direct2DRenderer : IRenderer
 
         var indices = new ushort[]
         {
-            3, 1, 0, 2, 1, 3,
-            0, 5, 4, 1, 5, 0,
-            3, 4, 7, 0, 4, 3,
-            1, 6, 5, 2, 6, 1,
-            2, 7, 6, 3, 7, 2,
-            6, 4, 5, 7, 4, 6
+            // Front face (looking down -Z)
+            0, 1, 5,
+            0, 5, 4,
+
+            // Back face (looking down +Z)
+            3, 7, 6,
+            3, 6, 2,
+
+            // Top face (looking down +Y)
+            3, 2, 1,
+            3, 1, 0,
+
+            // Bottom face (looking down -Y)
+            4, 5, 6,
+            4, 6, 7,
+
+            // Left face (looking down -X)
+            0, 4, 7,
+            0, 7, 3,
+
+            // Right face (looking down +X)
+            1, 2, 6,
+            1, 6, 5
         };
 
         _cubeVertexBuffer = d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
@@ -454,6 +471,13 @@ float4 PS(PS_Input input) : SV_TARGET
 
         if (d3dDevice is null || d3dContext is null || swapChain is null || depthStencilView is null) return;
         if (_cubeConstantBuffer is null || _cubeInputLayout is null || _cubeVertexShader is null || _cubePixelShader is null || _cubeVertexBuffer is null || _cubeIndexBuffer is null || _cubeRasterizerState is null || _cubeDepthStencilState is null)
+        {
+            return;
+        }
+
+        // --- ASPECT RATIO FIX ---
+        // Prevent division by zero if the window is minimized or has zero height.
+        if (RenderTargetSize.Y < 1.0f)
         {
             return;
         }
