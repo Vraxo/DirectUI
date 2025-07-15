@@ -1,6 +1,7 @@
 ﻿using YamlDotNet.Serialization;
+using DirectUI;
 
-namespace DirectUI;
+namespace Cocoshell;
 
 public static class SceneParser
 {

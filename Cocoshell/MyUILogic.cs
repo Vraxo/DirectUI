@@ -54,11 +54,6 @@ public class MyUILogic : IAppLogic
 
     public void DrawUI(UIContext context)
     {
-        if (context.Renderer is Direct2DRenderer d2dRenderer)
-        {
-            d2dRenderer.DrawCube();
-        }
-
         _menuBarView.Draw(context, OpenProjectWindowAction);
         DrawMainLayoutPanels();
 

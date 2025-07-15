@@ -22,8 +22,10 @@ public class DuiGraphicsDevice : IDisposable
     public ID3D11Device? D3DDevice { get; private set; }
     public ID3D11DeviceContext? D3DContext { get; private set; }
     public IDXGISwapChain? SwapChain { get; private set; }
+    public ID3D11DepthStencilView? DepthStencilView { get; private set; } // Added
     public bool IsInitialized { get; private set; } = false;
 
+    private ID3D11Texture2D? _depthStencilBuffer; // Added
     private bool _isDisposed = false;
 
     public bool Initialize(IntPtr hwnd, SizeI size)
@@ -68,7 +70,7 @@ public class DuiGraphicsDevice : IDisposable
                 out var d3dDevice,
                 out _,
                 out var d3dContext).CheckError();
-            
+
             SwapChain = swapChain;
             D3DDevice = d3dDevice;
             D3DContext = d3dContext;
@@ -79,6 +81,8 @@ public class DuiGraphicsDevice : IDisposable
                 var renderTargetProperties = new RenderTargetProperties(new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied));
                 RenderTarget = D2DFactory.CreateDxgiSurfaceRenderTarget(surface, renderTargetProperties);
             }
+
+            CreateDepthStencilView(size); // Create depth buffer
 
             if (RenderTarget is null) throw new InvalidOperationException("Render target creation returned null unexpectedly.");
 
@@ -96,6 +100,30 @@ public class DuiGraphicsDevice : IDisposable
         }
     }
 
+    private void CreateDepthStencilView(SizeI size)
+    {
+        if (D3DDevice is null) return;
+
+        // Clean up old resources first
+        _depthStencilBuffer?.Dispose();
+        DepthStencilView?.Dispose();
+
+        var depthStencilDesc = new Texture2DDescription
+        {
+            Width = size.Width,
+            Height = size.Height,
+            MipLevels = 1,
+            ArraySize = 1,
+            Format = Format.D24_UNorm_S8_UInt,
+            SampleDescription = new SampleDescription(1, 0),
+            Usage = ResourceUsage.Default,
+            BindFlags = BindFlags.DepthStencil,
+        };
+        _depthStencilBuffer = D3DDevice.CreateTexture2D(depthStencilDesc);
+        DepthStencilView = D3DDevice.CreateDepthStencilView(_depthStencilBuffer);
+    }
+
+
     public void Resize(SizeI newSize)
     {
         if (!IsInitialized || RenderTarget is null || SwapChain is null) return;
@@ -104,6 +132,11 @@ public class DuiGraphicsDevice : IDisposable
         {
             Console.WriteLine($"Resizing render target to {newSize}...");
             RenderTarget.Dispose();
+
+            // Also dispose depth resources before resizing
+            DepthStencilView?.Dispose();
+            _depthStencilBuffer?.Dispose();
+
             SwapChain.ResizeBuffers(1, (uint)newSize.Width, (uint)newSize.Height, Format.B8G8R8A8_UNorm, 0);
             using (var backBuffer = SwapChain.GetBuffer<ID3D11Texture2D>(0))
             using (var surface = backBuffer.QueryInterface<IDXGISurface>())
@@ -111,6 +144,10 @@ public class DuiGraphicsDevice : IDisposable
                 var renderTargetProperties = new RenderTargetProperties(new PixelFormat(Format.B8G8R8A8_UNorm, Vortice.DCommon.AlphaMode.Premultiplied));
                 RenderTarget = D2DFactory.CreateDxgiSurfaceRenderTarget(surface, renderTargetProperties);
             }
+
+            // Recreate depth resources with the new size
+            CreateDepthStencilView(newSize);
+
             Console.WriteLine("Successfully resized render target.");
         }
         catch (SharpGenException ex)
@@ -182,6 +219,10 @@ public class DuiGraphicsDevice : IDisposable
         if (resourcesExisted) Console.WriteLine("Cleaning up GraphicsDevice instance resources...");
 
         CleanupRenderTarget();
+        DepthStencilView?.Dispose();
+        DepthStencilView = null;
+        _depthStencilBuffer?.Dispose();
+        _depthStencilBuffer = null;
         D3DContext?.Dispose();
         D3DContext = null;
         D3DDevice?.Dispose();

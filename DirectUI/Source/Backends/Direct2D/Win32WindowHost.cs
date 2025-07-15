@@ -111,15 +111,27 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             return;
         }
 
-        appServices.GraphicsDevice.BeginDraw();
+        bool did3dPass = false;
+        // --- Pass 1: 3D Rendering (optional) ---
+        // This must happen BEFORE D2D's BeginDraw, as it uses the D3D context directly.
+        if (appServices.Renderer is Backends.Direct2DRenderer d2dRenderer)
+        {
+            d2dRenderer.DrawCube();
+            did3dPass = true;
+        }
 
+        // --- Pass 2: 2D UI Rendering ---
+        appServices.GraphicsDevice.BeginDraw();
         try
         {
-            if (appServices.AppEngine is not null && appServices.GraphicsDevice.RenderTarget is not null)
+            // If a 3D pass happened, it already cleared the background.
+            // If not, we must clear it for the 2D UI.
+            if (!did3dPass && appServices.AppEngine is not null && appServices.GraphicsDevice.RenderTarget is not null)
             {
                 appServices.GraphicsDevice.RenderTarget.Clear(appServices.AppEngine.BackgroundColor);
             }
 
+            // Render the UI. This should no longer call DrawCube itself.
             appServices?.AppEngine?.UpdateAndRender(appServices.Renderer, appServices.TextService);
         }
         catch (Exception ex)

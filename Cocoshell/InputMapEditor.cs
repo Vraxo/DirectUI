@@ -1,8 +1,10 @@
 ﻿using System.Numerics;
 using Cocoshell.Input;
 using Vortice.Mathematics;
+using DirectUI;
+using DirectUI.Core;
 
-namespace DirectUI;
+namespace Cocoshell;
 
 public class InputMapEditor
 {

@@ -1,4 +1,4 @@
-﻿namespace DirectUI;
+﻿namespace Cocoshell;
 
 public class SceneNode
 {

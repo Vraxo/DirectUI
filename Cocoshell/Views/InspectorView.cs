@@ -3,8 +3,12 @@ using System.Reflection;
 using System.Text;
 using Cherris;
 using Vortice.DirectWrite;
+using DirectUI;
+using ButtonStyle = DirectUI.ButtonStyle;
+using HAlignment = DirectUI.HAlignment;
+using VAlignment = DirectUI.VAlignment;
 
-namespace DirectUI;
+namespace Cocoshell;
 
 public class InspectorView
 {

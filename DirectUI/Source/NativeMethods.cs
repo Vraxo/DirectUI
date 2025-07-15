@@ -13,7 +13,7 @@ using System.Runtime.InteropServices;
 
 namespace DirectUI;
 
-internal static class NativeMethods
+public static class NativeMethods
 {
     // --- Constants ---
     public const uint CS_HREDRAW = 0x0002;

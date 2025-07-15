@@ -1,6 +1,7 @@
 ﻿using Cherris;
+using DirectUI;
 
-namespace DirectUI;
+namespace Cocoshell;
 
 public class SceneTreeView
 {

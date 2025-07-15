@@ -22,7 +22,19 @@ public class Direct2DRenderer : IRenderer
     private readonly ID3D11Device _d3dDevice;
     private readonly ID3D11DeviceContext _d3dContext;
     private readonly IDXGISwapChain _swapChain;
+    private readonly ID3D11DepthStencilView _depthStencilView;
     private readonly Dictionary<Color, ID2D1SolidColorBrush> _brushCache = new();
+
+    // D3D resources for the cube
+    private ID3D11Buffer? _cubeVertexBuffer;
+    private ID3D11Buffer? _cubeIndexBuffer;
+    private ID3D11Buffer? _cubeConstantBuffer;
+    private ID3D11VertexShader? _cubeVertexShader;
+    private ID3D11PixelShader? _cubePixelShader;
+    private ID3D11InputLayout? _cubeInputLayout;
+    private ID3D11RasterizerState? _cubeRasterizerState;
+    private ID3D11DepthStencilState? _cubeDepthStencilState;
+
 
     // Internal text layout cache for DrawText method
     private readonly Dictionary<TextLayoutCacheKey, IDWriteTextLayout> _textLayoutCache = new();
@@ -76,13 +88,16 @@ public class Direct2DRenderer : IRenderer
 
     public Vector2 RenderTargetSize => new(_renderTarget.Size.Width, _renderTarget.Size.Height);
 
-    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory, ID3D11Device d3dDevice, ID3D11DeviceContext d3dContext, IDXGISwapChain swapChain)
+    public Direct2DRenderer(ID2D1RenderTarget renderTarget, IDWriteFactory dwriteFactory, ID3D11Device d3dDevice, ID3D11DeviceContext d3dContext, IDXGISwapChain swapChain, ID3D11DepthStencilView depthStencilView)
     {
         _renderTarget = renderTarget ?? throw new ArgumentNullException(nameof(renderTarget));
         _dwriteFactory = dwriteFactory ?? throw new ArgumentNullException(nameof(dwriteFactory));
         _d3dDevice = d3dDevice ?? throw new ArgumentNullException(nameof(d3dDevice));
         _d3dContext = d3dContext ?? throw new ArgumentNullException(nameof(d3dContext));
         _swapChain = swapChain ?? throw new ArgumentNullException(nameof(swapChain));
+        _depthStencilView = depthStencilView ?? throw new ArgumentNullException(nameof(depthStencilView));
+
+        CreateCubeResources();
     }
 
     public void DrawLine(Vector2 p1, Vector2 p2, Drawing.Color color, float strokeWidth)
@@ -241,6 +256,15 @@ public class Direct2DRenderer : IRenderer
             pair.Value?.Dispose();
         }
         _textFormatCache.Clear();
+
+        _cubeVertexBuffer?.Dispose();
+        _cubeIndexBuffer?.Dispose();
+        _cubeConstantBuffer?.Dispose();
+        _cubeVertexShader?.Dispose();
+        _cubePixelShader?.Dispose();
+        _cubeInputLayout?.Dispose();
+        _cubeRasterizerState?.Dispose();
+        _cubeDepthStencilState?.Dispose();
     }
 
     private ID2D1SolidColorBrush? GetOrCreateBrush(Drawing.Color color)
@@ -309,7 +333,7 @@ public class Direct2DRenderer : IRenderer
         }
     }
 
-    public void DrawCube()
+    private void CreateCubeResources()
     {
         var vertices = new[]
         {
@@ -333,8 +357,8 @@ public class Direct2DRenderer : IRenderer
             6, 4, 5, 7, 4, 6
         };
 
-        var vertexBuffer = _d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
-        var indexBuffer = _d3dDevice.CreateBuffer(indices, BindFlags.IndexBuffer);
+        _cubeVertexBuffer = _d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
+        _cubeIndexBuffer = _d3dDevice.CreateBuffer(indices, BindFlags.IndexBuffer);
 
         using var vertexShaderByteCode = ShaderCompiler.Compile(
 @"
@@ -378,12 +402,11 @@ float4 PS(PS_Input input) : SV_TARGET
 }
 ", "PS", "ps_5_0");
 
-        // Convert Blob to byte[] to avoid versioning issues with the Blob class itself.
         byte[] vsBytes = vertexShaderByteCode.AsBytes();
         byte[] psBytes = pixelShaderByteCode.AsBytes();
 
-        var vertexShader = _d3dDevice.CreateVertexShader(vsBytes);
-        var pixelShader = _d3dDevice.CreatePixelShader(psBytes);
+        _cubeVertexShader = _d3dDevice.CreateVertexShader(vsBytes);
+        _cubePixelShader = _d3dDevice.CreatePixelShader(psBytes);
 
         var inputElements = new[]
         {
@@ -391,9 +414,29 @@ float4 PS(PS_Input input) : SV_TARGET
             new InputElementDescription("COLOR", 0, Format.R32G32B32A32_Float, 16, 0)
         };
 
-        var inputLayout = _d3dDevice.CreateInputLayout(inputElements, vsBytes);
+        _cubeInputLayout = _d3dDevice.CreateInputLayout(inputElements, vsBytes);
+        _cubeConstantBuffer = _d3dDevice.CreateBuffer(new BufferDescription(64, BindFlags.ConstantBuffer));
 
-        var constantBuffer = _d3dDevice.CreateBuffer(new BufferDescription(64, BindFlags.ConstantBuffer));
+        var rasterizerDesc = new RasterizerDescription(CullMode.Back, Vortice.Direct3D11.FillMode.Solid);
+        _cubeRasterizerState = _d3dDevice.CreateRasterizerState(rasterizerDesc);
+
+        var depthStencilDesc = new DepthStencilDescription
+        {
+            DepthEnable = true,
+            DepthWriteMask = DepthWriteMask.All,
+            DepthFunc = ComparisonFunction.Less,
+            StencilEnable = false
+        };
+        _cubeDepthStencilState = _d3dDevice.CreateDepthStencilState(depthStencilDesc);
+    }
+
+
+    public void DrawCube()
+    {
+        if (_cubeConstantBuffer is null || _cubeInputLayout is null || _cubeVertexShader is null || _cubePixelShader is null || _cubeVertexBuffer is null || _cubeIndexBuffer is null || _cubeRasterizerState is null || _cubeDepthStencilState is null)
+        {
+            return;
+        }
 
         var view = Matrix4x4.CreateLookAt(new Vector3(0, 0, -5), Vector3.Zero, Vector3.UnitY);
         var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)Math.PI / 4.0f, RenderTargetSize.X / RenderTargetSize.Y, 0.1f, 100.0f);
@@ -403,29 +446,33 @@ float4 PS(PS_Input input) : SV_TARGET
             (float)DateTime.Now.TimeOfDay.TotalSeconds / 3f);
 
         var worldViewProj = Matrix4x4.Transpose(world * view * proj);
-        _d3dContext.UpdateSubresource(worldViewProj, constantBuffer);
+        _d3dContext.UpdateSubresource(worldViewProj, _cubeConstantBuffer);
+
+        _d3dContext.RSSetViewport(new Viewport(RenderTargetSize.X, RenderTargetSize.Y));
+        _d3dContext.RSSetState(_cubeRasterizerState);
+        _d3dContext.OMSetDepthStencilState(_cubeDepthStencilState);
 
         _d3dContext.IASetPrimitiveTopology(PrimitiveTopology.TriangleList);
-        _d3dContext.IASetInputLayout(inputLayout);
-        _d3dContext.VSSetShader(vertexShader);
-        _d3dContext.VSSetConstantBuffer(0, constantBuffer);
-        _d3dContext.PSSetShader(pixelShader);
-        _d3dContext.IASetVertexBuffer(0, vertexBuffer, 32);
-        _d3dContext.IASetIndexBuffer(indexBuffer, Format.R16_UInt, 0);
+        _d3dContext.IASetInputLayout(_cubeInputLayout);
+        _d3dContext.VSSetShader(_cubeVertexShader);
+        _d3dContext.VSSetConstantBuffer(0, _cubeConstantBuffer);
+        _d3dContext.PSSetShader(_cubePixelShader);
+        _d3dContext.IASetVertexBuffer(0, _cubeVertexBuffer, 32);
+        _d3dContext.IASetIndexBuffer(_cubeIndexBuffer, Format.R16_UInt, 0);
 
         using (var backBuffer = _swapChain.GetBuffer<ID3D11Texture2D>(0))
         {
-            var renderTargetView = _d3dDevice.CreateRenderTargetView(backBuffer);
-            _d3dContext.OMSetRenderTargets(renderTargetView);
+            using var renderTargetView = _d3dDevice.CreateRenderTargetView(backBuffer);
+            _d3dContext.ClearRenderTargetView(renderTargetView, Colors.CornflowerBlue);
+            _d3dContext.ClearDepthStencilView(_depthStencilView, DepthStencilClearFlags.Depth, 1.0f, 0);
+            _d3dContext.OMSetRenderTargets([renderTargetView], _depthStencilView);
             _d3dContext.DrawIndexed(36, 0, 0);
-            renderTargetView.Dispose();
         }
 
-        vertexBuffer.Dispose();
-        indexBuffer.Dispose();
-        vertexShader.Dispose();
-        pixelShader.Dispose();
-        inputLayout.Dispose();
-        constantBuffer.Dispose();
+        // Unbind render targets before flushing, to release control for Direct2D
+        _d3dContext.OMSetRenderTargets(new ID3D11RenderTargetView(0));
+
+        // Flush the 3D commands to ensure they are executed before D2D begins drawing.
+        _d3dContext.Flush();
     }
 }

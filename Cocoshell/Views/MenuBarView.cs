@@ -1,8 +1,9 @@
 ﻿using System;
 using System.Numerics;
 using Vortice.Mathematics;
+using DirectUI;
 
-namespace DirectUI;
+namespace Cocoshell;
 
 public class MenuBarView
 {
