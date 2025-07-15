@@ -131,8 +131,8 @@ public class AppEngine
 
         try
         {
-            var inputState = _inputManager.GetCurrentState();
-            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
+            InputState inputState = _inputManager.GetCurrentState();
+            UIContext uiContext = new UIContext(renderer, textService, inputState, deltaTime);
             UI.BeginFrame(uiContext);
 
             // Execute the modal-specific drawing logic
@@ -153,66 +153,51 @@ public class AppEngine
 </file>
 
 <file path="Application.cs">
-using System;
-using System.Collections.Generic;
-
 namespace DirectUI;
 
-/// <summary>
-/// Manages Win32-specific application concerns, such as window registration and the message pump.
-/// </summary>
 public static class Application
 {
-    private static readonly List<Win32Window> s_windows = new();
-    private static bool s_isRunning = false;
+    private static readonly List<Win32Window> windows = [];
+    private static bool isRunning = false;
 
-    /// <summary>
-    /// A static constructor is guaranteed to run once before the class is used.
-    /// This is the perfect place to initialize application-wide resources.
-    /// </summary>
     static Application()
     {
         SharedGraphicsResources.Initialize();
     }
 
-    /// <summary>
-    /// Registers a window with the application manager. Called by Win32Window's constructor.
-    /// </summary>
     public static void RegisterWindow(Win32Window window)
     {
-        if (!s_windows.Contains(window))
+        if (windows.Contains(window))
         {
-            s_windows.Add(window);
+            return;
         }
+
+        windows.Add(window);
     }
 
-    /// <summary>
-    /// Unregisters a window. Called when a window is destroyed.
-    /// </summary>
     public static void UnregisterWindow(Win32Window window)
     {
-        s_windows.Remove(window);
-        // If the last Win32 window is closed, signal the message loop to exit.
-        if (s_windows.Count == 0)
+        windows.Remove(window);
+
+        if (windows.Count != 0)
         {
-            Exit();
+            return;
         }
+
+        Exit();
     }
 
-    /// <summary>
-    /// Runs the Win32 main message loop. This method blocks until WM_QUIT is received.
-    /// This is intended for Win32-based applications. Other backends will have their own loops.
-    /// </summary>
     public static void RunMessageLoop()
     {
-        if (s_windows.Count == 0)
+        if (windows.Count == 0)
         {
             Console.WriteLine("Application.RunMessageLoop() called with no Win32 windows registered.");
             return;
         }
 
-        s_isRunning = true;
-        while (s_isRunning)
+        isRunning = true;
+
+        while (isRunning)
         {
             ProcessMessages();
 
@@ -223,20 +208,16 @@ public static class Application
             // For now, this is a simplified message pump.
         }
 
-        // Clean up shared resources only after the very last Win32 window has closed.
         SharedGraphicsResources.Cleanup();
     }
 
-    /// <summary>
-    /// Processes all pending window messages in the queue.
-    /// </summary>
     internal static void ProcessMessages()
     {
         while (NativeMethods.PeekMessage(out var msg, IntPtr.Zero, 0, 0, NativeMethods.PM_REMOVE))
         {
             if (msg.message == NativeMethods.WM_QUIT)
             {
-                s_isRunning = false;
+                isRunning = false;
                 break;
             }
 
@@ -245,17 +226,15 @@ public static class Application
         }
     }
 
-    /// <summary>
-    /// Signals the Win32 message loop to exit.
-    /// </summary>
     public static void Exit()
     {
-        if (s_isRunning)
+        if (!isRunning)
         {
-            s_isRunning = false;
-            // Post a quit message to ensure the loop breaks out of GetMessage if it's blocking.
-            NativeMethods.PostQuitMessage(0);
+            return;
         }
+
+        isRunning = false;
+        NativeMethods.PostQuitMessage(0);
     }
 }
 </file>
@@ -4564,10 +4543,6 @@ public static class DefaultTheme
 </file>
 
 <file path="Styles\SliderStyle.cs">
-// MODIFIED: Styles/SliderStyle.cs
-// Summary: Updated default BoxStyle initializations to use BorderLength instead of BorderThickness.
-using DirectUI.Drawing;
-
 namespace DirectUI;
 
 public class SliderStyle
@@ -4577,7 +4552,7 @@ public class SliderStyle
         FillColor = DefaultTheme.DisabledFill,
         BorderColor = DefaultTheme.NormalBorder,
         Roundness = 0.5f,
-        BorderLength = 1.0f // Use new property
+        BorderLength = 1.0f
     };
 
     public BoxStyle Foreground { get; set; } = new()
@@ -4585,7 +4560,7 @@ public class SliderStyle
         FillColor = DefaultTheme.Accent,
         BorderColor = DefaultTheme.Transparent,
         Roundness = 0.5f,
-        BorderLength = 0.0f // Use new property
+        BorderLength = 0.0f
     };
 }
 </file>
@@ -6519,12 +6494,56 @@ public static class ShaderCompiler
 {
     public static Blob Compile(string source, string entryPoint, string profile)
     {
-        Compiler.Compile(source, null, null, entryPoint, profile, out var result, out var error);
-        if (result is null)
+        // Calling the overload with positional arguments to avoid naming errors.
+        // This is the 10-argument overload.
+        Result compileResult = Compiler.Compile(
+            source,          // 1: string sourceCode
+            null,            // 2: ShaderMacro[] defines
+            null,            // 3: Include include
+            string.Empty,    // 4: string sourceFileName
+            entryPoint,      // 5: string entryPoint
+            profile,         // 6: string profile
+            ShaderFlags.None,// 7: ShaderFlags shaderFlags
+            EffectFlags.None,// 8: EffectFlags effectFlags
+            out Blob? code,  // 9: out Blob result
+            out Blob? error  // 10: out Blob errorBlob
+        );
+
+        // Check if the compilation failed.
+        if (compileResult.Failure)
         {
-            throw new SharpGenException(error.AsString());
+            string errorMessage = "Shader compilation failed";
+            if (error != null)
+            {
+                // The error blob contains detailed diagnostics from the compiler.
+                errorMessage = error.AsString();
+                error.Dispose();
+            }
+            code?.Dispose(); // Clean up the code blob if it was created.
+
+            // Log the detailed error to the console before throwing.
+            Console.WriteLine($"--- SHADER COMPILATION FAILED ---");
+            Console.WriteLine($"Entry Point: {entryPoint}");
+            Console.WriteLine($"Profile: {profile}");
+            Console.WriteLine($"Error: {errorMessage}");
+            Console.WriteLine("--- Shader Source ---");
+            Console.WriteLine(source);
+            Console.WriteLine("---------------------");
+
+            // Throw an exception with the detailed message from the compiler.
+            throw new SharpGenException(compileResult, errorMessage);
         }
-        return result;
+
+        // On success, the error blob is usually null, but dispose it just in case.
+        error?.Dispose();
+
+        if (code is null)
+        {
+            // This should not happen if compilation succeeded, but it's a good safeguard.
+            throw new InvalidOperationException("Shader compilation succeeded but the resulting blob is null.");
+        }
+
+        return code;
     }
 }
 </file>

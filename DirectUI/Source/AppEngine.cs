@@ -113,8 +113,8 @@ public class AppEngine
 
         try
         {
-            var inputState = _inputManager.GetCurrentState();
-            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
+            InputState inputState = _inputManager.GetCurrentState();
+            UIContext uiContext = new UIContext(renderer, textService, inputState, deltaTime);
             UI.BeginFrame(uiContext);
 
             // Execute the modal-specific drawing logic

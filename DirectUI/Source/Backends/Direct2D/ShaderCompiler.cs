@@ -10,12 +10,13 @@ public static class ShaderCompiler
     {
         // Calling the overload with positional arguments to avoid naming errors.
         // This is the 10-argument overload.
+        // The error suggests the entryPoint and sourceFileName parameters are swapped in the user's library version.
         Result compileResult = Compiler.Compile(
             source,          // 1: string sourceCode
             null,            // 2: ShaderMacro[] defines
             null,            // 3: Include include
-            string.Empty,    // 4: string sourceFileName
-            entryPoint,      // 5: string entryPoint
+            entryPoint,      // 4: string entryPoint (was "ShaderSource")
+            "ShaderSource",  // 5: string sourceFileName (was entryPoint)
             profile,         // 6: string profile
             ShaderFlags.None,// 7: ShaderFlags shaderFlags
             EffectFlags.None,// 8: EffectFlags effectFlags

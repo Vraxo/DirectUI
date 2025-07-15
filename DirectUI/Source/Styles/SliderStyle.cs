@@ -1,8 +1,4 @@
-﻿// MODIFIED: Styles/SliderStyle.cs
-// Summary: Updated default BoxStyle initializations to use BorderLength instead of BorderThickness.
-using DirectUI.Drawing;
-
-namespace DirectUI;
+﻿namespace DirectUI;
 
 public class SliderStyle
 {
@@ -11,7 +7,7 @@ public class SliderStyle
         FillColor = DefaultTheme.DisabledFill,
         BorderColor = DefaultTheme.NormalBorder,
         Roundness = 0.5f,
-        BorderLength = 1.0f // Use new property
+        BorderLength = 1.0f
     };
 
     public BoxStyle Foreground { get; set; } = new()
@@ -19,6 +15,6 @@ public class SliderStyle
         FillColor = DefaultTheme.Accent,
         BorderColor = DefaultTheme.Transparent,
         Roundness = 0.5f,
-        BorderLength = 0.0f // Use new property
+        BorderLength = 0.0f
     };
 }
