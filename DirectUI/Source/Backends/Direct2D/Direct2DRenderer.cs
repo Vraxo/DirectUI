@@ -351,41 +351,51 @@ public class Direct2DRenderer : IRenderer
 
         var vertices = new[]
         {
-            new Vector4(-1.0f, 1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f),
-            new Vector4(1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f),
-            new Vector4(1.0f, 1.0f, 1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f),
-            new Vector4(-1.0f, 1.0f, 1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
-            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f),
-            new Vector4(1.0f, -1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f),
-            new Vector4(1.0f, -1.0f, 1.0f, 1.0f), new Vector4(1.0f, 1.0f, 1.0f, 1.0f),
-            new Vector4(-1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 0.0f, 0.0f, 1.0f)
+            // Front face (-Z) - Red - (TL, TR, BR, BL) - Clockwise
+            new Vector4(-1.0f,  1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 0
+            new Vector4( 1.0f,  1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 1
+            new Vector4( 1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 2
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 3
+
+            // Back face (+Z) - Green - (TR, TL, BL, BR) - Clockwise
+            new Vector4( 1.0f,  1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 4
+            new Vector4(-1.0f,  1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 5
+            new Vector4(-1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 6
+            new Vector4( 1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 7
+
+            // Top face (+Y) - Blue - (TL, TR, BR, BL) - Clockwise
+            new Vector4(-1.0f, 1.0f,  1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 8
+            new Vector4( 1.0f, 1.0f,  1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 9
+            new Vector4( 1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 10
+            new Vector4(-1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 11
+
+            // Bottom face (-Y) - Yellow - (BL, BR, TR, TL) - Clockwise
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 12
+            new Vector4( 1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 13
+            new Vector4( 1.0f, -1.0f,  1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 14
+            new Vector4(-1.0f, -1.0f,  1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 15
+
+            // Left face (-X) - Cyan - (TL, TR, BR, BL) - Clockwise
+            new Vector4(-1.0f,  1.0f,  1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 16
+            new Vector4(-1.0f,  1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 17
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 18
+            new Vector4(-1.0f, -1.0f,  1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 19
+
+            // Right face (+X) - Magenta - (TL, TR, BR, BL) - Clockwise
+            new Vector4( 1.0f,  1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f), // 20
+            new Vector4( 1.0f,  1.0f,  1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f), // 21
+            new Vector4( 1.0f, -1.0f,  1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f), // 22
+            new Vector4( 1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f)  // 23
         };
 
         var indices = new ushort[]
         {
-            // Front face (looking down -Z)
-            0, 1, 5,
-            0, 5, 4,
-
-            // Back face (looking down +Z)
-            3, 7, 6,
-            3, 6, 2,
-
-            // Top face (looking down +Y)
-            3, 2, 1,
-            3, 1, 0,
-
-            // Bottom face (looking down -Y)
-            4, 5, 6,
-            4, 6, 7,
-
-            // Left face (looking down -X)
-            0, 4, 7,
-            0, 7, 3,
-
-            // Right face (looking down +X)
-            1, 2, 6,
-            1, 6, 5
+            0,  1,  2,      0,  2,  3,    // Front
+            4,  5,  6,      4,  6,  7,    // Back
+            8,  9,  10,     8,  10, 11,   // Top
+            12, 13, 14,     12, 14, 15,  // Bottom
+            16, 17, 18,     16, 18, 19,  // Left
+            20, 21, 22,     20, 22, 23   // Right
         };
 
         _cubeVertexBuffer = d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
@@ -483,7 +493,15 @@ float4 PS(PS_Input input) : SV_TARGET
         }
 
         var view = Matrix4x4.CreateLookAt(new Vector3(0, 0, -5), Vector3.Zero, Vector3.UnitY);
-        var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)Math.PI / 4.0f, RenderTargetSize.X / RenderTargetSize.Y, 0.1f, 100.0f);
+
+        // --- CHANGE: Switch to Orthographic Projection ---
+        // This removes perspective distortion, so faces don't change size based on distance.
+        float aspectRatio = RenderTargetSize.X / RenderTargetSize.Y;
+        float viewHeight = 4.0f; // Defines the vertical size of the viewing volume
+        float viewWidth = viewHeight * aspectRatio;
+        var proj = Matrix4x4.CreateOrthographic(viewWidth, viewHeight, 0.1f, 100.0f);
+        // --- END CHANGE ---
+
         var world = Matrix4x4.CreateFromYawPitchRoll(
             (float)DateTime.Now.TimeOfDay.TotalSeconds,
             (float)DateTime.Now.TimeOfDay.TotalSeconds / 2f,
