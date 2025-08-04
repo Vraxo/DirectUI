@@ -15,9 +15,9 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
         {
             host = backend switch
             {
-                GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f)),
+                GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 GraphicsBackend.Direct2D => new Win32WindowHost("My D2D App", 1024, 768),
-                GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f)),
+                GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "Unsupported graphics backend.")
             };
 
@@ -25,7 +25,7 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
 
             var appLogic = appLogicFactory(host);
 
-            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f))) // #151515
+            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
             {
                 host.RunLoop();
             }

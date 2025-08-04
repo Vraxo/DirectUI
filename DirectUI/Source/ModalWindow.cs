@@ -25,7 +25,7 @@ public class ModalWindow : Win32Window
                 Handle,
                 GetClientRectSize(),
                 drawCallback,
-                new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
+                new(60 / 255f, 60 / 255f, 60 / 255f, 1.0f));
 
             return true;
         }

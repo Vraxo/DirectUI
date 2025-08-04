@@ -8,6 +8,23 @@ public static class DefaultTheme
 {
     // --- Theme Color Definitions ---
 
+    private static class DAWThemeColors
+    {
+        // Palette inspired by modern DAWs like Ableton Live
+        public static readonly Color Control = new Color(75, 75, 75, 255);          // #4B4B4B
+        public static readonly Color ControlHover = new Color(90, 90, 90, 255);       // #5A5A5A
+        public static readonly Color Border = new Color(30, 30, 30, 255);         // #1E1E1E
+
+        public static readonly Color Accent = new Color(0, 190, 190, 255);        // A bright teal #00BEBE
+        public static readonly Color AccentBorder = new Color(128, 222, 222, 255);   // Lighter teal
+
+        public static readonly Color DisabledFill = new Color(55, 55, 55, 255);
+        public static readonly Color DisabledBorder = new Color(40, 40, 40, 255);
+        public static readonly Color DisabledText = new Color(128, 128, 128, 255);
+
+        public static readonly Color Text = new Color(221, 221, 221, 255);     // #DDDDDD
+    }
+
     private static class Ue5ThemeColors
     {
         // Palette based on Unreal Engine 5 Editor
@@ -68,21 +85,22 @@ public static class DefaultTheme
     public static readonly Color Black = new Color(0, 0, 0, 255);
     public static readonly Color Transparent = new Color(0, 0, 0, 0);
 
-    /*
-    // --- ACTIVE THEME: UE5 ---
-    public static readonly Color NormalFill = Ue5ThemeColors.Fill;
-    public static readonly Color NormalBorder = Ue5ThemeColors.Border;
-    public static readonly Color HoverFill = Ue5ThemeColors.FillLighter;
-    public static readonly Color HoverBorder = Ue5ThemeColors.Hover;
-    public static readonly Color Accent = Ue5ThemeColors.Accent;
-    public static readonly Color AccentBorder = Ue5ThemeColors.AccentBorder;
-    public static readonly Color DisabledFill = Ue5ThemeColors.DisabledFill;
-    public static readonly Color DisabledBorder = Ue5ThemeColors.DisabledBorder;
-    public static readonly Color DisabledText = Ue5ThemeColors.DisabledText;
-    public static readonly Color FocusBorder = Ue5ThemeColors.Hover;
-    public static readonly Color Text = Ue5ThemeColors.Text;
-    */
+    
+    // --- ACTIVE THEME: DAW ---
+    public static readonly Color NormalFill = DAWThemeColors.Control;
+    public static readonly Color NormalBorder = DAWThemeColors.Border;
+    public static readonly Color HoverFill = DAWThemeColors.ControlHover;
+    public static readonly Color HoverBorder = DAWThemeColors.Accent; // Use Accent for hover border for clarity
+    public static readonly Color Accent = DAWThemeColors.Accent;
+    public static readonly Color AccentBorder = DAWThemeColors.AccentBorder;
+    public static readonly Color DisabledFill = DAWThemeColors.DisabledFill;
+    public static readonly Color DisabledBorder = DAWThemeColors.DisabledBorder;
+    public static readonly Color DisabledText = DAWThemeColors.DisabledText;
+    public static readonly Color FocusBorder = DAWThemeColors.Accent; // Use Accent for focus border
+    public static readonly Color Text = DAWThemeColors.Text;
 
+
+    /*
     // --- ACTIVE THEME: Unity Editor (Dark) ---
     public static readonly Color NormalFill = UnityEditorThemeColors.Fill;
     public static readonly Color NormalBorder = UnityEditorThemeColors.Border;
@@ -95,7 +113,7 @@ public static class DefaultTheme
     public static readonly Color DisabledText = UnityEditorThemeColors.DisabledText;
     public static readonly Color FocusBorder = UnityEditorThemeColors.SelectionBlueBorder; // Focus also uses the blue border
     public static readonly Color Text = UnityEditorThemeColors.Text;
-
+    */
 
     /*
     // --- BACKUP THEME: Original ---
