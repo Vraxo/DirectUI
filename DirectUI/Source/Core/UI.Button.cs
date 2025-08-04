@@ -19,7 +19,8 @@ public static partial class UI
         Alignment? textAlignment = null,
         Vector2? textOffset = null,
         Vector2? origin = null,
-        object? userData = null)
+        object? userData = null,
+        bool isActive = false)
     {
         if (!IsContextValid()) return false;
 
@@ -72,7 +73,7 @@ public static partial class UI
             clickMode,
             clickBehavior,
             textOffset ?? Vector2.Zero,
-            isActive: false
+            isActive: isActive
         );
 
         if (pushedClip)

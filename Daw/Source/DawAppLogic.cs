@@ -101,4 +101,3 @@ public class DawAppLogic : IAppLogic
         _pianoRollView.Draw(mainContentArea, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs);
     }
 }
-}
