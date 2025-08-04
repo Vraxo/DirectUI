@@ -150,10 +150,16 @@ public class DawAppLogic : IAppLogic
 
         Action<UIContext> drawCallback = (ctx) =>
         {
-            UI.Text("rename_prompt", "Enter new track name:", new Vector2(10, 10));
-            UI.InputText("rename_input", ref newName, new Vector2(280, 25), new Vector2(10, 40));
+            // Use a VBox for robust layout, with padding from the window edge.
+            UI.BeginVBoxContainer("rename_vbox", new Vector2(10, 10), 15);
 
-            UI.BeginHBoxContainer("rename_buttons", new Vector2(10, 80), 10);
+            UI.Text("rename_prompt", "Enter new track name:");
+            UI.InputText("rename_input", ref newName, new Vector2(280, 25));
+
+            // This HBox will now be positioned correctly by the parent VBox.
+            // We need to get the current position *before* beginning the HBox.
+            var hboxPos = UI.Context.Layout.GetCurrentPosition();
+            UI.BeginHBoxContainer("rename_buttons", hboxPos, 10);
             if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
             {
                 _host.ModalWindowService.CloseModalWindow(0); // 0 = Success
@@ -163,9 +169,11 @@ public class DawAppLogic : IAppLogic
                 _host.ModalWindowService.CloseModalWindow(1); // 1 = Cancel
             }
             UI.EndHBoxContainer();
+
+            UI.EndVBoxContainer();
         };
 
-        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 120, drawCallback, (resultCode) =>
+        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 160, drawCallback, (resultCode) =>
         {
             if (resultCode == 0 && !string.IsNullOrWhiteSpace(newName))
             {
