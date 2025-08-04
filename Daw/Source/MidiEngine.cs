@@ -18,6 +18,7 @@ public class MidiEngine : IDisposable
 {
     private Playback? _playback;
     private readonly IOutputDevice? _outputDevice;
+    private Song? _currentSong; // Store the currently playing song for looping
     private bool _isDisposed;
 
     public bool IsPlaying => _playback?.IsRunning ?? false;
@@ -118,18 +119,35 @@ public class MidiEngine : IDisposable
         // Stop any previous playback
         Stop();
 
+        _currentSong = song; // Store reference for the event handler
         _playback = midiFile.GetPlayback(_outputDevice);
 
-        // Apply looping if it's enabled.
-        if (song.IsLoopingEnabled)
-        {
-            // The `Melanchall.DryWetMidi.Interaction.Loop` class for defining a loop *range*
-            // does not exist in your version of the library. We fall back to the simple
-            // boolean property, which loops the entire track.
-            _playback.Loop = true;
-        }
+        // Manual looping implementation via event handler
+        _playback.Finished += OnPlaybackFinished;
 
-        _playback.Start();
+        // If looping is enabled, we need to decide where to start playing from.
+        if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
+        {
+            var loopStart = new MetricTimeSpan(0, 0, 0, (int)song.LoopStartMs);
+            _playback.Start();
+            _playback.MoveToTime(loopStart);
+        }
+        else
+        {
+            _playback.Start();
+        }
+    }
+
+    private void OnPlaybackFinished(object? sender, EventArgs e)
+    {
+        if (_playback is null || _currentSong is null) return;
+
+        if (_currentSong.IsLoopingEnabled && _currentSong.LoopEndMs > _currentSong.LoopStartMs)
+        {
+            var loopStart = new MetricTimeSpan(0, 0, 0, (int)_currentSong.LoopStartMs);
+            _playback.MoveToTime(loopStart);
+            _playback.Start();
+        }
     }
 
     /// <summary>
@@ -139,10 +157,12 @@ public class MidiEngine : IDisposable
     {
         if (_playback != null)
         {
+            _playback.Finished -= OnPlaybackFinished; // Unsubscribe to prevent leaks
             _playback.Stop();
             _playback.Dispose();
             _playback = null;
         }
+        _currentSong = null;
     }
 
     public void Dispose()
