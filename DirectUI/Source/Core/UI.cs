@@ -112,7 +112,6 @@ public static partial class UI
         var context = Context;
         var state = State;
         int intId = popupId.GetHashCode();
-        int clickedItemIndex = -1;
 
         // If a result for this menu is already available from the previous frame, consume and return it.
         if (state.PopupResultAvailable && state.PopupResultOwnerId == intId)
@@ -120,49 +119,45 @@ public static partial class UI
             return state.PopupResult;
         }
 
-        // Calculate popup properties
-        float itemHeight = 25;
-        float itemWidth = 150;
-        float popupHeight = items.Length * itemHeight;
-        var popupPosition = context.InputState.MousePosition;
-        var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, itemWidth, popupHeight);
-
-        // Define the draw callback for the popup, which runs at EndFrame
-        Action<UIContext> drawCallback = (ctx) =>
+        // Only set up the popup on the first frame it's requested.
+        // After that, the EndFrame logic will handle drawing it using the stored state.
+        if (!state.IsPopupOpen || state.ActivePopupId != intId)
         {
-            var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
-            ctx.Renderer.DrawBox(popupBounds, popupStyle);
+            // Calculate popup properties ONCE
+            float itemHeight = 25;
+            float itemWidth = 150;
+            float popupHeight = items.Length * itemHeight;
+            var popupPosition = context.InputState.MousePosition;
+            var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, itemWidth, popupHeight);
 
-            for (int i = 0; i < items.Length; i++)
+            // Define the draw callback for the popup, which runs at EndFrame
+            Action<UIContext> drawCallback = (ctx) =>
             {
-                var itemBounds = new Vortice.Mathematics.Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
-                var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-                itemTheme.Normal.FillColor = DefaultTheme.Transparent;
-                itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
-                itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+                var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
+                ctx.Renderer.DrawBox(popupBounds, popupStyle);
 
-                int itemId = HashCode.Combine(intId, "item", i);
-
-                if (DrawButtonPrimitive(
-                    itemId,
-                    itemBounds,
-                    items[i],
-                    itemTheme,
-                    false,
-                    new Alignment(HAlignment.Left, VAlignment.Center),
-                    DirectUI.Button.ActionMode.Release,
-                    DirectUI.Button.ClickBehavior.Left,
-                    new Vector2(5, 0)))
+                for (int i = 0; i < items.Length; i++)
                 {
-                    state.SetPopupResult(intId, i);
-                    state.ClearActivePopup();
+                    var itemBounds = new Vortice.Mathematics.Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
+                    var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+                    itemTheme.Normal.FillColor = DefaultTheme.Transparent;
+                    itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+                    itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+                    int itemId = HashCode.Combine(intId, "item", i);
+
+                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)))
+                    {
+                        state.SetPopupResult(intId, i);
+                        state.ClearActivePopup();
+                    }
                 }
-            }
-        };
+            };
 
-        state.SetActivePopup(intId, drawCallback, popupBounds);
+            state.SetActivePopup(intId, drawCallback, popupBounds);
+        }
 
-        return clickedItemIndex;
+        return -1; // No item was clicked on *this* frame
     }
 
 
