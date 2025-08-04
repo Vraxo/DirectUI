@@ -65,10 +65,28 @@ public class DawAppLogic : IAppLogic
     {
         // Poll the engine every frame for time-sensitive updates like looping
         _midiEngine.Update();
-        
+
         var windowSize = context.Renderer.RenderTargetSize;
 
-        // --- Global Actions ---
+        // Ensure active track index is always valid before drawing
+        if (_activeTrackIndex >= _song.Tracks.Count)
+        {
+            _activeTrackIndex = Math.Max(0, _song.Tracks.Count - 1);
+        }
+
+        // --- Step 1: Draw the entire UI. ---
+        // This allows all components to process input and update their internal state for this frame.
+        DrawTopBar(windowSize);
+        DrawMainContent(windowSize);
+
+        // --- Step 2: Handle actions that were generated during the draw pass. ---
+        // This is the correct order for an immediate-mode GUI.
+        HandleGlobalActions();
+        HandleTrackActions();
+    }
+
+    private void HandleGlobalActions()
+    {
         var fileAction = _menuBarView.GetAction();
         switch (fileAction)
         {
@@ -84,19 +102,6 @@ public class DawAppLogic : IAppLogic
                 _midiEngine.ExportToMidiFile(_song, "export.mid");
                 break;
         }
-        
-        // --- Track Management Actions from Context Menu ---
-        HandleTrackActions();
-
-        // Ensure active track index is always valid
-        if (_activeTrackIndex >= _song.Tracks.Count)
-        {
-            _activeTrackIndex = Math.Max(0, _song.Tracks.Count - 1);
-        }
-
-        // --- Draw UI Layout ---
-        DrawTopBar(windowSize);
-        DrawMainContent(windowSize);
     }
 
     private void HandleTrackActions()
@@ -142,12 +147,12 @@ public class DawAppLogic : IAppLogic
     private void PromptForTrackName(int trackIndex)
     {
         string newName = _song.Tracks[trackIndex].Name;
-        
+
         Action<UIContext> drawCallback = (ctx) =>
         {
             UI.Text("rename_prompt", "Enter new track name:", new Vector2(10, 10));
             UI.InputText("rename_input", ref newName, new Vector2(280, 25), new Vector2(10, 40));
-            
+
             UI.BeginHBoxContainer("rename_buttons", new Vector2(10, 80), 10);
             if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
             {
@@ -179,7 +184,7 @@ public class DawAppLogic : IAppLogic
         _menuBarView.Draw(new Vector2(0, 0));
         _transportView.Draw(new Vector2(0, 30), _song);
     }
-    
+
     private void DrawMainContent(Vector2 windowSize)
     {
         // Left Panel for Track List
@@ -199,15 +204,15 @@ public class DawAppLogic : IAppLogic
         float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
         var toolbarArea = new Rect(mainContentX, toolbarY, mainContentWidth, DawMetrics.PianoRollToolbarHeight);
         _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
-        
+
         // Piano Roll
         float pianoRollY = toolbarY + DawMetrics.PianoRollToolbarHeight;
         var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, windowSize.Y - pianoRollY);
-        
+
         var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
         _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
     }
-    
+
     public void SaveState()
     {
         SongSerializer.Save(_song, SongFilePath);
