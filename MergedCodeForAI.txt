@@ -239,7 +239,7 @@ public static class Application
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\ApplicationRunner.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppRunner.cs">
 using DirectUI.Backends.SDL3;
 using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
@@ -257,9 +257,9 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
         {
             host = backend switch
             {
-                GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f)),
+                GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 GraphicsBackend.Direct2D => new Win32WindowHost("My D2D App", 1024, 768),
-                GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f)),
+                GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "Unsupported graphics backend.")
             };
 
@@ -267,7 +267,7 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
 
             var appLogic = appLogicFactory(host);
 
-            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(21 / 255f, 21 / 255f, 21 / 255f, 1.0f))) // #151515
+            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
             {
                 host.RunLoop();
             }
@@ -357,7 +357,7 @@ public class ModalWindow : Win32Window
                 Handle,
                 GetClientRectSize(),
                 drawCallback,
-                new(37 / 255f, 37 / 255f, 38 / 255f, 1.0f));
+                new(60 / 255f, 60 / 255f, 60 / 255f, 1.0f));
 
             return true;
         }
@@ -1907,6 +1907,68 @@ public static partial class UI
 
         Context.Layout.AdvanceLayout(size);
         return textChanged;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Knob.cs">
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    /// <summary>
+    /// Draws a circular knob control. Value is changed by clicking and dragging vertically.
+    /// </summary>
+    /// <param name="id">A unique identifier for the knob.</param>
+    /// <param name="currentValue">The current value, passed by ref to be modified.</param>
+    /// <param name="minValue">The minimum value of the knob.</param>
+    /// <param name="maxValue">The maximum value of the knob.</param>
+    /// <param name="radius">The radius of the knob.</param>
+    /// <param name="theme">The style of the knob.</param>
+    /// <param name="disabled">Whether the knob is disabled.</param>
+    /// <param name="sensitivity">Controls how much the value changes per pixel of vertical mouse movement.</param>
+    /// <returns>True if the value was changed this frame, otherwise false.</returns>
+    public static bool Knob(
+        string id,
+        ref float currentValue,
+        float minValue,
+        float maxValue,
+        float radius = 24f,
+        KnobStyle? theme = null,
+        bool disabled = false,
+        float sensitivity = 0.005f)
+    {
+        if (!IsContextValid()) return false;
+
+        int intId = id.GetHashCode();
+        var knobInstance = State.GetOrCreateElement<InternalKnobLogic>(intId);
+        
+        Vector2 size = new(radius * 2, radius * 2);
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, size.X, size.Y);
+
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return false;
+        }
+
+        bool valueChanged = knobInstance.UpdateAndDraw(
+            intId,
+            ref currentValue,
+            minValue,
+            maxValue,
+            radius,
+            drawPos,
+            theme,
+            disabled,
+            sensitivity);
+
+        Context.Layout.AdvanceLayout(size);
+        return valueChanged;
     }
 }
 </file>
@@ -4249,6 +4311,23 @@ public static class DefaultTheme
 {
     // --- Theme Color Definitions ---
 
+    private static class DAWThemeColors
+    {
+        // Palette inspired by modern DAWs like Ableton Live
+        public static readonly Color Control = new Color(75, 75, 75, 255);          // #4B4B4B
+        public static readonly Color ControlHover = new Color(90, 90, 90, 255);       // #5A5A5A
+        public static readonly Color Border = new Color(30, 30, 30, 255);         // #1E1E1E
+
+        public static readonly Color Accent = new Color(0, 190, 190, 255);        // A bright teal #00BEBE
+        public static readonly Color AccentBorder = new Color(128, 222, 222, 255);   // Lighter teal
+
+        public static readonly Color DisabledFill = new Color(55, 55, 55, 255);
+        public static readonly Color DisabledBorder = new Color(40, 40, 40, 255);
+        public static readonly Color DisabledText = new Color(128, 128, 128, 255);
+
+        public static readonly Color Text = new Color(221, 221, 221, 255);     // #DDDDDD
+    }
+
     private static class Ue5ThemeColors
     {
         // Palette based on Unreal Engine 5 Editor
@@ -4309,21 +4388,22 @@ public static class DefaultTheme
     public static readonly Color Black = new Color(0, 0, 0, 255);
     public static readonly Color Transparent = new Color(0, 0, 0, 0);
 
-    /*
-    // --- ACTIVE THEME: UE5 ---
-    public static readonly Color NormalFill = Ue5ThemeColors.Fill;
-    public static readonly Color NormalBorder = Ue5ThemeColors.Border;
-    public static readonly Color HoverFill = Ue5ThemeColors.FillLighter;
-    public static readonly Color HoverBorder = Ue5ThemeColors.Hover;
-    public static readonly Color Accent = Ue5ThemeColors.Accent;
-    public static readonly Color AccentBorder = Ue5ThemeColors.AccentBorder;
-    public static readonly Color DisabledFill = Ue5ThemeColors.DisabledFill;
-    public static readonly Color DisabledBorder = Ue5ThemeColors.DisabledBorder;
-    public static readonly Color DisabledText = Ue5ThemeColors.DisabledText;
-    public static readonly Color FocusBorder = Ue5ThemeColors.Hover;
-    public static readonly Color Text = Ue5ThemeColors.Text;
-    */
+    
+    // --- ACTIVE THEME: DAW ---
+    public static readonly Color NormalFill = DAWThemeColors.Control;
+    public static readonly Color NormalBorder = DAWThemeColors.Border;
+    public static readonly Color HoverFill = DAWThemeColors.ControlHover;
+    public static readonly Color HoverBorder = DAWThemeColors.Accent; // Use Accent for hover border for clarity
+    public static readonly Color Accent = DAWThemeColors.Accent;
+    public static readonly Color AccentBorder = DAWThemeColors.AccentBorder;
+    public static readonly Color DisabledFill = DAWThemeColors.DisabledFill;
+    public static readonly Color DisabledBorder = DAWThemeColors.DisabledBorder;
+    public static readonly Color DisabledText = DAWThemeColors.DisabledText;
+    public static readonly Color FocusBorder = DAWThemeColors.Accent; // Use Accent for focus border
+    public static readonly Color Text = DAWThemeColors.Text;
 
+
+    /*
     // --- ACTIVE THEME: Unity Editor (Dark) ---
     public static readonly Color NormalFill = UnityEditorThemeColors.Fill;
     public static readonly Color NormalBorder = UnityEditorThemeColors.Border;
@@ -4336,7 +4416,7 @@ public static class DefaultTheme
     public static readonly Color DisabledText = UnityEditorThemeColors.DisabledText;
     public static readonly Color FocusBorder = UnityEditorThemeColors.SelectionBlueBorder; // Focus also uses the blue border
     public static readonly Color Text = UnityEditorThemeColors.Text;
-
+    */
 
     /*
     // --- BACKUP THEME: Original ---
@@ -4354,6 +4434,40 @@ public static class DefaultTheme
     public static readonly Color FocusBorder = new Color(135, 206, 250, 255); // LightSkyBlue
     public static readonly Color Text = OriginalColors.Text;
     */
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\KnobStyle.cs">
+using DirectUI.Drawing;
+
+namespace DirectUI;
+
+public class KnobStyle
+{
+    /// <summary>
+    /// Style for the main body of the knob.
+    /// </summary>
+    public BoxStyle BaseStyle { get; set; } = new();
+
+    /// <summary>
+    /// Color of the indicator line.
+    /// </summary>
+    public Color IndicatorColor { get; set; } = DefaultTheme.Accent;
+
+    /// <summary>
+    /// Thickness of the indicator line.
+    /// </summary>
+    public float IndicatorThickness { get; set; } = 2.0f;
+
+    /// <summary>
+    /// The start angle of the knob's rotation in degrees. (e.g., -135 for bottom-left start).
+    /// </summary>
+    public float StartAngleDegrees { get; set; } = -135f;
+
+    /// <summary>
+    /// The total range of motion for the knob in degrees. (e.g., 270 for a 3/4 turn).
+    /// </summary>
+    public float AngleRangeDegrees { get; set; } = 270f;
 }
 </file>
 
@@ -5164,6 +5278,115 @@ internal class InternalHSliderLogic : InternalSliderLogic
         // Changed to explicitly pass float components for Rect constructor
         renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
         renderer.PopClipRect();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalKnobLogic.cs">
+using System;
+using System.Numerics;
+using DirectUI.Core;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+internal class InternalKnobLogic
+{
+    private int _id;
+    private bool _isPressed;
+    private Vector2 _dragStartPosition;
+    private float _valueAtDragStart;
+
+    public bool UpdateAndDraw(
+        int id,
+        ref float currentValue,
+        float minValue,
+        float maxValue,
+        float radius,
+        Vector2 position,
+        KnobStyle? theme,
+        bool disabled,
+        float sensitivity = 0.005f)
+    {
+        _id = id;
+        var context = UI.Context;
+        var state = UI.State;
+        var renderer = context.Renderer;
+        var input = context.InputState;
+
+        var themeId = HashCode.Combine(id, "theme");
+        var finalTheme = theme ?? state.GetOrCreateElement<KnobStyle>(themeId);
+        if (theme is null)
+        {
+            // Setup a default theme if none is provided
+            finalTheme.BaseStyle.FillColor = DefaultTheme.NormalFill;
+            finalTheme.BaseStyle.BorderColor = DefaultTheme.NormalBorder;
+            finalTheme.BaseStyle.Roundness = 1.0f; // Circle
+            finalTheme.BaseStyle.BorderLength = 1.5f;
+            finalTheme.IndicatorColor = DefaultTheme.Accent;
+            finalTheme.IndicatorThickness = Math.Max(1f, radius * 0.15f);
+        }
+
+        bool valueChanged = false;
+        Vector2 center = position + new Vector2(radius, radius);
+        Rect bounds = new(position.X, position.Y, radius * 2, radius * 2);
+
+        bool isHovering = !disabled && bounds.Contains(input.MousePosition);
+        _isPressed = state.ActivelyPressedElementId == _id;
+
+        if (isHovering)
+        {
+            state.SetPotentialInputTarget(_id);
+        }
+
+        if (_isPressed && !input.IsLeftMouseDown)
+        {
+            state.ClearActivePress(_id);
+            _isPressed = false;
+        }
+
+        if (!disabled && isHovering && input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
+        {
+            state.SetPotentialCaptorForFrame(_id);
+            state.SetFocus(_id);
+            _isPressed = true;
+            _dragStartPosition = input.MousePosition;
+            _valueAtDragStart = currentValue;
+        }
+
+        if (_isPressed)
+        {
+            float deltaY = _dragStartPosition.Y - input.MousePosition.Y; // Inverted for natural feel
+            float valueRange = maxValue - minValue;
+            float change = deltaY * valueRange * sensitivity;
+
+            float newValue = Math.Clamp(_valueAtDragStart + change, minValue, maxValue);
+            if (Math.Abs(newValue - currentValue) > float.Epsilon)
+            {
+                currentValue = newValue;
+                valueChanged = true;
+            }
+        }
+        
+        // --- Drawing ---
+        // Base
+        renderer.DrawBox(bounds, finalTheme.BaseStyle);
+
+        // Indicator
+        float normalizedValue = (currentValue - minValue) / (maxValue - minValue);
+        float angleRangeRad = finalTheme.AngleRangeDegrees * (float)Math.PI / 180f;
+        float startAngleRad = finalTheme.StartAngleDegrees * (float)Math.PI / 180f;
+        float currentAngleRad = startAngleRad + (normalizedValue * angleRangeRad);
+
+        Vector2 indicatorStart = center;
+        Vector2 indicatorEnd = new(
+            center.X + (float)Math.Cos(currentAngleRad) * radius * 0.8f,
+            center.Y + (float)Math.Sin(currentAngleRad) * radius * 0.8f
+        );
+
+        renderer.DrawLine(indicatorStart, indicatorEnd, finalTheme.IndicatorColor, finalTheme.IndicatorThickness);
+        
+        return valueChanged;
     }
 }
 </file>
@@ -9470,6 +9693,860 @@ public interface IWindowHost : IDisposable
     /// Cleans up resources owned by the window host.
     /// </summary>
     void Cleanup();
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\DawAppLogic.cs">
+using System;
+using System.Numerics;
+using Daw.Audio;
+using Daw.Core;
+using Daw.Views;
+using DirectUI;
+using DirectUI.Core;
+using Vortice.Mathematics;
+
+namespace Daw;
+
+public class DawAppLogic : IAppLogic
+{
+    private readonly MidiEngine _midiEngine;
+    private Song _song;
+    private const string SongFilePath = "mysong.dawjson";
+
+    // --- Child Views ---
+    private readonly MenuBarView _menuBarView;
+    private readonly TransportView _transportView;
+    private readonly PianoRollView _pianoRollView;
+
+    public DawAppLogic(IWindowHost host)
+    {
+        _midiEngine = new MidiEngine();
+        _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
+
+        _menuBarView = new MenuBarView();
+        _transportView = new TransportView(_midiEngine);
+        _pianoRollView = new PianoRollView();
+    }
+
+    private static Song CreateDefaultSong()
+    {
+        var song = new Song { Tempo = 120 };
+        // Basic C Major Scale
+        song.Events.Add(new NoteEvent(0, 480, 60, 100));     // C
+        song.Events.Add(new NoteEvent(500, 480, 62, 100));    // D
+        song.Events.Add(new NoteEvent(1000, 480, 64, 100));   // E
+        song.Events.Add(new NoteEvent(1500, 480, 65, 100));   // F
+        song.Events.Add(new NoteEvent(2000, 480, 67, 100));   // G
+        song.Events.Add(new NoteEvent(2500, 480, 69, 100));   // A
+        song.Events.Add(new NoteEvent(3000, 480, 71, 100));   // B
+        song.Events.Add(new NoteEvent(3500, 480, 72, 100));   // C
+        return song;
+    }
+
+    public void DrawUI(UIContext context)
+    {
+        var windowSize = context.Renderer.RenderTargetSize;
+
+        // --- Global Actions ---
+        var fileAction = _menuBarView.GetAction();
+        switch (fileAction)
+        {
+            case MenuBarView.FileAction.Save:
+                SongSerializer.Save(_song, SongFilePath);
+                break;
+            case MenuBarView.FileAction.Load:
+                _midiEngine.Stop();
+                _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
+                break;
+            case MenuBarView.FileAction.Export:
+                _midiEngine.ExportToMidiFile(_song, "export.mid");
+                break;
+        }
+
+        // --- Draw UI Layout ---
+        DrawTopBar(windowSize);
+        DrawMainContent(windowSize);
+    }
+
+    private void DrawTopBar(Vector2 windowSize)
+    {
+        const float TopBarHeight = 70;
+        var topBarArea = new Rect(0, 0, windowSize.X, TopBarHeight);
+        var style = new BoxStyle { FillColor = DawTheme.PanelBackground, BorderColor = DawTheme.Border, BorderLengthBottom = 1, Roundness = 0 };
+        UI.Context.Renderer.DrawBox(topBarArea, style);
+
+        // Position menu bar and transport within the top bar
+        _menuBarView.Draw(new Vector2(0, 0));
+        _transportView.Draw(new Vector2(0, 30), _song);
+    }
+
+    private void DrawMainContent(Vector2 windowSize)
+    {
+        const float topOffset = 70; // Height of the top bar
+        var mainContentArea = new Rect(0, topOffset, windowSize.X, windowSize.Y - topOffset);
+
+        // The piano roll will take up the entire main content area for now
+        _pianoRollView.Draw(mainContentArea, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\DawTheme.cs">
+using DirectUI;
+using Vortice.Mathematics;
+
+namespace Daw;
+
+public static class DawTheme
+{
+    // Core Palette
+    public static readonly Color4 Background = new(21 / 255f, 21 / 255f, 21 / 255f, 1f);       // #151515
+    public static readonly Color4 PanelBackground = new(43 / 255f, 43 / 255f, 43 / 255f, 1f);  // #2B2B2B
+    public static readonly Color4 ControlFill = new(58 / 255f, 58 / 255f, 58 / 255f, 1f);      // #3A3A3A
+    public static readonly Color4 ControlFillHover = new(70 / 255f, 70 / 255f, 70 / 255f, 1f); // #464646
+    public static readonly Color4 Border = new(30 / 255f, 30 / 255f, 30 / 255f, 1f);           // #1E1E1E
+    public static readonly Color4 Text = new(211 / 255f, 211 / 255f, 211 / 255f, 1f);          // #D3D3D3
+    public static readonly Color4 TextDim = new(130 / 255f, 130 / 255f, 130 / 255f, 1f);       // #828282
+
+    // Accent Palette (for notes, selections, etc.)
+    public static readonly Color4 Accent = new(0 / 255f, 119 / 255f, 204 / 255f, 1f);          // #0077CC
+    public static readonly Color4 AccentBright = new(0 / 255f, 153 / 255f, 255 / 255f, 1f);   // #0099FF
+    public static readonly Color4 Selection = Colors.Yellow;
+
+    // Piano Roll Specific
+    public static readonly Color4 PianoRollGrid = new(54 / 255f, 54 / 255f, 54 / 255f, 1f);    // #363636
+    public static readonly Color4 PianoRollGridAccent = new(80 / 255f, 80 / 255f, 80 / 255f, 1f); // #505050
+    public static readonly Color4 PianoWhiteKey = new(218 / 255f, 218 / 255f, 218 / 255f, 1f); // #DADADA
+    public static readonly Color4 PianoBlackKey = new(30 / 255f, 30 / 255f, 30 / 255f, 1f);   // #1E1E1E
+
+    // Pre-configured Styles
+    public static readonly ButtonStylePack TransportButton;
+    public static readonly ButtonStylePack ToolbarButton;
+
+    static DawTheme()
+    {
+        ToolbarButton = new ButtonStylePack
+        {
+            Roundness = 0.2f,
+            BorderLength = 1f,
+        };
+        ToolbarButton.Normal.FillColor = ControlFill;
+        ToolbarButton.Normal.BorderColor = Border;
+        ToolbarButton.Hover.FillColor = ControlFillHover;
+        ToolbarButton.Hover.BorderColor = Border;
+        ToolbarButton.Pressed.FillColor = AccentBright;
+        ToolbarButton.Pressed.BorderColor = Accent;
+
+        TransportButton = new ButtonStylePack
+        {
+            Roundness = 0.5f,
+            BorderLength = 0f,
+        };
+        TransportButton.Normal.FillColor = Colors.Transparent;
+        TransportButton.Hover.FillColor = ControlFillHover;
+        TransportButton.Pressed.FillColor = Accent;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MenuBarView.cs">
+using System.Numerics;
+using DirectUI;
+using Vortice.Mathematics;
+
+namespace Daw.Views;
+
+public class MenuBarView
+{
+    public enum FileAction { None, Save, Load, Export }
+
+    private FileAction _requestedAction = FileAction.None;
+
+    public void Draw(Vector2 position)
+    {
+        _requestedAction = FileAction.None;
+
+        UI.BeginHBoxContainer("menubar", position, 0);
+
+        // Using a dropdown menu style would be the next step.
+        // For now, these are direct action buttons.
+        DrawMenuButton("File", new[] { "Save", "Load", "Export MIDI" }, HandleFileAction);
+        DrawMenuButton("Edit", new[] { "Undo", "Redo" });
+        DrawMenuButton("View", new[] { "Zoom In", "Zoom Out" });
+
+        UI.EndHBoxContainer();
+    }
+
+    private void HandleFileAction(string item)
+    {
+        _requestedAction = item switch
+        {
+            "Save" => FileAction.Save,
+            "Load" => FileAction.Load,
+            "Export MIDI" => FileAction.Export,
+            _ => FileAction.None
+        };
+    }
+
+    public FileAction GetAction()
+    {
+        return _requestedAction;
+    }
+
+    private void DrawMenuButton(string text, string[] items, Action<string>? onItemSelected = null)
+    {
+        var buttonId = $"menu_button_{text}";
+        var menuButtonStyle = new ButtonStylePack
+        {
+            Roundness = 0,
+            BorderLength = 0
+        };
+        menuButtonStyle.Normal.FillColor = Colors.Transparent;
+        menuButtonStyle.Hover.FillColor = DawTheme.ControlFillHover;
+
+        if (UI.Button(buttonId, text, new Vector2(0, 30), autoWidth: true, textMargin: new Vector2(10, 0), theme: menuButtonStyle))
+        {
+            // Placeholder for future dropdown logic. For now, top-level buttons do nothing.
+            // A real implementation would open a popup here.
+            // For simplicity, we make the first item the default action.
+            if (onItemSelected != null && items.Length > 0)
+            {
+                onItemSelected(items[0]);
+            }
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MidiEngine.cs">
+using System;
+using System.Linq;
+using Daw.Core;
+using Melanchall.DryWetMidi.Common;
+using Melanchall.DryWetMidi.Core;
+using Melanchall.DryWetMidi.Interaction;
+using Melanchall.DryWetMidi.Multimedia;
+
+namespace Daw.Audio;
+
+/// <summary>
+/// Provides core DAW functionality for converting a Song to MIDI,
+/// playing it back, and exporting it as a .mid file.
+/// This implementation uses the DryWetMIDI library.
+/// Required NuGet package: Melanchall.DryWetMidi
+/// </summary>
+public class MidiEngine : IDisposable
+{
+    private Playback? _playback;
+    private readonly IOutputDevice? _outputDevice;
+    private bool _isDisposed;
+
+    public bool IsPlaying => _playback?.IsRunning ?? false;
+    public long CurrentTimeMs
+    {
+        get
+        {
+            return _playback is null || !_playback.IsRunning ? 0 : (long)_playback.GetCurrentTime<MetricTimeSpan>().TotalMilliseconds;
+        }
+    }
+
+    public MidiEngine()
+    {
+        try
+        {
+            // Get the default system MIDI output device.
+            // This could be "Microsoft GS Wavetable Synth" on Windows.
+            _outputDevice = OutputDevice.GetByIndex(0);
+        }
+        catch (ArgumentException)
+        {
+            Console.WriteLine("Warning: No MIDI output devices found. Playback will not be available.");
+            _outputDevice = null;
+        }
+    }
+
+    /// <summary>
+    /// Converts a Song object into a DryWetMIDI MidiFile object.
+    /// </summary>
+    /// <param name="song">The song to convert.</param>
+    /// <returns>A MidiFile instance representing the song.</returns>
+    public MidiFile ConvertToMidiFile(Song song)
+    {
+        // Step 1: Create the structure of the MIDI file with tempo information.
+        var midiFile = new MidiFile();
+        // Using a standard time division of 480 ticks per quarter note.
+        midiFile.TimeDivision = new TicksPerQuarterNoteTimeDivision(480);
+        var trackChunk = new TrackChunk();
+
+        // Tempo is in BPM (beats per minute). Microseconds per quarter note = 60,000,000 / BPM.
+        long microsecondsPerQuarterNote = (long)(60000000 / song.Tempo);
+        trackChunk.Events.Add(new SetTempoEvent(microsecondsPerQuarterNote));
+        midiFile.Chunks.Add(trackChunk);
+
+        // Step 2: Get the tempo map from the file itself.
+        // This ensures the tempo map uses the file's time division, which is critical for sync.
+        var tempoMap = midiFile.GetTempoMap();
+
+        // Step 3: Convert song events to notes using the correct tempo map.
+        var notes = song.Events.Select(noteEvent =>
+        {
+            var startTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.StartTimeMs);
+            var durationTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.DurationMs);
+
+            // Use the older ConvertTo<> that the user's compiler accepts.
+            long timeInTicks = TimeConverter.ConvertTo<MidiTimeSpan>(startTimeSpan, tempoMap).TimeSpan;
+            long durationInTicks = LengthConverter.ConvertTo<MidiTimeSpan>(durationTimeSpan, timeInTicks, tempoMap).TimeSpan;
+
+            // Create the note with time and duration in MIDI ticks
+            return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
+            {
+                Velocity = (SevenBitNumber)noteEvent.Velocity
+            };
+        });
+
+        // Step 4: Add the created notes to the track chunk.
+        trackChunk.AddObjects(notes);
+
+        return midiFile;
+    }
+
+    /// <summary>
+    /// Exports the given song to a standard MIDI (.mid) file.
+    /// </summary>
+    /// <param name="song">The song to export.</param>
+    /// <param name="filePath">The path to save the .mid file.</param>
+    public void ExportToMidiFile(Song song, string filePath)
+    {
+        var midiFile = ConvertToMidiFile(song);
+        midiFile.Write(filePath, overwriteFile: true);
+        Console.WriteLine($"Song successfully exported to '{filePath}'.");
+    }
+
+    /// <summary>
+    /// Plays the given song using the default system MIDI output device.
+    /// </summary>
+    /// <param name="song">The song to play.</param>
+    public void Play(Song song)
+    {
+        if (_outputDevice == null)
+        {
+            Console.WriteLine("Cannot play: No MIDI output device is available.");
+            return;
+        }
+
+        var midiFile = ConvertToMidiFile(song);
+
+        // Stop any previous playback
+        Stop();
+
+        _playback = midiFile.GetPlayback(_outputDevice);
+        _playback.Start();
+    }
+
+    /// <summary>
+    /// Stops the current playback, if any.
+    /// </summary>
+    public void Stop()
+    {
+        if (_playback != null)
+        {
+            _playback.Stop();
+            _playback.Dispose();
+            _playback = null;
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (_isDisposed)
+            return;
+
+        if (disposing)
+        {
+            Stop();
+            _outputDevice?.Dispose();
+        }
+
+        _isDisposed = true;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\NoteEvent.cs">
+namespace Daw.Core;
+
+/// <summary>
+/// Represents a single musical note on the timeline.
+/// Now a mutable class to allow for interactive editing.
+/// </summary>
+public class NoteEvent
+{
+    public int StartTimeMs { get; set; }
+    public int DurationMs { get; set; }
+    public int Pitch { get; set; }
+    public int Velocity { get; set; }
+
+    public NoteEvent(int startTimeMs, int durationMs, int pitch, int velocity)
+    {
+        StartTimeMs = startTimeMs;
+        DurationMs = durationMs;
+        Pitch = pitch;
+        Velocity = velocity;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Song.cs">
+using System.Collections.Generic;
+
+namespace Daw.Core;
+
+/// <summary>
+/// Represents a song, containing a timeline of notes and metadata like tempo.
+/// </summary>
+public class Song
+{
+    /// <summary>
+    /// The tempo of the song in beats per minute (BPM).
+    /// </summary>
+    public double Tempo { get; set; } = 120.0;
+
+    /// <summary>
+    /// The list of note events that make up the song's timeline.
+    /// </summary>
+    public List<NoteEvent> Events { get; set; } = new();
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\SongSerializer.cs">
+using System;
+using System.IO;
+using System.Text.Json;
+
+namespace Daw.Core;
+
+/// <summary>
+/// Handles saving and loading Song objects to and from JSON files.
+/// </summary>
+public static class SongSerializer
+{
+    private static readonly JsonSerializerOptions _options = new()
+    {
+        WriteIndented = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+    };
+
+    /// <summary>
+    /// Saves a Song object to a specified JSON file path.
+    /// </summary>
+    /// <param name="song">The song to save.</param>
+    /// <param name="filePath">The path of the file (e.g., "mysong.dawjson").</param>
+    public static void Save(Song song, string filePath)
+    {
+        try
+        {
+            string jsonString = JsonSerializer.Serialize(song, _options);
+            File.WriteAllText(filePath, jsonString);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving song to '{filePath}': {ex.Message}");
+            // Depending on the application, you might want to re-throw or handle this differently.
+        }
+    }
+
+    /// <summary>
+    /// Loads a Song object from a specified JSON file path.
+    /// </summary>
+    /// <param name="filePath">The path of the file to load.</param>
+    /// <returns>The loaded Song object, or null if loading fails.</returns>
+    public static Song? Load(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            Console.WriteLine($"Error: File not found at '{filePath}'.");
+            return null;
+        }
+
+        try
+        {
+            string jsonString = File.ReadAllText(filePath);
+            var song = JsonSerializer.Deserialize<Song>(jsonString, _options);
+            return song;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading song from '{filePath}': {ex.Message}");
+            return null;
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\PianoRollView.cs">
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using Daw.Core;
+using DirectUI;
+using DirectUI.Core;
+using DirectUI.Input;
+using Vortice.Mathematics;
+
+namespace Daw.Views;
+
+public class PianoRollView
+{
+    // --- State ---
+    private Song? _song;
+    private NoteEvent? _selectedNote;
+    private NoteEvent? _noteBeingDragged;
+    private Vector2 _dragStartOffset;
+    private bool _isResizingRight;
+    private bool _isPanning;
+    private Vector2 _panOffset = Vector2.Zero;
+    private float _zoom = 1.0f; // Multiplier for pixelsPerMs
+
+    // --- Metrics ---
+    private const float KeyboardWidth = 80;
+    private const float NoteHeight = 20;
+    private const float BasePixelsPerMs = 0.1f;
+    private const int MinPitch = 24; // C1
+    private const int MaxPitch = 108; // C8
+
+    private readonly bool[] _isBlackKey = new bool[12];
+
+    public PianoRollView()
+    {
+        var blackKeys = new[] { 1, 3, 6, 8, 10 }; // C#, D#, F#, G#, A#
+        for (int i = 0; i < 12; i++)
+        {
+            _isBlackKey[i] = blackKeys.Contains(i);
+        }
+    }
+
+    public void Draw(Rect viewArea, Song song, bool isPlaying, long currentTimeMs)
+    {
+        _song = song;
+        var renderer = UI.Context.Renderer;
+        var input = UI.Context.InputState;
+
+        // Draw panel background
+        renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0 });
+
+        var gridArea = new Rect(viewArea.X + KeyboardWidth, viewArea.Y, viewArea.Width - KeyboardWidth, viewArea.Height);
+
+        HandleInput(input, gridArea);
+
+        DrawKeyboard(new Rect(viewArea.X, viewArea.Y, KeyboardWidth, viewArea.Height));
+        DrawGrid(gridArea, song.Tempo);
+        DrawNotes(gridArea);
+        DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
+    }
+
+    private void HandleInput(InputState input, Rect gridArea)
+    {
+        if (_song is null) return;
+
+        bool isHoveringGrid = gridArea.Contains(input.MousePosition);
+
+        // Panning
+        if (input.WasMiddleMousePressedThisFrame && isHoveringGrid) _isPanning = true;
+        if (!input.IsMiddleMouseDown) _isPanning = false;
+        if (_isPanning) _panOffset += input.MousePosition - input.PreviousMousePosition;
+
+        // Zooming
+        if (isHoveringGrid && input.ScrollDelta != 0)
+        {
+            _zoom += input.ScrollDelta * 0.1f * _zoom;
+            _zoom = Math.Clamp(_zoom, 0.1f, 10f);
+        }
+
+        // Note interaction
+        var mousePos = input.MousePosition;
+        if (input.WasLeftMousePressedThisFrame && isHoveringGrid)
+        {
+            var hitNote = HitTestNotes(mousePos, gridArea);
+            if (hitNote.note != null)
+            {
+                _selectedNote = hitNote.note;
+                if (hitNote.isEdge)
+                {
+                    _isResizingRight = true;
+                }
+                else
+                {
+                    _noteBeingDragged = hitNote.note;
+                    var noteScreenPos = GridToScreen(_noteBeingDragged.StartTimeMs, _noteBeingDragged.Pitch, gridArea);
+                    _dragStartOffset = mousePos - noteScreenPos;
+                }
+            }
+            else
+            {
+                _selectedNote = null;
+                // Double-click to add a note (simplified with single click + ctrl for now)
+                if (input.HeldKeys.Contains(Keys.Control))
+                {
+                    AddNewNote(mousePos, gridArea);
+                }
+            }
+        }
+
+        if (!input.IsLeftMouseDown)
+        {
+            _noteBeingDragged = null;
+            _isResizingRight = false;
+        }
+
+        float msPerBeat = (float)(60000.0 / _song.Tempo);
+        float quantization = msPerBeat / 4; // 16th note snapping
+
+        if (_noteBeingDragged != null)
+        {
+            var targetNoteScreenPos = input.MousePosition - _dragStartOffset;
+            var gridPos = ScreenToGrid(targetNoteScreenPos, gridArea);
+
+            float snappedTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
+
+            _noteBeingDragged.StartTimeMs = (int)snappedTime;
+            _noteBeingDragged.Pitch = gridPos.pitch;
+        }
+
+        if (_isResizingRight && _selectedNote != null)
+        {
+            var gridPos = ScreenToGrid(mousePos, gridArea);
+            float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
+            int newDuration = (int)endEdgeTime - _selectedNote.StartTimeMs;
+            _selectedNote.DurationMs = Math.Max((int)quantization, newDuration);
+        }
+
+        // Deletion
+        if (_selectedNote != null && input.PressedKeys.Contains(Keys.Delete))
+        {
+            _song.Events.Remove(_selectedNote);
+            _selectedNote = null;
+        }
+    }
+
+    private void AddNewNote(Vector2 screenPos, Rect gridArea)
+    {
+        if (_song == null) return;
+        var (time, pitch) = ScreenToGrid(screenPos, gridArea);
+
+        // Snap to nearest 1/16th note
+        float msPerBeat = (float)(60000.0 / _song.Tempo);
+        float msPer16th = msPerBeat / 4;
+        time = (int)(Math.Round(time / msPer16th) * msPer16th);
+
+        var newNote = new NoteEvent((int)time, (int)msPer16th * 2, pitch, 100);
+        _song.Events.Add(newNote);
+        _selectedNote = newNote;
+    }
+
+    private void DrawKeyboard(Rect keyboardArea)
+    {
+        var renderer = UI.Context.Renderer;
+        float pitchHeight = keyboardArea.Height / (MaxPitch - MinPitch + 1);
+
+        for (int pitch = MaxPitch; pitch >= MinPitch; pitch--)
+        {
+            float y = keyboardArea.Y + (MaxPitch - pitch) * pitchHeight;
+            var keyRect = new Rect(keyboardArea.X, y, keyboardArea.Width, pitchHeight);
+
+            bool isBlack = _isBlackKey[pitch % 12];
+            var keyColor = isBlack ? DawTheme.PianoBlackKey : DawTheme.PianoWhiteKey;
+            var textColor = isBlack ? DawTheme.PianoWhiteKey : DawTheme.PianoBlackKey;
+
+            renderer.DrawBox(keyRect, new BoxStyle { FillColor = keyColor, BorderColor = DawTheme.Border, BorderLengthLeft = 0, Roundness = 0 });
+
+            // Draw note names on C keys
+            if (pitch % 12 == 0)
+            {
+                UI.Text($"key_label_{pitch}", $"C{pitch / 12 - 1}",
+                    new Vector2(keyRect.Left + 5, keyRect.Top),
+                    new ButtonStyle { FontColor = textColor, FontSize = 10 });
+            }
+        }
+    }
+
+    private void DrawGrid(Rect gridArea, double tempo)
+    {
+        var renderer = UI.Context.Renderer;
+        float msPerBeat = (float)(60000.0 / tempo);
+        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
+        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float pixelsPerBeat = msPerBeat * pixelsPerMs;
+
+        // Horizontal lines (Pitches)
+        for (int pitch = MaxPitch; pitch >= MinPitch; pitch--)
+        {
+            float y = gridArea.Y + (MaxPitch - pitch) * pitchHeight;
+            var color = _isBlackKey[pitch % 12] ? DawTheme.PanelBackground : DawTheme.Background;
+            renderer.DrawBox(new Rect(gridArea.X, y, gridArea.Width, pitchHeight), new BoxStyle { FillColor = color, Roundness = 0 });
+        }
+
+        // Vertical lines (Time)
+        float startX = gridArea.X - (_panOffset.X % pixelsPerBeat);
+        int beatIndex = (int)(_panOffset.X / pixelsPerBeat);
+
+        for (float x = startX; x < gridArea.Right; x += pixelsPerBeat)
+        {
+            bool isMeasure = beatIndex % 4 == 0;
+            var color = isMeasure ? DawTheme.PianoRollGridAccent : DawTheme.PianoRollGrid;
+            renderer.DrawLine(new Vector2(x, gridArea.Y), new Vector2(x, gridArea.Bottom), color, 1f);
+            beatIndex++;
+        }
+    }
+
+    private void DrawNotes(Rect gridArea)
+    {
+        if (_song == null) return;
+        var renderer = UI.Context.Renderer;
+
+        foreach (var note in _song.Events)
+        {
+            var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
+            float width = (note.DurationMs * BasePixelsPerMs * _zoom);
+            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, NoteHeight);
+
+            // Culling
+            if (noteRect.Right < gridArea.X || noteRect.X > gridArea.Right)
+                continue;
+
+            var style = new BoxStyle
+            {
+                FillColor = DawTheme.Accent,
+                BorderColor = note == _selectedNote ? DawTheme.Selection : DawTheme.AccentBright,
+                BorderLength = note == _selectedNote ? 2f : 1f,
+                Roundness = 0.1f
+            };
+            renderer.DrawBox(noteRect, style);
+        }
+    }
+
+    private void DrawPlaybackCursor(Rect gridArea, bool isPlaying, long currentTimeMs)
+    {
+        if (!isPlaying) return;
+
+        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float cursorX = gridArea.X + (currentTimeMs * pixelsPerMs) - _panOffset.X;
+
+        // Culling
+        if (cursorX < gridArea.X || cursorX > gridArea.Right)
+        {
+            return;
+        }
+
+        var renderer = UI.Context.Renderer;
+        renderer.DrawLine(
+            new Vector2(cursorX, gridArea.Y),
+            new Vector2(cursorX, gridArea.Bottom),
+            DawTheme.AccentBright,
+            2f);
+    }
+
+    private (NoteEvent? note, bool isEdge) HitTestNotes(Vector2 screenPos, Rect gridArea)
+    {
+        if (_song == null) return (null, false);
+        const float edgeWidth = 8f;
+
+        foreach (var note in _song.Events.AsEnumerable().Reverse())
+        {
+            var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
+            float width = (note.DurationMs * BasePixelsPerMs * _zoom);
+            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, NoteHeight);
+
+            if (noteRect.Contains(screenPos))
+            {
+                bool isEdge = screenPos.X > noteRect.Right - edgeWidth;
+                return (note, isEdge);
+            }
+        }
+        return (null, false);
+    }
+
+    private Vector2 GridToScreen(float timeMs, int pitch, Rect gridArea)
+    {
+        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
+        float x = gridArea.X + (timeMs * BasePixelsPerMs * _zoom) - _panOffset.X;
+        float y = gridArea.Y + ((MaxPitch - pitch) * pitchHeight) - _panOffset.Y;
+        return new Vector2(x, y);
+    }
+
+    private (float timeMs, int pitch) ScreenToGrid(Vector2 screenPos, Rect gridArea)
+    {
+        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
+        float timeMs = (screenPos.X - gridArea.X + _panOffset.X) / (BasePixelsPerMs * _zoom);
+        int pitch = MaxPitch - (int)((screenPos.Y - gridArea.Y + _panOffset.Y) / pitchHeight);
+
+        timeMs = Math.Max(0, timeMs);
+        pitch = Math.Clamp(pitch, MinPitch, MaxPitch);
+
+        return (timeMs, pitch);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\TransportView.cs">
+using System.Numerics;
+using Daw.Audio;
+using Daw.Core;
+using DirectUI;
+
+namespace Daw.Views;
+
+public class TransportView
+{
+    private readonly MidiEngine _midiEngine;
+    private string _tempoString = "120.0";
+
+    public TransportView(MidiEngine midiEngine)
+    {
+        _midiEngine = midiEngine;
+    }
+
+    public void Draw(Vector2 position, Song song)
+    {
+        UI.BeginHBoxContainer("transport_controls", position, 10);
+
+        // Play Button
+        if (UI.Button("play_button", "▶", new Vector2(30, 30), theme: DawTheme.TransportButton))
+        {
+            _midiEngine.Play(song);
+        }
+
+        // Stop Button
+        if (UI.Button("stop_button", "■", new Vector2(30, 30), theme: DawTheme.TransportButton))
+        {
+            _midiEngine.Stop();
+        }
+
+        // Tempo Display and Input
+        UI.BeginVBoxContainer("tempo_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
+        UI.Text("tempo_label", "BPM", style: new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 });
+        if (UI.State.FocusedElementId != "tempo_input".GetHashCode())
+        {
+            _tempoString = song.Tempo.ToString("F1");
+        }
+        if (UI.InputText("tempo_input", ref _tempoString, new Vector2(50, 20)))
+        {
+            if (double.TryParse(_tempoString, out double newTempo))
+            {
+                song.Tempo = newTempo;
+            }
+        }
+        UI.EndVBoxContainer();
+
+        UI.EndHBoxContainer();
+    }
 }
 </file>
 

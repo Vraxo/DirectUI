@@ -22,14 +22,11 @@ public class PianoRollView
     private Vector2 _panOffset = Vector2.Zero;
     private float _zoom = 1.0f; // Multiplier for pixelsPerMs
 
-    // --- Metrics ---
-    private const float KeyboardWidth = 80;
-    private const float NoteHeight = 20;
-    private const float BasePixelsPerMs = 0.1f;
-    private const int MinPitch = 24; // C1
-    private const int MaxPitch = 108; // C8
-
     private readonly bool[] _isBlackKey = new bool[12];
+
+    // Public accessors for linked views (like Timeline)
+    public Vector2 GetPanOffset() => _panOffset;
+    public float GetZoom() => _zoom;
 
     public PianoRollView()
     {
@@ -49,11 +46,11 @@ public class PianoRollView
         // Draw panel background
         renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0 });
 
-        var gridArea = new Rect(viewArea.X + KeyboardWidth, viewArea.Y, viewArea.Width - KeyboardWidth, viewArea.Height);
+        var gridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
 
         HandleInput(input, gridArea);
 
-        DrawKeyboard(new Rect(viewArea.X, viewArea.Y, KeyboardWidth, viewArea.Height));
+        DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
         DrawGrid(gridArea, song.Tempo);
         DrawNotes(gridArea);
         DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
@@ -161,11 +158,11 @@ public class PianoRollView
     private void DrawKeyboard(Rect keyboardArea)
     {
         var renderer = UI.Context.Renderer;
-        float pitchHeight = keyboardArea.Height / (MaxPitch - MinPitch + 1);
+        float pitchHeight = keyboardArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
 
-        for (int pitch = MaxPitch; pitch >= MinPitch; pitch--)
+        for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
         {
-            float y = keyboardArea.Y + (MaxPitch - pitch) * pitchHeight;
+            float y = keyboardArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
             var keyRect = new Rect(keyboardArea.X, y, keyboardArea.Width, pitchHeight);
 
             bool isBlack = _isBlackKey[pitch % 12];
@@ -188,14 +185,14 @@ public class PianoRollView
     {
         var renderer = UI.Context.Renderer;
         float msPerBeat = (float)(60000.0 / tempo);
-        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
-        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
         float pixelsPerBeat = msPerBeat * pixelsPerMs;
 
         // Horizontal lines (Pitches)
-        for (int pitch = MaxPitch; pitch >= MinPitch; pitch--)
+        for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
         {
-            float y = gridArea.Y + (MaxPitch - pitch) * pitchHeight;
+            float y = gridArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
             var color = _isBlackKey[pitch % 12] ? DawTheme.PanelBackground : DawTheme.Background;
             renderer.DrawBox(new Rect(gridArea.X, y, gridArea.Width, pitchHeight), new BoxStyle { FillColor = color, Roundness = 0 });
         }
@@ -211,6 +208,17 @@ public class PianoRollView
             renderer.DrawLine(new Vector2(x, gridArea.Y), new Vector2(x, gridArea.Bottom), color, 1f);
             beatIndex++;
         }
+        
+        // Draw Loop Region Overlay
+        if (_song != null && _song.IsLoopingEnabled)
+        {
+            float loopStartX = gridArea.X + (_song.LoopStartMs * pixelsPerMs) - _panOffset.X;
+            float loopEndX = gridArea.X + (_song.LoopEndMs * pixelsPerMs) - _panOffset.X;
+            var loopRect = new Rect(loopStartX, gridArea.Y, loopEndX - loopStartX, gridArea.Height);
+            
+            var loopOverlayColor = new Color4(DawTheme.Accent.R, DawTheme.Accent.G, DawTheme.Accent.B, 0.2f);
+            renderer.DrawBox(loopRect, new BoxStyle { FillColor = loopOverlayColor, Roundness = 0, BorderLength = 0 });
+        }
     }
 
     private void DrawNotes(Rect gridArea)
@@ -221,8 +229,8 @@ public class PianoRollView
         foreach (var note in _song.Events)
         {
             var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            float width = (note.DurationMs * BasePixelsPerMs * _zoom);
-            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, NoteHeight);
+            float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _zoom);
+            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
 
             // Culling
             if (noteRect.Right < gridArea.X || noteRect.X > gridArea.Right)
@@ -243,7 +251,7 @@ public class PianoRollView
     {
         if (!isPlaying) return;
 
-        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
         float cursorX = gridArea.X + (currentTimeMs * pixelsPerMs) - _panOffset.X;
 
         // Culling
@@ -268,8 +276,8 @@ public class PianoRollView
         foreach (var note in _song.Events.AsEnumerable().Reverse())
         {
             var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            float width = (note.DurationMs * BasePixelsPerMs * _zoom);
-            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, NoteHeight);
+            float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _zoom);
+            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
 
             if (noteRect.Contains(screenPos))
             {
@@ -282,20 +290,20 @@ public class PianoRollView
 
     private Vector2 GridToScreen(float timeMs, int pitch, Rect gridArea)
     {
-        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
-        float x = gridArea.X + (timeMs * BasePixelsPerMs * _zoom) - _panOffset.X;
-        float y = gridArea.Y + ((MaxPitch - pitch) * pitchHeight) - _panOffset.Y;
+        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
+        float x = gridArea.X + (timeMs * DawMetrics.BasePixelsPerMs * _zoom) - _panOffset.X;
+        float y = gridArea.Y + ((DawMetrics.MaxPitch - pitch) * pitchHeight) - _panOffset.Y;
         return new Vector2(x, y);
     }
 
     private (float timeMs, int pitch) ScreenToGrid(Vector2 screenPos, Rect gridArea)
     {
-        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
-        float timeMs = (screenPos.X - gridArea.X + _panOffset.X) / (BasePixelsPerMs * _zoom);
-        int pitch = MaxPitch - (int)((screenPos.Y - gridArea.Y + _panOffset.Y) / pitchHeight);
+        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
+        float timeMs = (screenPos.X - gridArea.X + _panOffset.X) / (DawMetrics.BasePixelsPerMs * _zoom);
+        int pitch = DawMetrics.MaxPitch - (int)((screenPos.Y - gridArea.Y + _panOffset.Y) / pitchHeight);
 
         timeMs = Math.Max(0, timeMs);
-        pitch = Math.Clamp(pitch, MinPitch, MaxPitch);
+        pitch = Math.Clamp(pitch, DawMetrics.MinPitch, DawMetrics.MaxPitch);
 
         return (timeMs, pitch);
     }

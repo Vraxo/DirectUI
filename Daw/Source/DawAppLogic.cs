@@ -18,6 +18,7 @@ public class DawAppLogic : IAppLogic
     // --- Child Views ---
     private readonly MenuBarView _menuBarView;
     private readonly TransportView _transportView;
+    private readonly TimelineView _timelineView;
     private readonly PianoRollView _pianoRollView;
 
     public DawAppLogic(IWindowHost host)
@@ -27,6 +28,7 @@ public class DawAppLogic : IAppLogic
 
         _menuBarView = new MenuBarView();
         _transportView = new TransportView(_midiEngine);
+        _timelineView = new TimelineView();
         _pianoRollView = new PianoRollView();
     }
 
@@ -67,7 +69,8 @@ public class DawAppLogic : IAppLogic
 
         // --- Draw UI Layout ---
         DrawTopBar(windowSize);
-        DrawMainContent(windowSize);
+        DrawTimeline(windowSize);
+        DrawPianoRoll(windowSize);
     }
 
     private void DrawTopBar(Vector2 windowSize)
@@ -81,13 +84,21 @@ public class DawAppLogic : IAppLogic
         _menuBarView.Draw(new Vector2(0, 0));
         _transportView.Draw(new Vector2(0, 30), _song);
     }
-
-    private void DrawMainContent(Vector2 windowSize)
+    
+    private void DrawTimeline(Vector2 windowSize)
     {
-        const float topOffset = 70; // Height of the top bar
+        var timelineArea = new Rect(0, DawMetrics.TopBarHeight, windowSize.X, DawMetrics.TimelineHeight);
+        // Pass pan/zoom from the piano roll to the timeline so they are in sync
+        _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
+    }
+
+    private void DrawPianoRoll(Vector2 windowSize)
+    {
+        float topOffset = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
         var mainContentArea = new Rect(0, topOffset, windowSize.X, windowSize.Y - topOffset);
 
         // The piano roll will take up the entire main content area for now
         _pianoRollView.Draw(mainContentArea, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs);
     }
+}
 }

@@ -28,6 +28,7 @@ public static class DawTheme
     // Pre-configured Styles
     public static readonly ButtonStylePack TransportButton;
     public static readonly ButtonStylePack ToolbarButton;
+    public static readonly ButtonStylePack LoopToggleStyle;
 
     static DawTheme()
     {
@@ -51,5 +52,19 @@ public static class DawTheme
         TransportButton.Normal.FillColor = Colors.Transparent;
         TransportButton.Hover.FillColor = ControlFillHover;
         TransportButton.Pressed.FillColor = Accent;
+
+        LoopToggleStyle = new ButtonStylePack
+        {
+            Roundness = 0.2f,
+            BorderLength = 1f,
+        };
+        LoopToggleStyle.Normal.FillColor = ControlFill;
+        LoopToggleStyle.Normal.BorderColor = Border;
+        LoopToggleStyle.Hover.FillColor = ControlFillHover;
+        LoopToggleStyle.Hover.BorderColor = AccentBright;
+        LoopToggleStyle.Active.FillColor = Accent;
+        LoopToggleStyle.Active.BorderColor = AccentBright;
+        LoopToggleStyle.ActiveHover.FillColor = AccentBright;
+        LoopToggleStyle.ActiveHover.BorderColor = Accent;
     }
 }

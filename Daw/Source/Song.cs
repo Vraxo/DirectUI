@@ -16,4 +16,19 @@ public class Song
     /// The list of note events that make up the song's timeline.
     /// </summary>
     public List<NoteEvent> Events { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets whether playback looping is enabled.
+    /// </summary>
+    public bool IsLoopingEnabled { get; set; } = false;
+
+    /// <summary>
+    /// The start time of the loop region in milliseconds.
+    /// </summary>
+    public long LoopStartMs { get; set; } = 0;
+
+    /// <summary>
+    /// The end time of the loop region in milliseconds.
+    /// </summary>
+    public long LoopEndMs { get; set; } = 4000; // Default 2 measures at 120bpm
 }

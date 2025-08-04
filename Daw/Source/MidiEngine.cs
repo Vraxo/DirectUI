@@ -119,6 +119,15 @@ public class MidiEngine : IDisposable
         Stop();
 
         _playback = midiFile.GetPlayback(_outputDevice);
+        
+        // Apply looping if it's enabled and the range is valid.
+        if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
+        {
+            var loopStart = new MetricTimeSpan(0, 0, 0, (int)song.LoopStartMs);
+            var loopEnd = new MetricTimeSpan(0, 0, 0, (int)song.LoopEndMs);
+            _playback.Loop = new Loop(loopStart, loopEnd);
+        }
+        
         _playback.Start();
     }
 
