@@ -253,6 +253,7 @@ public static class ApplicationRunner
 public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> appLogicFactory)
     {
         IWindowHost? host = null;
+        IAppLogic? appLogic = null;
         try
         {
             host = backend switch
@@ -265,7 +266,7 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
 
             Console.WriteLine($"Using {backend} Backend.");
 
-            var appLogic = appLogicFactory(host);
+            appLogic = appLogicFactory(host);
 
             if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
             {
@@ -282,6 +283,13 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
         }
         finally
         {
+            // Save application state before cleaning up resources.
+            if (appLogic is not null)
+            {
+                Console.WriteLine("Application shutting down. Saving state...");
+                appLogic.SaveState();
+            }
+
             host?.Cleanup();
             host?.Dispose();
         }
@@ -1185,7 +1193,8 @@ public static partial class UI
         Alignment? textAlignment = null,
         Vector2? textOffset = null,
         Vector2? origin = null,
-        object? userData = null)
+        object? userData = null,
+        bool isActive = false)
     {
         if (!IsContextValid()) return false;
 
@@ -1238,7 +1247,7 @@ public static partial class UI
             clickMode,
             clickBehavior,
             textOffset ?? Vector2.Zero,
-            isActive: false
+            isActive: isActive
         );
 
         if (pushedClip)
@@ -1775,7 +1784,7 @@ public static partial class UI
     {
         get; private set;
     } = false;
-    
+
     // --- Frame Management ---
     public static void BeginFrame(UIContext context)
     {
@@ -1824,7 +1833,7 @@ public static partial class UI
         if (!State.IsPopupOpen) return;
 
         // If a mouse press occurred outside the popup's bounds, close the popup.
-        if (Context.InputState.WasLeftMousePressedThisFrame)
+        if (Context.InputState.WasLeftMousePressedThisFrame || Context.InputState.WasRightMousePressedThisFrame)
         {
             if (!State.PopupBounds.Contains(Context.InputState.MousePosition))
             {
@@ -1835,6 +1844,92 @@ public static partial class UI
 
         // Execute the callback to draw the popup content.
         State.PopupDrawCallback?.Invoke(Context);
+    }
+
+    /// <summary>
+    /// Checks if a context menu should be opened for a given widget ID.
+    /// A context menu is typically triggered by a right-click.
+    /// </summary>
+    /// <param name="widgetId">The unique ID of the widget that can open the context menu.</param>
+    /// <returns>True if the context menu should be opened this frame, false otherwise.</returns>
+    public static bool BeginContextMenu(string widgetId)
+    {
+        if (!IsContextValid()) return false;
+
+        int intId = widgetId.GetHashCode();
+        var state = State;
+        var input = Context.InputState;
+
+        // A context menu is opened if the right mouse button was pressed this frame,
+        // and the potential input target is the widget we're checking.
+        if (input.WasRightMousePressedThisFrame && state.PotentialInputTargetId == intId)
+        {
+            state.ClearActivePopup(); // Close any other popups first.
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Draws a context menu popup at the current mouse position. This should be called after BeginContextMenu returns true.
+    /// </summary>
+    /// <param name="popupId">A unique ID for this specific context menu instance.</param>
+    /// <param name="items">An array of strings representing the menu items.</param>
+    /// <returns>The index of the clicked item, or -1 if no item was clicked.</returns>
+    public static int ContextMenu(string popupId, string[] items)
+    {
+        if (!IsContextValid() || items is null || items.Length == 0) return -1;
+
+        var context = Context;
+        var state = State;
+        int intId = popupId.GetHashCode();
+
+        // If a result for this menu is already available from the previous frame, consume and return it.
+        if (state.PopupResultAvailable && state.PopupResultOwnerId == intId)
+        {
+            return state.PopupResult;
+        }
+
+        // Only set up the popup on the first frame it's requested.
+        // After that, the EndFrame logic will handle drawing it using the stored state.
+        if (!state.IsPopupOpen || state.ActivePopupId != intId)
+        {
+            // Calculate popup properties ONCE
+            float itemHeight = 25;
+            float itemWidth = 150;
+            float popupHeight = items.Length * itemHeight;
+            var popupPosition = context.InputState.MousePosition;
+            var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, itemWidth, popupHeight);
+
+            // Define the draw callback for the popup, which runs at EndFrame
+            Action<UIContext> drawCallback = (ctx) =>
+            {
+                var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
+                ctx.Renderer.DrawBox(popupBounds, popupStyle);
+
+                for (int i = 0; i < items.Length; i++)
+                {
+                    var itemBounds = new Vortice.Mathematics.Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
+                    var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+                    itemTheme.Normal.FillColor = DefaultTheme.Transparent;
+                    itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+                    itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+                    int itemId = HashCode.Combine(intId, "item", i);
+
+                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)))
+                    {
+                        state.SetPopupResult(intId, i);
+                        state.ClearActivePopup();
+                    }
+                }
+            };
+
+            state.SetActivePopup(intId, drawCallback, popupBounds);
+        }
+
+        return -1; // No item was clicked on *this* frame
     }
 
 
@@ -9462,6 +9557,7 @@ namespace DirectUI.Core;
 public interface IAppLogic
 {
     void DrawUI(UIContext context);
+    void SaveState();
 }
 </file>
 
@@ -9714,41 +9810,78 @@ public class DawAppLogic : IAppLogic
     private Song _song;
     private const string SongFilePath = "mysong.dawjson";
 
+    // --- UI State ---
+    private int _activeTrackIndex = 0;
+    private float _leftPanelWidth = 150;
+    private PianoRollTool _currentTool = PianoRollTool.Select;
+
     // --- Child Views ---
     private readonly MenuBarView _menuBarView;
     private readonly TransportView _transportView;
+    private readonly TimelineView _timelineView;
+    private readonly TrackListView _trackListView;
+    private readonly PianoRollToolbarView _pianoRollToolbarView;
     private readonly PianoRollView _pianoRollView;
+    private readonly IWindowHost _host;
 
     public DawAppLogic(IWindowHost host)
     {
+        _host = host;
         _midiEngine = new MidiEngine();
         _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
 
         _menuBarView = new MenuBarView();
         _transportView = new TransportView(_midiEngine);
+        _timelineView = new TimelineView();
+        _trackListView = new TrackListView();
+        _pianoRollToolbarView = new PianoRollToolbarView();
         _pianoRollView = new PianoRollView();
     }
 
     private static Song CreateDefaultSong()
     {
         var song = new Song { Tempo = 120 };
+        var leadTrack = new MidiTrack("Lead Melody");
+        song.Tracks.Add(leadTrack);
+
         // Basic C Major Scale
-        song.Events.Add(new NoteEvent(0, 480, 60, 100));     // C
-        song.Events.Add(new NoteEvent(500, 480, 62, 100));    // D
-        song.Events.Add(new NoteEvent(1000, 480, 64, 100));   // E
-        song.Events.Add(new NoteEvent(1500, 480, 65, 100));   // F
-        song.Events.Add(new NoteEvent(2000, 480, 67, 100));   // G
-        song.Events.Add(new NoteEvent(2500, 480, 69, 100));   // A
-        song.Events.Add(new NoteEvent(3000, 480, 71, 100));   // B
-        song.Events.Add(new NoteEvent(3500, 480, 72, 100));   // C
+        leadTrack.Events.Add(new NoteEvent(0, 480, 60, 100));     // C
+        leadTrack.Events.Add(new NoteEvent(500, 480, 62, 100));    // D
+        leadTrack.Events.Add(new NoteEvent(1000, 480, 64, 100));   // E
+        leadTrack.Events.Add(new NoteEvent(1500, 480, 65, 100));   // F
+        leadTrack.Events.Add(new NoteEvent(2000, 480, 67, 100));   // G
+        leadTrack.Events.Add(new NoteEvent(2500, 480, 69, 100));   // A
+        leadTrack.Events.Add(new NoteEvent(3000, 480, 71, 100));   // B
+        leadTrack.Events.Add(new NoteEvent(3500, 480, 72, 100));   // C
         return song;
     }
 
     public void DrawUI(UIContext context)
     {
+        // Poll the engine every frame for time-sensitive updates like looping
+        _midiEngine.Update();
+
         var windowSize = context.Renderer.RenderTargetSize;
 
-        // --- Global Actions ---
+        // Ensure active track index is always valid before drawing
+        if (_activeTrackIndex >= _song.Tracks.Count)
+        {
+            _activeTrackIndex = Math.Max(0, _song.Tracks.Count - 1);
+        }
+
+        // --- Step 1: Draw the entire UI. ---
+        // This allows all components to process input and update their internal state for this frame.
+        DrawTopBar(windowSize);
+        DrawMainContent(windowSize);
+
+        // --- Step 2: Handle actions that were generated during the draw pass. ---
+        // This is the correct order for an immediate-mode GUI.
+        HandleGlobalActions();
+        HandleTrackActions();
+    }
+
+    private void HandleGlobalActions()
+    {
         var fileAction = _menuBarView.GetAction();
         switch (fileAction)
         {
@@ -9758,21 +9891,102 @@ public class DawAppLogic : IAppLogic
             case MenuBarView.FileAction.Load:
                 _midiEngine.Stop();
                 _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
+                _activeTrackIndex = 0;
                 break;
             case MenuBarView.FileAction.Export:
                 _midiEngine.ExportToMidiFile(_song, "export.mid");
                 break;
         }
+    }
 
-        // --- Draw UI Layout ---
-        DrawTopBar(windowSize);
-        DrawMainContent(windowSize);
+    private void HandleTrackActions()
+    {
+        var (action, index) = _trackListView.GetAction();
+        if (action == TrackListView.TrackAction.None) return;
+
+        switch (action)
+        {
+            case TrackListView.TrackAction.Delete:
+                if (index >= 0 && index < _song.Tracks.Count)
+                {
+                    _song.Tracks.RemoveAt(index);
+                }
+                break;
+            case TrackListView.TrackAction.Rename:
+                if (index >= 0 && index < _song.Tracks.Count)
+                {
+                    PromptForTrackName(index);
+                }
+                break;
+            case TrackListView.TrackAction.MoveUp:
+                if (index > 0 && index < _song.Tracks.Count)
+                {
+                    var track = _song.Tracks[index];
+                    _song.Tracks.RemoveAt(index);
+                    _song.Tracks.Insert(index - 1, track);
+                    _activeTrackIndex = index - 1; // Keep selection on the moved track
+                }
+                break;
+            case TrackListView.TrackAction.MoveDown:
+                if (index >= 0 && index < _song.Tracks.Count - 1)
+                {
+                    var track = _song.Tracks[index];
+                    _song.Tracks.RemoveAt(index);
+                    _song.Tracks.Insert(index + 1, track);
+                    _activeTrackIndex = index + 1; // Keep selection on the moved track
+                }
+                break;
+        }
+    }
+
+    private void PromptForTrackName(int trackIndex)
+    {
+        string newName = _song.Tracks[trackIndex].Name;
+        Console.WriteLine($"[LOG] Opening rename dialog for track {trackIndex} with initial name '{newName}'.");
+
+        Action<UIContext> drawCallback = (ctx) =>
+        {
+            // Use a VBox for robust layout, with padding from the window edge.
+            UI.BeginVBoxContainer("rename_vbox", new Vector2(10, 10), 15);
+
+            UI.Text("rename_prompt", "Enter new track name:");
+            UI.InputText("rename_input", ref newName, new Vector2(280, 25));
+
+            // This HBox will now be positioned correctly by the parent VBox.
+            // We need to get the current position *before* beginning the HBox.
+            var hboxPos = UI.Context.Layout.GetCurrentPosition();
+            UI.BeginHBoxContainer("rename_buttons", hboxPos, 10);
+            if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
+            {
+                _host.ModalWindowService.CloseModalWindow(0); // 0 = Success
+            }
+            if (UI.Button("rename_cancel", "Cancel", new Vector2(80, 25)))
+            {
+                _host.ModalWindowService.CloseModalWindow(1); // 1 = Cancel
+            }
+            UI.EndHBoxContainer();
+
+            UI.EndVBoxContainer();
+        };
+
+        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 160, drawCallback, (resultCode) =>
+        {
+            Console.WriteLine($"[LOG] Rename dialog closed. Result: {resultCode}. Final name in input box: '{newName}'.");
+            if (resultCode == 0 && !string.IsNullOrWhiteSpace(newName))
+            {
+                Console.WriteLine($"[LOG] SUCCESS: Applying new name to track {trackIndex}.");
+                _song.Tracks[trackIndex].Name = newName;
+            }
+            else
+            {
+                Console.WriteLine($"[LOG] CANCELED: Rename was canceled or name was empty.");
+            }
+        });
     }
 
     private void DrawTopBar(Vector2 windowSize)
     {
-        const float TopBarHeight = 70;
-        var topBarArea = new Rect(0, 0, windowSize.X, TopBarHeight);
+        var topBarArea = new Rect(0, 0, windowSize.X, DawMetrics.TopBarHeight);
         var style = new BoxStyle { FillColor = DawTheme.PanelBackground, BorderColor = DawTheme.Border, BorderLengthBottom = 1, Roundness = 0 };
         UI.Context.Renderer.DrawBox(topBarArea, style);
 
@@ -9783,12 +9997,61 @@ public class DawAppLogic : IAppLogic
 
     private void DrawMainContent(Vector2 windowSize)
     {
-        const float topOffset = 70; // Height of the top bar
-        var mainContentArea = new Rect(0, topOffset, windowSize.X, windowSize.Y - topOffset);
+        // Left Panel for Track List
+        UI.BeginResizableVPanel("track_list_panel", ref _leftPanelWidth, HAlignment.Left, topOffset: DawMetrics.TopBarHeight, minWidth: 100, maxWidth: 300);
+        _trackListView.Draw(_song, ref _activeTrackIndex);
+        UI.EndResizableVPanel();
 
-        // The piano roll will take up the entire main content area for now
-        _pianoRollView.Draw(mainContentArea, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs);
+        // Right side for Timeline and Piano Roll
+        float mainContentX = _leftPanelWidth;
+        float mainContentWidth = windowSize.X - _leftPanelWidth;
+
+        // Timeline
+        var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
+        _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
+
+        // Toolbar for Piano Roll Tools
+        float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
+        var toolbarArea = new Rect(mainContentX, toolbarY, mainContentWidth, DawMetrics.PianoRollToolbarHeight);
+        _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
+
+        // Piano Roll
+        float pianoRollY = toolbarY + DawMetrics.PianoRollToolbarHeight;
+        var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, windowSize.Y - pianoRollY);
+
+        var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
+        _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
     }
+
+    public void SaveState()
+    {
+        SongSerializer.Save(_song, SongFilePath);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\DawMetrics.cs">
+namespace Daw.Views;
+
+/// <summary>
+/// Defines shared constants for layout, grid, and pitch to ensure consistency
+/// between the Timeline, Piano Roll, and other views.
+/// </summary>
+public static class DawMetrics
+{
+    // --- Layout ---
+    public const float TopBarHeight = 70;
+    public const float TimelineHeight = 40;
+    public const float PianoRollToolbarHeight = 40;
+    public const float KeyboardWidth = 80;
+
+    // --- Grid & Zoom ---
+    public const float BasePixelsPerMs = 0.1f;
+    public const float NoteHeight = 20;
+
+    // --- Pitch Range ---
+    public const int MinPitch = 24; // C1
+    public const int MaxPitch = 108; // C8
 }
 </file>
 
@@ -9823,6 +10086,7 @@ public static class DawTheme
     // Pre-configured Styles
     public static readonly ButtonStylePack TransportButton;
     public static readonly ButtonStylePack ToolbarButton;
+    public static readonly ButtonStylePack LoopToggleStyle;
 
     static DawTheme()
     {
@@ -9846,6 +10110,20 @@ public static class DawTheme
         TransportButton.Normal.FillColor = Colors.Transparent;
         TransportButton.Hover.FillColor = ControlFillHover;
         TransportButton.Pressed.FillColor = Accent;
+
+        LoopToggleStyle = new ButtonStylePack
+        {
+            Roundness = 0.2f,
+            BorderLength = 1f,
+        };
+        LoopToggleStyle.Normal.FillColor = ControlFill;
+        LoopToggleStyle.Normal.BorderColor = Border;
+        LoopToggleStyle.Hover.FillColor = ControlFillHover;
+        LoopToggleStyle.Hover.BorderColor = AccentBright;
+        LoopToggleStyle.Active.FillColor = Accent;
+        LoopToggleStyle.Active.BorderColor = AccentBright;
+        LoopToggleStyle.ActiveHover.FillColor = AccentBright;
+        LoopToggleStyle.ActiveHover.BorderColor = Accent;
     }
 }
 </file>
@@ -9940,6 +10218,7 @@ public class MidiEngine : IDisposable
 {
     private Playback? _playback;
     private readonly IOutputDevice? _outputDevice;
+    private Song? _currentSong; // Store the currently playing song for looping
     private bool _isDisposed;
 
     public bool IsPlaying => _playback?.IsRunning ?? false;
@@ -9967,46 +10246,72 @@ public class MidiEngine : IDisposable
     }
 
     /// <summary>
+    /// This method should be called every frame to handle real-time updates like looping.
+    /// </summary>
+    public void Update()
+    {
+        if (_playback == null || !_playback.IsRunning || _currentSong == null)
+        {
+            return;
+        }
+
+        // Handle custom looping logic by polling the current time.
+        if (_currentSong.IsLoopingEnabled && _currentSong.LoopEndMs > _currentSong.LoopStartMs)
+        {
+            var currentTime = this.CurrentTimeMs;
+
+            // If the current time has passed the loop end point, seek back to the loop start.
+            if (currentTime >= _currentSong.LoopEndMs)
+            {
+                var loopStart = new MetricTimeSpan(0, 0, 0, (int)_currentSong.LoopStartMs);
+                _playback.MoveToTime(loopStart);
+            }
+        }
+    }
+
+    /// <summary>
     /// Converts a Song object into a DryWetMIDI MidiFile object.
     /// </summary>
     /// <param name="song">The song to convert.</param>
     /// <returns>A MidiFile instance representing the song.</returns>
     public MidiFile ConvertToMidiFile(Song song)
     {
-        // Step 1: Create the structure of the MIDI file with tempo information.
         var midiFile = new MidiFile();
-        // Using a standard time division of 480 ticks per quarter note.
         midiFile.TimeDivision = new TicksPerQuarterNoteTimeDivision(480);
-        var trackChunk = new TrackChunk();
 
-        // Tempo is in BPM (beats per minute). Microseconds per quarter note = 60,000,000 / BPM.
-        long microsecondsPerQuarterNote = (long)(60000000 / song.Tempo);
-        trackChunk.Events.Add(new SetTempoEvent(microsecondsPerQuarterNote));
-        midiFile.Chunks.Add(trackChunk);
-
-        // Step 2: Get the tempo map from the file itself.
-        // This ensures the tempo map uses the file's time division, which is critical for sync.
+        // A single tempo map is used for the entire file.
         var tempoMap = midiFile.GetTempoMap();
+        long microsecondsPerQuarterNote = (long)(60000000 / song.Tempo);
+        var setTempoEvent = new SetTempoEvent(microsecondsPerQuarterNote);
 
-        // Step 3: Convert song events to notes using the correct tempo map.
-        var notes = song.Events.Select(noteEvent =>
+        // Create a track for each track in our song
+        foreach (var songTrack in song.Tracks)
         {
-            var startTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.StartTimeMs);
-            var durationTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.DurationMs);
+            var trackChunk = new TrackChunk();
 
-            // Use the older ConvertTo<> that the user's compiler accepts.
-            long timeInTicks = TimeConverter.ConvertTo<MidiTimeSpan>(startTimeSpan, tempoMap).TimeSpan;
-            long durationInTicks = LengthConverter.ConvertTo<MidiTimeSpan>(durationTimeSpan, timeInTicks, tempoMap).TimeSpan;
-
-            // Create the note with time and duration in MIDI ticks
-            return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
+            // Add the tempo event to the first track only
+            if (midiFile.Chunks.Count == 0)
             {
-                Velocity = (SevenBitNumber)noteEvent.Velocity
-            };
-        });
+                trackChunk.Events.Add(setTempoEvent);
+            }
 
-        // Step 4: Add the created notes to the track chunk.
-        trackChunk.AddObjects(notes);
+            var notes = songTrack.Events.Select(noteEvent =>
+            {
+                var startTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.StartTimeMs);
+                var durationTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.DurationMs);
+
+                long timeInTicks = TimeConverter.ConvertTo<MidiTimeSpan>(startTimeSpan, tempoMap).TimeSpan;
+                long durationInTicks = LengthConverter.ConvertTo<MidiTimeSpan>(durationTimeSpan, timeInTicks, tempoMap).TimeSpan;
+
+                return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
+                {
+                    Velocity = (SevenBitNumber)noteEvent.Velocity
+                };
+            });
+
+            trackChunk.AddObjects(notes);
+            midiFile.Chunks.Add(trackChunk);
+        }
 
         return midiFile;
     }
@@ -10040,8 +10345,20 @@ public class MidiEngine : IDisposable
         // Stop any previous playback
         Stop();
 
+        _currentSong = song; // Store reference for the update loop
         _playback = midiFile.GetPlayback(_outputDevice);
-        _playback.Start();
+
+        // If looping is enabled, we need to decide where to start playing from.
+        if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
+        {
+            var loopStart = new MetricTimeSpan(0, 0, 0, (int)song.LoopStartMs);
+            _playback.Start();
+            _playback.MoveToTime(loopStart);
+        }
+        else
+        {
+            _playback.Start();
+        }
     }
 
     /// <summary>
@@ -10055,6 +10372,7 @@ public class MidiEngine : IDisposable
             _playback.Dispose();
             _playback = null;
         }
+        _currentSong = null;
     }
 
     public void Dispose()
@@ -10075,6 +10393,31 @@ public class MidiEngine : IDisposable
         }
 
         _isDisposed = true;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MidiTrack.cs">
+using System.Collections.Generic;
+
+namespace Daw.Core;
+
+/// <summary>
+/// Represents a single track in a song, containing its own list of notes and properties.
+/// </summary>
+public class MidiTrack
+{
+    public string Name { get; set; } = "New Track";
+    public List<NoteEvent> Events { get; set; } = new();
+
+    // Future properties could include: MidiChannel, Instrument, Mute, Solo, etc.
+
+    // Parameterless constructor for serialization
+    public MidiTrack() { }
+
+    public MidiTrack(string name)
+    {
+        Name = name;
     }
 }
 </file>
@@ -10103,6 +10446,16 @@ public class NoteEvent
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\PianoRollTool.cs">
+namespace Daw.Views;
+
+public enum PianoRollTool
+{
+    Select,
+    Pencil
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Song.cs">
 using System.Collections.Generic;
 
@@ -10119,9 +10472,24 @@ public class Song
     public double Tempo { get; set; } = 120.0;
 
     /// <summary>
-    /// The list of note events that make up the song's timeline.
+    /// The list of tracks that make up the song.
     /// </summary>
-    public List<NoteEvent> Events { get; set; } = new();
+    public List<MidiTrack> Tracks { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets whether playback looping is enabled.
+    /// </summary>
+    public bool IsLoopingEnabled { get; set; } = false;
+
+    /// <summary>
+    /// The start time of the loop region in milliseconds.
+    /// </summary>
+    public long LoopStartMs { get; set; } = 0;
+
+    /// <summary>
+    /// The end time of the loop region in milliseconds.
+    /// </summary>
+    public long LoopEndMs { get; set; } = 4000; // Default 2 measures at 120bpm
 }
 </file>
 
@@ -10190,6 +10558,40 @@ public static class SongSerializer
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\PianoRollToolbarView.cs">
+using System.Numerics;
+using DirectUI;
+using Vortice.Mathematics;
+
+namespace Daw.Views;
+
+public class PianoRollToolbarView
+{
+    public void Draw(Rect viewArea, ref PianoRollTool currentTool)
+    {
+        UI.Context.Renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0 });
+
+        UI.BeginHBoxContainer("pianoroll_toolbar", viewArea.TopLeft + new Vector2(5, 5), 5);
+
+        // Select Tool Button
+        bool isSelectActive = currentTool == PianoRollTool.Select;
+        if (UI.Button("tool_select", "↗", new Vector2(30, 30), DawTheme.LoopToggleStyle, isActive: isSelectActive))
+        {
+            currentTool = PianoRollTool.Select;
+        }
+
+        // Pencil Tool Button
+        bool isPencilActive = currentTool == PianoRollTool.Pencil;
+        if (UI.Button("tool_pencil", "✎", new Vector2(30, 30), DawTheme.LoopToggleStyle, isActive: isPencilActive))
+        {
+            currentTool = PianoRollTool.Pencil;
+        }
+
+        UI.EndHBoxContainer();
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\PianoRollView.cs">
 using System;
 using System.Collections.Generic;
@@ -10206,6 +10608,7 @@ namespace Daw.Views;
 public class PianoRollView
 {
     // --- State ---
+    private MidiTrack? _activeTrack;
     private Song? _song;
     private NoteEvent? _selectedNote;
     private NoteEvent? _noteBeingDragged;
@@ -10214,15 +10617,13 @@ public class PianoRollView
     private bool _isPanning;
     private Vector2 _panOffset = Vector2.Zero;
     private float _zoom = 1.0f; // Multiplier for pixelsPerMs
-
-    // --- Metrics ---
-    private const float KeyboardWidth = 80;
-    private const float NoteHeight = 20;
-    private const float BasePixelsPerMs = 0.1f;
-    private const int MinPitch = 24; // C1
-    private const int MaxPitch = 108; // C8
+    private PianoRollTool _currentTool;
 
     private readonly bool[] _isBlackKey = new bool[12];
+
+    // Public accessors for linked views (like Timeline)
+    public Vector2 GetPanOffset() => _panOffset;
+    public float GetZoom() => _zoom;
 
     public PianoRollView()
     {
@@ -10233,71 +10634,56 @@ public class PianoRollView
         }
     }
 
-    public void Draw(Rect viewArea, Song song, bool isPlaying, long currentTimeMs)
+    public void Draw(Rect viewArea, MidiTrack? activeTrack, Song song, bool isPlaying, long currentTimeMs, PianoRollTool currentTool)
     {
+        _activeTrack = activeTrack;
         _song = song;
+        _currentTool = currentTool;
         var renderer = UI.Context.Renderer;
         var input = UI.Context.InputState;
 
         // Draw panel background
         renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0 });
 
-        var gridArea = new Rect(viewArea.X + KeyboardWidth, viewArea.Y, viewArea.Width - KeyboardWidth, viewArea.Height);
+        var gridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
 
         HandleInput(input, gridArea);
-
-        DrawKeyboard(new Rect(viewArea.X, viewArea.Y, KeyboardWidth, viewArea.Height));
-        DrawGrid(gridArea, song.Tempo);
-        DrawNotes(gridArea);
-        DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
+        
+        if (_activeTrack != null)
+        {
+            DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
+            DrawGrid(gridArea, song.Tempo);
+            DrawNotes(gridArea);
+            DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
+        }
+        else
+        {
+            UI.Text("no_track_selected", "No track selected. Please add or select a track.", new Vector2(gridArea.X + 10, gridArea.Y + 10));
+        }
     }
 
     private void HandleInput(InputState input, Rect gridArea)
     {
-        if (_song is null) return;
+        if (_song is null || _activeTrack is null) return;
 
         bool isHoveringGrid = gridArea.Contains(input.MousePosition);
 
-        // Panning
+        // Panning (Middle Mouse) should work regardless of the tool
         if (input.WasMiddleMousePressedThisFrame && isHoveringGrid) _isPanning = true;
         if (!input.IsMiddleMouseDown) _isPanning = false;
         if (_isPanning) _panOffset += input.MousePosition - input.PreviousMousePosition;
 
-        // Zooming
+        // Zooming (Scroll Wheel) should work regardless of the tool
         if (isHoveringGrid && input.ScrollDelta != 0)
         {
             _zoom += input.ScrollDelta * 0.1f * _zoom;
             _zoom = Math.Clamp(_zoom, 0.1f, 10f);
         }
 
-        // Note interaction
-        var mousePos = input.MousePosition;
+        // --- Tool-Specific Logic (Left Mouse) ---
         if (input.WasLeftMousePressedThisFrame && isHoveringGrid)
         {
-            var hitNote = HitTestNotes(mousePos, gridArea);
-            if (hitNote.note != null)
-            {
-                _selectedNote = hitNote.note;
-                if (hitNote.isEdge)
-                {
-                    _isResizingRight = true;
-                }
-                else
-                {
-                    _noteBeingDragged = hitNote.note;
-                    var noteScreenPos = GridToScreen(_noteBeingDragged.StartTimeMs, _noteBeingDragged.Pitch, gridArea);
-                    _dragStartOffset = mousePos - noteScreenPos;
-                }
-            }
-            else
-            {
-                _selectedNote = null;
-                // Double-click to add a note (simplified with single click + ctrl for now)
-                if (input.HeldKeys.Contains(Keys.Control))
-                {
-                    AddNewNote(mousePos, gridArea);
-                }
-            }
+            HandleLeftClick(input, gridArea);
         }
 
         if (!input.IsLeftMouseDown)
@@ -10306,6 +10692,60 @@ public class PianoRollView
             _isResizingRight = false;
         }
 
+        // Drag/Resize logic is only for the Select tool
+        if (_currentTool == PianoRollTool.Select)
+        {
+            HandleDragAndResize(input, gridArea);
+        }
+    }
+    
+    private void HandleLeftClick(InputState input, Rect gridArea)
+    {
+        var (hitNote, isEdge) = HitTestNotes(input.MousePosition, gridArea);
+
+        switch (_currentTool)
+        {
+            case PianoRollTool.Select:
+                if (hitNote != null)
+                {
+                    _selectedNote = hitNote;
+                    if (isEdge)
+                    {
+                        _isResizingRight = true;
+                    }
+                    else
+                    {
+                        _noteBeingDragged = hitNote;
+                        var noteScreenPos = GridToScreen(hitNote.StartTimeMs, hitNote.Pitch, gridArea);
+                        _dragStartOffset = input.MousePosition - noteScreenPos;
+                    }
+                }
+                else
+                {
+                    _selectedNote = null;
+                }
+                break;
+
+            case PianoRollTool.Pencil:
+                if (hitNote != null)
+                {
+                    // If clicking an existing note with pencil, delete it
+                    _activeTrack?.Events.Remove(hitNote);
+                    if (_selectedNote == hitNote) _selectedNote = null;
+                }
+                else
+                {
+                    // If clicking empty space, add a new note
+                    AddNewNote(input.MousePosition, gridArea);
+                }
+                break;
+        }
+    }
+    
+    private void HandleDragAndResize(InputState input, Rect gridArea)
+    {
+        if (_song is null) return;
+        
         float msPerBeat = (float)(60000.0 / _song.Tempo);
         float quantization = msPerBeat / 4; // 16th note snapping
 
@@ -10322,7 +10762,7 @@ public class PianoRollView
 
         if (_isResizingRight && _selectedNote != null)
         {
-            var gridPos = ScreenToGrid(mousePos, gridArea);
+            var gridPos = ScreenToGrid(input.MousePosition, gridArea);
             float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
             int newDuration = (int)endEdgeTime - _selectedNote.StartTimeMs;
             _selectedNote.DurationMs = Math.Max((int)quantization, newDuration);
@@ -10331,14 +10771,14 @@ public class PianoRollView
         // Deletion
         if (_selectedNote != null && input.PressedKeys.Contains(Keys.Delete))
         {
-            _song.Events.Remove(_selectedNote);
+            _activeTrack?.Events.Remove(_selectedNote);
             _selectedNote = null;
         }
     }
 
     private void AddNewNote(Vector2 screenPos, Rect gridArea)
     {
-        if (_song == null) return;
+        if (_song == null || _activeTrack == null) return;
         var (time, pitch) = ScreenToGrid(screenPos, gridArea);
 
         // Snap to nearest 1/16th note
@@ -10347,18 +10787,18 @@ public class PianoRollView
         time = (int)(Math.Round(time / msPer16th) * msPer16th);
 
         var newNote = new NoteEvent((int)time, (int)msPer16th * 2, pitch, 100);
-        _song.Events.Add(newNote);
+        _activeTrack.Events.Add(newNote);
         _selectedNote = newNote;
     }
 
     private void DrawKeyboard(Rect keyboardArea)
     {
         var renderer = UI.Context.Renderer;
-        float pitchHeight = keyboardArea.Height / (MaxPitch - MinPitch + 1);
+        float pitchHeight = keyboardArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
 
-        for (int pitch = MaxPitch; pitch >= MinPitch; pitch--)
+        for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
         {
-            float y = keyboardArea.Y + (MaxPitch - pitch) * pitchHeight;
+            float y = keyboardArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
             var keyRect = new Rect(keyboardArea.X, y, keyboardArea.Width, pitchHeight);
 
             bool isBlack = _isBlackKey[pitch % 12];
@@ -10381,14 +10821,14 @@ public class PianoRollView
     {
         var renderer = UI.Context.Renderer;
         float msPerBeat = (float)(60000.0 / tempo);
-        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
-        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
         float pixelsPerBeat = msPerBeat * pixelsPerMs;
 
         // Horizontal lines (Pitches)
-        for (int pitch = MaxPitch; pitch >= MinPitch; pitch--)
+        for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
         {
-            float y = gridArea.Y + (MaxPitch - pitch) * pitchHeight;
+            float y = gridArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
             var color = _isBlackKey[pitch % 12] ? DawTheme.PanelBackground : DawTheme.Background;
             renderer.DrawBox(new Rect(gridArea.X, y, gridArea.Width, pitchHeight), new BoxStyle { FillColor = color, Roundness = 0 });
         }
@@ -10404,18 +10844,29 @@ public class PianoRollView
             renderer.DrawLine(new Vector2(x, gridArea.Y), new Vector2(x, gridArea.Bottom), color, 1f);
             beatIndex++;
         }
+        
+        // Draw Loop Region Overlay
+        if (_song != null && _song.IsLoopingEnabled)
+        {
+            float loopStartX = gridArea.X + (_song.LoopStartMs * pixelsPerMs) - _panOffset.X;
+            float loopEndX = gridArea.X + (_song.LoopEndMs * pixelsPerMs) - _panOffset.X;
+            var loopRect = new Rect(loopStartX, gridArea.Y, loopEndX - loopStartX, gridArea.Height);
+            
+            var loopOverlayColor = new Color4(DawTheme.Accent.R, DawTheme.Accent.G, DawTheme.Accent.B, 0.2f);
+            renderer.DrawBox(loopRect, new BoxStyle { FillColor = loopOverlayColor, Roundness = 0, BorderLength = 0 });
+        }
     }
 
     private void DrawNotes(Rect gridArea)
     {
-        if (_song == null) return;
+        if (_song == null || _activeTrack == null) return;
         var renderer = UI.Context.Renderer;
 
-        foreach (var note in _song.Events)
+        foreach (var note in _activeTrack.Events)
         {
             var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            float width = (note.DurationMs * BasePixelsPerMs * _zoom);
-            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, NoteHeight);
+            float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _zoom);
+            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
 
             // Culling
             if (noteRect.Right < gridArea.X || noteRect.X > gridArea.Right)
@@ -10436,7 +10887,7 @@ public class PianoRollView
     {
         if (!isPlaying) return;
 
-        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
         float cursorX = gridArea.X + (currentTimeMs * pixelsPerMs) - _panOffset.X;
 
         // Culling
@@ -10455,14 +10906,14 @@ public class PianoRollView
 
     private (NoteEvent? note, bool isEdge) HitTestNotes(Vector2 screenPos, Rect gridArea)
     {
-        if (_song == null) return (null, false);
+        if (_song == null || _activeTrack == null) return (null, false);
         const float edgeWidth = 8f;
 
-        foreach (var note in _song.Events.AsEnumerable().Reverse())
+        foreach (var note in _activeTrack.Events.AsEnumerable().Reverse())
         {
             var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            float width = (note.DurationMs * BasePixelsPerMs * _zoom);
-            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, NoteHeight);
+            float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _zoom);
+            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
 
             if (noteRect.Contains(screenPos))
             {
@@ -10475,22 +10926,260 @@ public class PianoRollView
 
     private Vector2 GridToScreen(float timeMs, int pitch, Rect gridArea)
     {
-        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
-        float x = gridArea.X + (timeMs * BasePixelsPerMs * _zoom) - _panOffset.X;
-        float y = gridArea.Y + ((MaxPitch - pitch) * pitchHeight) - _panOffset.Y;
+        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
+        float x = gridArea.X + (timeMs * DawMetrics.BasePixelsPerMs * _zoom) - _panOffset.X;
+        float y = gridArea.Y + ((DawMetrics.MaxPitch - pitch) * pitchHeight) - _panOffset.Y;
         return new Vector2(x, y);
     }
 
     private (float timeMs, int pitch) ScreenToGrid(Vector2 screenPos, Rect gridArea)
     {
-        float pitchHeight = gridArea.Height / (MaxPitch - MinPitch + 1);
-        float timeMs = (screenPos.X - gridArea.X + _panOffset.X) / (BasePixelsPerMs * _zoom);
-        int pitch = MaxPitch - (int)((screenPos.Y - gridArea.Y + _panOffset.Y) / pitchHeight);
+        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
+        float timeMs = (screenPos.X - gridArea.X + _panOffset.X) / (DawMetrics.BasePixelsPerMs * _zoom);
+        int pitch = DawMetrics.MaxPitch - (int)((screenPos.Y - gridArea.Y + _panOffset.Y) / pitchHeight);
 
         timeMs = Math.Max(0, timeMs);
-        pitch = Math.Clamp(pitch, MinPitch, MaxPitch);
+        pitch = Math.Clamp(pitch, DawMetrics.MinPitch, DawMetrics.MaxPitch);
 
         return (timeMs, pitch);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\TimelineView.cs">
+using System;
+using System.Numerics;
+using Daw.Core;
+using DirectUI;
+using Vortice.Mathematics;
+
+namespace Daw.Views;
+
+public class TimelineView
+{
+    private bool _isDraggingLoop;
+
+    public void Draw(Rect viewArea, Song song, Vector2 panOffset, float zoom)
+    {
+        var renderer = UI.Context.Renderer;
+
+        // Draw background
+        renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0, BorderColor = DawTheme.Border, BorderLengthBottom = 1 });
+
+        // Define the interactive grid area, excluding the keyboard space
+        var timelineGridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
+
+        HandleInput(timelineGridArea, song, panOffset, zoom);
+        DrawRuler(timelineGridArea, song, panOffset, zoom);
+        DrawLoopRegion(timelineGridArea, song, panOffset, zoom);
+    }
+
+    private void HandleInput(Rect gridArea, Song song, Vector2 panOffset, float zoom)
+    {
+        var input = UI.Context.InputState;
+        var mousePos = input.MousePosition;
+        bool isHovering = gridArea.Contains(mousePos);
+
+        if (isHovering && input.WasLeftMousePressedThisFrame)
+        {
+            _isDraggingLoop = true;
+            // Start dragging, set start point.
+            float time = ScreenToTime(mousePos.X, gridArea, panOffset, zoom);
+            song.LoopStartMs = (long)time;
+            song.LoopEndMs = (long)time; // Collapse to start point initially
+        }
+
+        if (!input.IsLeftMouseDown)
+        {
+            _isDraggingLoop = false;
+        }
+
+        if (_isDraggingLoop)
+        {
+            // Update end point while dragging
+            float time = ScreenToTime(mousePos.X, gridArea, panOffset, zoom);
+            song.LoopEndMs = (long)time;
+        }
+
+        // After dragging is finished, ensure start is always less than end
+        if (!_isDraggingLoop && song.LoopStartMs > song.LoopEndMs)
+        {
+            (song.LoopEndMs, song.LoopStartMs) = (song.LoopStartMs, song.LoopEndMs); // Tuple swap
+        }
+    }
+
+    private void DrawRuler(Rect gridArea, Song song, Vector2 panOffset, float zoom)
+    {
+        var renderer = UI.Context.Renderer;
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
+        float msPerBeat = (float)(60000.0 / song.Tempo);
+        float pixelsPerBeat = msPerBeat * pixelsPerMs;
+        float pixelsPerMeasure = pixelsPerBeat * 4;
+
+        // Don't draw if beats are too close together
+        if (pixelsPerBeat < 5) return;
+
+        // Calculate the first visible beat number based on panning
+        int firstBeat = (int)Math.Floor(panOffset.X / pixelsPerBeat);
+        float startX = gridArea.X - (panOffset.X % pixelsPerBeat);
+
+        var textStyle = new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 };
+
+        for (float x = startX; x < gridArea.Right; x += pixelsPerBeat, firstBeat++)
+        {
+            if (x < gridArea.X) continue;
+
+            bool isMeasure = firstBeat % 4 == 0;
+            float lineY = isMeasure ? gridArea.Y + gridArea.Height * 0.5f : gridArea.Y + gridArea.Height * 0.75f;
+            renderer.DrawLine(new Vector2(x, lineY), new Vector2(x, gridArea.Bottom), DawTheme.PianoRollGridAccent, 1f);
+
+            if (isMeasure)
+            {
+                int measureNumber = (firstBeat / 4) + 1;
+                UI.Text($"measure_label_{measureNumber}", measureNumber.ToString(), new Vector2(x + 3, gridArea.Y + 5), textStyle);
+            }
+        }
+    }
+
+    private void DrawLoopRegion(Rect gridArea, Song song, Vector2 panOffset, float zoom)
+    {
+        if (!song.IsLoopingEnabled) return;
+
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
+        float start = song.LoopStartMs;
+        float end = song.LoopEndMs;
+
+        // Handle the case where the user is dragging from right to left
+        if (_isDraggingLoop && start > end)
+        {
+            (end, start) = (start, end);
+        }
+
+        float startX = gridArea.X + (start * pixelsPerMs) - panOffset.X;
+        float endX = gridArea.X + (end * pixelsPerMs) - panOffset.X;
+
+        var loopRect = new Rect(startX, gridArea.Y, endX - startX, gridArea.Height);
+
+        // Clamp to visible area for drawing
+        loopRect.X = Math.Max(loopRect.X, gridArea.X);
+        loopRect.Width = Math.Min(endX, gridArea.Right) - loopRect.X;
+
+        if (loopRect.Width > 0)
+        {
+            var color = new Color4(DawTheme.AccentBright.R, DawTheme.AccentBright.G, DawTheme.AccentBright.B, 0.4f);
+            UI.Context.Renderer.DrawBox(loopRect, new BoxStyle { FillColor = color, Roundness = 0 });
+        }
+    }
+
+    private float ScreenToTime(float screenX, Rect gridArea, Vector2 panOffset, float zoom)
+    {
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
+        float timeMs = (screenX - gridArea.X + panOffset.X) / pixelsPerMs;
+        return Math.Max(0, timeMs);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\TrackListView.cs">
+using System;
+using System.Numerics;
+using Daw.Core;
+using DirectUI;
+
+namespace Daw.Views;
+
+public class TrackListView
+{
+    public enum TrackAction { None, Rename, Delete, MoveUp, MoveDown }
+    private (TrackAction, int) _requestedAction = (TrackAction.None, -1);
+
+    // State to remember which track's context menu is active across frames
+    private int _contextMenuTrackIndex = -1;
+
+    public void Draw(Song song, ref int activeTrackIndex)
+    {
+        UI.Text("track_list_header", "Tracks");
+        UI.Separator(100); // Use a dynamic width later
+
+        for (int i = 0; i < song.Tracks.Count; i++)
+        {
+            var track = song.Tracks[i];
+            bool isActive = (i == activeTrackIndex);
+            string trackId = $"track_{i}";
+
+            // --- Draw the main track button ---
+            var theme = new ButtonStylePack();
+            theme.Normal.FillColor = isActive ? DawTheme.Accent : DawTheme.ControlFill;
+            theme.Hover.FillColor = isActive ? DawTheme.AccentBright : DawTheme.ControlFillHover;
+            theme.Pressed.FillColor = DawTheme.AccentBright;
+
+            if (UI.Button(trackId, track.Name, new Vector2(120, 30), theme, isActive: isActive, clickBehavior: DirectUI.Button.ClickBehavior.Left))
+            {
+                activeTrackIndex = i;
+            }
+
+            // --- Open Context Menu on Right-Click ---
+            if (UI.BeginContextMenu(trackId))
+            {
+                // Remember which track's menu we need to draw and check for results
+                _contextMenuTrackIndex = i;
+                Console.WriteLine($"[DEBUG] Opening context menu for track index: {i}");
+            }
+        }
+
+        // --- Draw the Active Context Menu (if any) ---
+        // This is now outside the loop, so we check for the result every frame.
+        if (_contextMenuTrackIndex != -1)
+        {
+            // The context menu system is modal, so only one can be open.
+            // We use the index to generate a unique ID.
+            int choice = UI.ContextMenu($"track_context_{_contextMenuTrackIndex}", new[] { "Rename", "Delete", "Move Up", "Move Down" });
+
+            if (choice != -1)
+            {
+                Console.WriteLine($"[DEBUG] ContextMenu returned choice: {choice} for track index: {_contextMenuTrackIndex}");
+                switch (choice)
+                {
+                    case 0: _requestedAction = (TrackAction.Rename, _contextMenuTrackIndex); break;
+                    case 1: _requestedAction = (TrackAction.Delete, _contextMenuTrackIndex); break;
+                    case 2: _requestedAction = (TrackAction.MoveUp, _contextMenuTrackIndex); break;
+                    case 3: _requestedAction = (TrackAction.MoveDown, _contextMenuTrackIndex); break;
+                }
+                Console.WriteLine($"[DEBUG] RequestedAction set to: {_requestedAction.Item1}");
+
+                // We got a result, so stop showing the menu.
+                _contextMenuTrackIndex = -1;
+            }
+            // If the popup was closed by clicking away, UI.State.IsPopupOpen will become false.
+            // We should stop trying to draw the menu in that case.
+            else if (!UI.State.IsPopupOpen)
+            {
+                _contextMenuTrackIndex = -1;
+            }
+        }
+
+        if (UI.Button("add_track_button", "+ Add Track", new Vector2(120, 25), DawTheme.ToolbarButton))
+        {
+            song.Tracks.Add(new MidiTrack($"Track {song.Tracks.Count + 1}"));
+            // Automatically select the new track
+            activeTrackIndex = song.Tracks.Count - 1;
+        }
+    }
+
+    /// <summary>
+    /// Allows the main app logic to poll for a requested action for a specific track.
+    /// This "consumes" the action, resetting it to None after being read.
+    /// </summary>
+    public (TrackAction action, int trackIndex) GetAction()
+    {
+        var actionToReturn = _requestedAction;
+        if (actionToReturn.Item1 != TrackAction.None)
+        {
+            Console.WriteLine($"[DEBUG] DawAppLogic is consuming action: {actionToReturn.Item1} for index {actionToReturn.Item2}");
+            // Reset the action immediately after it's been read to ensure it only fires once.
+            _requestedAction = (TrackAction.None, -1);
+        }
+        return actionToReturn;
     }
 }
 </file>
@@ -10529,13 +11218,23 @@ public class TransportView
             _midiEngine.Stop();
         }
 
+        // Loop Button
+        bool isLooping = song.IsLoopingEnabled;
+        if (UI.Button("loop_button", "Loop", new Vector2(60, 30), theme: DawTheme.LoopToggleStyle, isActive: isLooping))
+        {
+            song.IsLoopingEnabled = !isLooping;
+        }
+
         // Tempo Display and Input
-        UI.BeginVBoxContainer("tempo_vbox", UI.Context.Layout.GetCurrentPosition(), 0);
+        UI.BeginVBoxContainer("tempo_vbox", UI.Context.Layout.GetCurrentPosition(), 2);
         UI.Text("tempo_label", "BPM", style: new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 });
+        
+        // Only update the tempo string from the song if the input box is not focused
         if (UI.State.FocusedElementId != "tempo_input".GetHashCode())
         {
             _tempoString = song.Tempo.ToString("F1");
         }
+
         if (UI.InputText("tempo_input", ref _tempoString, new Vector2(50, 20)))
         {
             if (double.TryParse(_tempoString, out double newTempo))

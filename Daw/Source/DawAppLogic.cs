@@ -29,6 +29,16 @@ public class DawAppLogic : IAppLogic
     private readonly PianoRollView _pianoRollView;
     private readonly IWindowHost _host;
 
+    /// <summary>
+    /// A small helper class to robustly manage state passed to and from a modal dialog.
+    /// This avoids potential C# closure issues with ref-modified variables.
+    /// </summary>
+    private class RenameModalState
+    {
+        public string Name;
+        public RenameModalState(string initialName) { Name = initialName; }
+    }
+
     public DawAppLogic(IWindowHost host)
     {
         _host = host;
@@ -146,40 +156,63 @@ public class DawAppLogic : IAppLogic
 
     private void PromptForTrackName(int trackIndex)
     {
-        string newName = _song.Tracks[trackIndex].Name;
+        // Use a state object to robustly capture the string being modified by the modal.
+        var modalState = new RenameModalState(_song.Tracks[trackIndex].Name);
+
+        Console.WriteLine($"[RENAME-LOG] Opening rename dialog for track {trackIndex}. Initial name: '{modalState.Name}'.");
 
         Action<UIContext> drawCallback = (ctx) =>
         {
-            // Use a VBox for robust layout, with padding from the window edge.
+            // This is the UI for the modal window. It's drawn every frame the modal is open.
             UI.BeginVBoxContainer("rename_vbox", new Vector2(10, 10), 15);
 
             UI.Text("rename_prompt", "Enter new track name:");
-            UI.InputText("rename_input", ref newName, new Vector2(280, 25));
 
-            // This HBox will now be positioned correctly by the parent VBox.
-            // We need to get the current position *before* beginning the HBox.
+            // The 'ref modalState.Name' here modifies the field on the captured 'modalState' object.
+            if (UI.InputText("rename_input", ref modalState.Name, new Vector2(280, 25)))
+            {
+                // This log will fire every time a character is typed in the InputText widget.
+                Console.WriteLine($"[RENAME-LOG] InputText changed. In-modal name is now: '{modalState.Name}'");
+            }
+
             var hboxPos = UI.Context.Layout.GetCurrentPosition();
             UI.BeginHBoxContainer("rename_buttons", hboxPos, 10);
             if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
             {
-                _host.ModalWindowService.CloseModalWindow(0); // 0 = Success
+                // Close the modal and indicate success with result code 0.
+                _host.ModalWindowService.CloseModalWindow(0);
             }
             if (UI.Button("rename_cancel", "Cancel", new Vector2(80, 25)))
             {
-                _host.ModalWindowService.CloseModalWindow(1); // 1 = Cancel
+                // Close the modal and indicate cancellation with result code 1.
+                _host.ModalWindowService.CloseModalWindow(1);
             }
             UI.EndHBoxContainer();
 
             UI.EndVBoxContainer();
         };
 
-        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 160, drawCallback, (resultCode) =>
+        // This is the callback that executes *after* the modal window is closed.
+        Action<int> onClosedCallback = (resultCode) =>
         {
-            if (resultCode == 0 && !string.IsNullOrWhiteSpace(newName))
+            // This is the crucial moment. We log the value from our state object.
+            Console.WriteLine($"[RENAME-LOG] Closed dialog for track {trackIndex}. Result code: {resultCode}.");
+            Console.WriteLine($"[RENAME-LOG] Final captured value of name: '{modalState.Name}'.");
+
+            if (resultCode == 0 && !string.IsNullOrWhiteSpace(modalState.Name))
             {
-                _song.Tracks[trackIndex].Name = newName;
+                // If OK was pressed and the name is valid, apply the change.
+                _song.Tracks[trackIndex].Name = modalState.Name;
+                Console.WriteLine($"[RENAME-LOG] SUCCESS: Applied new name '{modalState.Name}' to track {trackIndex}.");
             }
-        });
+            else
+            {
+                // If Cancel was pressed or the name is invalid, do not change anything.
+                Console.WriteLine($"[RENAME-LOG] CANCELED: Rename aborted. Track name remains '{_song.Tracks[trackIndex].Name}'.");
+            }
+        };
+
+        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 160, drawCallback, onClosedCallback);
     }
 
     private void DrawTopBar(Vector2 windowSize)
