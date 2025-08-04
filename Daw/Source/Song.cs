@@ -13,9 +13,9 @@ public class Song
     public double Tempo { get; set; } = 120.0;
 
     /// <summary>
-    /// The list of note events that make up the song's timeline.
+    /// The list of tracks that make up the song.
     /// </summary>
-    public List<NoteEvent> Events { get; set; } = new();
+    public List<MidiTrack> Tracks { get; set; } = new();
 
     /// <summary>
     /// Gets or sets whether playback looping is enabled.

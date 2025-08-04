@@ -13,6 +13,7 @@ namespace Daw.Views;
 public class PianoRollView
 {
     // --- State ---
+    private MidiTrack? _activeTrack;
     private Song? _song;
     private NoteEvent? _selectedNote;
     private NoteEvent? _noteBeingDragged;
@@ -37,8 +38,9 @@ public class PianoRollView
         }
     }
 
-    public void Draw(Rect viewArea, Song song, bool isPlaying, long currentTimeMs)
+    public void Draw(Rect viewArea, MidiTrack? activeTrack, Song song, bool isPlaying, long currentTimeMs)
     {
+        _activeTrack = activeTrack;
         _song = song;
         var renderer = UI.Context.Renderer;
         var input = UI.Context.InputState;
@@ -49,16 +51,23 @@ public class PianoRollView
         var gridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
 
         HandleInput(input, gridArea);
-
-        DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
-        DrawGrid(gridArea, song.Tempo);
-        DrawNotes(gridArea);
-        DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
+        
+        if (_activeTrack != null)
+        {
+            DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
+            DrawGrid(gridArea, song.Tempo);
+            DrawNotes(gridArea);
+            DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
+        }
+        else
+        {
+            UI.Text("no_track_selected", "No track selected. Please add or select a track.", new Vector2(gridArea.X + 10, gridArea.Y + 10));
+        }
     }
 
     private void HandleInput(InputState input, Rect gridArea)
     {
-        if (_song is null) return;
+        if (_song is null || _activeTrack is null) return;
 
         bool isHoveringGrid = gridArea.Contains(input.MousePosition);
 
@@ -135,14 +144,14 @@ public class PianoRollView
         // Deletion
         if (_selectedNote != null && input.PressedKeys.Contains(Keys.Delete))
         {
-            _song.Events.Remove(_selectedNote);
+            _activeTrack.Events.Remove(_selectedNote);
             _selectedNote = null;
         }
     }
 
     private void AddNewNote(Vector2 screenPos, Rect gridArea)
     {
-        if (_song == null) return;
+        if (_song == null || _activeTrack == null) return;
         var (time, pitch) = ScreenToGrid(screenPos, gridArea);
 
         // Snap to nearest 1/16th note
@@ -151,7 +160,7 @@ public class PianoRollView
         time = (int)(Math.Round(time / msPer16th) * msPer16th);
 
         var newNote = new NoteEvent((int)time, (int)msPer16th * 2, pitch, 100);
-        _song.Events.Add(newNote);
+        _activeTrack.Events.Add(newNote);
         _selectedNote = newNote;
     }
 
@@ -223,10 +232,10 @@ public class PianoRollView
 
     private void DrawNotes(Rect gridArea)
     {
-        if (_song == null) return;
+        if (_song == null || _activeTrack == null) return;
         var renderer = UI.Context.Renderer;
 
-        foreach (var note in _song.Events)
+        foreach (var note in _activeTrack.Events)
         {
             var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
             float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _zoom);
@@ -270,10 +279,10 @@ public class PianoRollView
 
     private (NoteEvent? note, bool isEdge) HitTestNotes(Vector2 screenPos, Rect gridArea)
     {
-        if (_song == null) return (null, false);
+        if (_song == null || _activeTrack == null) return (null, false);
         const float edgeWidth = 8f;
 
-        foreach (var note in _song.Events.AsEnumerable().Reverse())
+        foreach (var note in _activeTrack.Events.AsEnumerable().Reverse())
         {
             var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
             float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _zoom);

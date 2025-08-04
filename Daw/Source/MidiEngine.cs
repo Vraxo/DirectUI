@@ -76,40 +76,42 @@ public class MidiEngine : IDisposable
     /// <returns>A MidiFile instance representing the song.</returns>
     public MidiFile ConvertToMidiFile(Song song)
     {
-        // Step 1: Create the structure of the MIDI file with tempo information.
         var midiFile = new MidiFile();
-        // Using a standard time division of 480 ticks per quarter note.
         midiFile.TimeDivision = new TicksPerQuarterNoteTimeDivision(480);
-        var trackChunk = new TrackChunk();
 
-        // Tempo is in BPM (beats per minute). Microseconds per quarter note = 60,000,000 / BPM.
-        long microsecondsPerQuarterNote = (long)(60000000 / song.Tempo);
-        trackChunk.Events.Add(new SetTempoEvent(microsecondsPerQuarterNote));
-        midiFile.Chunks.Add(trackChunk);
-
-        // Step 2: Get the tempo map from the file itself.
-        // This ensures the tempo map uses the file's time division, which is critical for sync.
+        // A single tempo map is used for the entire file.
         var tempoMap = midiFile.GetTempoMap();
+        long microsecondsPerQuarterNote = (long)(60000000 / song.Tempo);
+        var setTempoEvent = new SetTempoEvent(microsecondsPerQuarterNote);
 
-        // Step 3: Convert song events to notes using the correct tempo map.
-        var notes = song.Events.Select(noteEvent =>
+        // Create a track for each track in our song
+        foreach (var songTrack in song.Tracks)
         {
-            var startTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.StartTimeMs);
-            var durationTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.DurationMs);
+            var trackChunk = new TrackChunk();
 
-            // Use the older ConvertTo<> that the user's compiler accepts.
-            long timeInTicks = TimeConverter.ConvertTo<MidiTimeSpan>(startTimeSpan, tempoMap).TimeSpan;
-            long durationInTicks = LengthConverter.ConvertTo<MidiTimeSpan>(durationTimeSpan, timeInTicks, tempoMap).TimeSpan;
-
-            // Create the note with time and duration in MIDI ticks
-            return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
+            // Add the tempo event to the first track only
+            if (midiFile.Chunks.Count == 0)
             {
-                Velocity = (SevenBitNumber)noteEvent.Velocity
-            };
-        });
+                trackChunk.Events.Add(setTempoEvent);
+            }
 
-        // Step 4: Add the created notes to the track chunk.
-        trackChunk.AddObjects(notes);
+            var notes = songTrack.Events.Select(noteEvent =>
+            {
+                var startTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.StartTimeMs);
+                var durationTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.DurationMs);
+
+                long timeInTicks = TimeConverter.ConvertTo<MidiTimeSpan>(startTimeSpan, tempoMap).TimeSpan;
+                long durationInTicks = LengthConverter.ConvertTo<MidiTimeSpan>(durationTimeSpan, timeInTicks, tempoMap).TimeSpan;
+
+                return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
+                {
+                    Velocity = (SevenBitNumber)noteEvent.Velocity
+                };
+            });
+
+            trackChunk.AddObjects(notes);
+            midiFile.Chunks.Add(trackChunk);
+        }
 
         return midiFile;
     }
