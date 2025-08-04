@@ -9,6 +9,7 @@ public static class DawMetrics
     // --- Layout ---
     public const float TopBarHeight = 70;
     public const float TimelineHeight = 40;
+    public const float PianoRollToolbarHeight = 40;
     public const float KeyboardWidth = 80;
 
     // --- Grid & Zoom ---

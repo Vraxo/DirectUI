@@ -18,12 +18,14 @@ public class DawAppLogic : IAppLogic
     // --- UI State ---
     private int _activeTrackIndex = 0;
     private float _leftPanelWidth = 150;
+    private PianoRollTool _currentTool = PianoRollTool.Select;
 
     // --- Child Views ---
     private readonly MenuBarView _menuBarView;
     private readonly TransportView _transportView;
     private readonly TimelineView _timelineView;
     private readonly TrackListView _trackListView;
+    private readonly PianoRollToolbarView _pianoRollToolbarView;
     private readonly PianoRollView _pianoRollView;
 
     public DawAppLogic(IWindowHost host)
@@ -35,6 +37,7 @@ public class DawAppLogic : IAppLogic
         _transportView = new TransportView(_midiEngine);
         _timelineView = new TimelineView();
         _trackListView = new TrackListView();
+        _pianoRollToolbarView = new PianoRollToolbarView();
         _pianoRollView = new PianoRollView();
     }
 
@@ -113,14 +116,20 @@ public class DawAppLogic : IAppLogic
         float mainContentX = _leftPanelWidth;
         float mainContentWidth = windowSize.X - _leftPanelWidth;
 
+        // Timeline
         var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
         _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
 
-        float pianoRollY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
+        // Toolbar for Piano Roll Tools
+        float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
+        var toolbarArea = new Rect(mainContentX, toolbarY, mainContentWidth, DawMetrics.PianoRollToolbarHeight);
+        _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
+        
+        // Piano Roll
+        float pianoRollY = toolbarY + DawMetrics.PianoRollToolbarHeight;
         var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, windowSize.Y - pianoRollY);
         
-        // Pass the active track to the piano roll
         var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
-        _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs);
+        _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
     }
 }

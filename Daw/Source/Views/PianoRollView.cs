@@ -22,6 +22,7 @@ public class PianoRollView
     private bool _isPanning;
     private Vector2 _panOffset = Vector2.Zero;
     private float _zoom = 1.0f; // Multiplier for pixelsPerMs
+    private PianoRollTool _currentTool;
 
     private readonly bool[] _isBlackKey = new bool[12];
 
@@ -38,10 +39,11 @@ public class PianoRollView
         }
     }
 
-    public void Draw(Rect viewArea, MidiTrack? activeTrack, Song song, bool isPlaying, long currentTimeMs)
+    public void Draw(Rect viewArea, MidiTrack? activeTrack, Song song, bool isPlaying, long currentTimeMs, PianoRollTool currentTool)
     {
         _activeTrack = activeTrack;
         _song = song;
+        _currentTool = currentTool;
         var renderer = UI.Context.Renderer;
         var input = UI.Context.InputState;
 
@@ -71,46 +73,22 @@ public class PianoRollView
 
         bool isHoveringGrid = gridArea.Contains(input.MousePosition);
 
-        // Panning
+        // Panning (Middle Mouse) should work regardless of the tool
         if (input.WasMiddleMousePressedThisFrame && isHoveringGrid) _isPanning = true;
         if (!input.IsMiddleMouseDown) _isPanning = false;
         if (_isPanning) _panOffset += input.MousePosition - input.PreviousMousePosition;
 
-        // Zooming
+        // Zooming (Scroll Wheel) should work regardless of the tool
         if (isHoveringGrid && input.ScrollDelta != 0)
         {
             _zoom += input.ScrollDelta * 0.1f * _zoom;
             _zoom = Math.Clamp(_zoom, 0.1f, 10f);
         }
 
-        // Note interaction
-        var mousePos = input.MousePosition;
+        // --- Tool-Specific Logic (Left Mouse) ---
         if (input.WasLeftMousePressedThisFrame && isHoveringGrid)
         {
-            var hitNote = HitTestNotes(mousePos, gridArea);
-            if (hitNote.note != null)
-            {
-                _selectedNote = hitNote.note;
-                if (hitNote.isEdge)
-                {
-                    _isResizingRight = true;
-                }
-                else
-                {
-                    _noteBeingDragged = hitNote.note;
-                    var noteScreenPos = GridToScreen(_noteBeingDragged.StartTimeMs, _noteBeingDragged.Pitch, gridArea);
-                    _dragStartOffset = mousePos - noteScreenPos;
-                }
-            }
-            else
-            {
-                _selectedNote = null;
-                // Double-click to add a note (simplified with single click + ctrl for now)
-                if (input.HeldKeys.Contains(Keys.Control))
-                {
-                    AddNewNote(mousePos, gridArea);
-                }
-            }
+            HandleLeftClick(input, gridArea);
         }
 
         if (!input.IsLeftMouseDown)
@@ -119,6 +97,60 @@ public class PianoRollView
             _isResizingRight = false;
         }
 
+        // Drag/Resize logic is only for the Select tool
+        if (_currentTool == PianoRollTool.Select)
+        {
+            HandleDragAndResize(input, gridArea);
+        }
+    }
+    
+    private void HandleLeftClick(InputState input, Rect gridArea)
+    {
+        var (hitNote, isEdge) = HitTestNotes(input.MousePosition, gridArea);
+
+        switch (_currentTool)
+        {
+            case PianoRollTool.Select:
+                if (hitNote != null)
+                {
+                    _selectedNote = hitNote;
+                    if (isEdge)
+                    {
+                        _isResizingRight = true;
+                    }
+                    else
+                    {
+                        _noteBeingDragged = hitNote;
+                        var noteScreenPos = GridToScreen(hitNote.StartTimeMs, hitNote.Pitch, gridArea);
+                        _dragStartOffset = input.MousePosition - noteScreenPos;
+                    }
+                }
+                else
+                {
+                    _selectedNote = null;
+                }
+                break;
+
+            case PianoRollTool.Pencil:
+                if (hitNote != null)
+                {
+                    // If clicking an existing note with pencil, delete it
+                    _activeTrack?.Events.Remove(hitNote);
+                    if (_selectedNote == hitNote) _selectedNote = null;
+                }
+                else
+                {
+                    // If clicking empty space, add a new note
+                    AddNewNote(input.MousePosition, gridArea);
+                }
+                break;
+        }
+    }
+    
+    private void HandleDragAndResize(InputState input, Rect gridArea)
+    {
+        if (_song is null) return;
+        
         float msPerBeat = (float)(60000.0 / _song.Tempo);
         float quantization = msPerBeat / 4; // 16th note snapping
 
@@ -135,7 +167,7 @@ public class PianoRollView
 
         if (_isResizingRight && _selectedNote != null)
         {
-            var gridPos = ScreenToGrid(mousePos, gridArea);
+            var gridPos = ScreenToGrid(input.MousePosition, gridArea);
             float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
             int newDuration = (int)endEdgeTime - _selectedNote.StartTimeMs;
             _selectedNote.DurationMs = Math.Max((int)quantization, newDuration);
@@ -144,7 +176,7 @@ public class PianoRollView
         // Deletion
         if (_selectedNote != null && input.PressedKeys.Contains(Keys.Delete))
         {
-            _activeTrack.Events.Remove(_selectedNote);
+            _activeTrack?.Events.Remove(_selectedNote);
             _selectedNote = null;
         }
     }
