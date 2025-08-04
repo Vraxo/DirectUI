@@ -1,4 +1,4 @@
-<file path="Alignment.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Alignment.cs">
 // Alignment.cs
 // Alignment.cs
 using DirectUI.Core; // Added using directive
@@ -15,7 +15,7 @@ public struct Alignment(HAlignment horizontal, VAlignment vertical)
 }
 </file>
 
-<file path="AppEngine.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppEngine.cs">
 // AppEngine.cs
 using System;
 using System.Diagnostics;
@@ -152,7 +152,7 @@ public class AppEngine
 }
 </file>
 
-<file path="Application.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Application.cs">
 namespace DirectUI;
 
 public static class Application
@@ -239,7 +239,7 @@ public static class Application
 }
 </file>
 
-<file path="ApplicationRunner.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\ApplicationRunner.cs">
 using DirectUI.Backends.SDL3;
 using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
@@ -292,7 +292,7 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
 }
 </file>
 
-<file path="AppServices.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppServices.cs">
 using DirectUI.Core;
 
 namespace DirectUI;
@@ -314,11 +314,11 @@ public sealed class AppServices
 }
 </file>
 
-<file path="GlobalUsings.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\GlobalUsings.cs">
 global using Color = DirectUI.Drawing.Color;
 </file>
 
-<file path="GraphicsBackend.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\GraphicsBackend.cs">
 namespace DirectUI;
 
 public enum GraphicsBackend
@@ -329,7 +329,7 @@ public enum GraphicsBackend
 }
 </file>
 
-<file path="ModalWindow.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\ModalWindow.cs">
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
@@ -549,7 +549,7 @@ public class ModalWindow : Win32Window
 }
 </file>
 
-<file path="MouseButton.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\MouseButton.cs">
 namespace DirectUI;
 
 public enum MouseButton
@@ -562,7 +562,7 @@ public enum MouseButton
 }
 </file>
 
-<file path="NativeMethods.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\NativeMethods.cs">
 // NativeMethods.cs
 using System;
 using System.Runtime.InteropServices;
@@ -764,7 +764,7 @@ public static class NativeMethods
 }
 </file>
 
-<file path="SharedGraphicsResources.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\SharedGraphicsResources.cs">
 // SharedGraphicsResources.cs
 using System;
 using Vortice.Direct2D1;
@@ -831,7 +831,7 @@ internal static class SharedGraphicsResources
 }
 </file>
 
-<file path="Containers\ComboboxState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ComboboxState.cs">
 namespace DirectUI;
 
 internal class ComboboxState
@@ -840,7 +840,7 @@ internal class ComboboxState
 }
 </file>
 
-<file path="Containers\GridContainerState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\GridContainerState.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -939,7 +939,7 @@ internal class GridContainerState : ILayoutContainer
 }
 </file>
 
-<file path="Containers\HBoxContainerState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\HBoxContainerState.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -980,7 +980,7 @@ public class HBoxContainerState : ILayoutContainer
 }
 </file>
 
-<file path="Containers\ResizableHPanelState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ResizableHPanelState.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -1004,7 +1004,7 @@ internal class ResizableHPanelState : ILayoutContainer
 }
 </file>
 
-<file path="Containers\ResizablePanelState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ResizablePanelState.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -1028,7 +1028,7 @@ internal class ResizablePanelState : ILayoutContainer
 }
 </file>
 
-<file path="Containers\ScrollContainerState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ScrollContainerState.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -1055,7 +1055,7 @@ public class ScrollContainerState : ILayoutContainer
 }
 </file>
 
-<file path="Containers\TreeViewState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\TreeViewState.cs">
 namespace DirectUI;
 
 internal class TreeViewState
@@ -1072,7 +1072,7 @@ internal class TreeViewState
 }
 </file>
 
-<file path="Containers\VBoxContainerState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\VBoxContainerState.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -1113,7 +1113,7 @@ public class VBoxContainerState : ILayoutContainer
 }
 </file>
 
-<file path="Core\TextMetrics.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\TextMetrics.cs">
 // DirectUI/Core/TextMetrics.cs
 using System.Numerics;
 using Vortice.Mathematics;
@@ -1163,7 +1163,7 @@ public readonly record struct TextHitTestResult(
 );
 </file>
 
-<file path="Core\UI.Button.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Button.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
@@ -1252,7 +1252,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Checkbox.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Checkbox.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 using Vortice.Direct2D1; // Still needed for AntialiasMode enum
@@ -1378,7 +1378,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.ComboBox.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ComboBox.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -1424,7 +1424,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Containers.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Containers.cs">
 // Core/UI.Containers.cs
 using System;
 using System.Numerics;
@@ -1760,7 +1760,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.cs">
 using System;
 using System.Numerics;
 
@@ -1851,7 +1851,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.InputText.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.InputText.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -1911,7 +1911,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Label.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Label.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -1968,7 +1968,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.ScrollBar.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ScrollBar.cs">
 // Core/UI.ScrollBar.cs
 using System;
 using System.Numerics;
@@ -2069,7 +2069,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Separator.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Separator.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -2109,7 +2109,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Slider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Slider.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -2220,7 +2220,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.StatelessWidgets.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.StatelessWidgets.cs">
 using System.Numerics;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
@@ -2403,7 +2403,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Style.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Style.cs">
 using System;
 using System.Collections.Generic;
 using System.Numerics;
@@ -2505,7 +2505,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.TabBar.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.TabBar.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -2581,7 +2581,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UI.Tree.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Tree.cs">
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -2683,7 +2683,7 @@ public static partial class UI
 }
 </file>
 
-<file path="Core\UIContext.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UIContext.cs">
 // Core/UIContext.cs
 using System.Collections.Generic;
 using DirectUI.Core;
@@ -2716,7 +2716,7 @@ public class UIContext
 }
 </file>
 
-<file path="Core\UILayoutManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UILayoutManager.cs">
 using System.Numerics;
 using Vortice.Mathematics;
 using System;
@@ -2856,7 +2856,7 @@ public class UILayoutManager
 }
 </file>
 
-<file path="Core\UIPersistentState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UIPersistentState.cs">
 using System;
 using System.Collections.Generic;
 using Vortice.Mathematics;
@@ -3029,7 +3029,7 @@ public class UIPersistentState
 }
 </file>
 
-<file path="Diagnostics\FpsCounter.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Diagnostics\FpsCounter.cs">
 // DirectUI/Diagnostics/FpsCounter.cs
 using System;
 using System.Diagnostics;
@@ -3151,7 +3151,7 @@ public class FpsCounter
 }
 </file>
 
-<file path="Drawing\Color.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\Color.cs">
 using System.Runtime.InteropServices;
 
 namespace DirectUI.Drawing;
@@ -3197,7 +3197,7 @@ public struct Color
 }
 </file>
 
-<file path="Drawing\FontManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\FontManager.cs">
 // DirectUI/Drawing/FontManager.cs
 using Raylib_cs;
 using System;
@@ -3341,7 +3341,7 @@ namespace DirectUI.Drawing
 }
 </file>
 
-<file path="Input\InputManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Input\InputManager.cs">
 using System.Numerics;
 using System.Runtime.InteropServices; // Added for Marshal
 using Raylib_cs; // Added for Raylib backend
@@ -3775,7 +3775,7 @@ public class InputManager
 }
 </file>
 
-<file path="Input\InputState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Input\InputState.cs">
 // InputState.cs
 using System.Collections.Generic;
 using System.Numerics;
@@ -3825,7 +3825,7 @@ public readonly struct InputState
 }
 </file>
 
-<file path="Input\Keys.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Input\Keys.cs">
 namespace DirectUI;
 
 /// <summary>
@@ -3993,7 +3993,7 @@ public enum Keys
 }
 </file>
 
-<file path="Styles\BoxStyle.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\BoxStyle.cs">
 using DirectUI.Drawing;
 
 namespace DirectUI;
@@ -4036,7 +4036,7 @@ public class BoxStyle
 }
 </file>
 
-<file path="Styles\ButtonStyle.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\ButtonStyle.cs">
 // ButtonStyle.cs
 using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
@@ -4072,7 +4072,7 @@ public class ButtonStyle : BoxStyle
 }
 </file>
 
-<file path="Styles\ButtonStylePack.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\ButtonStylePack.cs">
 using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
@@ -4212,7 +4212,7 @@ public sealed class ButtonStylePack
 }
 </file>
 
-<file path="Styles\DefaultTheme.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\DefaultTheme.cs">
 // DefaultTheme.cs
 using DirectUI.Drawing;
 
@@ -4331,7 +4331,7 @@ public static class DefaultTheme
 }
 </file>
 
-<file path="Styles\SliderStyle.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\SliderStyle.cs">
 namespace DirectUI;
 
 public class SliderStyle
@@ -4354,7 +4354,7 @@ public class SliderStyle
 }
 </file>
 
-<file path="Styles\TabStyle.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TabStyle.cs">
 namespace DirectUI;
 
 public class TabStyle : ButtonStyle
@@ -4363,7 +4363,7 @@ public class TabStyle : ButtonStyle
 }
 </file>
 
-<file path="Styles\TabStylePack.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TabStylePack.cs">
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -4438,7 +4438,7 @@ public sealed class TabStylePack
 }
 </file>
 
-<file path="Styles\TreeStyle.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TreeStyle.cs">
 using DirectUI.Drawing;
 
 namespace DirectUI;
@@ -4485,7 +4485,7 @@ public class TreeStyle
 }
 </file>
 
-<file path="Widgets\Button.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\Button.cs">
 namespace DirectUI;
 
 public static class Button
@@ -4495,7 +4495,7 @@ public static class Button
 }
 </file>
 
-<file path="Widgets\InputText.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputText.cs">
 // Widgets/LineEdit.cs
 using System;
 using System.Collections.Generic;
@@ -4880,7 +4880,7 @@ internal class InputText
 }
 </file>
 
-<file path="Widgets\InputTextState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputTextState.cs">
 using System.Collections.Generic;
 
 namespace DirectUI;
@@ -4901,7 +4901,7 @@ internal class InputTextState
 }
 </file>
 
-<file path="Widgets\InternalComboboxLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalComboboxLogic.cs">
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -5023,7 +5023,7 @@ internal class InternalComboboxLogic
 }
 </file>
 
-<file path="Widgets\InternalHSliderLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalHSliderLogic.cs">
 // Widgets/InternalHSliderLogic.cs
 using System;
 using System.Numerics;
@@ -5142,7 +5142,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
 }
 </file>
 
-<file path="Widgets\InternalScrollBarLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalScrollBarLogic.cs">
 // Widgets/InternalScrollBarLogic.cs
 using System;
 using System.Numerics;
@@ -5324,7 +5324,7 @@ internal class InternalScrollBarLogic
 }
 </file>
 
-<file path="Widgets\InternalSliderLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalSliderLogic.cs">
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -5478,7 +5478,7 @@ internal abstract class InternalSliderLogic
 }
 </file>
 
-<file path="Widgets\InternalVSlider.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalVSlider.cs">
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -5594,14 +5594,14 @@ internal class InternalVSliderLogic : InternalSliderLogic
 }
 </file>
 
-<file path="Widgets\SliderDirection.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\SliderDirection.cs">
 namespace DirectUI;
 
 public enum HSliderDirection { LeftToRight, RightToLeft }
 public enum VSliderDirection { TopToBottom, BottomToTop }
 </file>
 
-<file path="Widgets\TabBarState.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\TabBarState.cs">
 namespace DirectUI;
 
 internal class TabBarState
@@ -5610,7 +5610,7 @@ internal class TabBarState
 }
 </file>
 
-<file path="Widgets\TreeNode.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\TreeNode.cs">
 using System.Collections.Generic;
 
 namespace DirectUI;
@@ -5660,7 +5660,7 @@ public class TreeNode<T>
 }
 </file>
 
-<file path="Backends\Direct2D\Direct2DRenderer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Direct2DRenderer.cs">
 using System.Numerics;
 using DirectUI.Core;
 using SharpGen.Runtime;
@@ -6014,41 +6014,51 @@ public class Direct2DRenderer : IRenderer
 
         var vertices = new[]
         {
-            new Vector4(-1.0f, 1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f),
-            new Vector4(1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f),
-            new Vector4(1.0f, 1.0f, 1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f),
-            new Vector4(-1.0f, 1.0f, 1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f),
-            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f),
-            new Vector4(1.0f, -1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f),
-            new Vector4(1.0f, -1.0f, 1.0f, 1.0f), new Vector4(1.0f, 1.0f, 1.0f, 1.0f),
-            new Vector4(-1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 0.0f, 0.0f, 1.0f)
+            // Front face (-Z) - Red - (TL, TR, BR, BL) - Clockwise
+            new Vector4(-1.0f,  1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 0
+            new Vector4( 1.0f,  1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 1
+            new Vector4( 1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 2
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 0.0f, 1.0f), // 3
+
+            // Back face (+Z) - Green - (TR, TL, BL, BR) - Clockwise
+            new Vector4( 1.0f,  1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 4
+            new Vector4(-1.0f,  1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 5
+            new Vector4(-1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 6
+            new Vector4( 1.0f, -1.0f, 1.0f, 1.0f), new Vector4(0.0f, 1.0f, 0.0f, 1.0f), // 7
+
+            // Top face (+Y) - Blue - (TL, TR, BR, BL) - Clockwise
+            new Vector4(-1.0f, 1.0f,  1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 8
+            new Vector4( 1.0f, 1.0f,  1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 9
+            new Vector4( 1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 10
+            new Vector4(-1.0f, 1.0f, -1.0f, 1.0f), new Vector4(0.0f, 0.0f, 1.0f, 1.0f), // 11
+
+            // Bottom face (-Y) - Yellow - (BL, BR, TR, TL) - Clockwise
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 12
+            new Vector4( 1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 13
+            new Vector4( 1.0f, -1.0f,  1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 14
+            new Vector4(-1.0f, -1.0f,  1.0f, 1.0f), new Vector4(1.0f, 1.0f, 0.0f, 1.0f), // 15
+
+            // Left face (-X) - Cyan - (TL, TR, BR, BL) - Clockwise
+            new Vector4(-1.0f,  1.0f,  1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 16
+            new Vector4(-1.0f,  1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 17
+            new Vector4(-1.0f, -1.0f, -1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 18
+            new Vector4(-1.0f, -1.0f,  1.0f, 1.0f), new Vector4(0.0f, 1.0f, 1.0f, 1.0f), // 19
+
+            // Right face (+X) - Magenta - (TL, TR, BR, BL) - Clockwise
+            new Vector4( 1.0f,  1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f), // 20
+            new Vector4( 1.0f,  1.0f,  1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f), // 21
+            new Vector4( 1.0f, -1.0f,  1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f), // 22
+            new Vector4( 1.0f, -1.0f, -1.0f, 1.0f), new Vector4(1.0f, 0.0f, 1.0f, 1.0f)  // 23
         };
 
         var indices = new ushort[]
         {
-            // Front face (looking down -Z)
-            0, 1, 5,
-            0, 5, 4,
-
-            // Back face (looking down +Z)
-            3, 7, 6,
-            3, 6, 2,
-
-            // Top face (looking down +Y)
-            3, 2, 1,
-            3, 1, 0,
-
-            // Bottom face (looking down -Y)
-            4, 5, 6,
-            4, 6, 7,
-
-            // Left face (looking down -X)
-            0, 4, 7,
-            0, 7, 3,
-
-            // Right face (looking down +X)
-            1, 2, 6,
-            1, 6, 5
+            0,  1,  2,      0,  2,  3,    // Front
+            4,  5,  6,      4,  6,  7,    // Back
+            8,  9,  10,     8,  10, 11,   // Top
+            12, 13, 14,     12, 14, 15,  // Bottom
+            16, 17, 18,     16, 18, 19,  // Left
+            20, 21, 22,     20, 22, 23   // Right
         };
 
         _cubeVertexBuffer = d3dDevice.CreateBuffer(vertices, BindFlags.VertexBuffer);
@@ -6146,7 +6156,15 @@ float4 PS(PS_Input input) : SV_TARGET
         }
 
         var view = Matrix4x4.CreateLookAt(new Vector3(0, 0, -5), Vector3.Zero, Vector3.UnitY);
-        var proj = Matrix4x4.CreatePerspectiveFieldOfView((float)Math.PI / 4.0f, RenderTargetSize.X / RenderTargetSize.Y, 0.1f, 100.0f);
+
+        // --- CHANGE: Switch to Orthographic Projection ---
+        // This removes perspective distortion, so faces don't change size based on distance.
+        float aspectRatio = RenderTargetSize.X / RenderTargetSize.Y;
+        float viewHeight = 4.0f; // Defines the vertical size of the viewing volume
+        float viewWidth = viewHeight * aspectRatio;
+        var proj = Matrix4x4.CreateOrthographic(viewWidth, viewHeight, 0.1f, 100.0f);
+        // --- END CHANGE ---
+
         var world = Matrix4x4.CreateFromYawPitchRoll(
             (float)DateTime.Now.TimeOfDay.TotalSeconds,
             (float)DateTime.Now.TimeOfDay.TotalSeconds / 2f,
@@ -6185,7 +6203,7 @@ float4 PS(PS_Input input) : SV_TARGET
 }
 </file>
 
-<file path="Backends\Direct2D\DirectWriteTextLayout.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\DirectWriteTextLayout.cs">
 // DirectUI/Backends/DirectWriteTextLayout.cs
 using System;
 using System.Numerics;
@@ -6249,7 +6267,7 @@ internal class DirectWriteTextLayout : ITextLayout
 }
 </file>
 
-<file path="Backends\Direct2D\DirectWriteTextService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\DirectWriteTextService.cs">
 // DirectUI/Backends/DirectWriteTextService.cs
 using System;
 using System.Collections.Generic;
@@ -6392,7 +6410,7 @@ public class DirectWriteTextService : ITextService
 }
 </file>
 
-<file path="Backends\Direct2D\DuiGraphicsDevice.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\DuiGraphicsDevice.cs">
 using DirectUI;
 using SharpGen.Runtime;
 using Vortice.Direct2D1;
@@ -6654,7 +6672,7 @@ public class DuiGraphicsDevice : IDisposable
 }
 </file>
 
-<file path="Backends\Direct2D\ShaderCompiler.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\ShaderCompiler.cs">
 using SharpGen.Runtime;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -6720,7 +6738,7 @@ public static class ShaderCompiler
 }
 </file>
 
-<file path="Backends\Direct2D\Win32AppServicesInitializer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Win32AppServicesInitializer.cs">
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -6755,7 +6773,7 @@ public static class Win32AppServicesInitializer
 }
 </file>
 
-<file path="Backends\Direct2D\Win32Window.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Win32Window.cs">
 // Win32Window.cs
 using System;
 using System.Collections.Generic;
@@ -7241,7 +7259,7 @@ public abstract class Win32Window : IDisposable
 }
 </file>
 
-<file path="Backends\Direct2D\Win32WindowHost.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Win32WindowHost.cs">
 using DirectUI.Core;
 using DirectUI.Input;
 using Vortice.Mathematics;
@@ -7547,7 +7565,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 }
 </file>
 
-<file path="Backends\Raylib\RaylibRenderer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibRenderer.cs">
 // DirectUI/Backends/Raylib/RaylibRenderer.cs
 using System;
 using System.Collections.Generic;
@@ -7790,7 +7808,7 @@ public class RaylibRenderer : IRenderer
 }
 </file>
 
-<file path="Backends\Raylib\RaylibTextLayout.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibTextLayout.cs">
 // DirectUI/Backends/Raylib/RaylibTextLayout.cs
 using System;
 using System.Numerics;
@@ -7883,7 +7901,7 @@ internal class RaylibTextLayout : ITextLayout
 }
 </file>
 
-<file path="Backends\Raylib\RaylibTextService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibTextService.cs">
 // DirectUI/Backends/Raylib/RaylibTextService.cs
 using System;
 using System.Collections.Generic;
@@ -7991,7 +8009,7 @@ public class RaylibTextService : ITextService
 }
 </file>
 
-<file path="Backends\Raylib\RaylibWindowHost.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibWindowHost.cs">
 // DirectUI/RaylibWindowHost.cs
 using System;
 using System.Numerics;
@@ -8141,7 +8159,7 @@ public class RaylibWindowHost : IWindowHost
 }
 </file>
 
-<file path="Backends\SDL3\SDL3Renderer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3Renderer.cs">
 using System.Numerics;
 using DirectUI.Core;
 using SDL3;
@@ -8498,7 +8516,7 @@ public unsafe class SDL3Renderer : IRenderer
 }
 </file>
 
-<file path="Backends\SDL3\SDL3TextLayout.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3TextLayout.cs">
 using System;
 using System.Numerics;
 using DirectUI.Core;
@@ -8603,7 +8621,7 @@ internal unsafe class SDL3TextLayout : ITextLayout
 }
 </file>
 
-<file path="Backends\SDL3\SDL3TextService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3TextService.cs">
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -8816,7 +8834,7 @@ public unsafe class SDL3TextService : ITextService
 }
 </file>
 
-<file path="Backends\SDL3\SDL3WindowHost.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3WindowHost.cs">
 using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
@@ -9189,7 +9207,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 }
 </file>
 
-<file path="Core\Interface\IAppLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IAppLogic.cs">
 namespace DirectUI.Core;
 
 public interface IAppLogic
@@ -9198,7 +9216,7 @@ public interface IAppLogic
 }
 </file>
 
-<file path="Core\Interface\ILayoutContainer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\ILayoutContainer.cs">
 using System.Numerics;
 
 namespace DirectUI;
@@ -9210,7 +9228,7 @@ public interface ILayoutContainer
 }
 </file>
 
-<file path="Core\Interface\IModalWindowService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IModalWindowService.cs">
 // DirectUI/Core/IModalWindowService.cs
 using System;
 using Vortice.Mathematics;
@@ -9247,7 +9265,7 @@ public interface IModalWindowService
 }
 </file>
 
-<file path="Core\Interface\IRenderer.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IRenderer.cs">
 // DirectUI/Core/IRenderer.cs
 using System.Numerics;
 using DirectUI.Drawing;
@@ -9299,7 +9317,7 @@ public interface IRenderer
 }
 </file>
 
-<file path="Core\Interface\ITextLayout.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\ITextLayout.cs">
 // DirectUI/Core/ITextLayout.cs
 using System;
 using System.Numerics;
@@ -9339,7 +9357,7 @@ public interface ITextLayout : IDisposable
 }
 </file>
 
-<file path="Core\Interface\ITextService.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\ITextService.cs">
 // DirectUI/Core/ITextService.cs
 using System.Numerics;
 using Vortice.Mathematics;
@@ -9369,7 +9387,7 @@ public interface ITextService
 }
 </file>
 
-<file path="Core\Interface\IWindowHost.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IWindowHost.cs">
 // DirectUI/Core/IWindowHost.cs
 using System;
 using DirectUI.Input;
@@ -9429,7 +9447,7 @@ public interface IWindowHost : IDisposable
 }
 </file>
 
-<file path="InputBinding.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\InputBinding.cs">
 namespace Cocoshell.Input;
 
 public enum BindingType
@@ -9446,7 +9464,7 @@ public class InputBinding
 }
 </file>
 
-<file path="InputManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\InputManager.cs">
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -9502,7 +9520,7 @@ public static class InputMapManager
 }
 </file>
 
-<file path="InputMapEditor.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\InputMapEditor.cs">
 using System.Numerics;
 using Cocoshell.Input;
 using Vortice.Mathematics;
@@ -9821,7 +9839,7 @@ public class InputMapEditor
 }
 </file>
 
-<file path="MyUILogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\MyUILogic.cs">
 // MyUILogic.cs
 using System;
 using System.Numerics;
@@ -10027,7 +10045,7 @@ public class MyUILogic : IAppLogic
 }
 </file>
 
-<file path="Program.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\Program.cs">
 using DirectUI;
 
 namespace Cocoshell;
@@ -10046,7 +10064,7 @@ public class Program
 }
 </file>
 
-<file path="SceneNode.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\SceneNode.cs">
 namespace Cocoshell;
 
 public class SceneNode
@@ -10058,7 +10076,7 @@ public class SceneNode
 }
 </file>
 
-<file path="SceneParser.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\SceneParser.cs">
 using YamlDotNet.Serialization;
 using DirectUI;
 
@@ -10134,7 +10152,7 @@ public static class SceneParser
 }
 </file>
 
-<file path="Views\BottomPanelView.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\Views\BottomPanelView.cs">
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -10360,7 +10378,7 @@ public class BottomPanelView
 }
 </file>
 
-<file path="Views\InspectorView.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\Views\InspectorView.cs">
 using System.Numerics;
 using System.Reflection;
 using System.Text;
@@ -10675,7 +10693,7 @@ public class InspectorView
 }
 </file>
 
-<file path="Views\MainView.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\Views\MainView.cs">
 // Views/MainView.cs
 using System;
 using System.Numerics;
@@ -10790,7 +10808,7 @@ public class MainView
 }
 </file>
 
-<file path="Views\MenuBarView.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\Views\MenuBarView.cs">
 using System;
 using System.Numerics;
 using Vortice.Mathematics;
@@ -10867,7 +10885,7 @@ public class MenuBarView
 }
 </file>
 
-<file path="Views\SceneTreeView.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Cocoshell\Views\SceneTreeView.cs">
 using Cherris;
 using DirectUI;
 
