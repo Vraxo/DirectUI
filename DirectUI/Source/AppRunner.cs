@@ -8,10 +8,16 @@ namespace DirectUI;
 
 public static class ApplicationRunner
 {
-public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> appLogicFactory)
+    private static bool _isSavedOnExit = false;
+
+    public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> appLogicFactory)
     {
         IWindowHost? host = null;
         IAppLogic? appLogic = null;
+
+        // Define a guarded save action to prevent saving more than once on exit.
+        Action? saveAction = null;
+
         try
         {
             host = backend switch
@@ -25,6 +31,22 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
             Console.WriteLine($"Using {backend} Backend.");
 
             appLogic = appLogicFactory(host);
+
+            saveAction = () =>
+            {
+                if (_isSavedOnExit || appLogic == null) return;
+
+                Console.WriteLine("Exit detected. Saving application state...");
+                appLogic.SaveState();
+                _isSavedOnExit = true;
+            };
+
+            // Hook into the AppDomain.ProcessExit event. This is a more reliable way
+            // to catch process termination, including closing the console window.
+            AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+            {
+                saveAction?.Invoke();
+            };
 
             if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
             {
@@ -41,12 +63,9 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
         }
         finally
         {
-            // Save application state before cleaning up resources.
-            if (appLogic is not null)
-            {
-                Console.WriteLine("Application shutting down. Saving state...");
-                appLogic.SaveState();
-            }
+            // The finally block is executed on a clean shutdown (e.g., closing the GUI window).
+            // We call the same guarded save action here.
+            saveAction?.Invoke();
 
             host?.Cleanup();
             host?.Dispose();
