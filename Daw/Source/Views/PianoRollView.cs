@@ -16,6 +16,7 @@ public class PianoRollView
     private Song? _song;
     private NoteEvent? _selectedNote;
     private NoteEvent? _noteBeingDragged;
+    private Vector2 _dragStartOffset;
     private bool _isResizingRight;
     private bool _isPanning;
     private Vector2 _panOffset = Vector2.Zero;
@@ -59,6 +60,8 @@ public class PianoRollView
 
     private void HandleInput(InputState input, Rect gridArea)
     {
+        if (_song is null) return;
+
         bool isHoveringGrid = gridArea.Contains(input.MousePosition);
 
         // Panning
@@ -88,6 +91,8 @@ public class PianoRollView
                 else
                 {
                     _noteBeingDragged = hitNote.note;
+                    var noteScreenPos = GridToScreen(_noteBeingDragged.StartTimeMs, _noteBeingDragged.Pitch, gridArea);
+                    _dragStartOffset = mousePos - noteScreenPos;
                 }
             }
             else
@@ -107,24 +112,32 @@ public class PianoRollView
             _isResizingRight = false;
         }
 
+        float msPerBeat = (float)(60000.0 / _song.Tempo);
+        float quantization = msPerBeat / 4; // 16th note snapping
+
         if (_noteBeingDragged != null)
         {
-            var gridPos = ScreenToGrid(mousePos, gridArea);
-            _noteBeingDragged.StartTimeMs = (int)gridPos.timeMs;
+            var targetNoteScreenPos = input.MousePosition - _dragStartOffset;
+            var gridPos = ScreenToGrid(targetNoteScreenPos, gridArea);
+
+            float snappedTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
+
+            _noteBeingDragged.StartTimeMs = (int)snappedTime;
             _noteBeingDragged.Pitch = gridPos.pitch;
         }
 
         if (_isResizingRight && _selectedNote != null)
         {
             var gridPos = ScreenToGrid(mousePos, gridArea);
-            int newDuration = (int)gridPos.timeMs - _selectedNote.StartTimeMs;
-            _selectedNote.DurationMs = Math.Max(50, newDuration); // Ensure minimum duration
+            float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
+            int newDuration = (int)endEdgeTime - _selectedNote.StartTimeMs;
+            _selectedNote.DurationMs = Math.Max((int)quantization, newDuration);
         }
 
         // Deletion
         if (_selectedNote != null && input.PressedKeys.Contains(Keys.Delete))
         {
-            _song?.Events.Remove(_selectedNote);
+            _song.Events.Remove(_selectedNote);
             _selectedNote = null;
         }
     }
