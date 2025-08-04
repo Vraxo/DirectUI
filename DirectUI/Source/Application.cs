@@ -49,17 +49,18 @@ public static class Application
             // After processing messages, if no WM_QUIT was posted, allow all registered
             // windows to perform their per-frame updates. This is crucial for logic
             // that needs to run every frame, like checking for modal window closure.
-            if (isRunning)
+            if (!isRunning)
             {
-                // Iterate over a copy so we can modify the original list (e.g., on window close).
-                // This is safer than iterating over the list directly if FrameUpdate can cause
-                // a window to be unregistered.
-                foreach (var window in windows.ToList())
-                {
-                    // FrameUpdate implementations should be safe to call even if the
-                    // window's handle has been destroyed in the same frame.
-                    window.FrameUpdate();
-                }
+                continue;
+            }
+            // Iterate over a copy so we can modify the original list (e.g., on window close).
+            // This is safer than iterating over the list directly if FrameUpdate can cause
+            // a window to be unregistered.
+            foreach (Win32Window? window in windows.ToList())
+            {
+                // FrameUpdate implementations should be safe to call even if the
+                // window's handle has been destroyed in the same frame.
+                window.FrameUpdate();
             }
         }
 

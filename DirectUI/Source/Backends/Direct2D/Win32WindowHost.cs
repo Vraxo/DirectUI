@@ -253,7 +253,9 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         if (activeModalWindow.CreateAsModal())
         {
-            onModalClosedCallback = onClosedCallback;
+            // FIX: Explicitly assign to the instance field 'this.onModalClosedCallback'
+            // to avoid the local variable shadowing it.
+            this.onModalClosedCallback = onClosedCallback;
             modalResultCode = -1;
             Console.WriteLine("Modal window opened successfully.");
         }
@@ -277,6 +279,10 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         activeModalWindow.Close();
     }
 
+    /// <summary>
+    /// This method is now a fallback for cleanup, but the primary notification
+    /// comes from NotifyModalHasClosed.
+    /// </summary>
     private void HandleModalLifecycle()
     {
         if (activeModalWindow is null)
@@ -284,17 +290,28 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             return;
         }
 
-        if (activeModalWindow.Handle != IntPtr.Zero || _isModalClosing)
+        // If the handle is zero, it means the window was destroyed, but our new
+        // notification mechanism might have already handled it. This is a safety net.
+        if (activeModalWindow.Handle == IntPtr.Zero && !_isModalClosing)
         {
-            return;
+            Console.WriteLine("[LIFECYCLE-FALLBACK] Cleaning up orphaned modal window.");
+            NotifyModalHasClosed();
         }
+    }
 
+    /// <summary>
+    /// Called directly by the ModalWindow from its OnDestroy method.
+    /// This is the new, reliable way to trigger the close callback.
+    /// </summary>
+    public void NotifyModalHasClosed()
+    {
+        if (_isModalClosing) return; // Re-entrancy guard
         _isModalClosing = true;
 
         Console.WriteLine($"Modal window closed. Result: {modalResultCode}");
         onModalClosedCallback?.Invoke(modalResultCode);
 
-        activeModalWindow.Dispose();
+        // The modal window is already disposing, so we just clear our references to it.
         activeModalWindow = null;
         onModalClosedCallback = null;
         modalResultCode = 0;

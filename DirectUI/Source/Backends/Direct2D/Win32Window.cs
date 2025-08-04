@@ -338,7 +338,11 @@ public abstract class Win32Window : IDisposable
             return;
         }
 
-        NativeMethods.DestroyWindow(_hwnd);
+        // Post a close message instead of destroying directly.
+        // This is a safer pattern, allowing the window to process the close request
+        // through its own message loop, preventing re-entrancy issues if called
+        // from within a message handler (like a button click during WM_PAINT).
+        NativeMethods.PostMessage(_hwnd, NativeMethods.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
     }
 
     public void Invalidate()

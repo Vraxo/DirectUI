@@ -137,9 +137,9 @@ public class ModalWindow : Win32Window
         Invalidate();
     }
 
-    protected override bool OnClose() 
-    { 
-        return true; 
+    protected override bool OnClose()
+    {
+        return true;
     }
 
     public bool CreateAsModal()
@@ -187,6 +187,13 @@ public class ModalWindow : Win32Window
 
     protected override void OnDestroy()
     {
+        // Explicitly notify the owner that the modal has closed.
+        // This is a more robust pattern than the owner polling the handle.
+        if (owner is Win32WindowHost host)
+        {
+            host.NotifyModalHasClosed();
+        }
+
         if (owner.Handle != IntPtr.Zero)
         {
             NativeMethods.EnableWindow(owner.Handle, true);
@@ -206,7 +213,7 @@ public class ModalWindow : Win32Window
 
         int baseWidth = int.Max(1, Width);
         int baseHeight = int.Max(1, Height);
-        
+
         if (Handle != nint.Zero)
         {
             Console.WriteLine($"GetClientRect failed. Falling back to stored size: {baseWidth}x{baseHeight}");
