@@ -63,7 +63,7 @@ public class DawAppLogic : IAppLogic
     {
         // Poll the engine every frame for time-sensitive updates like looping
         _midiEngine.Update();
-
+        
         var windowSize = context.Renderer.RenderTargetSize;
 
         // --- Global Actions ---
@@ -104,7 +104,7 @@ public class DawAppLogic : IAppLogic
         _menuBarView.Draw(new Vector2(0, 0));
         _transportView.Draw(new Vector2(0, 30), _song);
     }
-
+    
     private void DrawMainContent(Vector2 windowSize)
     {
         // Left Panel for Track List
@@ -131,5 +131,10 @@ public class DawAppLogic : IAppLogic
         
         var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
         _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
+    }
+    
+    public void SaveState()
+    {
+        SongSerializer.Save(_song, SongFilePath);
     }
 }

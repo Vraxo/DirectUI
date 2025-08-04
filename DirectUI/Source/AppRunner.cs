@@ -11,6 +11,7 @@ public static class ApplicationRunner
 public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> appLogicFactory)
     {
         IWindowHost? host = null;
+        IAppLogic? appLogic = null;
         try
         {
             host = backend switch
@@ -23,7 +24,7 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
 
             Console.WriteLine($"Using {backend} Backend.");
 
-            var appLogic = appLogicFactory(host);
+            appLogic = appLogicFactory(host);
 
             if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
             {
@@ -40,6 +41,13 @@ public static void Run(GraphicsBackend backend, Func<IWindowHost, IAppLogic> app
         }
         finally
         {
+            // Save application state before cleaning up resources.
+            if (appLogic is not null)
+            {
+                Console.WriteLine("Application shutting down. Saving state...");
+                appLogic.SaveState();
+            }
+
             host?.Cleanup();
             host?.Dispose();
         }
