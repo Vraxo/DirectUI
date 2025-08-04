@@ -49,6 +49,9 @@ public class DawAppLogic : IAppLogic
 
     public void DrawUI(UIContext context)
     {
+        // Poll the engine every frame for time-sensitive updates like looping
+        _midiEngine.Update();
+
         var windowSize = context.Renderer.RenderTargetSize;
 
         // --- Global Actions ---
@@ -75,8 +78,7 @@ public class DawAppLogic : IAppLogic
 
     private void DrawTopBar(Vector2 windowSize)
     {
-        const float TopBarHeight = 70;
-        var topBarArea = new Rect(0, 0, windowSize.X, TopBarHeight);
+        var topBarArea = new Rect(0, 0, windowSize.X, DawMetrics.TopBarHeight);
         var style = new BoxStyle { FillColor = DawTheme.PanelBackground, BorderColor = DawTheme.Border, BorderLengthBottom = 1, Roundness = 0 };
         UI.Context.Renderer.DrawBox(topBarArea, style);
 
@@ -84,7 +86,7 @@ public class DawAppLogic : IAppLogic
         _menuBarView.Draw(new Vector2(0, 0));
         _transportView.Draw(new Vector2(0, 30), _song);
     }
-    
+
     private void DrawTimeline(Vector2 windowSize)
     {
         var timelineArea = new Rect(0, DawMetrics.TopBarHeight, windowSize.X, DawMetrics.TimelineHeight);

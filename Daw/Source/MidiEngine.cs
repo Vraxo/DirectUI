@@ -46,6 +46,30 @@ public class MidiEngine : IDisposable
     }
 
     /// <summary>
+    /// This method should be called every frame to handle real-time updates like looping.
+    /// </summary>
+    public void Update()
+    {
+        if (_playback == null || !_playback.IsRunning || _currentSong == null)
+        {
+            return;
+        }
+
+        // Handle custom looping logic by polling the current time.
+        if (_currentSong.IsLoopingEnabled && _currentSong.LoopEndMs > _currentSong.LoopStartMs)
+        {
+            var currentTime = this.CurrentTimeMs;
+
+            // If the current time has passed the loop end point, seek back to the loop start.
+            if (currentTime >= _currentSong.LoopEndMs)
+            {
+                var loopStart = new MetricTimeSpan(0, 0, 0, (int)_currentSong.LoopStartMs);
+                _playback.MoveToTime(loopStart);
+            }
+        }
+    }
+
+    /// <summary>
     /// Converts a Song object into a DryWetMIDI MidiFile object.
     /// </summary>
     /// <param name="song">The song to convert.</param>
@@ -119,11 +143,8 @@ public class MidiEngine : IDisposable
         // Stop any previous playback
         Stop();
 
-        _currentSong = song; // Store reference for the event handler
+        _currentSong = song; // Store reference for the update loop
         _playback = midiFile.GetPlayback(_outputDevice);
-
-        // Manual looping implementation via event handler
-        _playback.Finished += OnPlaybackFinished;
 
         // If looping is enabled, we need to decide where to start playing from.
         if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
@@ -138,18 +159,6 @@ public class MidiEngine : IDisposable
         }
     }
 
-    private void OnPlaybackFinished(object? sender, EventArgs e)
-    {
-        if (_playback is null || _currentSong is null) return;
-
-        if (_currentSong.IsLoopingEnabled && _currentSong.LoopEndMs > _currentSong.LoopStartMs)
-        {
-            var loopStart = new MetricTimeSpan(0, 0, 0, (int)_currentSong.LoopStartMs);
-            _playback.MoveToTime(loopStart);
-            _playback.Start();
-        }
-    }
-
     /// <summary>
     /// Stops the current playback, if any.
     /// </summary>
@@ -157,7 +166,6 @@ public class MidiEngine : IDisposable
     {
         if (_playback != null)
         {
-            _playback.Finished -= OnPlaybackFinished; // Unsubscribe to prevent leaks
             _playback.Stop();
             _playback.Dispose();
             _playback = null;
