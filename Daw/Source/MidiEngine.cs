@@ -119,15 +119,16 @@ public class MidiEngine : IDisposable
         Stop();
 
         _playback = midiFile.GetPlayback(_outputDevice);
-        
-        // Apply looping if it's enabled and the range is valid.
-        if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
+
+        // Apply looping if it's enabled.
+        if (song.IsLoopingEnabled)
         {
-            var loopStart = new MetricTimeSpan(0, 0, 0, (int)song.LoopStartMs);
-            var loopEnd = new MetricTimeSpan(0, 0, 0, (int)song.LoopEndMs);
-            _playback.Loop = new Loop(loopStart, loopEnd);
+            // The `Melanchall.DryWetMidi.Interaction.Loop` class for defining a loop *range*
+            // does not exist in your version of the library. We fall back to the simple
+            // boolean property, which loops the entire track.
+            _playback.Loop = true;
         }
-        
+
         _playback.Start();
     }
 
