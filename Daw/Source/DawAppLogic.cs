@@ -1,8 +1,8 @@
-﻿using System.Drawing;
-using System.Linq;
+﻿using System;
 using System.Numerics;
 using Daw.Audio;
 using Daw.Core;
+using Daw.Views;
 using DirectUI;
 using DirectUI.Core;
 using Vortice.Mathematics;
@@ -15,106 +15,79 @@ public class DawAppLogic : IAppLogic
     private Song _song;
     private const string SongFilePath = "mysong.dawjson";
 
+    // --- Child Views ---
+    private readonly MenuBarView _menuBarView;
+    private readonly TransportView _transportView;
+    private readonly PianoRollView _pianoRollView;
+
     public DawAppLogic(IWindowHost host)
     {
         _midiEngine = new MidiEngine();
         _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
+
+        _menuBarView = new MenuBarView();
+        _transportView = new TransportView(_midiEngine);
+        _pianoRollView = new PianoRollView();
     }
 
     private static Song CreateDefaultSong()
     {
-        return new Song
-        {
-            Tempo = 120,
-            Events = new()
-            {
-                new NoteEvent(0, 500, 60, 100),
-                new NoteEvent(500, 500, 62, 100),
-                new NoteEvent(1000, 500, 64, 100),
-                new NoteEvent(1500, 500, 65, 100),
-            }
-        };
+        var song = new Song { Tempo = 120 };
+        // Basic C Major Scale
+        song.Events.Add(new NoteEvent(0, 480, 60, 100));     // C
+        song.Events.Add(new NoteEvent(500, 480, 62, 100));    // D
+        song.Events.Add(new NoteEvent(1000, 480, 64, 100));   // E
+        song.Events.Add(new NoteEvent(1500, 480, 65, 100));   // F
+        song.Events.Add(new NoteEvent(2000, 480, 67, 100));   // G
+        song.Events.Add(new NoteEvent(2500, 480, 69, 100));   // A
+        song.Events.Add(new NoteEvent(3000, 480, 71, 100));   // B
+        song.Events.Add(new NoteEvent(3500, 480, 72, 100));   // C
+        return song;
     }
 
     public void DrawUI(UIContext context)
     {
         var windowSize = context.Renderer.RenderTargetSize;
-        DrawMenuBar(windowSize);
-        DrawTimeline(windowSize);
+
+        // --- Global Actions ---
+        var fileAction = _menuBarView.GetAction();
+        switch (fileAction)
+        {
+            case MenuBarView.FileAction.Save:
+                SongSerializer.Save(_song, SongFilePath);
+                break;
+            case MenuBarView.FileAction.Load:
+                _midiEngine.Stop();
+                _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
+                break;
+            case MenuBarView.FileAction.Export:
+                _midiEngine.ExportToMidiFile(_song, "export.mid");
+                break;
+        }
+
+        // --- Draw UI Layout ---
+        DrawTopBar(windowSize);
+        DrawMainContent(windowSize);
     }
 
-    private void DrawMenuBar(Vector2 windowSize)
+    private void DrawTopBar(Vector2 windowSize)
     {
-        UI.BeginHBoxContainer("menubar", new Vector2(5, 5), 5);
+        const float TopBarHeight = 70;
+        var topBarArea = new Rect(0, 0, windowSize.X, TopBarHeight);
+        var style = new BoxStyle { FillColor = DawTheme.PanelBackground, BorderColor = DawTheme.Border, BorderLengthBottom = 1, Roundness = 0 };
+        UI.Context.Renderer.DrawBox(topBarArea, style);
 
-        if (UI.Button("play_button", "Play"))
-        {
-            _midiEngine.Play(_song);
-        }
-
-        if (UI.Button("stop_button", "Stop"))
-        {
-            _midiEngine.Stop();
-        }
-
-        UI.Separator(1, 20, 0);
-
-        if (UI.Button("add_note_button", "Add Note"))
-        {
-            int lastNoteTime = _song.Events.Any() ? _song.Events.Max(e => e.StartTimeMs + e.DurationMs) : 0;
-            _song.Events.Add(new NoteEvent(lastNoteTime, 500, 60, 100));
-        }
-
-        if (UI.Button("save_button", "Save"))
-        {
-            SongSerializer.Save(_song, SongFilePath);
-        }
-
-        if (UI.Button("load_button", "Load"))
-        {
-            _midiEngine.Stop();
-            _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
-        }
-
-        if (UI.Button("export_button", "Export MIDI"))
-        {
-            _midiEngine.ExportToMidiFile(_song, "export.mid");
-        }
-
-        UI.EndHBoxContainer();
+        // Position menu bar and transport within the top bar
+        _menuBarView.Draw(new Vector2(0, 0));
+        _transportView.Draw(new Vector2(0, 30), _song);
     }
 
-    private void DrawTimeline(Vector2 windowSize)
+    private void DrawMainContent(Vector2 windowSize)
     {
-        var timelineArea = new Rect(10, 40, windowSize.X - 20, windowSize.Y - 50);
-        UI.Context.Renderer.DrawBox(timelineArea, new BoxStyle { FillColor = new Color4(0.1f, 0.1f, 0.1f, 1f), BorderColor = Colors.Gray, BorderLength = 1 });
+        const float topOffset = 70; // Height of the top bar
+        var mainContentArea = new Rect(0, topOffset, windowSize.X, windowSize.Y - topOffset);
 
-        float pixelsPerMs = 0.2f;
-        float noteHeight = 20f;
-        int maxPitch = 84;
-        int minPitch = 48;
-        int pitchRange = maxPitch - minPitch;
-        if (pitchRange <= 0) return;
-
-        foreach (var note in _song.Events)
-        {
-            float x = timelineArea.X + (note.StartTimeMs * pixelsPerMs);
-            float width = note.DurationMs * pixelsPerMs;
-
-            float yRatio = (float)(maxPitch - note.Pitch) / pitchRange;
-            float y = timelineArea.Y + (yRatio * timelineArea.Height);
-
-            y = Math.Clamp(y, timelineArea.Top, timelineArea.Bottom - noteHeight);
-
-            var noteRect = new Rect(x, y, width, noteHeight);
-
-            if (noteRect.Right < timelineArea.X || noteRect.X > timelineArea.Right)
-            {
-                continue;
-            }
-
-            var noteStyle = new BoxStyle { FillColor = Colors.CornflowerBlue, BorderColor = Colors.LightBlue, BorderLength = 1, Roundness = 0.1f };
-            UI.Context.Renderer.DrawBox(noteRect, noteStyle);
-        }
+        // The piano roll will take up the entire main content area for now
+        _pianoRollView.Draw(mainContentArea, _song);
     }
 }

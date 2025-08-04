@@ -2,9 +2,20 @@
 
 /// <summary>
 /// Represents a single musical note on the timeline.
+/// Now a mutable class to allow for interactive editing.
 /// </summary>
-/// <param name="StartTimeMs">The note's start time on the timeline, in milliseconds.</param>
-/// <param name="DurationMs">The note's duration, in milliseconds.</param>
-/// <param name="Pitch">The MIDI note number (60 = Middle C).</param>
-/// <param name="Velocity">The note's velocity (loudness), from 0 to 127.</param>
-public record NoteEvent(int StartTimeMs, int DurationMs, int Pitch, int Velocity);
+public class NoteEvent
+{
+    public int StartTimeMs { get; set; }
+    public int DurationMs { get; set; }
+    public int Pitch { get; set; }
+    public int Velocity { get; set; }
+
+    public NoteEvent(int startTimeMs, int durationMs, int pitch, int velocity)
+    {
+        StartTimeMs = startTimeMs;
+        DurationMs = durationMs;
+        Pitch = pitch;
+        Velocity = velocity;
+    }
+}
