@@ -27,9 +27,11 @@ public class DawAppLogic : IAppLogic
     private readonly TrackListView _trackListView;
     private readonly PianoRollToolbarView _pianoRollToolbarView;
     private readonly PianoRollView _pianoRollView;
+    private readonly IWindowHost _host;
 
     public DawAppLogic(IWindowHost host)
     {
+        _host = host;
         _midiEngine = new MidiEngine();
         _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
 
@@ -83,6 +85,9 @@ public class DawAppLogic : IAppLogic
                 break;
         }
         
+        // --- Track Management Actions from Context Menu ---
+        HandleTrackActions();
+
         // Ensure active track index is always valid
         if (_activeTrackIndex >= _song.Tracks.Count)
         {
@@ -92,6 +97,76 @@ public class DawAppLogic : IAppLogic
         // --- Draw UI Layout ---
         DrawTopBar(windowSize);
         DrawMainContent(windowSize);
+    }
+
+    private void HandleTrackActions()
+    {
+        var (action, index) = _trackListView.GetAction();
+        if (action == TrackListView.TrackAction.None) return;
+
+        switch (action)
+        {
+            case TrackListView.TrackAction.Delete:
+                if (index >= 0 && index < _song.Tracks.Count)
+                {
+                    _song.Tracks.RemoveAt(index);
+                }
+                break;
+            case TrackListView.TrackAction.Rename:
+                if (index >= 0 && index < _song.Tracks.Count)
+                {
+                    PromptForTrackName(index);
+                }
+                break;
+            case TrackListView.TrackAction.MoveUp:
+                if (index > 0 && index < _song.Tracks.Count)
+                {
+                    var track = _song.Tracks[index];
+                    _song.Tracks.RemoveAt(index);
+                    _song.Tracks.Insert(index - 1, track);
+                    _activeTrackIndex = index - 1; // Keep selection on the moved track
+                }
+                break;
+            case TrackListView.TrackAction.MoveDown:
+                if (index >= 0 && index < _song.Tracks.Count - 1)
+                {
+                    var track = _song.Tracks[index];
+                    _song.Tracks.RemoveAt(index);
+                    _song.Tracks.Insert(index + 1, track);
+                    _activeTrackIndex = index + 1; // Keep selection on the moved track
+                }
+                break;
+        }
+    }
+
+    private void PromptForTrackName(int trackIndex)
+    {
+        string newName = _song.Tracks[trackIndex].Name;
+        
+        Action<UIContext> drawCallback = (ctx) =>
+        {
+            UI.Text("rename_prompt", "Enter new track name:", new Vector2(10, 10));
+            UI.InputText("rename_input", ref newName, new Vector2(280, 25), new Vector2(10, 40));
+            
+            UI.BeginHBoxContainer("rename_buttons", new Vector2(10, 80), 10);
+            if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
+            {
+                _host.ModalWindowService.CloseModalWindow(0); // 0 = Success
+            }
+            if (UI.Button("rename_cancel", "Cancel", new Vector2(80, 25)))
+            {
+                _host.ModalWindowService.CloseModalWindow(1); // 1 = Cancel
+            }
+            UI.EndHBoxContainer();
+        };
+
+        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 120, drawCallback, (resultCode) =>
+        {
+            if (resultCode == 0 && !string.IsNullOrWhiteSpace(newName))
+            {
+                _song.Tracks[trackIndex].Name = newName;
+            }
+        });
     }
 
     private void DrawTopBar(Vector2 windowSize)
