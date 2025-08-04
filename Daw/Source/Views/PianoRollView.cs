@@ -40,7 +40,7 @@ public class PianoRollView
         }
     }
 
-    public void Draw(Rect viewArea, Song song)
+    public void Draw(Rect viewArea, Song song, bool isPlaying, long currentTimeMs)
     {
         _song = song;
         var renderer = UI.Context.Renderer;
@@ -56,6 +56,7 @@ public class PianoRollView
         DrawKeyboard(new Rect(viewArea.X, viewArea.Y, KeyboardWidth, viewArea.Height));
         DrawGrid(gridArea, song.Tempo);
         DrawNotes(gridArea);
+        DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
     }
 
     private void HandleInput(InputState input, Rect gridArea)
@@ -236,6 +237,27 @@ public class PianoRollView
             };
             renderer.DrawBox(noteRect, style);
         }
+    }
+
+    private void DrawPlaybackCursor(Rect gridArea, bool isPlaying, long currentTimeMs)
+    {
+        if (!isPlaying) return;
+
+        float pixelsPerMs = BasePixelsPerMs * _zoom;
+        float cursorX = gridArea.X + (currentTimeMs * pixelsPerMs) - _panOffset.X;
+
+        // Culling
+        if (cursorX < gridArea.X || cursorX > gridArea.Right)
+        {
+            return;
+        }
+
+        var renderer = UI.Context.Renderer;
+        renderer.DrawLine(
+            new Vector2(cursorX, gridArea.Y),
+            new Vector2(cursorX, gridArea.Bottom),
+            DawTheme.AccentBright,
+            2f);
     }
 
     private (NoteEvent? note, bool isEdge) HitTestNotes(Vector2 screenPos, Rect gridArea)

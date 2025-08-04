@@ -88,6 +88,6 @@ public class DawAppLogic : IAppLogic
         var mainContentArea = new Rect(0, topOffset, windowSize.X, windowSize.Y - topOffset);
 
         // The piano roll will take up the entire main content area for now
-        _pianoRollView.Draw(mainContentArea, _song);
+        _pianoRollView.Draw(mainContentArea, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs);
     }
 }

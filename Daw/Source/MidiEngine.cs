@@ -20,6 +20,19 @@ public class MidiEngine : IDisposable
     private readonly IOutputDevice? _outputDevice;
     private bool _isDisposed;
 
+    public bool IsPlaying => _playback?.IsRunning ?? false;
+    public long CurrentTimeMs
+    {
+        get
+        {
+            if (_playback is null || !_playback.IsRunning)
+            {
+                return 0;
+            }
+            return (long)_playback.GetCurrentTime<MetricTimeSpan>().TotalMilliseconds;
+        }
+    }
+
     public MidiEngine()
     {
         try
