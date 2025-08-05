@@ -59,7 +59,12 @@ public class MidiEngine : IDisposable
     public MidiFile ConvertToMidiFile(Song song)
     {
         var midiFile = new MidiFile();
-        var tempoMap = TempoMap.Create(new TicksPerQuarterNoteTimeDivision(480), Tempo.FromBeatsPerMinute(song.Tempo));
+        // --- FIX: Explicitly set the Time Division on the MidiFile object ---
+        // This is crucial for DryWetMidi to correctly interpret the tick values later.
+        var timeDivision = new TicksPerQuarterNoteTimeDivision(480);
+        midiFile.TimeDivision = timeDivision;
+
+        var tempoMap = TempoMap.Create(timeDivision, Tempo.FromBeatsPerMinute(song.Tempo));
 
         // CRITICAL FIX: The MIDI file must contain a SetTempoEvent for the playback engine to know the correct speed.
         // We create a "conductor track" for this and other meta-events.
@@ -151,6 +156,8 @@ public class MidiEngine : IDisposable
             }
 
             var loopedMidiFile = new MidiFile(loopedTrackChunk);
+            // The new file also needs its time division set
+            loopedMidiFile.TimeDivision = midiFile.TimeDivision;
             playback = loopedMidiFile.GetTimedEvents().Select(e => e.Event).GetPlayback(loopedMidiFile.GetTempoMap());
             playback.Loop = true;
         }

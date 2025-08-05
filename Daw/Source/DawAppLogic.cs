@@ -258,8 +258,8 @@ public class DawAppLogic : IAppLogic
         // Draw the background for the velocity pane
         UI.Context.Renderer.DrawBox(velocityPaneArea, new BoxStyle { FillColor = DawTheme.Background, Roundness = 0 });
 
-        // --- FIX: Actually call the method to draw the velocity bars ---
-        _pianoRollView.DrawVelocityPane(velocityPaneArea);
+        // Pass the song object, which is now required for tempo-correct scaling.
+        _pianoRollView.DrawVelocityPane(velocityPaneArea, _song);
 
         UI.EndResizableHPanel();
 
@@ -270,14 +270,12 @@ public class DawAppLogic : IAppLogic
 
         // Timeline
         var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
+        float timelineBottom = timelineArea.Y + timelineArea.Height;
+        if (timelineBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
+        {
+            _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
+        }
 
-        _timelineView.Draw(
-            viewArea: timelineArea,
-            song: _song,
-            panOffset: _pianoRollView.GetPanOffset(),
-            zoom: _pianoRollView.GetZoom(),
-            isPlaying: _midiEngine.IsPlaying,
-            currentTimeMs: _midiEngine.CurrentTimeMs);
 
         // Toolbar for Piano Roll Tools
         float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;

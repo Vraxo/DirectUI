@@ -13,7 +13,9 @@ public static class DawMetrics
     public const float KeyboardWidth = 80;
 
     // --- Grid & Zoom ---
-    public const float BasePixelsPerMs = 0.1f;
+    // A quarter note (a "beat") is this many pixels wide at 100% zoom.
+    // This is the new source of truth for horizontal scaling.
+    public const float PixelsPerBeat = 100.0f;
     public const float NoteHeight = 20;
 
     // --- Pitch Range ---

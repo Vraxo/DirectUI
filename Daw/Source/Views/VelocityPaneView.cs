@@ -12,22 +12,29 @@ namespace Daw.Views;
 /// </summary>
 public class VelocityPaneView
 {
-    public void Draw(Rect viewArea, UIContext context, PianoRollState state, MidiTrack? track, Vector2 panOffset, float zoom)
+    private float GetPixelsPerMs(Song song, float zoom)
     {
-        // Background and border are drawn by the parent layout (DawAppLogic)
-        HandleVelocityInput(context.InputState, viewArea, state, track);
-        DrawVelocityBars(context, viewArea, state, track, panOffset, zoom);
+        if (song.Tempo <= 0) return 0;
+        float msPerBeat = (float)(60000.0 / song.Tempo);
+        return (DawMetrics.PixelsPerBeat / msPerBeat) * zoom;
     }
 
-    private void HandleVelocityInput(InputState input, Rect velocityArea, PianoRollState state, MidiTrack? track)
+    public void Draw(Rect viewArea, UIContext context, PianoRollState state, MidiTrack? track, Song? song, Vector2 panOffset, float zoom)
     {
-        if (track is null) return;
+        // Background and border are drawn by the parent layout (DawAppLogic)
+        HandleVelocityInput(context.InputState, viewArea, state, track, song);
+        DrawVelocityBars(context, viewArea, state, track, song, panOffset, zoom);
+    }
+
+    private void HandleVelocityInput(InputState input, Rect velocityArea, PianoRollState state, MidiTrack? track, Song? song)
+    {
+        if (track is null || song is null) return;
 
         bool isHoveringVelocity = velocityArea.Contains(input.MousePosition);
 
         if (isHoveringVelocity && input.WasLeftMousePressedThisFrame)
         {
-            var hitNote = HitTestVelocityBars(input.MousePosition, velocityArea, track, state.PanOffset, state.Zoom);
+            var hitNote = HitTestVelocityBars(input.MousePosition, velocityArea, track, song, state.PanOffset, state.Zoom);
             if (hitNote != null)
             {
                 state.VelocityBarBeingDragged = hitNote;
@@ -55,12 +62,13 @@ public class VelocityPaneView
         }
     }
 
-    private void DrawVelocityBars(UIContext context, Rect velocityArea, PianoRollState state, MidiTrack? track, Vector2 panOffset, float zoom)
+    private void DrawVelocityBars(UIContext context, Rect velocityArea, PianoRollState state, MidiTrack? track, Song? song, Vector2 panOffset, float zoom)
     {
-        // FIX: Add a null check to prevent crashing when no track is selected.
-        if (track is null) return;
+        if (track is null || song is null) return;
 
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
+        float pixelsPerMs = GetPixelsPerMs(song, zoom);
+        if (pixelsPerMs <= 0) return;
+
         const float chordOffset = 4f; // Pixels to shift each note in a chord
 
         // Group notes by start time to handle chords
@@ -104,9 +112,11 @@ public class VelocityPaneView
         }
     }
 
-    private NoteEvent? HitTestVelocityBars(Vector2 screenPos, Rect velocityArea, MidiTrack track, Vector2 panOffset, float zoom)
+    private NoteEvent? HitTestVelocityBars(Vector2 screenPos, Rect velocityArea, MidiTrack track, Song song, Vector2 panOffset, float zoom)
     {
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
+        float pixelsPerMs = GetPixelsPerMs(song, zoom);
+        if (pixelsPerMs <= 0) return null;
+
         const float chordOffset = 4f;
 
         var notesByTime = track.Events.GroupBy(n => n.StartTimeMs).OrderBy(g => g.Key);

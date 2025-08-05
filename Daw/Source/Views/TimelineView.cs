@@ -10,133 +10,134 @@ public class TimelineView
 {
     private bool _isDraggingLoop;
 
-    /// <summary>
-    /// Draws the timeline grid, loop region, and—when playing—the playback cursor in sync with the audio engine.
-    /// </summary>
-    public void Draw(
-        Rect viewArea,
-        Song song,
-        Vector2 panOffset,
-        float zoom,
-        bool isPlaying,
-        long currentTimeMs)
+    private float GetPixelsPerMs(Song song, float zoom)
+    {
+        if (song.Tempo <= 0) return 0;
+        float msPerBeat = (float)(60000.0 / song.Tempo);
+        return (DawMetrics.PixelsPerBeat / msPerBeat) * zoom;
+    }
+
+    public void Draw(Rect viewArea, Song song, Vector2 panOffset, float zoom)
     {
         var renderer = UI.Context.Renderer;
 
-        // 1) background panel
-        renderer.DrawBox(viewArea, new BoxStyle
-        {
-            FillColor = DawTheme.PanelBackground,
-            Roundness = 0,
-            BorderColor = DawTheme.Border,
-            BorderLengthBottom = 1
-        });
+        // Draw background
+        renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0, BorderColor = DawTheme.Border, BorderLengthBottom = 1 });
 
-        // 2) the “grid” area (right of the keyboard)
-        var grid = new Rect(
-            viewArea.X + DawMetrics.KeyboardWidth,
-            viewArea.Y,
-            viewArea.Width - DawMetrics.KeyboardWidth,
-            viewArea.Height);
+        // Define the interactive grid area, excluding the keyboard space
+        var timelineGridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
 
-        HandleInput(grid, song, panOffset, zoom);
-        DrawRuler(grid, song, panOffset, zoom);
-        DrawLoopRegion(grid, song, panOffset, zoom);
-
-        // 3) **NEW** draw the playhead line using real playback time
-        DrawPlaybackCursor(grid, isPlaying, currentTimeMs, panOffset, zoom);
+        HandleInput(timelineGridArea, song, panOffset, zoom);
+        DrawRuler(timelineGridArea, song, panOffset, zoom);
+        DrawLoopRegion(timelineGridArea, song, panOffset, zoom);
     }
 
-    private void HandleInput(Rect grid, Song song, Vector2 pan, float zoom)
+    private void HandleInput(Rect gridArea, Song song, Vector2 panOffset, float zoom)
     {
-        var inp = UI.Context.InputState;
-        var m = inp.MousePosition;
+        var input = UI.Context.InputState;
+        var mousePos = input.MousePosition;
+        bool isHovering = gridArea.Contains(mousePos);
 
-        if (grid.Contains(m) && inp.WasLeftMousePressedThisFrame)
+        if (isHovering && input.WasLeftMousePressedThisFrame)
         {
             _isDraggingLoop = true;
-            var t = ScreenToTime(m.X, grid, pan, zoom);
-            song.LoopStartMs = song.LoopEndMs = (long)t;
+            // Start dragging, set start point.
+            float time = ScreenToTime(mousePos.X, gridArea, song, panOffset, zoom);
+            song.LoopStartMs = (long)time;
+            song.LoopEndMs = (long)time; // Collapse to start point initially
         }
 
-        if (!inp.IsLeftMouseDown)
+        if (!input.IsLeftMouseDown)
+        {
             _isDraggingLoop = false;
+        }
 
         if (_isDraggingLoop)
-            song.LoopEndMs = (long)ScreenToTime(m.X, grid, pan, zoom);
+        {
+            // Update end point while dragging
+            float time = ScreenToTime(mousePos.X, gridArea, song, panOffset, zoom);
+            song.LoopEndMs = (long)time;
+        }
 
+        // After dragging is finished, ensure start is always less than end
         if (!_isDraggingLoop && song.LoopStartMs > song.LoopEndMs)
-            (song.LoopEndMs, song.LoopStartMs) = (song.LoopStartMs, song.LoopEndMs);
+        {
+            (song.LoopEndMs, song.LoopStartMs) = (song.LoopStartMs, song.LoopEndMs); // Tuple swap
+        }
     }
 
-    private void DrawRuler(Rect grid, Song song, Vector2 pan, float zoom)
+    private void DrawRuler(Rect gridArea, Song song, Vector2 panOffset, float zoom)
     {
-        var r = UI.Context.Renderer;
-        float pxPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        float msPerBeat = 60000f / (float)song.Tempo;
-        float pxPerBeat = msPerBeat * pxPerMs;
-        if (pxPerBeat < 5) return;
+        var renderer = UI.Context.Renderer;
+        float pixelsPerMs = GetPixelsPerMs(song, zoom);
+        if (pixelsPerMs <= 0) return;
 
-        int beatIdx = (int)Math.Floor(pan.X / pxPerBeat);
-        float startX = grid.X - (pan.X % pxPerBeat);
+        float msPerBeat = (float)(60000.0 / song.Tempo);
+        float pixelsPerBeat = msPerBeat * pixelsPerMs;
+        float pixelsPerMeasure = pixelsPerBeat * 4;
+
+        // Don't draw if beats are too close together
+        if (pixelsPerBeat < 5) return;
+
+        // Calculate the first visible beat number based on panning
+        int firstBeat = (int)Math.Floor(panOffset.X / pixelsPerBeat);
+        float startX = gridArea.X - (panOffset.X % pixelsPerBeat);
+
         var textStyle = new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 };
 
-        for (float x = startX; x < grid.Right; x += pxPerBeat, beatIdx++)
+        for (float x = startX; x < gridArea.Right; x += pixelsPerBeat, firstBeat++)
         {
-            if (x < grid.X) continue;
-            bool measure = beatIdx % 4 == 0;
-            r.DrawLine(
-                new Vector2(x, grid.Y),
-                new Vector2(x, grid.Y + (measure ? grid.Height : grid.Height * 0.6f)),
-                DawTheme.TextDim,
-                1f);
+            if (x < gridArea.X) continue;
 
-            if (measure)
+            bool isMeasure = firstBeat % 4 == 0;
+            float lineY = isMeasure ? gridArea.Y + gridArea.Height * 0.5f : gridArea.Y + gridArea.Height * 0.75f;
+            renderer.DrawLine(new Vector2(x, lineY), new Vector2(x, gridArea.Bottom), DawTheme.PianoRollGridAccent, 1f);
+
+            if (isMeasure)
             {
-                string lbl = (beatIdx / 4 + 1).ToString();
-                var size = UI.Context.TextService.MeasureText(lbl, textStyle);
-                r.DrawText(
-                    new Vector2(x - size.X / 2, grid.Y + grid.Height - size.Y),
-                    lbl,
-                    textStyle,
-                    new Alignment(HAlignment.Center, VAlignment.Top),
-                    size,
-                    DawTheme.TextDim);
+                int measureNumber = (firstBeat / 4) + 1;
+                UI.Text($"measure_label_{measureNumber}", measureNumber.ToString(), new Vector2(x + 3, gridArea.Y + 5), textStyle);
             }
         }
     }
 
-    private void DrawLoopRegion(Rect grid, Song song, Vector2 pan, float zoom)
+    private void DrawLoopRegion(Rect gridArea, Song song, Vector2 panOffset, float zoom)
     {
         if (!song.IsLoopingEnabled) return;
-        float pxPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        float x0 = grid.X + song.LoopStartMs * pxPerMs - pan.X;
-        float x1 = grid.X + song.LoopEndMs * pxPerMs - pan.X;
-        var loopRect = new Rect(x0, grid.Y, x1 - x0, grid.Height);
-        var overlay = new Color4(DawTheme.Accent.R, DawTheme.Accent.G, DawTheme.Accent.B, 0.2f);
-        UI.Context.Renderer.DrawBox(loopRect, new BoxStyle { FillColor = overlay, Roundness = 0, BorderLength = 0 });
+
+        float pixelsPerMs = GetPixelsPerMs(song, zoom);
+        if (pixelsPerMs <= 0) return;
+
+        float start = song.LoopStartMs;
+        float end = song.LoopEndMs;
+
+        // Handle the case where the user is dragging from right to left
+        if (_isDraggingLoop && start > end)
+        {
+            (end, start) = (start, end);
+        }
+
+        float startX = gridArea.X + (start * pixelsPerMs) - panOffset.X;
+        float endX = gridArea.X + (end * pixelsPerMs) - panOffset.X;
+
+        var loopRect = new Rect(startX, gridArea.Y, endX - startX, gridArea.Height);
+
+        // Clamp to visible area for drawing
+        loopRect.X = Math.Max(loopRect.X, gridArea.X);
+        loopRect.Width = Math.Min(endX, gridArea.Right) - loopRect.X;
+
+        if (loopRect.Width > 0)
+        {
+            var color = new Color4(DawTheme.AccentBright.R, DawTheme.AccentBright.G, DawTheme.AccentBright.B, 0.4f);
+            UI.Context.Renderer.DrawBox(loopRect, new BoxStyle { FillColor = color, Roundness = 0 });
+        }
     }
 
-    private void DrawPlaybackCursor(
-        Rect grid,
-        bool isPlaying,
-        long currentTimeMs,
-        Vector2 pan,
-        float zoom)
+    private float ScreenToTime(float screenX, Rect gridArea, Song song, Vector2 panOffset, float zoom)
     {
-        if (!isPlaying) return;
-
-        float pxPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        float x = grid.X + currentTimeMs * pxPerMs - pan.X;
-        if (x < grid.X || x > grid.Right) return;
-
-        UI.Context.Renderer.DrawLine(
-            new Vector2(x, grid.Y),
-            new Vector2(x, grid.Bottom),
-            DawTheme.AccentBright,
-            2f);
+        float pixelsPerMs = GetPixelsPerMs(song, zoom);
+        if (pixelsPerMs <= 0) return 0;
+        float timeMs = (screenX - gridArea.X + panOffset.X) / pixelsPerMs;
+        return Math.Max(0, timeMs);
     }
-
-    private float ScreenToTime(float sx, Rect grid, Vector2 pan, float zoom)
-        => (sx - grid.X + pan.X) / (DawMetrics.BasePixelsPerMs * zoom);
 }
