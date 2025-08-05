@@ -31,7 +31,8 @@ public class VelocityPaneView
             if (hitNote != null)
             {
                 state.VelocityBarBeingDragged = hitNote;
-                state.SelectedNote = hitNote; // Also select the note in the main view
+                state.SelectedNotes.Clear();
+                state.SelectedNotes.Add(hitNote);
             }
         }
 
@@ -54,8 +55,11 @@ public class VelocityPaneView
         }
     }
 
-    private void DrawVelocityBars(UIContext context, Rect velocityArea, PianoRollState state, MidiTrack track, Vector2 panOffset, float zoom)
+    private void DrawVelocityBars(UIContext context, Rect velocityArea, PianoRollState state, MidiTrack? track, Vector2 panOffset, float zoom)
     {
+        // FIX: Add a null check to prevent crashing when no track is selected.
+        if (track is null) return;
+
         float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
         const float chordOffset = 4f; // Pixels to shift each note in a chord
 
@@ -86,7 +90,7 @@ public class VelocityPaneView
                     barHeight
                 );
 
-                var color = note == state.SelectedNote ? DawTheme.Selection : DawTheme.AccentBright;
+                var color = state.SelectedNotes.Contains(note) ? DawTheme.Selection : DawTheme.AccentBright;
 
                 // The main line of the bar
                 context.Renderer.DrawBox(barRect, new BoxStyle { FillColor = color, Roundness = 0 });

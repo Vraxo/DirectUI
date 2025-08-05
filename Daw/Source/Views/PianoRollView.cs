@@ -20,6 +20,10 @@ public class PianoRollView
     private PianoRollTool _currentTool;
     private readonly bool[] _isBlackKey = new bool[12];
 
+    // --- Drag state for multi-note move ---
+    private Dictionary<NoteEvent, (int StartTime, int Pitch)> _dragStartStates = new();
+
+
     // Public accessors for linked views (like Timeline)
     public Vector2 GetPanOffset() => _state.PanOffset;
     public float GetZoom() => _state.Zoom;
@@ -50,6 +54,7 @@ public class PianoRollView
             DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
             DrawGrid(gridArea, song.Tempo);
             DrawNotes(gridArea);
+            DrawSelectionBox();
             DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
         }
         else
@@ -76,74 +81,135 @@ public class PianoRollView
 
         bool isHoveringGrid = gridArea.Contains(input.MousePosition);
 
-        // Panning (Middle Mouse) should work regardless of the tool
+        // Panning (Middle Mouse)
         if (input.WasMiddleMousePressedThisFrame && isHoveringGrid) _state.IsPanning = true;
         if (!input.IsMiddleMouseDown) _state.IsPanning = false;
         if (_state.IsPanning) _state.PanOffset += input.MousePosition - input.PreviousMousePosition;
 
-        // Zooming (Scroll Wheel) should work regardless of the tool
+        // Zooming (Scroll Wheel)
         if (isHoveringGrid && input.ScrollDelta != 0)
         {
             _state.Zoom += input.ScrollDelta * 0.1f * _state.Zoom;
             _state.Zoom = Math.Clamp(_state.Zoom, 0.1f, 10f);
         }
 
-        // --- Tool-Specific Logic (Left Mouse) ---
+        // Left Mouse Button Down
         if (input.WasLeftMousePressedThisFrame && isHoveringGrid)
         {
             HandleLeftClick(input, gridArea);
         }
 
-        if (!input.IsLeftMouseDown)
+        // Left Mouse Button Drag
+        if (_state.IsBoxSelecting)
         {
-            _state.NoteBeingDragged = null;
-            _state.IsResizingRight = false;
+            float x = Math.Min(_state.BoxSelectionStart.X, input.MousePosition.X);
+            float y = Math.Min(_state.BoxSelectionStart.Y, input.MousePosition.Y);
+            float width = Math.Abs(_state.BoxSelectionStart.X - input.MousePosition.X);
+            float height = Math.Abs(_state.BoxSelectionStart.Y - input.MousePosition.Y);
+            _state.SelectionBox = new Rect(x, y, width, height);
         }
 
-        // Drag/Resize logic is only for the Select tool
+        // Left Mouse Button Up
+        if (!input.IsLeftMouseDown)
+        {
+            if (_state.IsBoxSelecting)
+            {
+                FinalizeBoxSelection(gridArea);
+            }
+            _state.IsBoxSelecting = false;
+            _state.NoteBeingDragged = null;
+            _state.IsResizingRight = false;
+            _dragStartStates.Clear();
+        }
+
+        // Drag/Resize logic
         if (_currentTool == PianoRollTool.Select)
         {
             HandleDragAndResize(input, gridArea);
         }
     }
 
+    private void FinalizeBoxSelection(Rect gridArea)
+    {
+        _state.SelectedNotes.Clear();
+        if (_activeTrack == null) return;
+
+        foreach (var note in _activeTrack.Events)
+        {
+            var notePos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
+            var noteWidth = note.DurationMs * DawMetrics.BasePixelsPerMs * _state.Zoom;
+            var noteRect = new Rect(notePos.X, notePos.Y, noteWidth, DawMetrics.NoteHeight);
+
+            // Manual AABB intersection check
+            bool intersects = _state.SelectionBox.Left < noteRect.Right &&
+                              _state.SelectionBox.Right > noteRect.Left &&
+                              _state.SelectionBox.Top < noteRect.Bottom &&
+                              _state.SelectionBox.Bottom > noteRect.Top;
+
+            if (intersects)
+            {
+                _state.SelectedNotes.Add(note);
+            }
+        }
+    }
+
     private void HandleLeftClick(InputState input, Rect gridArea)
     {
         var (hitNote, isEdge) = HitTestNotes(input.MousePosition, gridArea);
+        bool isShiftHeld = input.HeldKeys.Contains(Keys.Shift);
 
         switch (_currentTool)
         {
             case PianoRollTool.Select:
                 if (hitNote != null)
                 {
-                    _state.SelectedNote = hitNote;
-                    if (isEdge)
+                    if (isShiftHeld)
+                    {
+                        // Add or remove from selection with Shift
+                        if (_state.SelectedNotes.Contains(hitNote)) _state.SelectedNotes.Remove(hitNote);
+                        else _state.SelectedNotes.Add(hitNote);
+                    }
+                    else
+                    {
+                        // If not already selected, clear selection and select only this one
+                        if (!_state.SelectedNotes.Contains(hitNote))
+                        {
+                            _state.SelectedNotes.Clear();
+                            _state.SelectedNotes.Add(hitNote);
+                        }
+                    }
+
+                    if (isEdge && _state.SelectedNotes.Count == 1)
                     {
                         _state.IsResizingRight = true;
                     }
                     else
                     {
+                        // Prepare for multi-note drag
                         _state.NoteBeingDragged = hitNote;
                         var noteScreenPos = GridToScreen(hitNote.StartTimeMs, hitNote.Pitch, gridArea);
                         _state.DragStartOffset = input.MousePosition - noteScreenPos;
+                        _dragStartStates = _state.SelectedNotes.ToDictionary(n => n, n => (n.StartTimeMs, n.Pitch));
                     }
                 }
                 else
                 {
-                    _state.SelectedNote = null;
+                    // Clicked on empty space
+                    if (!isShiftHeld) _state.SelectedNotes.Clear();
+                    _state.IsBoxSelecting = true;
+                    _state.BoxSelectionStart = input.MousePosition;
+                    _state.SelectionBox = new Rect(input.MousePosition.X, input.MousePosition.Y, 0, 0);
                 }
                 break;
 
             case PianoRollTool.Pencil:
                 if (hitNote != null)
                 {
-                    // If clicking an existing note with pencil, delete it
                     _activeTrack?.Events.Remove(hitNote);
-                    if (_state.SelectedNote == hitNote) _state.SelectedNote = null;
+                    if (_state.SelectedNotes.Contains(hitNote)) _state.SelectedNotes.Remove(hitNote);
                 }
                 else
                 {
-                    // If clicking empty space, add a new note
                     AddNewNote(input.MousePosition, gridArea);
                 }
                 break;
@@ -157,30 +223,40 @@ public class PianoRollView
         float msPerBeat = (float)(60000.0 / _song.Tempo);
         float quantization = msPerBeat / 4; // 16th note snapping
 
+        // Multi-note drag
         if (_state.NoteBeingDragged != null)
         {
             var targetNoteScreenPos = input.MousePosition - _state.DragStartOffset;
-            var gridPos = ScreenToGrid(targetNoteScreenPos, gridArea);
+            var (targetTime, targetPitch) = ScreenToGrid(targetNoteScreenPos, gridArea);
 
-            float snappedTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
+            var dragNoteStart = _dragStartStates[_state.NoteBeingDragged];
+            int timeDelta = (int)targetTime - dragNoteStart.StartTime;
+            int pitchDelta = targetPitch - dragNoteStart.Pitch;
 
-            _state.NoteBeingDragged.StartTimeMs = (int)snappedTime;
-            _state.NoteBeingDragged.Pitch = gridPos.pitch;
+            foreach (var note in _state.SelectedNotes)
+            {
+                var originalState = _dragStartStates[note];
+                float newTime = originalState.StartTime + timeDelta;
+                note.StartTimeMs = (int)(Math.Round(newTime / quantization) * quantization);
+                note.Pitch = originalState.Pitch + pitchDelta;
+            }
         }
 
-        if (_state.IsResizingRight && _state.SelectedNote != null)
+        // Single-note resize
+        var singleSelected = _state.GetSingleSelectedNote();
+        if (_state.IsResizingRight && singleSelected != null)
         {
             var gridPos = ScreenToGrid(input.MousePosition, gridArea);
             float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
-            int newDuration = (int)endEdgeTime - _state.SelectedNote.StartTimeMs;
-            _state.SelectedNote.DurationMs = Math.Max((int)quantization, newDuration);
+            int newDuration = (int)endEdgeTime - singleSelected.StartTimeMs;
+            singleSelected.DurationMs = Math.Max((int)quantization, newDuration);
         }
 
-        // Deletion
-        if (_state.SelectedNote != null && input.PressedKeys.Contains(Keys.Delete))
+        // Multi-note deletion
+        if (_state.SelectedNotes.Count > 0 && input.PressedKeys.Contains(Keys.Delete))
         {
-            _activeTrack?.Events.Remove(_state.SelectedNote);
-            _state.SelectedNote = null;
+            foreach (var note in _state.SelectedNotes) _activeTrack?.Events.Remove(note);
+            _state.SelectedNotes.Clear();
         }
     }
 
@@ -189,14 +265,14 @@ public class PianoRollView
         if (_song == null || _activeTrack == null) return;
         var (time, pitch) = ScreenToGrid(screenPos, gridArea);
 
-        // Snap to nearest 1/16th note
         float msPerBeat = (float)(60000.0 / _song.Tempo);
         float msPer16th = msPerBeat / 4;
         time = (int)(Math.Round(time / msPer16th) * msPer16th);
 
         var newNote = new NoteEvent((int)time, (int)msPer16th * 2, pitch, 100);
         _activeTrack.Events.Add(newNote);
-        _state.SelectedNote = newNote;
+        _state.SelectedNotes.Clear();
+        _state.SelectedNotes.Add(newNote);
     }
 
     private void DrawKeyboard(Rect keyboardArea)
@@ -215,7 +291,6 @@ public class PianoRollView
 
             renderer.DrawBox(keyRect, new BoxStyle { FillColor = keyColor, BorderColor = DawTheme.Border, BorderLengthLeft = 0, Roundness = 0 });
 
-            // Draw note names on C keys
             if (pitch % 12 == 0)
             {
                 UI.Text($"key_label_{pitch}", $"C{pitch / 12 - 1}",
@@ -233,7 +308,6 @@ public class PianoRollView
         float pixelsPerMs = DawMetrics.BasePixelsPerMs * _state.Zoom;
         float pixelsPerBeat = msPerBeat * pixelsPerMs;
 
-        // Horizontal lines (Pitches)
         for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
         {
             float y = gridArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
@@ -241,7 +315,6 @@ public class PianoRollView
             renderer.DrawBox(new Rect(gridArea.X, y, gridArea.Width, pitchHeight), new BoxStyle { FillColor = color, Roundness = 0 });
         }
 
-        // Vertical lines (Time)
         float startX = gridArea.X - (_state.PanOffset.X % pixelsPerBeat);
         int beatIndex = (int)(_state.PanOffset.X / pixelsPerBeat);
 
@@ -253,7 +326,6 @@ public class PianoRollView
             beatIndex++;
         }
 
-        // Draw Loop Region Overlay
         if (_song != null && _song.IsLoopingEnabled)
         {
             float loopStartX = gridArea.X + (_song.LoopStartMs * pixelsPerMs) - _state.PanOffset.X;
@@ -276,20 +348,34 @@ public class PianoRollView
             float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _state.Zoom);
             var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
 
-            // Culling
             if (noteRect.Right < gridArea.X || noteRect.X > gridArea.Right)
                 continue;
 
+            bool isSelected = _state.SelectedNotes.Contains(note);
             var style = new BoxStyle
             {
                 FillColor = DawTheme.Accent,
-                BorderColor = note == _state.SelectedNote ? DawTheme.Selection : DawTheme.AccentBright,
-                BorderLength = note == _state.SelectedNote ? 2f : 1f,
+                BorderColor = isSelected ? DawTheme.Selection : DawTheme.AccentBright,
+                BorderLength = isSelected ? 2f : 1f,
                 Roundness = 0.1f
             };
             renderer.DrawBox(noteRect, style);
         }
     }
+
+    private void DrawSelectionBox()
+    {
+        if (!_state.IsBoxSelecting) return;
+        var style = new BoxStyle
+        {
+            FillColor = new Color4(DawTheme.Selection.R, DawTheme.Selection.G, DawTheme.Selection.B, 0.2f),
+            BorderColor = DawTheme.Selection,
+            BorderLength = 1f,
+            Roundness = 0f
+        };
+        UI.Context.Renderer.DrawBox(_state.SelectionBox, style);
+    }
+
 
     private void DrawPlaybackCursor(Rect gridArea, bool isPlaying, long currentTimeMs)
     {
@@ -298,11 +384,7 @@ public class PianoRollView
         float pixelsPerMs = DawMetrics.BasePixelsPerMs * _state.Zoom;
         float cursorX = gridArea.X + (currentTimeMs * pixelsPerMs) - _state.PanOffset.X;
 
-        // Culling
-        if (cursorX < gridArea.X || cursorX > gridArea.Right)
-        {
-            return;
-        }
+        if (cursorX < gridArea.X || cursorX > gridArea.Right) return;
 
         var renderer = UI.Context.Renderer;
         renderer.DrawLine(
