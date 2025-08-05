@@ -17,22 +17,24 @@ public class DawAppLogic : IAppLogic
     private const string SongFilePath = "mysong.dawjson";
 
     // --- UI State ---
-    private readonly SynthParameters _synthParameters = new();
     private int _activeTrackIndex = 0;
-    private float _leftPanelWidth = 200; // Widen for synth controls
-    private float _bottomPanelHeight = 100;
+    private float _leftPanelWidth = 150;
+    private float _bottomPanelHeight = 100; // State for the new velocity panel
     private PianoRollTool _currentTool = PianoRollTool.Select;
 
     // --- Child Views ---
     private readonly MenuBarView _menuBarView;
     private readonly TransportView _transportView;
-    private readonly TimelineView _timelineView; // FIX: Restored this line
+    private readonly TimelineView _timelineView;
     private readonly TrackListView _trackListView;
     private readonly PianoRollToolbarView _pianoRollToolbarView;
     private readonly PianoRollView _pianoRollView;
-    private readonly SynthControlView _synthControlView; // New view for synth controls
     private readonly IWindowHost _host;
 
+    /// <summary>
+    /// A small helper class to robustly manage state passed to and from a modal dialog.
+    /// This avoids potential C# closure issues with ref-modified variables.
+    /// </summary>
     private class RenameModalState
     {
         public string Name;
@@ -42,17 +44,16 @@ public class DawAppLogic : IAppLogic
     public DawAppLogic(IWindowHost host)
     {
         _host = host;
-        _audioEngine = new AudioEngine(_synthParameters); // Pass parameters to the engine
+        _audioEngine = new AudioEngine();
         _midiEngine = new MidiEngine(_audioEngine);
         _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
 
         _menuBarView = new MenuBarView();
         _transportView = new TransportView(_midiEngine);
-        _timelineView = new TimelineView(); // FIX: Restored this line
+        _timelineView = new TimelineView();
         _trackListView = new TrackListView();
         _pianoRollToolbarView = new PianoRollToolbarView();
         _pianoRollView = new PianoRollView();
-        _synthControlView = new SynthControlView(); // Instantiate the new view
     }
 
     private static Song CreateDefaultSong()
@@ -75,17 +76,24 @@ public class DawAppLogic : IAppLogic
 
     public void DrawUI(UIContext context)
     {
+        // Poll the engine every frame for time-sensitive updates like looping
         _midiEngine.Update();
+
         var windowSize = context.Renderer.RenderTargetSize;
 
+        // Ensure active track index is always valid before drawing
         if (_activeTrackIndex >= _song.Tracks.Count)
         {
             _activeTrackIndex = Math.Max(0, _song.Tracks.Count - 1);
         }
 
+        // --- Step 1: Draw the entire UI. ---
+        // This allows all components to process input and update their internal state for this frame.
         DrawTopBar(windowSize);
         DrawMainContent(windowSize);
 
+        // --- Step 2: Handle actions that were generated during the draw pass. ---
+        // This is the correct order for an immediate-mode GUI.
         HandleGlobalActions();
         HandleTrackActions();
     }
@@ -117,10 +125,16 @@ public class DawAppLogic : IAppLogic
         switch (action)
         {
             case TrackListView.TrackAction.Delete:
-                if (index >= 0 && index < _song.Tracks.Count) _song.Tracks.RemoveAt(index);
+                if (index >= 0 && index < _song.Tracks.Count)
+                {
+                    _song.Tracks.RemoveAt(index);
+                }
                 break;
             case TrackListView.TrackAction.Rename:
-                if (index >= 0 && index < _song.Tracks.Count) PromptForTrackName(index);
+                if (index >= 0 && index < _song.Tracks.Count)
+                {
+                    PromptForTrackName(index);
+                }
                 break;
             case TrackListView.TrackAction.MoveUp:
                 if (index > 0 && index < _song.Tracks.Count)
@@ -128,7 +142,7 @@ public class DawAppLogic : IAppLogic
                     var track = _song.Tracks[index];
                     _song.Tracks.RemoveAt(index);
                     _song.Tracks.Insert(index - 1, track);
-                    _activeTrackIndex = index - 1;
+                    _activeTrackIndex = index - 1; // Keep selection on the moved track
                 }
                 break;
             case TrackListView.TrackAction.MoveDown:
@@ -137,7 +151,7 @@ public class DawAppLogic : IAppLogic
                     var track = _song.Tracks[index];
                     _song.Tracks.RemoveAt(index);
                     _song.Tracks.Insert(index + 1, track);
-                    _activeTrackIndex = index + 1;
+                    _activeTrackIndex = index + 1; // Keep selection on the moved track
                 }
                 break;
         }
@@ -145,25 +159,62 @@ public class DawAppLogic : IAppLogic
 
     private void PromptForTrackName(int trackIndex)
     {
+        // Use a state object to robustly capture the string being modified by the modal.
         var modalState = new RenameModalState(_song.Tracks[trackIndex].Name);
+
+        Console.WriteLine($"[RENAME-LOG] Opening rename dialog for track {trackIndex}. Initial name: '{modalState.Name}'.");
+
         Action<UIContext> drawCallback = (ctx) =>
         {
+            // This is the UI for the modal window. It's drawn every frame the modal is open.
             UI.BeginVBoxContainer("rename_vbox", new Vector2(10, 10), 15);
+
             UI.Text("rename_prompt", "Enter new track name:");
-            UI.InputText("rename_input", ref modalState.Name, new Vector2(280, 25));
-            UI.BeginHBoxContainer("rename_buttons", UI.Context.Layout.GetCurrentPosition(), 10);
-            if (UI.Button("rename_ok", "OK", new Vector2(80, 25))) _host.ModalWindowService.CloseModalWindow(0);
-            if (UI.Button("rename_cancel", "Cancel", new Vector2(80, 25))) _host.ModalWindowService.CloseModalWindow(1);
+
+            // The 'ref modalState.Name' here modifies the field on the captured 'modalState' object.
+            if (UI.InputText("rename_input", ref modalState.Name, new Vector2(280, 25)))
+            {
+                // This log will fire every time a character is typed in the InputText widget.
+                Console.WriteLine($"[RENAME-LOG] InputText changed. In-modal name is now: '{modalState.Name}'");
+            }
+
+            var hboxPos = UI.Context.Layout.GetCurrentPosition();
+            UI.BeginHBoxContainer("rename_buttons", hboxPos, 10);
+            if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
+            {
+                // Close the modal and indicate success with result code 0.
+                _host.ModalWindowService.CloseModalWindow(0);
+            }
+            if (UI.Button("rename_cancel", "Cancel", new Vector2(80, 25)))
+            {
+                // Close the modal and indicate cancellation with result code 1.
+                _host.ModalWindowService.CloseModalWindow(1);
+            }
             UI.EndHBoxContainer();
+
             UI.EndVBoxContainer();
         };
+
+        // This is the callback that executes *after* the modal window is closed.
         Action<int> onClosedCallback = (resultCode) =>
         {
+            // This is the crucial moment. We log the value from our state object.
+            Console.WriteLine($"[RENAME-LOG] Closed dialog for track {trackIndex}. Result code: {resultCode}.");
+            Console.WriteLine($"[RENAME-LOG] Final captured value of name: '{modalState.Name}'.");
+
             if (resultCode == 0 && !string.IsNullOrWhiteSpace(modalState.Name))
             {
+                // If OK was pressed and the name is valid, apply the change.
                 _song.Tracks[trackIndex].Name = modalState.Name;
+                Console.WriteLine($"[RENAME-LOG] SUCCESS: Applied new name '{modalState.Name}' to track {trackIndex}.");
+            }
+            else
+            {
+                // If Cancel was pressed or the name is invalid, do not change anything.
+                Console.WriteLine($"[RENAME-LOG] CANCELED: Rename aborted. Track name remains '{_song.Tracks[trackIndex].Name}'.");
             }
         };
+
         _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 160, drawCallback, onClosedCallback);
     }
 
@@ -172,47 +223,70 @@ public class DawAppLogic : IAppLogic
         var topBarArea = new Rect(0, 0, windowSize.X, DawMetrics.TopBarHeight);
         var style = new BoxStyle { FillColor = DawTheme.PanelBackground, BorderColor = DawTheme.Border, BorderLengthBottom = 1, Roundness = 0 };
         UI.Context.Renderer.DrawBox(topBarArea, style);
+
+        // Position menu bar and transport within the top bar
         _menuBarView.Draw(new Vector2(0, 0));
-        _transportView.Draw(new Vector2(150, 30), _song); // Offset to not overlap menu
+        _transportView.Draw(new Vector2(0, 30), _song);
     }
 
     private void DrawMainContent(Vector2 windowSize)
     {
-        // Left Panel for Track List and Synth Controls
-        UI.BeginResizableVPanel("left_panel", ref _leftPanelWidth, HAlignment.Left, topOffset: DawMetrics.TopBarHeight, minWidth: 150, maxWidth: 400);
-        UI.BeginVBoxContainer("left_panel_vbox", new Vector2(5, 5), 10);
+        // Left Panel for Track List
+        UI.BeginResizableVPanel("track_list_panel", ref _leftPanelWidth, HAlignment.Left, topOffset: DawMetrics.TopBarHeight, minWidth: 100, maxWidth: 300);
         _trackListView.Draw(_song, ref _activeTrackIndex);
-        UI.Separator(100, 1, 10);
-        _synthControlView.Draw(new Rect(0, UI.Context.Layout.GetCurrentPosition().Y, _leftPanelWidth - 10, 350), _synthParameters);
-        UI.EndVBoxContainer();
         UI.EndResizableVPanel();
 
         // Right side for Timeline and Piano Roll
         float mainContentX = _leftPanelWidth;
         float mainContentWidth = windowSize.X - _leftPanelWidth;
 
-        UI.BeginResizableHPanel("editor_panel", ref _bottomPanelHeight, reservedLeftSpace: mainContentX, reservedRightSpace: 0, topOffset: DawMetrics.TopBarHeight, minHeight: 50, maxHeight: 300);
-        var velocityPaneArea = new Rect(mainContentX, windowSize.Y - _bottomPanelHeight, mainContentWidth, _bottomPanelHeight);
+        // Container for the main editing area (Timeline + Piano Roll + Velocity Pane)
+        UI.BeginResizableHPanel("editor_panel", ref _bottomPanelHeight,
+            reservedLeftSpace: mainContentX,
+            reservedRightSpace: 0,
+            topOffset: DawMetrics.TopBarHeight,
+            minHeight: 50, maxHeight: 300);
+
+        // This inner part is the Velocity Editor Pane
+        var velocityPaneArea = new Rect(
+            mainContentX,
+            windowSize.Y - _bottomPanelHeight,
+            mainContentWidth,
+            _bottomPanelHeight
+        );
+
+        // Draw the background for the velocity pane
         UI.Context.Renderer.DrawBox(velocityPaneArea, new BoxStyle { FillColor = DawTheme.Background, Roundness = 0 });
+
+        // Pass the song object, which is now required for tempo-correct scaling.
         _pianoRollView.DrawVelocityPane(velocityPaneArea, _song);
+
         UI.EndResizableHPanel();
 
+
+        // Calculate the area available for the upper section (Timeline and Piano Roll)
         float upperAreaHeight = windowSize.Y - DawMetrics.TopBarHeight - _bottomPanelHeight;
         if (upperAreaHeight < 0) upperAreaHeight = 0;
 
+        // Timeline
         var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
-        if (timelineArea.Bottom <= upperAreaHeight + DawMetrics.TopBarHeight)
+        float timelineBottom = timelineArea.Y + timelineArea.Height;
+        if (timelineBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
         {
             _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
         }
 
+
+        // Toolbar for Piano Roll Tools
         float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
         var toolbarArea = new Rect(mainContentX, toolbarY, mainContentWidth, DawMetrics.PianoRollToolbarHeight);
-        if (toolbarArea.Bottom <= upperAreaHeight + DawMetrics.TopBarHeight)
+        float toolbarBottom = toolbarArea.Y + toolbarArea.Height;
+        if (toolbarBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
         {
             _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
         }
 
+        // Piano Roll
         float pianoRollY = toolbarY + DawMetrics.PianoRollToolbarHeight;
         float availablePianoRollHeight = windowSize.Y - pianoRollY - _bottomPanelHeight;
         if (availablePianoRollHeight > 0)
