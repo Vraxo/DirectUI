@@ -270,12 +270,14 @@ public class DawAppLogic : IAppLogic
 
         // Timeline
         var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
-        float timelineBottom = timelineArea.Y + timelineArea.Height;
-        if (timelineBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
-        {
-            _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
-        }
 
+        _timelineView.Draw(
+            viewArea: timelineArea,
+            song: _song,
+            panOffset: _pianoRollView.GetPanOffset(),
+            zoom: _pianoRollView.GetZoom(),
+            isPlaying: _midiEngine.IsPlaying,
+            currentTimeMs: _midiEngine.CurrentTimeMs);
 
         // Toolbar for Piano Roll Tools
         float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
