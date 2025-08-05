@@ -18,7 +18,7 @@ public class DawAppLogic : IAppLogic
 
     // --- UI State ---
     private int _activeTrackIndex = 0;
-    private float _leftPanelWidth = 150;
+    private float _leftPanelWidth = 250; // Increased width to accommodate inspector
     private float _bottomPanelHeight = 100; // State for the new velocity panel
     private PianoRollTool _currentTool = PianoRollTool.Select;
 
@@ -27,6 +27,7 @@ public class DawAppLogic : IAppLogic
     private readonly TransportView _transportView;
     private readonly TimelineView _timelineView;
     private readonly TrackListView _trackListView;
+    private readonly InspectorView _inspectorView; // Added InspectorView
     private readonly PianoRollToolbarView _pianoRollToolbarView;
     private readonly PianoRollView _pianoRollView;
     private readonly IWindowHost _host;
@@ -52,6 +53,7 @@ public class DawAppLogic : IAppLogic
         _transportView = new TransportView(_midiEngine);
         _timelineView = new TimelineView();
         _trackListView = new TrackListView();
+        _inspectorView = new InspectorView(); // Instantiate InspectorView
         _pianoRollToolbarView = new PianoRollToolbarView();
         _pianoRollView = new PianoRollView();
     }
@@ -231,9 +233,22 @@ public class DawAppLogic : IAppLogic
 
     private void DrawMainContent(Vector2 windowSize)
     {
-        // Left Panel for Track List
-        UI.BeginResizableVPanel("track_list_panel", ref _leftPanelWidth, HAlignment.Left, topOffset: DawMetrics.TopBarHeight, minWidth: 100, maxWidth: 300);
+        // --- Left Panel: Track List and Inspector ---
+        UI.BeginResizableVPanel("left_panel", ref _leftPanelWidth, HAlignment.Left, topOffset: DawMetrics.TopBarHeight, minWidth: 200, maxWidth: 400);
+        
+        // This VBox now contains both the track list and the inspector
+        UI.BeginVBoxContainer("left_panel_vbox", UI.Context.Layout.GetCurrentPosition(), 10);
+        
         _trackListView.Draw(_song, ref _activeTrackIndex);
+        
+        UI.Separator(200, verticalPadding: 10);
+        
+        var activeTrack = (_song.Tracks.Count > 0 && _activeTrackIndex < _song.Tracks.Count) 
+            ? _song.Tracks[_activeTrackIndex] 
+            : null;
+        _inspectorView.Draw(activeTrack);
+
+        UI.EndVBoxContainer();
         UI.EndResizableVPanel();
 
         // Right side for Timeline and Piano Roll
@@ -292,8 +307,8 @@ public class DawAppLogic : IAppLogic
         if (availablePianoRollHeight > 0)
         {
             var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, availablePianoRollHeight);
-            var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
-            _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
+            var pianoRollActiveTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
+            _pianoRollView.Draw(pianoRollArea, pianoRollActiveTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
         }
     }
 
