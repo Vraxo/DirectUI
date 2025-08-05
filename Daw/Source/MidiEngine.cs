@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Concurrent;
 using System.Linq;
 using Daw.Core;
 using Melanchall.DryWetMidi.Common;
@@ -10,16 +11,16 @@ namespace Daw.Audio;
 
 /// <summary>
 /// Provides core DAW functionality for converting a Song to MIDI,
-/// playing it back, and exporting it as a .mid file.
-/// This implementation uses the DryWetMIDI library.
-/// Required NuGet package: Melanchall.DryWetMidi
+/// playing it back through the internal AudioEngine, and exporting it as a .mid file.
 /// </summary>
 public class MidiEngine : IDisposable
 {
+    private readonly AudioEngine _audioEngine;
     private Playback? _playback;
-    private readonly IOutputDevice? _outputDevice;
-    private Song? _currentSong; // Store the currently playing song for looping
-    private bool _isDisposed;
+    private Song? _currentSong;
+
+    // Use a thread-safe queue to handle Note Off events, as they may come from a different thread.
+    private readonly ConcurrentQueue<(long releaseTime, Note note)> _notesToRelease = new();
 
     public bool IsPlaying => _playback?.IsRunning ?? false;
     public long CurrentTimeMs
@@ -30,44 +31,51 @@ public class MidiEngine : IDisposable
         }
     }
 
-    public MidiEngine()
+    public MidiEngine(AudioEngine audioEngine)
     {
-        try
-        {
-            // Get the default system MIDI output device.
-            // This could be "Microsoft GS Wavetable Synth" on Windows.
-            _outputDevice = OutputDevice.GetByIndex(0);
-        }
-        catch (ArgumentException)
-        {
-            Console.WriteLine("Warning: No MIDI output devices found. Playback will not be available.");
-            _outputDevice = null;
-        }
+        _audioEngine = audioEngine ?? throw new ArgumentNullException(nameof(audioEngine));
     }
 
     /// <summary>
-    /// This method should be called every frame to handle real-time updates like looping.
+    /// This method should be called every frame to handle real-time updates like looping and note-off events.
     /// </summary>
     public void Update()
     {
+        // Clean up any finished voices from the mixer.
+        _audioEngine.Update();
+
         if (_playback == null || !_playback.IsRunning || _currentSong == null)
         {
+            // Even when stopped, process any lingering notes to be released
+            ProcessNoteReleases(long.MaxValue);
             return;
         }
 
-        // Handle custom looping logic by polling the current time.
+        long currentTimeMs = CurrentTimeMs;
+
+        ProcessNoteReleases(currentTimeMs);
+
         if (_currentSong.IsLoopingEnabled && _currentSong.LoopEndMs > _currentSong.LoopStartMs)
         {
-            var currentTime = this.CurrentTimeMs;
-
-            // If the current time has passed the loop end point, seek back to the loop start.
-            if (currentTime >= _currentSong.LoopEndMs)
+            if (currentTimeMs >= _currentSong.LoopEndMs)
             {
                 var loopStart = new MetricTimeSpan(0, 0, 0, (int)_currentSong.LoopStartMs);
                 _playback.MoveToTime(loopStart);
             }
         }
     }
+
+    private void ProcessNoteReleases(long currentTimeMs)
+    {
+        while (_notesToRelease.TryPeek(out var item) && item.releaseTime <= currentTimeMs)
+        {
+            if (_notesToRelease.TryDequeue(out item))
+            {
+                _audioEngine.NoteOff(item.note.NoteNumber);
+            }
+        }
+    }
+
 
     /// <summary>
     /// Converts a Song object into a DryWetMIDI MidiFile object.
@@ -77,23 +85,11 @@ public class MidiEngine : IDisposable
     public MidiFile ConvertToMidiFile(Song song)
     {
         var midiFile = new MidiFile();
-        midiFile.TimeDivision = new TicksPerQuarterNoteTimeDivision(480);
+        var tempoMap = TempoMap.Create(new TicksPerQuarterNoteTimeDivision(480), Tempo.FromBeatsPerMinute(song.Tempo));
 
-        // A single tempo map is used for the entire file.
-        var tempoMap = midiFile.GetTempoMap();
-        long microsecondsPerQuarterNote = (long)(60000000 / song.Tempo);
-        var setTempoEvent = new SetTempoEvent(microsecondsPerQuarterNote);
-
-        // Create a track for each track in our song
         foreach (var songTrack in song.Tracks)
         {
             var trackChunk = new TrackChunk();
-
-            // Add the tempo event to the first track only
-            if (midiFile.Chunks.Count == 0)
-            {
-                trackChunk.Events.Add(setTempoEvent);
-            }
 
             var notes = songTrack.Events.Select(noteEvent =>
             {
@@ -129,26 +125,21 @@ public class MidiEngine : IDisposable
     }
 
     /// <summary>
-    /// Plays the given song using the default system MIDI output device.
+    /// Plays the given song using the internal AudioEngine.
     /// </summary>
     /// <param name="song">The song to play.</param>
     public void Play(Song song)
     {
-        if (_outputDevice == null)
-        {
-            Console.WriteLine("Cannot play: No MIDI output device is available.");
-            return;
-        }
+        Stop(); // Stop any previous playback first
 
         var midiFile = ConvertToMidiFile(song);
+        _currentSong = song;
 
-        // Stop any previous playback
-        Stop();
+        // Use the event-based Playback, which doesn't require an output device.
+        _playback = midiFile.GetPlayback();
+        _playback.NotesPlaybackStarted += OnNotesPlaybackStarted;
+        _playback.NotesPlaybackFinished += OnNotesPlaybackFinished;
 
-        _currentSong = song; // Store reference for the update loop
-        _playback = midiFile.GetPlayback(_outputDevice);
-
-        // If looping is enabled, we need to decide where to start playing from.
         if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
         {
             var loopStart = new MetricTimeSpan(0, 0, 0, (int)song.LoopStartMs);
@@ -168,30 +159,40 @@ public class MidiEngine : IDisposable
     {
         if (_playback != null)
         {
+            // Turn off all notes that might be sustaining by processing the queue
+            _notesToRelease.Clear();
+            ProcessNoteReleases(long.MaxValue);
+
             _playback.Stop();
+            _playback.NotesPlaybackStarted -= OnNotesPlaybackStarted;
+            _playback.NotesPlaybackFinished -= OnNotesPlaybackFinished;
             _playback.Dispose();
             _playback = null;
         }
         _currentSong = null;
     }
 
-    public void Dispose()
+    private void OnNotesPlaybackStarted(object? sender, NotesEventArgs e)
     {
-        Dispose(true);
-        GC.SuppressFinalize(this);
+        foreach (var note in e.Notes)
+        {
+            _audioEngine.NoteOn(note.NoteNumber, note.Velocity);
+        }
     }
 
-    protected virtual void Dispose(bool disposing)
+    private void OnNotesPlaybackFinished(object? sender, NotesEventArgs e)
     {
-        if (_isDisposed)
-            return;
-
-        if (disposing)
+        // This event can fire from a separate thread.
+        // Queue the notes to be released safely on the main update thread.
+        long currentTimeMs = CurrentTimeMs;
+        foreach (var note in e.Notes)
         {
-            Stop();
-            _outputDevice?.Dispose();
+            _notesToRelease.Enqueue((currentTimeMs, note));
         }
+    }
 
-        _isDisposed = true;
+    public void Dispose()
+    {
+        Stop();
     }
 }

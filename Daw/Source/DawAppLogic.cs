@@ -11,6 +11,7 @@ namespace Daw;
 
 public class DawAppLogic : IAppLogic
 {
+    private readonly AudioEngine _audioEngine;
     private readonly MidiEngine _midiEngine;
     private Song _song;
     private const string SongFilePath = "mysong.dawjson";
@@ -43,7 +44,8 @@ public class DawAppLogic : IAppLogic
     public DawAppLogic(IWindowHost host)
     {
         _host = host;
-        _midiEngine = new MidiEngine();
+        _audioEngine = new AudioEngine();
+        _midiEngine = new MidiEngine(_audioEngine);
         _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
 
         _menuBarView = new MenuBarView();
@@ -298,5 +300,7 @@ public class DawAppLogic : IAppLogic
     public void SaveState()
     {
         SongSerializer.Save(_song, SongFilePath);
+        _midiEngine.Dispose();
+        _audioEngine.Dispose();
     }
 }

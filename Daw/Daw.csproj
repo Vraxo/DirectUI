@@ -8,6 +8,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="CSCore" Version="1.2.1.2" />
     <PackageReference Include="Melanchall.DryWetMidi" Version="8.0.3-prerelease1" />
   </ItemGroup>
 
