@@ -10,71 +10,104 @@ namespace Daw.Audio;
 /// </summary>
 public class SynthesizerVoice : ISampleSource
 {
-    private readonly SineGenerator _sineGenerator;
-    private readonly AdsrEnvelope _adsr;
+    private readonly int _sampleRate;
+    private readonly AdsrEnvelope _ampEnvelope;
+    private readonly Filter _filter;
+
+    private OscillatorType _oscillatorType;
+    private double _phase;
+    private float _amplitude;
 
     public WaveFormat WaveFormat { get; }
     public long Position { get; set; }
-
-    // SineGenerator is an infinite source, so it has no defined length.
-    public long Length => 0;
-
-    // A synthesizer generates a continuous stream, so it cannot be seeked.
+    public long Length => 0; // Infinite
     public bool CanSeek => false;
 
-    // A public property to read the frequency for NoteOff matching.
-    public float Frequency => (float)_sineGenerator.Frequency;
+    public float Frequency { get; private set; }
 
     public SynthesizerVoice(int sampleRate)
     {
-        // FIX: The WaveFormat must match the mixer's format, which is 32-bit float.
+        _sampleRate = sampleRate;
         WaveFormat = new WaveFormat(sampleRate, 32, 1, AudioEncoding.IeeeFloat);
 
-        _sineGenerator = new SineGenerator(sampleRate, 0, 0) { Amplitude = 0.2f };
-        _adsr = new AdsrEnvelope(sampleRate)
-        {
-            AttackTime = 0.01f,
-            DecayTime = 0.1f,
-            SustainLevel = 0.7f,
-            ReleaseTime = 0.2f
-        };
+        _ampEnvelope = new AdsrEnvelope(sampleRate);
+        _filter = new Filter(sampleRate);
     }
 
-    public void NoteOn(int pitch, int velocity)
+    public void Configure(SynthParameters parameters, int pitch, int velocity)
     {
-        _sineGenerator.Frequency = (float)MidiToFrequency(pitch);
-        _sineGenerator.Amplitude = (velocity / 127f) * 0.2f; // Velocity affects amplitude
-        _adsr.NoteOn();
+        _oscillatorType = parameters.OscillatorType;
+
+        // Configure amp envelope from parameters
+        _ampEnvelope.AttackTime = parameters.AmpEnvAttackTime;
+        _ampEnvelope.DecayTime = parameters.AmpEnvDecayTime;
+        _ampEnvelope.SustainLevel = parameters.AmpEnvSustainLevel;
+        _ampEnvelope.ReleaseTime = parameters.AmpEnvReleaseTime;
+
+        // Configure voice properties from note event
+        Frequency = (float)MidiToFrequency(pitch);
+        _amplitude = (velocity / 127f) * 0.5f; // Reduce gain to prevent clipping with rich waveforms
+        _phase = 0.0; // Reset phase for new note
+
+        // Trigger the envelope
+        _ampEnvelope.NoteOn();
     }
 
     public void NoteOff()
     {
-        _adsr.NoteOff();
+        _ampEnvelope.NoteOff();
     }
 
-    /// <summary>
-    /// Returns true if the voice is currently active (i.e., not in the idle state of its envelope).
-    /// </summary>
-    public bool IsActive => _adsr.State != AdsrEnvelope.AdsrState.Idle;
+    public bool IsActive => _ampEnvelope.State != AdsrEnvelope.AdsrState.Idle;
 
     public int Read(float[] buffer, int offset, int count)
     {
-        // SineGenerator is infinite, so it will always fill the buffer.
-        int samplesRead = count;
-        _sineGenerator.Read(buffer, offset, count);
-
-        // Apply the ADSR envelope to each sample
-        for (int i = 0; i < samplesRead; i++)
+        // This is the core audio processing loop for the voice
+        for (int i = 0; i < count; i++)
         {
-            buffer[offset + i] *= _adsr.Process();
+            // 1. Generate Raw Oscillator Waveform
+            float rawSample = GenerateSample();
+
+            // 2. Apply Filter (currently static, will be modulated later)
+            // For now, we use the parameters from the time the note was struck.
+            // A more advanced synth would have its own envelopes for the filter.
+            float filteredSample = _filter.Process(rawSample, 20000f, 0.707f); // Placeholder - real values should come from params
+
+            // 3. Apply Amplitude Envelope (Volume)
+            float envelopedSample = filteredSample * _ampEnvelope.Process();
+
+            buffer[offset + i] = envelopedSample;
         }
 
-        return samplesRead;
+        return count;
     }
 
-    /// <summary>
-    /// Converts a MIDI note number (pitch) to its corresponding frequency in Hz.
-    /// </summary>
+    private float GenerateSample()
+    {
+        double increment = Frequency / _sampleRate;
+        _phase += increment;
+        if (_phase > 1.0) _phase -= 1.0;
+
+        float value = 0.0f;
+        switch (_oscillatorType)
+        {
+            case OscillatorType.Sine:
+                value = (float)Math.Sin(_phase * 2.0 * Math.PI);
+                break;
+            case OscillatorType.Square:
+                value = _phase < 0.5 ? 1.0f : -1.0f;
+                break;
+            case OscillatorType.Sawtooth:
+                value = (float)(2.0 * _phase - 1.0);
+                break;
+            case OscillatorType.Triangle:
+                value = (float)(2.0 * (0.5 - Math.Abs(_phase - 0.5)) * 2.0 - 1.0);
+                break;
+        }
+
+        return value * _amplitude;
+    }
+
     public static double MidiToFrequency(int midiNote)
     {
         return 440.0 * Math.Pow(2.0, (midiNote - 69.0) / 12.0);

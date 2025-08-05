@@ -15,15 +15,15 @@ public class AudioEngine : IDisposable
     private readonly ISoundOut _soundOut;
     private readonly MixingSampleSource _mixer;
     private readonly List<SynthesizerVoice> _voices = new();
+    private readonly SynthParameters _synthParameters;
     private const int MaxVoices = 32; // Limit polyphony
 
-    public AudioEngine()
+    public AudioEngine(SynthParameters synthParameters)
     {
-        // Use WasapiOut in exclusive mode with a low latency buffer (20ms).
-        // This is the best practice for a DAW to minimize the delay between a note event and the audible sound.
-        _soundOut = new WasapiOut(true, AudioClientShareMode.Exclusive, 20);
+        _synthParameters = synthParameters ?? throw new ArgumentNullException(nameof(synthParameters));
 
-        // Use our new custom mixer.
+        // Use WasapiOut in exclusive mode with a low latency buffer (20ms).
+        _soundOut = new WasapiOut(true, AudioClientShareMode.Exclusive, 20);
         _mixer = new MixingSampleSource(1, 44100);
 
         // Create a pool of synthesizer voices to be reused.
@@ -42,9 +42,9 @@ public class AudioEngine : IDisposable
         var voice = _voices.FirstOrDefault(v => !v.IsActive);
         if (voice != null)
         {
-            // The mixer needs to be aware of the voice to process its audio.
+            // Configure the voice with the current synthesizer parameters
+            voice.Configure(_synthParameters, pitch, velocity);
             _mixer.AddSource(voice);
-            voice.NoteOn(pitch, velocity);
         }
         else
         {
@@ -62,10 +62,6 @@ public class AudioEngine : IDisposable
         }
     }
 
-    /// <summary>
-    /// Tells all currently active voices to start their release phase.
-    /// This is thread-safe and can be called from any thread.
-    /// </summary>
     public void StopAllVoices()
     {
         foreach (var voice in _voices.Where(v => v.IsActive))
@@ -74,10 +70,6 @@ public class AudioEngine : IDisposable
         }
     }
 
-
-    /// <summary>
-    /// Called periodically to clean up voices that have finished their release phase.
-    /// </summary>
     public void Update()
     {
         // Find voices that are part of the mixer but are no longer active
@@ -92,7 +84,6 @@ public class AudioEngine : IDisposable
             _mixer.RemoveSource(voice);
         }
     }
-
 
     public void Dispose()
     {
