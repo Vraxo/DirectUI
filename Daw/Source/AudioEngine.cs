@@ -4,6 +4,7 @@ using System.Linq;
 using CSCore;
 using CSCore.CoreAudioAPI;
 using CSCore.SoundOut;
+using Daw.Core;
 
 namespace Daw.Audio;
 
@@ -36,7 +37,7 @@ public class AudioEngine : IDisposable
         _soundOut.Play();
     }
 
-    public void NoteOn(int pitch, int velocity)
+    public void NoteOn(int pitch, int velocity, OscillatorType oscType)
     {
         // Find a free (inactive) voice to play the note.
         var voice = _voices.FirstOrDefault(v => !v.IsActive);
@@ -44,6 +45,7 @@ public class AudioEngine : IDisposable
         {
             // The mixer needs to be aware of the voice to process its audio.
             _mixer.AddSource(voice);
+            voice.OscillatorType = oscType;
             voice.NoteOn(pitch, velocity);
         }
         else

@@ -24,6 +24,8 @@ public class TrackListView
             bool isActive = (i == activeTrackIndex);
             string trackId = $"track_{i}";
 
+            UI.BeginHBoxContainer($"track_row_{i}", UI.Context.Layout.GetCurrentPosition(), 5);
+
             // --- Draw the main track button ---
             var theme = new ButtonStylePack();
             theme.Normal.FillColor = isActive ? DawTheme.Accent : DawTheme.ControlFill;
@@ -34,6 +36,20 @@ public class TrackListView
             {
                 activeTrackIndex = i;
             }
+
+            // --- Oscillator ComboBox ---
+            var oscVBoxPos = UI.Context.Layout.GetCurrentPosition();
+            UI.BeginVBoxContainer($"osc_vbox_{i}", oscVBoxPos, 2);
+            UI.Text($"osc_label_{i}", "Wave", new Vector2(80, 10), new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 });
+            int selectedIndex = (int)track.OscillatorType;
+            string[] oscillatorNames = Enum.GetNames(typeof(OscillatorType));
+            if (UI.Combobox($"osc_combo_{i}", ref selectedIndex, oscillatorNames, new Vector2(80, 20)))
+            {
+                track.OscillatorType = (OscillatorType)selectedIndex;
+            }
+            UI.EndVBoxContainer();
+
+            UI.EndHBoxContainer();
 
             // --- Open Context Menu on Right-Click ---
             if (UI.BeginContextMenu(trackId))

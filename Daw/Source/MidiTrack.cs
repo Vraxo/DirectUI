@@ -9,6 +9,7 @@ public class MidiTrack
 {
     public string Name { get; set; } = "New Track";
     public List<NoteEvent> Events { get; set; } = new();
+    public OscillatorType OscillatorType { get; set; } = OscillatorType.Sine;
 
     // Future properties could include: MidiChannel, Instrument, Mute, Solo, etc.
 

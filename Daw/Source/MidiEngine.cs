@@ -11,7 +11,7 @@ namespace Daw.Audio;
 
 /// <summary>
 /// Provides core DAW functionality for converting a Song to MIDI,
-/// playing it back through the internal AudioEngine, and exporting it as a .mid file.
+/// playing it through the internal AudioEngine, and exporting it as a .mid file.
 /// </summary>
 public class MidiEngine : IDisposable
 {
@@ -72,8 +72,15 @@ public class MidiEngine : IDisposable
         conductorTrack.Events.Add(new SetTempoEvent(Tempo.FromBeatsPerMinute(song.Tempo).MicrosecondsPerQuarterNote));
         midiFile.Chunks.Add(conductorTrack);
 
-        foreach (var songTrack in song.Tracks)
+        for (int i = 0; i < song.Tracks.Count; i++)
         {
+            if (i >= 16)
+            {
+                Console.WriteLine($"Warning: Skipping track {i+1} ('{song.Tracks[i].Name}') as it exceeds the 16-channel MIDI limit.");
+                continue;
+            }
+        
+            var songTrack = song.Tracks[i];
             var trackChunk = new TrackChunk();
 
             var notes = songTrack.Events.Select(noteEvent =>
@@ -86,7 +93,8 @@ public class MidiEngine : IDisposable
 
                 return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
                 {
-                    Velocity = (SevenBitNumber)noteEvent.Velocity
+                    Velocity = (SevenBitNumber)noteEvent.Velocity,
+                    Channel = (FourBitNumber)i
                 };
             });
 
@@ -189,9 +197,19 @@ public class MidiEngine : IDisposable
 
     private void OnNotesPlaybackStarted(object? sender, NotesEventArgs e)
     {
+        if (_currentSong is null) return;
+
         foreach (var note in e.Notes)
         {
-            _audioEngine.NoteOn(note.NoteNumber, note.Velocity);
+            if (note.Channel < _currentSong.Tracks.Count)
+            {
+                var track = _currentSong.Tracks[note.Channel];
+                _audioEngine.NoteOn(note.NoteNumber, note.Velocity, track.OscillatorType);
+            }
+            else
+            {
+                _audioEngine.NoteOn(note.NoteNumber, note.Velocity, OscillatorType.Sine);
+            }
         }
     }
 
