@@ -17,6 +17,7 @@ public class PianoRollView
     private Song? _song;
     private NoteEvent? _selectedNote;
     private NoteEvent? _noteBeingDragged;
+    private NoteEvent? _velocityBarBeingDragged;
     private Vector2 _dragStartOffset;
     private bool _isResizingRight;
     private bool _isPanning;
@@ -47,13 +48,13 @@ public class PianoRollView
         var renderer = UI.Context.Renderer;
         var input = UI.Context.InputState;
 
-        // Draw panel background
-        renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0 });
+        // The viewArea is now just for the piano roll notes grid and keyboard.
+        // The velocity pane will be drawn in a separate area passed from the AppLogic.
 
         var gridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
 
         HandleInput(input, gridArea);
-        
+
         if (_activeTrack != null)
         {
             DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
@@ -63,9 +64,114 @@ public class PianoRollView
         }
         else
         {
-            UI.Text("no_track_selected", "No track selected. Please add or select a track.", new Vector2(gridArea.X + 10, gridArea.Y + 10));
+            // Center the "No track selected" text
+            var textSize = UI.Context.TextService.MeasureText("No track selected. Please add or select a track.", new ButtonStyle());
+            var textPos = new Vector2(
+                gridArea.X + (gridArea.Width - textSize.X) / 2,
+                gridArea.Y + (gridArea.Height - textSize.Y) / 2
+            );
+            UI.Text("no_track_selected", "No track selected. Please add or select a track.", textPos);
         }
     }
+
+    public void DrawVelocityPane(Rect velocityArea)
+    {
+        var renderer = UI.Context.Renderer;
+        var input = UI.Context.InputState;
+
+        // Background already drawn by AppLogic, but we can add a top border
+        renderer.DrawLine(velocityArea.TopLeft, velocityArea.TopRight, DawTheme.Border, 1f);
+
+        HandleVelocityInput(input, velocityArea);
+        DrawVelocityBars(velocityArea);
+    }
+
+    private void HandleVelocityInput(InputState input, Rect velocityArea)
+    {
+        if (_activeTrack is null || _song is null) return;
+
+        bool isHoveringVelocity = velocityArea.Contains(input.MousePosition);
+
+        if (isHoveringVelocity && input.WasLeftMousePressedThisFrame)
+        {
+            var hitNote = HitTestVelocityBars(input.MousePosition, velocityArea);
+            if (hitNote != null)
+            {
+                _velocityBarBeingDragged = hitNote;
+                _selectedNote = hitNote; // Also select the note in the main view
+            }
+        }
+
+        if (!input.IsLeftMouseDown)
+        {
+            _velocityBarBeingDragged = null;
+        }
+
+        if (_velocityBarBeingDragged != null)
+        {
+            float mouseY = input.MousePosition.Y;
+            float areaY = velocityArea.Y;
+            float areaHeight = velocityArea.Height;
+
+            // Calculate velocity (0-127) based on vertical mouse position within the pane
+            float ratio = 1.0f - (mouseY - areaY) / areaHeight;
+            int newVelocity = (int)(Math.Clamp(ratio, 0f, 1f) * 127);
+
+            _velocityBarBeingDragged.Velocity = newVelocity;
+        }
+    }
+
+    private void DrawVelocityBars(Rect velocityArea)
+    {
+        if (_activeTrack is null) return;
+        var renderer = UI.Context.Renderer;
+
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
+
+        foreach (var note in _activeTrack.Events)
+        {
+            float noteStartPx = (note.StartTimeMs * pixelsPerMs) - _panOffset.X;
+            float noteEndPx = noteStartPx + (note.DurationMs * pixelsPerMs);
+
+            // Culling: Only draw bars for notes that are horizontally visible
+            if (noteEndPx < 0 || noteStartPx > velocityArea.Width) continue;
+
+            float barHeight = (note.Velocity / 127f) * velocityArea.Height;
+            var barRect = new Rect(
+                velocityArea.X + noteStartPx,
+                velocityArea.Y + (velocityArea.Height - barHeight), // Anchor to bottom
+                2f, // Fixed width for velocity "lollipops"
+                barHeight
+            );
+
+            // The main line of the bar
+            renderer.DrawBox(barRect, new BoxStyle { FillColor = DawTheme.AccentBright, Roundness = 0 });
+
+            // The "head" of the lollipop
+            var headRect = new Rect(velocityArea.X + noteStartPx - 2, barRect.Y - 2, 6, 6);
+            renderer.DrawBox(headRect, new BoxStyle { FillColor = DawTheme.AccentBright, Roundness = 0.5f });
+        }
+    }
+
+    private NoteEvent? HitTestVelocityBars(Vector2 screenPos, Rect velocityArea)
+    {
+        if (_activeTrack is null) return null;
+        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
+
+        // Iterate in reverse to hit-test topmost notes first
+        foreach (var note in _activeTrack.Events.AsEnumerable().Reverse())
+        {
+            float noteStartPx = velocityArea.X + (note.StartTimeMs * pixelsPerMs) - _panOffset.X;
+            var hitRect = new Rect(noteStartPx - 4, velocityArea.Y, 8, velocityArea.Height); // 8px wide hit area
+
+            if (hitRect.Contains(screenPos))
+            {
+                return note;
+            }
+        }
+        return null;
+    }
+
 
     private void HandleInput(InputState input, Rect gridArea)
     {
@@ -103,7 +209,7 @@ public class PianoRollView
             HandleDragAndResize(input, gridArea);
         }
     }
-    
+
     private void HandleLeftClick(InputState input, Rect gridArea)
     {
         var (hitNote, isEdge) = HitTestNotes(input.MousePosition, gridArea);
@@ -146,11 +252,11 @@ public class PianoRollView
                 break;
         }
     }
-    
+
     private void HandleDragAndResize(InputState input, Rect gridArea)
     {
         if (_song is null) return;
-        
+
         float msPerBeat = (float)(60000.0 / _song.Tempo);
         float quantization = msPerBeat / 4; // 16th note snapping
 
@@ -249,14 +355,14 @@ public class PianoRollView
             renderer.DrawLine(new Vector2(x, gridArea.Y), new Vector2(x, gridArea.Bottom), color, 1f);
             beatIndex++;
         }
-        
+
         // Draw Loop Region Overlay
         if (_song != null && _song.IsLoopingEnabled)
         {
             float loopStartX = gridArea.X + (_song.LoopStartMs * pixelsPerMs) - _panOffset.X;
             float loopEndX = gridArea.X + (_song.LoopEndMs * pixelsPerMs) - _panOffset.X;
             var loopRect = new Rect(loopStartX, gridArea.Y, loopEndX - loopStartX, gridArea.Height);
-            
+
             var loopOverlayColor = new Color4(DawTheme.Accent.R, DawTheme.Accent.G, DawTheme.Accent.B, 0.2f);
             renderer.DrawBox(loopRect, new BoxStyle { FillColor = loopOverlayColor, Roundness = 0, BorderLength = 0 });
         }

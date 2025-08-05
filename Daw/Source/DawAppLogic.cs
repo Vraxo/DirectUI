@@ -18,6 +18,7 @@ public class DawAppLogic : IAppLogic
     // --- UI State ---
     private int _activeTrackIndex = 0;
     private float _leftPanelWidth = 150;
+    private float _bottomPanelHeight = 100; // State for the new velocity panel
     private PianoRollTool _currentTool = PianoRollTool.Select;
 
     // --- Child Views ---
@@ -237,21 +238,61 @@ public class DawAppLogic : IAppLogic
         float mainContentX = _leftPanelWidth;
         float mainContentWidth = windowSize.X - _leftPanelWidth;
 
+        // Container for the main editing area (Timeline + Piano Roll + Velocity Pane)
+        UI.BeginResizableHPanel("editor_panel", ref _bottomPanelHeight,
+            reservedLeftSpace: mainContentX,
+            reservedRightSpace: 0,
+            topOffset: DawMetrics.TopBarHeight,
+            minHeight: 50, maxHeight: 300);
+
+        // This inner part is the Velocity Editor Pane
+        var velocityPaneArea = new Rect(
+            mainContentX,
+            windowSize.Y - _bottomPanelHeight,
+            mainContentWidth,
+            _bottomPanelHeight
+        );
+
+        // Draw the background for the velocity pane
+        UI.Context.Renderer.DrawBox(velocityPaneArea, new BoxStyle { FillColor = DawTheme.Background, Roundness = 0 });
+
+        // --- FIX: Actually call the method to draw the velocity bars ---
+        _pianoRollView.DrawVelocityPane(velocityPaneArea);
+
+        UI.EndResizableHPanel();
+
+
+        // Calculate the area available for the upper section (Timeline and Piano Roll)
+        float upperAreaHeight = windowSize.Y - DawMetrics.TopBarHeight - _bottomPanelHeight;
+        if (upperAreaHeight < 0) upperAreaHeight = 0;
+
         // Timeline
         var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
-        _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
+        float timelineBottom = timelineArea.Y + timelineArea.Height;
+        if (timelineBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
+        {
+            _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
+        }
+
 
         // Toolbar for Piano Roll Tools
         float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
         var toolbarArea = new Rect(mainContentX, toolbarY, mainContentWidth, DawMetrics.PianoRollToolbarHeight);
-        _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
+        float toolbarBottom = toolbarArea.Y + toolbarArea.Height;
+        if (toolbarBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
+        {
+            _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
+        }
 
         // Piano Roll
         float pianoRollY = toolbarY + DawMetrics.PianoRollToolbarHeight;
-        var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, windowSize.Y - pianoRollY);
-
-        var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
-        _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
+        float availablePianoRollHeight = windowSize.Y - pianoRollY - _bottomPanelHeight;
+        if (availablePianoRollHeight > 0)
+        {
+            var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, availablePianoRollHeight);
+            var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
+            _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
+        }
     }
 
     public void SaveState()
