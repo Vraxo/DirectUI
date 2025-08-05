@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using CSCore;
+using CSCore.CoreAudioAPI;
 using CSCore.SoundOut;
 
 namespace Daw.Audio;
@@ -11,15 +12,17 @@ namespace Daw.Audio;
 /// </summary>
 public class AudioEngine : IDisposable
 {
-    private readonly WasapiOut _soundOut;
+    private readonly ISoundOut _soundOut;
     private readonly MixingSampleSource _mixer;
     private readonly List<SynthesizerVoice> _voices = new();
     private const int MaxVoices = 32; // Limit polyphony
 
     public AudioEngine()
     {
-        // Use WasapiOut for low-latency audio playback.
-        _soundOut = new WasapiOut { Latency = 100 };
+        // Use WasapiOut in exclusive mode with a low latency buffer (20ms).
+        // This is the best practice for a DAW to minimize the delay between a note event and the audible sound.
+        _soundOut = new WasapiOut(true, AudioClientShareMode.Exclusive, 20);
+
         // Use our new custom mixer.
         _mixer = new MixingSampleSource(1, 44100);
 
@@ -58,6 +61,19 @@ public class AudioEngine : IDisposable
             voice.NoteOff();
         }
     }
+
+    /// <summary>
+    /// Tells all currently active voices to start their release phase.
+    /// This is thread-safe and can be called from any thread.
+    /// </summary>
+    public void StopAllVoices()
+    {
+        foreach (var voice in _voices.Where(v => v.IsActive))
+        {
+            voice.NoteOff();
+        }
+    }
+
 
     /// <summary>
     /// Called periodically to clean up voices that have finished their release phase.
