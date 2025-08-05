@@ -125,48 +125,75 @@ public class PianoRollView
     {
         if (_activeTrack is null) return;
         var renderer = UI.Context.Renderer;
-
         float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
+        const float chordOffset = 4f; // Pixels to shift each note in a chord
 
-        foreach (var note in _activeTrack.Events)
+        // Group notes by start time to handle chords
+        var notesByTime = _activeTrack.Events.GroupBy(n => n.StartTimeMs).OrderBy(g => g.Key);
+
+        foreach (var chord in notesByTime)
         {
-            float noteStartPx = (note.StartTimeMs * pixelsPerMs) - _panOffset.X;
-            float noteEndPx = noteStartPx + (note.DurationMs * pixelsPerMs);
+            int noteIndexInChord = 0;
+            foreach (var note in chord)
+            {
+                float baseNoteStartPx = (note.StartTimeMs * pixelsPerMs) - _panOffset.X;
+                float noteStartPx = baseNoteStartPx + (noteIndexInChord * chordOffset);
+                float noteEndPx = noteStartPx + 2f; // The bar is just a thin line
 
-            // Culling: Only draw bars for notes that are horizontally visible
-            if (noteEndPx < 0 || noteStartPx > velocityArea.Width) continue;
+                // Culling: Only draw bars for notes that are horizontally visible
+                if (noteEndPx < 0 || noteStartPx > velocityArea.Width)
+                {
+                    noteIndexInChord++;
+                    continue;
+                }
 
-            float barHeight = (note.Velocity / 127f) * velocityArea.Height;
-            var barRect = new Rect(
-                velocityArea.X + noteStartPx,
-                velocityArea.Y + (velocityArea.Height - barHeight), // Anchor to bottom
-                2f, // Fixed width for velocity "lollipops"
-                barHeight
-            );
+                float barHeight = (note.Velocity / 127f) * velocityArea.Height;
+                var barRect = new Rect(
+                    velocityArea.X + noteStartPx,
+                    velocityArea.Y + (velocityArea.Height - barHeight), // Anchor to bottom
+                    2f, // Fixed width for velocity "lollipops"
+                    barHeight
+                );
 
-            // The main line of the bar
-            renderer.DrawBox(barRect, new BoxStyle { FillColor = DawTheme.AccentBright, Roundness = 0 });
+                var color = note == _selectedNote ? DawTheme.Selection : DawTheme.AccentBright;
 
-            // The "head" of the lollipop
-            var headRect = new Rect(velocityArea.X + noteStartPx - 2, barRect.Y - 2, 6, 6);
-            renderer.DrawBox(headRect, new BoxStyle { FillColor = DawTheme.AccentBright, Roundness = 0.5f });
+                // The main line of the bar
+                renderer.DrawBox(barRect, new BoxStyle { FillColor = color, Roundness = 0 });
+
+                // The "head" of the lollipop
+                var headRect = new Rect(velocityArea.X + noteStartPx - 2, barRect.Y - 2, 6, 6);
+                renderer.DrawBox(headRect, new BoxStyle { FillColor = color, Roundness = 0.5f });
+
+                noteIndexInChord++;
+            }
         }
     }
+
 
     private NoteEvent? HitTestVelocityBars(Vector2 screenPos, Rect velocityArea)
     {
         if (_activeTrack is null) return null;
         float pixelsPerMs = DawMetrics.BasePixelsPerMs * _zoom;
+        const float chordOffset = 4f;
 
-        // Iterate in reverse to hit-test topmost notes first
-        foreach (var note in _activeTrack.Events.AsEnumerable().Reverse())
+        var notesByTime = _activeTrack.Events.GroupBy(n => n.StartTimeMs).OrderBy(g => g.Key);
+
+        // Iterate in reverse to hit-test topmost notes first if they overlap
+        foreach (var chord in notesByTime.Reverse())
         {
-            float noteStartPx = velocityArea.X + (note.StartTimeMs * pixelsPerMs) - _panOffset.X;
-            var hitRect = new Rect(noteStartPx - 4, velocityArea.Y, 8, velocityArea.Height); // 8px wide hit area
-
-            if (hitRect.Contains(screenPos))
+            int noteIndexInChord = 0;
+            foreach (var note in chord)
             {
-                return note;
+                float baseNoteStartPx = (note.StartTimeMs * pixelsPerMs) - _panOffset.X;
+                float noteStartPx = velocityArea.X + baseNoteStartPx + (noteIndexInChord * chordOffset);
+
+                var hitRect = new Rect(noteStartPx - 4, velocityArea.Y, 8, velocityArea.Height); // 8px wide hit area
+
+                if (hitRect.Contains(screenPos))
+                {
+                    return note;
+                }
+                noteIndexInChord++;
             }
         }
         return null;
