@@ -118,7 +118,8 @@ public class SonorizeLogic : IAppLogic
                 _columns,
                 ref _selectedTrackIndex,
                 gridSize,
-                gridPos
+                gridPos,
+                autoSizeColumns: true
             );
         }
     }

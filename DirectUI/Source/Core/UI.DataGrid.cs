@@ -23,13 +23,15 @@ public static partial class UI
     /// <param name="selectedIndex">A reference to the index of the currently selected item.</param>
     /// <param name="size">The total size of the data grid control.</param>
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
+    /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
     public static void DataGrid<T>(
         string id,
         IReadOnlyList<T> items,
         IReadOnlyList<DataGridColumn> columns,
         ref int selectedIndex,
         Vector2 size,
-        Vector2 position = default)
+        Vector2 position = default,
+        bool autoSizeColumns = false)
     {
         if (!IsContextValid()) return;
 
@@ -63,32 +65,56 @@ public static partial class UI
         // --- Layout Calculation ---
         var headerBounds = new Rect(drawPos.X, drawPos.Y, size.X, headerHeight);
         var contentBounds = new Rect(drawPos.X, drawPos.Y + headerHeight, size.X, size.Y - headerHeight);
-        float totalContentWidth = state.ColumnWidths.Sum();
         float totalContentHeight = items.Count * rowHeight;
+
+        // Determine scrollbar visibility and available content view size
+        bool vScrollVisible = totalContentHeight > contentBounds.Height;
+        float viewWidth = contentBounds.Width - (vScrollVisible ? scrollbarThickness : 0);
+
+        // Auto-size columns if requested
+        if (autoSizeColumns)
+        {
+            float totalInitialWidth = columns.Sum(c => c.InitialWidth);
+            if (totalInitialWidth > 0 && viewWidth > 0)
+            {
+                float scaleFactor = viewWidth / totalInitialWidth;
+                state.ColumnWidths.Clear();
+                float accumulatedWidth = 0;
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    // For all but the last column, calculate and round.
+                    if (i < columns.Count - 1)
+                    {
+                        float newWidth = (float)Math.Round(columns[i].InitialWidth * scaleFactor);
+                        state.ColumnWidths.Add(newWidth);
+                        accumulatedWidth += newWidth;
+                    }
+                    else // For the last column, use the remaining space to avoid rounding errors.
+                    {
+                        state.ColumnWidths.Add(Math.Max(20, viewWidth - accumulatedWidth)); // Ensure a minimum width
+                    }
+                }
+            }
+        }
+
+        float totalContentWidth = state.ColumnWidths.Sum();
+        bool hScrollVisible = !autoSizeColumns && totalContentWidth > contentBounds.Width;
+        float viewHeight = contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0);
+
 
         // --- Draw Main Background ---
         Context.Renderer.DrawBox(gridBounds, gridStyle);
 
         // --- Draw Header ---
-        DrawDataGridHeader(intId, state, columns, headerBounds, headerStyle);
+        DrawDataGridHeader(intId, state, columns, headerBounds, headerStyle, !autoSizeColumns);
 
         // --- Handle Scrolling and Draw Rows ---
-        bool hScrollVisible = totalContentWidth > contentBounds.Width;
-        bool vScrollVisible = totalContentHeight > contentBounds.Height;
-
-        float viewWidth = contentBounds.Width - (vScrollVisible ? scrollbarThickness : 0);
-        float viewHeight = contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0);
-
-        // Use a local variable for the struct to avoid CS1612
         var scrollOffset = state.ScrollOffset;
 
         // Handle Mouse Wheel Scrolling
         bool isHoveringContent = contentBounds.Contains(Context.InputState.MousePosition);
         if (isHoveringContent && Context.InputState.ScrollDelta != 0)
         {
-            // Scroll delta is inverted: up is positive, but content moves down (offset increases)
-            // A standard mouse wheel tick is 120, and the delta is usually +/- 1.0f in the input system.
-            // Scrolling by 3 rows feels natural.
             scrollOffset.Y -= Context.InputState.ScrollDelta * rowHeight * 3;
         }
 
@@ -139,7 +165,7 @@ public static partial class UI
         state.ColumnWidths.AddRange(columns.Select(c => c.InitialWidth));
     }
 
-    private static void DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style)
+    private static void DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style, bool allowColumnResize)
     {
         var input = Context.InputState;
         float currentX = headerBounds.X - state.ScrollOffset.X;
@@ -153,31 +179,33 @@ public static partial class UI
             Context.Renderer.DrawBox(colHeaderBounds, style);
             DrawTextPrimitive(colHeaderBounds, columns[i].HeaderText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
 
-            // Column Resizer Handle
-            var handleId = HashCode.Combine(id, "resize", i);
-            var handleBounds = new Rect(currentX + colWidth - 2, headerBounds.Y, 4, headerBounds.Height);
-
-            bool isHoveringHandle = handleBounds.Contains(input.MousePosition);
-            if (isHoveringHandle) State.SetPotentialInputTarget(handleId);
-
-            if (State.ActivelyPressedElementId == handleId && input.IsLeftMouseDown)
+            if (allowColumnResize)
             {
-                float deltaX = input.MousePosition.X - state.DragStartMouseX;
-                state.ColumnWidths[i] = Math.Max(20, state.ColumnResizeStartWidth + deltaX);
-            }
-            else if (State.ActivelyPressedElementId == handleId && !input.IsLeftMouseDown)
-            {
-                State.ClearActivePress(handleId);
-            }
+                // Column Resizer Handle
+                var handleId = HashCode.Combine(id, "resize", i);
+                var handleBounds = new Rect(currentX + colWidth - 2, headerBounds.Y, 4, headerBounds.Height);
 
-            if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
-            {
-                State.SetPotentialCaptorForFrame(handleId);
-                state.ResizingColumnIndex = i;
-                state.DragStartMouseX = input.MousePosition.X;
-                state.ColumnResizeStartWidth = state.ColumnWidths[i];
-            }
+                bool isHoveringHandle = handleBounds.Contains(input.MousePosition);
+                if (isHoveringHandle) State.SetPotentialInputTarget(handleId);
 
+                if (State.ActivelyPressedElementId == handleId && input.IsLeftMouseDown)
+                {
+                    float deltaX = input.MousePosition.X - state.DragStartMouseX;
+                    state.ColumnWidths[i] = Math.Max(20, state.ColumnResizeStartWidth + deltaX);
+                }
+                else if (State.ActivelyPressedElementId == handleId && !input.IsLeftMouseDown)
+                {
+                    State.ClearActivePress(handleId);
+                }
+
+                if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
+                {
+                    State.SetPotentialCaptorForFrame(handleId);
+                    state.ResizingColumnIndex = i;
+                    state.DragStartMouseX = input.MousePosition.X;
+                    state.ColumnResizeStartWidth = state.ColumnWidths[i];
+                }
+            }
             currentX += colWidth;
         }
 
