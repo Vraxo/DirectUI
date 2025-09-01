@@ -21,6 +21,7 @@ public class SonorizeLogic : IAppLogic
     private int _selectedTrackIndex = -1;
     private int _previousSelectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
+    private float _seekSliderValue = 0f;
 
 
     public SonorizeLogic(IWindowHost host)
@@ -174,34 +175,49 @@ public class SonorizeLogic : IAppLogic
         double totalDuration = _audioPlayer.GetLength();
         bool isAudioLoaded = totalDuration > 0;
 
-        // Use a container to position the slider
+        // Determine if the user is currently interacting with the slider
+        var sliderId = "seekSlider".GetHashCode();
+        bool isSliderActive = UI.State.ActivelyPressedElementId == sliderId;
+
+        // If the slider is NOT active, its value should be dictated by the audio player's position.
+        // If it IS active, we let its value persist from the previous frame to allow smooth dragging.
+        if (!isSliderActive)
+        {
+            _seekSliderValue = (float)currentPosition;
+        }
+
         var sliderAreaHeight = 20f;
         var sliderAreaY = controlsY + (playbackControlsHeight - sliderAreaHeight) / 2f;
-        UI.BeginVBoxContainer("playbackControls", new Vector2(padding, sliderAreaY));
+        var sliderPos = new Vector2(padding, sliderAreaY);
+        var sliderWidth = windowSize.X - (padding * 2);
+        var sliderSize = new Vector2(sliderWidth, sliderAreaHeight);
+
+        // Pass our state-managed value to the slider.
+        float newSliderValue = UI.HSlider(
+            id: "seekSlider",
+            currentValue: _seekSliderValue,
+            minValue: 0f,
+            maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
+            size: sliderSize,
+            position: sliderPos,
+            disabled: !isAudioLoaded
+        );
+
+        // If the slider's output value is different from our state variable,
+        // it means the user interacted with it.
+        if (Math.Abs(newSliderValue - _seekSliderValue) > 0.01f)
         {
-            var sliderWidth = windowSize.X - (padding * 2);
-            var sliderSize = new Vector2(sliderWidth, sliderAreaHeight);
+            // Update our state variable to the new value from the slider.
+            _seekSliderValue = newSliderValue;
 
-            float sliderValue = (float)currentPosition;
-
-            float newSliderValue = UI.HSlider(
-                id: "seekSlider",
-                currentValue: sliderValue,
-                minValue: 0f,
-                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
-                size: sliderSize,
-                disabled: !isAudioLoaded
-            );
-
-            // If user dragged the slider (and audio is loaded), seek to new position.
-            // Check for a meaningful change to avoid seeking due to float precision issues.
-            if (isAudioLoaded && Math.Abs(newSliderValue - sliderValue) > 0.01f)
+            // If audio is loaded, command the player to seek.
+            if (isAudioLoaded)
             {
-                _audioPlayer.Seek(newSliderValue);
+                _audioPlayer.Seek(_seekSliderValue);
             }
         }
-        UI.EndVBoxContainer();
     }
+
 
     private void OpenSettingsModal()
     {
