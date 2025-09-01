@@ -18,6 +18,8 @@ public class UIPersistentState
     private int _activePopupId;
     private Action<UIContext>? _popupDrawCallback;
     private Rect _popupBounds;
+    public bool PopupWasOpenedThisFrame { get; private set; }
+
 
     // Staging area for results from the previous frame to be read in the current one.
     private int _nextFramePopupResult;
@@ -106,6 +108,9 @@ public class UIPersistentState
         _nextFramePopupResult = 0;
         _nextFramePopupResultAvailable = false;
         _nextFramePopupResultOwnerId = 0;
+
+        // Reset the popup-opened-this-frame flag.
+        PopupWasOpenedThisFrame = false;
     }
 
     // --- Popup Management ---
@@ -119,6 +124,7 @@ public class UIPersistentState
         _activePopupId = ownerId;
         _popupDrawCallback = drawCallback;
         _popupBounds = bounds;
+        PopupWasOpenedThisFrame = true;
     }
 
     public void SetPopupResult(int ownerId, int result)
@@ -159,7 +165,7 @@ public class UIPersistentState
     // Used for immediate visual feedback (which element is currently held down)
     public bool TrySetActivePress(int id, int layer)
     {
-        if (layer > _inputCaptorLayer)
+        if (layer >= _inputCaptorLayer)
         {
             _inputCaptorLayer = layer;
             InputCaptorId = id; // This element is the captor for release checks

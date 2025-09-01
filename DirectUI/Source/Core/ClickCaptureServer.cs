@@ -26,11 +26,9 @@ public class ClickCaptureServer
 
         var winner = _requests.OrderByDescending(r => r.Layer).First();
 
-        if (_requests.Count > 1) // Only log if there was a contest
-        {
-            var candidates = string.Join(", ", _requests.Select(r => $"[ID: {r.Id}, L: {r.Layer}]"));
-            Console.WriteLine($"[CAPTURE-RESOLVED] Candidates: {candidates} -> Winner: ID {winner.Id} (Layer {winner.Layer})");
-        }
+        // Always log the resolution process if there was at least one candidate.
+        var candidates = string.Join(", ", _requests.Select(r => $"[ID: {r.Id}, L: {r.Layer}]"));
+        Console.WriteLine($"[CAPTURE-RESOLVED] Candidates: {candidates} -> Winner: ID {winner.Id} (Layer {winner.Layer})");
 
         return winner.Id;
     }

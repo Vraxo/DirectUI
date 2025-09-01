@@ -69,7 +69,8 @@ public static partial class UI
         if (!UI.State.IsPopupOpen) return;
 
         // If a mouse press occurred outside the popup's bounds, close the popup.
-        if (UI.Context.InputState.WasLeftMousePressedThisFrame || UI.Context.InputState.WasRightMousePressedThisFrame)
+        // This logic is skipped on the same frame the popup was opened to prevent it from closing immediately.
+        if (!UI.State.PopupWasOpenedThisFrame && (UI.Context.InputState.WasLeftMousePressedThisFrame || UI.Context.InputState.WasRightMousePressedThisFrame))
         {
             if (!UI.State.PopupBounds.Contains(UI.Context.InputState.MousePosition))
             {
