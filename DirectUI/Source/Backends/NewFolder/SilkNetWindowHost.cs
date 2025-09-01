@@ -131,6 +131,8 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
                 _modalGl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
                 if (_modalSkSurface != null && _modalRenderer != null && _modalTextService != null && _modalAppEngine != null)
                 {
+                    var modalBg = _modalAppEngine.BackgroundColor;
+                    _modalSkSurface.Canvas.Clear(new SKColor((byte)(modalBg.R * 255), (byte)(modalBg.G * 255), (byte)(modalBg.B * 255), (byte)(modalBg.A * 255)));
                     _modalRenderer.SetCanvas(_modalSkSurface.Canvas, new Vector2(_activeModalIWindow.Size.X, _activeModalIWindow.Size.Y));
                     _modalAppEngine.UpdateAndRender(_modalRenderer, _modalTextService);
                     _modalSkSurface.Canvas.Flush();
@@ -197,7 +199,25 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _gl = _window!.CreateOpenGL();
 
         bool useTransparentBg = BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
-        Color4 finalBackgroundColor = useTransparentBg ? new Color4(0, 0, 0, 0) : _backgroundColor;
+        Color4 finalBackgroundColor;
+
+        if (useTransparentBg)
+        {
+            // DWM compositing for light-themed Mica is buggy and requires a non-black, near-transparent
+            // background color to render correctly, otherwise it appears solid white.
+            if (TitleBarTheme == WindowTitleBarTheme.Light)
+            {
+                finalBackgroundColor = new Color4(243 / 255f, 243 / 255f, 243 / 255f, 1 / 255f);
+            }
+            else // Dark theme
+            {
+                finalBackgroundColor = new Color4(0, 0, 0, 1 / 255f);
+            }
+        }
+        else
+        {
+            finalBackgroundColor = backgroundColor;
+        }
 
         _gl.ClearColor(finalBackgroundColor.R, finalBackgroundColor.G, finalBackgroundColor.B, finalBackgroundColor.A);
 
@@ -235,6 +255,9 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 
         if (_skSurface is null || _renderer is null || _textService is null || _appEngine is null) return;
+
+        var bgColor = _appEngine.BackgroundColor;
+        _skSurface.Canvas.Clear(new SKColor((byte)(bgColor.R * 255), (byte)(bgColor.G * 255), (byte)(bgColor.B * 255), (byte)(bgColor.A * 255)));
 
         _renderer.SetCanvas(_skSurface.Canvas, new Vector2(_window!.Size.X, _window.Size.Y));
         _appEngine.UpdateAndRender(_renderer, _textService);
@@ -292,6 +315,16 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
                 WindowBackdropType.Tabbed => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TABBEDWINDOW,
                 _ => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_AUTO
             };
+
+            // DWM BUG WORKAROUND: The DWM has a bug where light-themed Mica fails to render, showing a solid
+            // color instead. We can work around this by substituting the more stable Acrylic material, which
+            // provides a similar transparent effect.
+            if (BackdropType == WindowBackdropType.Mica && TitleBarTheme == WindowTitleBarTheme.Light)
+            {
+                backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Use Acrylic instead
+                Console.WriteLine("DWM WORKAROUND: Light Mica requested, substituting with Light Acrylic due to DWM rendering bug.");
+            }
+
             DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
         }
     }
@@ -334,22 +367,28 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _activeModalIWindow.Load += () =>
         {
             _modalGl = _activeModalIWindow.CreateOpenGL();
-            var modalBgColor = new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f);
+            Color4 modalBgColor;
             bool useTransparentModalBg = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
 
             if (useTransparentModalBg)
             {
-                _modalGl.ClearColor(0, 0, 0, 0);
-                modalBgColor = new Color4(0, 0, 0, 0);
+                if (TitleBarTheme == WindowTitleBarTheme.Light)
+                {
+                    modalBgColor = new Color4(243 / 255f, 243 / 255f, 243 / 255f, 1 / 255f);
+                }
+                else
+                {
+                    modalBgColor = new Color4(0, 0, 0, 1 / 255f);
+                }
+
+                _modalGl.ClearColor(modalBgColor.R, modalBgColor.G, modalBgColor.B, modalBgColor.A);
 
                 var modalHwnd = _activeModalIWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
                 if (modalHwnd != IntPtr.Zero)
                 {
-                    if (TitleBarTheme != WindowTitleBarTheme.Default)
-                    {
-                        int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Dark) ? 1 : 0;
-                        DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
-                    }
+                    // Unify theming logic with ApplyWindowStyles
+                    int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1; // Default and Dark map to 1 (dark)
+                    DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
 
                     int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Acrylic for modals
                     DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
@@ -357,6 +396,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             }
             else
             {
+                modalBgColor = new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f);
                 _modalGl.ClearColor(modalBgColor.R, modalBgColor.G, modalBgColor.B, modalBgColor.A);
             }
 

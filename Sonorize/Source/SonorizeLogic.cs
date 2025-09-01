@@ -43,8 +43,8 @@ public class SonorizeLogic : IAppLogic
 
             // EXAMPLE 2: Modern Mica window with a light title bar
             // RESULT: Same Mica background, but with a modern light title bar.
-            // silkHost.BackdropType = WindowBackdropType.Mica;
-            // silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
+             silkHost.BackdropType = WindowBackdropType.Mica;
+             silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
 
             // EXAMPLE 3: Modern Acrylic window with a dark title bar
             // RESULT: Blurry, semi-transparent background showing windows behind this one.
@@ -60,8 +60,8 @@ public class SonorizeLogic : IAppLogic
 
             // EXAMPLE 5: Solid color window with a modern dark title bar
             // RESULT: Solid background color but with the modern dark title bar and borders.
-             silkHost.BackdropType = WindowBackdropType.Default;
-             silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+            // silkHost.BackdropType = WindowBackdropType.Default;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
 
             // --- INVALID / AUTO-CORRECTED COMBINATION ---
 

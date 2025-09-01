@@ -7945,6 +7945,46 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\DwmApi.cs">
+using System;
+using System.Runtime.InteropServices;
+
+namespace DirectUI.Backends.SkiaSharp;
+
+/// <summary>
+/// Contains P/Invoke definitions for the Windows Desktop Window Manager (DWM) API.
+/// </summary>
+internal static class DwmApi
+{
+    [DllImport("dwmapi.dll")]
+    internal static extern int DwmSetWindowAttribute(IntPtr hwnd, DWMWINDOWATTRIBUTE dwAttribute, ref int pvAttribute, int cbAttribute);
+
+    internal enum DWMWINDOWATTRIBUTE
+    {
+        DWMWA_USE_IMMERSIVE_DARK_MODE = 20,
+        DWMWA_SYSTEMBACKDROP_TYPE = 38,
+        DWMWA_WINDOW_CORNER_PREFERENCE = 33
+    }
+
+    internal enum DWM_WINDOW_CORNER_PREFERENCE
+    {
+        DWMWCP_DEFAULT = 0,
+        DWMWCP_DONOTROUND = 1,
+        DWMWCP_ROUND = 2,
+        DWMWCP_ROUNDSMALL = 3
+    }
+
+    internal enum DWMSYSTEMBACKDROP_TYPE
+    {
+        DWMSBT_AUTO = 0,
+        DWMSBT_NONE = 1,
+        DWMSBT_MAINWINDOW = 2,       // Mica
+        DWMSBT_TRANSIENTWINDOW = 3,  // Acrylic
+        DWMSBT_TABBEDWINDOW = 4      // Tabbed
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetRenderer.cs">
 using System;
 using System.Collections.Generic;
@@ -8308,6 +8348,21 @@ using Key = Silk.NET.Input.Key;
 
 namespace DirectUI.Backends.SkiaSharp;
 
+public enum WindowBackdropType
+{
+    Default,
+    Mica,
+    Acrylic,
+    Tabbed,
+}
+
+public enum WindowTitleBarTheme
+{
+    Default,
+    Dark,
+    Light
+}
+
 public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 {
     private readonly string _title;
@@ -8356,6 +8411,9 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     public IModalWindowService ModalWindowService => this;
     public bool IsModalWindowOpen => _activeModalIWindow != null;
 
+    public WindowBackdropType BackdropType { get; set; } = WindowBackdropType.Default;
+    public WindowTitleBarTheme TitleBarTheme { get; set; } = WindowTitleBarTheme.Dark;
+
     public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
     {
         _title = title;
@@ -8371,6 +8429,12 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         options.Title = _title;
         options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
         options.ShouldSwapAutomatically = false; // Required for our manual render loop
+
+        // On modern Windows, always request a transparent framebuffer to allow for effects like Mica/Acrylic.
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            options.TransparentFramebuffer = true;
+        }
 
         _window = Window.Create(options);
         if (_window == null) return false;
@@ -8465,7 +8529,11 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     private void OnLoad(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         _gl = _window!.CreateOpenGL();
-        _gl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+
+        bool useTransparentBg = BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+        Color4 finalBackgroundColor = useTransparentBg ? new Color4(0, 0, 0, 0) : _backgroundColor;
+
+        _gl.ClearColor(finalBackgroundColor.R, finalBackgroundColor.G, finalBackgroundColor.B, finalBackgroundColor.A);
 
         var glInterface = GRGlInterface.Create();
         _grContext = GRContext.CreateGl(glInterface);
@@ -8473,10 +8541,12 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _renderTarget = new GRBackendRenderTarget(_width, _height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
         _skSurface = SKSurface.Create(_grContext, _renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
 
-        _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+        _appEngine = new AppEngine(uiDrawCallback, finalBackgroundColor);
         _textService = new SilkNetTextService();
         _renderer = new SilkNetRenderer(_textService);
         _appEngine.Initialize(_textService, _renderer);
+
+        ApplyWindowStyles(); // Apply styles after window handle is available
 
         _inputContext = _window.CreateInput();
         foreach (var keyboard in _inputContext.Keyboards)
@@ -8522,6 +8592,44 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         // Cleanup is handled by the finally block in ApplicationRunner.
     }
 
+    private void ApplyWindowStyles()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var hwnd = _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero) return;
+
+        bool wantsModernBackdrop = BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+
+        // Set Title Bar Theme (Immersive Dark Mode)
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
+        {
+            // A modern backdrop requires a modern title bar.
+            // If the user requests a modern backdrop but a default title bar, we must
+            // choose a theme for them. Dark is a sensible default.
+            bool applyImmersiveTheme = wantsModernBackdrop || TitleBarTheme != WindowTitleBarTheme.Default;
+
+            if (applyImmersiveTheme)
+            {
+                int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1; // Default and Dark map to 1 (dark)
+                DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+            }
+        }
+
+        // Set Backdrop Type (Mica/Acrylic)
+        if (wantsModernBackdrop)
+        {
+            int backdropValue = BackdropType switch
+            {
+                WindowBackdropType.Mica => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_MAINWINDOW,
+                WindowBackdropType.Acrylic => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW,
+                WindowBackdropType.Tabbed => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TABBEDWINDOW,
+                _ => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_AUTO
+            };
+            DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
+        }
+    }
+
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) { if (!IsModalWindowOpen) Input.AddKeyPressed(MapKey(key)); }
     private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) { if (!IsModalWindowOpen) Input.AddKeyReleased(MapKey(key)); }
     private void OnKeyChar(IKeyboard keyboard, char c) { if (!IsModalWindowOpen) Input.AddCharacterInput(c); }
@@ -8550,18 +8658,48 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         options.WindowBorder = WindowBorder.Fixed;
         options.ShouldSwapAutomatically = false;
 
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            options.TransparentFramebuffer = true;
+        }
+
         _activeModalIWindow = Window.Create(options);
 
         _activeModalIWindow.Load += () =>
         {
             _modalGl = _activeModalIWindow.CreateOpenGL();
-            _modalGl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+            var modalBgColor = new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f);
+            bool useTransparentModalBg = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+
+            if (useTransparentModalBg)
+            {
+                _modalGl.ClearColor(0, 0, 0, 0);
+                modalBgColor = new Color4(0, 0, 0, 0);
+
+                var modalHwnd = _activeModalIWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
+                if (modalHwnd != IntPtr.Zero)
+                {
+                    if (TitleBarTheme != WindowTitleBarTheme.Default)
+                    {
+                        int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Dark) ? 1 : 0;
+                        DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+                    }
+
+                    int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Acrylic for modals
+                    DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
+                }
+            }
+            else
+            {
+                _modalGl.ClearColor(modalBgColor.R, modalBgColor.G, modalBgColor.B, modalBgColor.A);
+            }
+
             var glInterface = GRGlInterface.Create();
             _modalGrContext = GRContext.CreateGl(glInterface);
             _modalRenderTarget = new GRBackendRenderTarget(width, height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
             _modalSkSurface = SKSurface.Create(_modalGrContext, _modalRenderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
 
-            _modalAppEngine = new AppEngine(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 25f, 1.0f));
+            _modalAppEngine = new AppEngine(drawCallback, modalBgColor);
             _modalTextService = new SilkNetTextService();
             _modalRenderer = new SilkNetRenderer(_modalTextService);
             _modalAppEngine.Initialize(_modalTextService, _modalRenderer);
@@ -10638,6 +10776,7 @@ using System.IO;
 using System.Numerics;
 using System.Text.Json;
 using System;
+using DirectUI.Backends.SkiaSharp; // Added for SilkNetWindowHost
 
 namespace Sonorize;
 
@@ -10655,6 +10794,64 @@ public class SonorizeLogic : IAppLogic
     public SonorizeLogic(IWindowHost host)
     {
         _host = host;
+
+        // Enable modern window styles if using the SkiaSharp/Silk.NET backend
+        if (_host is SilkNetWindowHost silkHost)
+        {
+            // ========================================================================
+            // == CONFIGURING WINDOW BACKDROP AND TITLE BAR (WINDOWS 11+)           ==
+            // ========================================================================
+            // Uncomment ONE of the examples below to set the desired window style.
+            // These effects require Windows 11 (Build 22621 or newer). On older
+            // systems, they will fall back to a solid color window.
+
+            // --- VALID COMBINATIONS ---
+
+            // EXAMPLE 1: Modern Mica window with a dark title bar (standard Win11 look)
+            // RESULT: Semi-transparent background that shows a blurred desktop wallpaper.
+            //         Modern dark title bar and window borders.
+            //silkHost.BackdropType = WindowBackdropType.Mica;
+            //silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+
+            // EXAMPLE 2: Modern Mica window with a light title bar
+            // RESULT: Same Mica background, but with a modern light title bar.
+             silkHost.BackdropType = WindowBackdropType.Mica;
+             silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
+
+            // EXAMPLE 3: Modern Acrylic window with a dark title bar
+            // RESULT: Blurry, semi-transparent background showing windows behind this one.
+            //         Often used for modal dialogs or popups.
+            // silkHost.BackdropType = WindowBackdropType.Acrylic;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+
+            // EXAMPLE 4: Classic solid color window (to regain the pre-effects look)
+            // RESULT: A standard window with a solid background color and the OS-default
+            //         (non-modern) title bar.
+            // silkHost.BackdropType = WindowBackdropType.Default;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
+
+            // EXAMPLE 5: Solid color window with a modern dark title bar
+            // RESULT: Solid background color but with the modern dark title bar and borders.
+            // silkHost.BackdropType = WindowBackdropType.Default;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+
+            // --- INVALID / AUTO-CORRECTED COMBINATION ---
+
+            // EXAMPLE 6 (INVALID): Mica/Acrylic with a default title bar
+            // SETTINGS: silkHost.BackdropType = WindowBackdropType.Mica;
+            //           silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
+            //
+            // WHY IT'S INVALID: The modern backdrop effects (Mica, Acrylic) are part
+            // of the "immersive" Windows 11 UI system and REQUIRE an immersive
+            // title bar theme (either Dark or Light) to function correctly.
+            //
+            // WHAT HAPPENS: The code will detect this invalid combination. It will
+            // honor the request for a Mica backdrop, but will be FORCED to apply
+            // a modern title bar. It defaults to the Dark theme in this case.
+            //
+            // FINAL RESULT: Mica backdrop with a modern DARK title bar.
+        }
+
         _fileMenuPopupId = "fileMenuPopup".GetHashCode();
         LoadState();
     }
