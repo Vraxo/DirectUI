@@ -22,6 +22,13 @@ public enum WindowBackdropType
     Tabbed,
 }
 
+public enum WindowTitleBarTheme
+{
+    Default,
+    Dark,
+    Light
+}
+
 public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 {
     private readonly string _title;
@@ -71,7 +78,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     public bool IsModalWindowOpen => _activeModalIWindow != null;
 
     public WindowBackdropType BackdropType { get; set; } = WindowBackdropType.Default;
-    public bool UseDarkMode { get; set; } = true;
+    public WindowTitleBarTheme TitleBarTheme { get; set; } = WindowTitleBarTheme.Dark;
 
     public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
     {
@@ -261,8 +268,11 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         // Set dark mode before backdrop type for better transition
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
         {
-            int useDarkMode = UseDarkMode ? 1 : 0;
-            DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+            if (TitleBarTheme != WindowTitleBarTheme.Default)
+            {
+                int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Dark) ? 1 : 0;
+                DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+            }
         }
 
         // Set backdrop type (Mica/Acrylic) - requires Windows 11 Build 22621+
@@ -328,8 +338,11 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
                 var modalHwnd = _activeModalIWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
                 if (modalHwnd != IntPtr.Zero)
                 {
-                    int useDarkMode = UseDarkMode ? 1 : 0;
-                    DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+                    if (TitleBarTheme != WindowTitleBarTheme.Default)
+                    {
+                        int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Dark) ? 1 : 0;
+                        DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+                    }
 
                     int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Acrylic for modals
                     DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));

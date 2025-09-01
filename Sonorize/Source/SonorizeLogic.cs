@@ -26,8 +26,17 @@ public class SonorizeLogic : IAppLogic
         // Enable modern window styles if using the SkiaSharp/Silk.NET backend
         if (_host is SilkNetWindowHost silkHost)
         {
-            silkHost.BackdropType = WindowBackdropType.Mica;
-            silkHost.UseDarkMode = true;
+            // === THIS IS WHERE YOU SET THE PROPERTIES ===
+
+            // EXAMPLE 1: Modern Mica window with a dark title bar (Win 11 look)
+            silkHost.BackdropType = WindowBackdropType.Default;
+            silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+            //silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+
+            // EXAMPLE 2: To get the classic solid color window and title bar,
+            // set both the backdrop and the title bar theme to Default.
+            //silkHost.BackdropType = WindowBackdropType.Default;
+            //silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
         }
 
         _fileMenuPopupId = "fileMenuPopup".GetHashCode();
