@@ -1,4 +1,5 @@
-﻿using DirectUI.Core;
+﻿// Entire file content here
+using DirectUI.Core;
 using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
@@ -137,7 +138,21 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public override void FrameUpdate()
     {
-        Invalidate();
+        // If a modal window is open, this host window is disabled. Standard message-based
+        // invalidation (which relies on WM_PAINT) will not work reliably because
+        // disabled windows may not process paint messages. To prevent the window from
+        // appearing frozen or being wiped clean by the OS, we must call its paint logic
+        // directly on every frame update from the main application loop.
+        // The UI will appear static as no input is being received, which is the
+        // desired effect.
+        if (IsModalWindowOpen)
+        {
+            OnPaint();
+        }
+        else
+        {
+            Invalidate();
+        }
         HandleModalLifecycle();
     }
 

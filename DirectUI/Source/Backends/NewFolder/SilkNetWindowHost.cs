@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Entire file content here
+using System;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using DirectUI.Core;
@@ -123,6 +124,16 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         {
             _window.DoEvents(); // Process events for ALL windows on the thread.
 
+            // --- Main Window Rendering ---
+            // Always render the main window. Input handlers prevent new interactions
+            // when a modal is open, so this just redraws the last state, preventing
+            // the window from appearing "wiped" or frozen.
+            _window.GLContext?.MakeCurrent();
+            OnRender(0); // Pass a dummy delta.
+            _window.SwapBuffers();
+
+
+            // --- Modal Window Rendering & Logic ---
             if (IsModalWindowOpen && _activeModalIWindow != null && !_activeModalIWindow.IsClosing)
             {
                 // Modal is active. Make its context current before rendering.
@@ -138,13 +149,6 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
                     _modalSkSurface.Canvas.Flush();
                 }
                 _activeModalIWindow.SwapBuffers();
-            }
-            else if (!IsModalWindowOpen)
-            {
-                // Main window is active. Make its context current before rendering.
-                _window.GLContext?.MakeCurrent();
-                OnRender(0); // Pass a dummy delta.
-                _window.SwapBuffers();
             }
 
             // Check if a modal that was open is now closing.
