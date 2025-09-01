@@ -5,6 +5,7 @@ using System.Numerics;
 using System.Text.Json;
 using System;
 using DirectUI.Backends.SkiaSharp; // Added for SilkNetWindowHost
+using TinyDialogsNet;
 
 namespace Sonorize;
 
@@ -38,13 +39,13 @@ public class SonorizeLogic : IAppLogic
             // EXAMPLE 1: Modern Mica window with a dark title bar (standard Win11 look)
             // RESULT: Semi-transparent background that shows a blurred desktop wallpaper.
             //         Modern dark title bar and window borders.
-            //silkHost.BackdropType = WindowBackdropType.Mica;
-            //silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+            silkHost.BackdropType = WindowBackdropType.Mica;
+            silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
 
             // EXAMPLE 2: Modern Mica window with a light title bar
             // RESULT: Same Mica background, but with a modern light title bar.
-             silkHost.BackdropType = WindowBackdropType.Mica;
-             silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
+            // silkHost.BackdropType = WindowBackdropType.Mica;
+            //silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
 
             // EXAMPLE 3: Modern Acrylic window with a dark title bar
             // RESULT: Blurry, semi-transparent background showing windows behind this one.
@@ -231,8 +232,15 @@ public class SonorizeLogic : IAppLogic
         {
             if (UI.Button("addDir", "Add", new Vector2(80, 24)))
             {
-                // In a real app, this would open a folder browser dialog.
-                _settings.Directories.Add($"New Directory {_settings.Directories.Count + 1}");
+                // This uses TinyFileDialogs.Net, a lightweight, cross-platform
+                // wrapper for native OS dialogs. You must add the
+                // 'TinyFileDialogs.Net' NuGet package to the project for this to work.
+                var selectedPath = TinyDialogs.SelectFolderDialog("Select a folder to add to Sonorize");
+
+                if (!string.IsNullOrWhiteSpace(selectedPath.Path) && !_settings.Directories.Contains(selectedPath.Path))
+                {
+                    _settings.Directories.Add(selectedPath.Path);
+                }
             }
             if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
             {
