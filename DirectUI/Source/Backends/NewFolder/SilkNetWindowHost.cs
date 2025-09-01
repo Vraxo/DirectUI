@@ -265,18 +265,25 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         var hwnd = _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
         if (hwnd == IntPtr.Zero) return;
 
-        // Set dark mode before backdrop type for better transition
+        bool wantsModernBackdrop = BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+
+        // Set Title Bar Theme (Immersive Dark Mode)
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
         {
-            if (TitleBarTheme != WindowTitleBarTheme.Default)
+            // A modern backdrop requires a modern title bar.
+            // If the user requests a modern backdrop but a default title bar, we must
+            // choose a theme for them. Dark is a sensible default.
+            bool applyImmersiveTheme = wantsModernBackdrop || TitleBarTheme != WindowTitleBarTheme.Default;
+
+            if (applyImmersiveTheme)
             {
-                int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Dark) ? 1 : 0;
+                int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1; // Default and Dark map to 1 (dark)
                 DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
             }
         }
 
-        // Set backdrop type (Mica/Acrylic) - requires Windows 11 Build 22621+
-        if (BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
+        // Set Backdrop Type (Mica/Acrylic)
+        if (wantsModernBackdrop)
         {
             int backdropValue = BackdropType switch
             {

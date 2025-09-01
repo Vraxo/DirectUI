@@ -26,17 +26,58 @@ public class SonorizeLogic : IAppLogic
         // Enable modern window styles if using the SkiaSharp/Silk.NET backend
         if (_host is SilkNetWindowHost silkHost)
         {
-            // === THIS IS WHERE YOU SET THE PROPERTIES ===
+            // ========================================================================
+            // == CONFIGURING WINDOW BACKDROP AND TITLE BAR (WINDOWS 11+)           ==
+            // ========================================================================
+            // Uncomment ONE of the examples below to set the desired window style.
+            // These effects require Windows 11 (Build 22621 or newer). On older
+            // systems, they will fall back to a solid color window.
 
-            // EXAMPLE 1: Modern Mica window with a dark title bar (Win 11 look)
-            silkHost.BackdropType = WindowBackdropType.Default;
-            silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+            // --- VALID COMBINATIONS ---
+
+            // EXAMPLE 1: Modern Mica window with a dark title bar (standard Win11 look)
+            // RESULT: Semi-transparent background that shows a blurred desktop wallpaper.
+            //         Modern dark title bar and window borders.
+            //silkHost.BackdropType = WindowBackdropType.Mica;
             //silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
 
-            // EXAMPLE 2: To get the classic solid color window and title bar,
-            // set both the backdrop and the title bar theme to Default.
-            //silkHost.BackdropType = WindowBackdropType.Default;
-            //silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
+            // EXAMPLE 2: Modern Mica window with a light title bar
+            // RESULT: Same Mica background, but with a modern light title bar.
+            // silkHost.BackdropType = WindowBackdropType.Mica;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
+
+            // EXAMPLE 3: Modern Acrylic window with a dark title bar
+            // RESULT: Blurry, semi-transparent background showing windows behind this one.
+            //         Often used for modal dialogs or popups.
+            // silkHost.BackdropType = WindowBackdropType.Acrylic;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+
+            // EXAMPLE 4: Classic solid color window (to regain the pre-effects look)
+            // RESULT: A standard window with a solid background color and the OS-default
+            //         (non-modern) title bar.
+            // silkHost.BackdropType = WindowBackdropType.Default;
+            // silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
+
+            // EXAMPLE 5: Solid color window with a modern dark title bar
+            // RESULT: Solid background color but with the modern dark title bar and borders.
+             silkHost.BackdropType = WindowBackdropType.Default;
+             silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+
+            // --- INVALID / AUTO-CORRECTED COMBINATION ---
+
+            // EXAMPLE 6 (INVALID): Mica/Acrylic with a default title bar
+            // SETTINGS: silkHost.BackdropType = WindowBackdropType.Mica;
+            //           silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
+            //
+            // WHY IT'S INVALID: The modern backdrop effects (Mica, Acrylic) are part
+            // of the "immersive" Windows 11 UI system and REQUIRE an immersive
+            // title bar theme (either Dark or Light) to function correctly.
+            //
+            // WHAT HAPPENS: The code will detect this invalid combination. It will
+            // honor the request for a Mica backdrop, but will be FORCED to apply
+            // a modern title bar. It defaults to the Dark theme in this case.
+            //
+            // FINAL RESULT: Mica backdrop with a modern DARK title bar.
         }
 
         _fileMenuPopupId = "fileMenuPopup".GetHashCode();
