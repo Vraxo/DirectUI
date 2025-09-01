@@ -17,7 +17,6 @@ public class SonorizeLogic : IAppLogic
     private int _selectedDirectoryIndex = -1;
     private bool _isFileMenuOpen = false;
     private int _fileMenuPopupId;
-    private bool _isShowingSettings = false;
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -66,17 +65,10 @@ public class SonorizeLogic : IAppLogic
     {
         DrawMenuBar(context);
 
-        if (_isShowingSettings)
-        {
-            DrawSettingsView(context);
-        }
-        else
-        {
-            // Main application content would go here
-            UI.BeginVBoxContainer("mainContentBox", new Vector2(20, 50));
-            UI.Text("mainContent", "Main Application View", new Vector2(200, 30));
-            UI.EndVBoxContainer();
-        }
+        // Main application content would go here
+        UI.BeginVBoxContainer("mainContentBox", new Vector2(20, 50));
+        UI.Text("mainContent", "Main Application View", new Vector2(200, 30));
+        UI.EndVBoxContainer();
     }
 
     private void DrawMenuBar(UIContext context)
@@ -126,7 +118,7 @@ public class SonorizeLogic : IAppLogic
                     {
                         UI.State.ClearActivePopup();
                         _isFileMenuOpen = false;
-                        _isShowingSettings = true;
+                        OpenSettingsModal();
                     }
                 };
                 UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
@@ -139,19 +131,22 @@ public class SonorizeLogic : IAppLogic
         UI.EndHBoxContainer();
     }
 
-    private void DrawSettingsView(UIContext context)
+    private void OpenSettingsModal()
     {
-        var settingsPanelRect = new Vortice.Mathematics.Rect(0, 30, context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y - 30);
-        UI.Context.Renderer.DrawBox(settingsPanelRect, new BoxStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0 });
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, DrawSettingsModal);
+    }
 
-        UI.BeginVBoxContainer("settingsVBox", new Vector2(20, 50), 10);
+    private void DrawSettingsModal(UIContext context)
+    {
+        UI.BeginVBoxContainer("settingsVBox", new Vector2(10, 10), 10);
 
         UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
-        UI.Separator(context.Renderer.RenderTargetSize.X - 40, verticalPadding: 2);
+        UI.Separator(480, verticalPadding: 2);
 
         UI.Text("dirsHeader", "Directories");
 
-        UI.BeginScrollableRegion("dirsScroll", new Vector2(context.Renderer.RenderTargetSize.X - 40, 200), out float innerWidth);
+        // Directories List
+        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 200), out float innerWidth);
         {
             var selectedStyle = new ButtonStylePack();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
@@ -169,10 +164,12 @@ public class SonorizeLogic : IAppLogic
         }
         UI.EndScrollableRegion();
 
+        // Add/Remove Buttons
         UI.BeginHBoxContainer("dirsButtons", UI.Context.Layout.GetCurrentPosition(), 5);
         {
             if (UI.Button("addDir", "Add", new Vector2(80, 24)))
             {
+                // In a real app, this would open a folder browser dialog.
                 _settings.Directories.Add($"New Directory {_settings.Directories.Count + 1}");
             }
             if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
@@ -180,18 +177,20 @@ public class SonorizeLogic : IAppLogic
                 if (_selectedDirectoryIndex >= 0 && _selectedDirectoryIndex < _settings.Directories.Count)
                 {
                     _settings.Directories.RemoveAt(_selectedDirectoryIndex);
-                    _selectedDirectoryIndex = -1;
+                    _selectedDirectoryIndex = -1; // Deselect
                 }
             }
         }
         UI.EndHBoxContainer();
 
-        UI.Separator(context.Renderer.RenderTargetSize.X - 40, verticalPadding: 8);
-
-        if (UI.Button("closeSettings", "Close", new Vector2(80, 24)))
+        // OK Button
+        var okButtonPos = new Vector2(480 - 80 + 10, 400 - 24 - 10);
+        UI.BeginVBoxContainer("okButtonContainer", okButtonPos);
+        if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
         {
-            _isShowingSettings = false;
+            _host.ModalWindowService.CloseModalWindow(0);
         }
+        UI.EndVBoxContainer();
 
         UI.EndVBoxContainer();
     }

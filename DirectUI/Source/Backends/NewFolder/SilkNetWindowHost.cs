@@ -13,7 +13,7 @@ using Key = Silk.NET.Input.Key;
 
 namespace DirectUI.Backends.SkiaSharp;
 
-public class SilkNetWindowHost : Core.IWindowHost
+public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 {
     private readonly string _title;
     private readonly int _width;
@@ -32,11 +32,20 @@ public class SilkNetWindowHost : Core.IWindowHost
 
     private bool _isDisposed;
 
+    // Modal state
+    private bool _isModalOpen;
+    private IWindow? _activeModalIWindow;
+    private Action<int>? _onModalClosedCallback;
+    private int _modalResultCode;
+
+
     public IntPtr Handle => _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
     public SizeI ClientSize => new(_window?.Size.X ?? 0, _window?.Size.Y ?? 0);
     public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
-    public IModalWindowService ModalWindowService { get; } = new SilkNetDummyModalWindowService();
+    public IModalWindowService ModalWindowService => this;
+    public bool IsModalWindowOpen => _isModalOpen;
+
 
     public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
     {
@@ -99,6 +108,8 @@ public class SilkNetWindowHost : Core.IWindowHost
 
     private void OnRender(double delta)
     {
+        if (_isModalOpen) return;
+
         _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 
         if (_skSurface is null || _renderer is null || _textService is null || _appEngine is null) return;
@@ -125,13 +136,112 @@ public class SilkNetWindowHost : Core.IWindowHost
         // Cleanup is handled by the finally block in ApplicationRunner.
     }
 
-    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyPressed(MapKey(key));
-    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyReleased(MapKey(key));
-    private void OnKeyChar(IKeyboard keyboard, char c) => Input.AddCharacterInput(c);
-    private void OnMouseDown(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseDown(MapMouseButton(button));
-    private void OnMouseUp(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseUp(MapMouseButton(button));
-    private void OnMouseMove(IMouse mouse, Vector2 position) => Input.SetMousePosition((int)position.X, (int)position.Y);
-    private void OnMouseWheel(IMouse mouse, ScrollWheel scroll) => Input.AddMouseWheelDelta(scroll.Y);
+    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) { if (!_isModalOpen) Input.AddKeyPressed(MapKey(key)); }
+    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) { if (!_isModalOpen) Input.AddKeyReleased(MapKey(key)); }
+    private void OnKeyChar(IKeyboard keyboard, char c) { if (!_isModalOpen) Input.AddCharacterInput(c); }
+    private void OnMouseDown(IMouse mouse, Silk.NET.Input.MouseButton button) { if (!_isModalOpen) Input.SetMouseDown(MapMouseButton(button)); }
+    private void OnMouseUp(IMouse mouse, Silk.NET.Input.MouseButton button) { if (!_isModalOpen) Input.SetMouseUp(MapMouseButton(button)); }
+    private void OnMouseMove(IMouse mouse, Vector2 position) { if (!_isModalOpen) Input.SetMousePosition((int)position.X, (int)position.Y); }
+    private void OnMouseWheel(IMouse mouse, ScrollWheel scroll) { if (!_isModalOpen) Input.AddMouseWheelDelta(scroll.Y); }
+
+
+    public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+    {
+        if (_isModalOpen) return;
+
+        _isModalOpen = true;
+        _onModalClosedCallback = onClosedCallback;
+        _modalResultCode = -1; // Default to canceled/closed
+
+        var options = WindowOptions.Default;
+        options.Size = new Vector2D<int>(width, height);
+        options.Title = title;
+        options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
+        options.WindowBorder = WindowBorder.Fixed;
+        options.ShouldSwapAutomatically = true; // Let Silk.NET handle buffer swapping for the modal
+
+        _activeModalIWindow = Window.Create(options);
+
+        // --- The modal window runs its entire lifecycle here ---
+        AppEngine? modalAppEngine = null;
+        SilkNetRenderer? modalRenderer = null;
+        SilkNetTextService? modalTextService = null;
+        IInputContext? modalInputContext = null;
+        GL? modalGl = null;
+        GRContext? modalGrContext = null;
+        SKSurface? modalSkSurface = null;
+        GRBackendRenderTarget? modalRenderTarget = null;
+
+        _activeModalIWindow.Load += () =>
+        {
+            modalGl = _activeModalIWindow.CreateOpenGL();
+            modalGl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+            var glInterface = GRGlInterface.Create();
+            modalGrContext = GRContext.CreateGl(glInterface);
+            modalRenderTarget = new GRBackendRenderTarget(width, height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
+            modalSkSurface = SKSurface.Create(modalGrContext, modalRenderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
+
+            modalAppEngine = new AppEngine(drawCallback, _backgroundColor);
+            modalTextService = new SilkNetTextService();
+            modalRenderer = new SilkNetRenderer(modalTextService);
+            modalAppEngine.Initialize(modalTextService, modalRenderer);
+
+            modalInputContext = _activeModalIWindow.CreateInput();
+            foreach (var kbd in modalInputContext.Keyboards)
+            {
+                kbd.KeyDown += (_, key, _) => modalAppEngine.Input.AddKeyPressed(MapKey(key));
+                kbd.KeyUp += (_, key, _) => modalAppEngine.Input.AddKeyReleased(MapKey(key));
+                kbd.KeyChar += (_, c) => modalAppEngine.Input.AddCharacterInput(c);
+            }
+            foreach (var m in modalInputContext.Mice)
+            {
+                m.MouseDown += (_, btn) => modalAppEngine.Input.SetMouseDown(MapMouseButton(btn));
+                m.MouseUp += (_, btn) => modalAppEngine.Input.SetMouseUp(MapMouseButton(btn));
+                m.MouseMove += (_, pos) => modalAppEngine.Input.SetMousePosition((int)pos.X, (int)pos.Y);
+                m.Scroll += (_, scroll) => modalAppEngine.Input.AddMouseWheelDelta(scroll.Y);
+            }
+        };
+
+        _activeModalIWindow.Render += (delta) =>
+        {
+            modalGl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+            if (modalSkSurface != null && modalRenderer != null && modalTextService != null && modalAppEngine != null)
+            {
+                modalRenderer.SetCanvas(modalSkSurface.Canvas, new Vector2(_activeModalIWindow.Size.X, _activeModalIWindow.Size.Y));
+                modalAppEngine.UpdateAndRenderModal(modalRenderer, modalTextService, drawCallback);
+                modalSkSurface.Canvas.Flush();
+            }
+        };
+
+        _activeModalIWindow.Closing += () =>
+        {
+            modalAppEngine?.Cleanup();
+            modalRenderer?.Cleanup();
+            modalTextService?.Cleanup();
+            modalSkSurface?.Dispose();
+            modalRenderTarget?.Dispose();
+            modalGrContext?.Dispose();
+            modalGl?.Dispose();
+            modalInputContext?.Dispose();
+        };
+
+        // Blocking call
+        _activeModalIWindow.Run();
+
+        // After modal returns
+        _activeModalIWindow.Dispose();
+        _activeModalIWindow = null;
+
+        _onModalClosedCallback?.Invoke(_modalResultCode);
+        _isModalOpen = false;
+    }
+
+    public void CloseModalWindow(int resultCode = 0)
+    {
+        _modalResultCode = resultCode;
+        _activeModalIWindow?.Close();
+    }
+
 
     private static Keys MapKey(Key key) => key switch
     {
@@ -267,16 +377,5 @@ public class SilkNetWindowHost : Core.IWindowHost
     {
         Cleanup();
         GC.SuppressFinalize(this);
-    }
-
-    private class SilkNetDummyModalWindowService : IModalWindowService
-    {
-        public bool IsModalWindowOpen => false;
-        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
-        {
-            Console.WriteLine($"Modal window '{title}' requested but not supported in Silk.NET backend.");
-            onClosedCallback?.Invoke(-1);
-        }
-        public void CloseModalWindow(int resultCode = 0) { }
     }
 }
