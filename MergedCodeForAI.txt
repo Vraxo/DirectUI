@@ -861,6 +861,26 @@ internal class ComboboxState
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\DataGridState.cs">
+// DirectUI/Source/Containers/DataGridState.cs
+using System.Collections.Generic;
+using System.Numerics;
+
+namespace DirectUI;
+
+internal class DataGridState
+{
+    public int Id { get; set; }
+    public List<float> ColumnWidths { get; set; } = new();
+    public Vector2 ScrollOffset { get; set; } = Vector2.Zero;
+    public int ResizingColumnIndex { get; set; } = -1;
+
+    // State for column resizing drag operation
+    public float ColumnResizeStartWidth { get; set; }
+    public float DragStartMouseX { get; set; }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\GridContainerState.cs">
 using System.Numerics;
 
@@ -1955,6 +1975,254 @@ public static partial class UI
             return false;
         }
         return true;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.DataGrid.cs">
+// DirectUI/Source/Core/UI.DataGrid.cs
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using System.Reflection;
+using DirectUI.Drawing;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    private static readonly Dictionary<Type, Dictionary<string, PropertyInfo?>> _propertyInfoCache = new();
+
+    /// <summary>
+    /// Renders a grid to display tabular data.
+    /// </summary>
+    /// <typeparam name="T">The type of data items in the collection.</typeparam>
+    /// <param name="id">A unique identifier for the data grid.</param>
+    /// <param name="items">The collection of data items to display.</param>
+    /// <param name="columns">The column definitions for the grid.</param>
+    /// <param name="selectedIndex">A reference to the index of the currently selected item.</param>
+    /// <param name="size">The total size of the data grid control.</param>
+    /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
+    public static void DataGrid<T>(
+        string id,
+        IReadOnlyList<T> items,
+        IReadOnlyList<DataGridColumn> columns,
+        ref int selectedIndex,
+        Vector2 size,
+        Vector2 position = default)
+    {
+        if (!IsContextValid()) return;
+
+        int intId = id.GetHashCode();
+        var state = State.GetOrCreateElement<DataGridState>(intId);
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Culling
+        var gridBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
+        if (!Context.Layout.IsRectVisible(gridBounds))
+        {
+            Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        InitializeDataGridState(state, intId, columns);
+
+        // --- Style Definitions ---
+        float headerHeight = 28f;
+        float rowHeight = 24f;
+        const float scrollbarThickness = 12f;
+
+        var gridStyle = new BoxStyle { FillColor = new(0.1f, 0.1f, 0.1f, 1.0f), BorderLength = 0f, Roundness = 0f };
+        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = Colors.Transparent, FontColor = DefaultTheme.Text };
+        var rowStyle = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+        rowStyle.Normal.FillColor = DefaultTheme.Transparent;
+        rowStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 1.0f);
+        rowStyle.Active.FillColor = DefaultTheme.Accent;
+        rowStyle.ActiveHover.FillColor = DefaultTheme.Accent;
+
+        // --- Layout Calculation ---
+        var headerBounds = new Rect(drawPos.X, drawPos.Y, size.X, headerHeight);
+        var contentBounds = new Rect(drawPos.X, drawPos.Y + headerHeight, size.X, size.Y - headerHeight);
+        float totalContentWidth = state.ColumnWidths.Sum();
+        float totalContentHeight = items.Count * rowHeight;
+
+        // --- Draw Main Background ---
+        Context.Renderer.DrawBox(gridBounds, gridStyle);
+
+        // --- Draw Header ---
+        DrawDataGridHeader(intId, state, columns, headerBounds, headerStyle);
+
+        // --- Handle Scrolling and Draw Rows ---
+        bool hScrollVisible = totalContentWidth > contentBounds.Width;
+        bool vScrollVisible = totalContentHeight > contentBounds.Height;
+
+        float viewWidth = contentBounds.Width - (vScrollVisible ? scrollbarThickness : 0);
+        float viewHeight = contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0);
+
+        // Use a local variable for the struct to avoid CS1612
+        var scrollOffset = state.ScrollOffset;
+
+        // Clamp scroll offsets
+        scrollOffset.X = Math.Clamp(scrollOffset.X, 0, Math.Max(0, totalContentWidth - viewWidth));
+        scrollOffset.Y = Math.Clamp(scrollOffset.Y, 0, Math.Max(0, totalContentHeight - viewHeight));
+        state.ScrollOffset = scrollOffset; // Assign back before drawing rows
+
+        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle);
+
+        // --- Draw Scrollbars ---
+        // Re-read from state in case it was modified, then modify and write back.
+        scrollOffset = state.ScrollOffset;
+        if (vScrollVisible)
+        {
+            scrollOffset.Y = VScrollBar(
+                id + "_vscroll",
+                scrollOffset.Y,
+                new Vector2(contentBounds.Right - scrollbarThickness, contentBounds.Y),
+                contentBounds.Height,
+                totalContentHeight,
+                viewHeight,
+                scrollbarThickness
+            );
+        }
+        if (hScrollVisible)
+        {
+            scrollOffset.X = HScrollBar(
+                id + "_hscroll",
+                scrollOffset.X,
+                new Vector2(contentBounds.X, contentBounds.Bottom - scrollbarThickness),
+                contentBounds.Width - (vScrollVisible ? scrollbarThickness : 0),
+                totalContentWidth,
+                viewWidth,
+                scrollbarThickness
+            );
+        }
+        state.ScrollOffset = scrollOffset; // Assign the final value back
+
+        Context.Layout.AdvanceLayout(size);
+    }
+
+    private static void InitializeDataGridState(DataGridState state, int id, IReadOnlyList<DataGridColumn> columns)
+    {
+        if (state.Id == id && state.ColumnWidths.Count == columns.Count) return;
+        state.Id = id;
+        state.ColumnWidths.Clear();
+        state.ColumnWidths.AddRange(columns.Select(c => c.InitialWidth));
+    }
+
+    private static void DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style)
+    {
+        var input = Context.InputState;
+        float currentX = headerBounds.X - state.ScrollOffset.X;
+
+        Context.Renderer.PushClipRect(headerBounds);
+
+        for (int i = 0; i < columns.Count; i++)
+        {
+            float colWidth = state.ColumnWidths[i];
+            var colHeaderBounds = new Rect(currentX, headerBounds.Y, colWidth, headerBounds.Height);
+            Context.Renderer.DrawBox(colHeaderBounds, style);
+            DrawTextPrimitive(colHeaderBounds, columns[i].HeaderText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
+
+            // Column Resizer Handle
+            var handleId = HashCode.Combine(id, "resize", i);
+            var handleBounds = new Rect(currentX + colWidth - 2, headerBounds.Y, 4, headerBounds.Height);
+
+            bool isHoveringHandle = handleBounds.Contains(input.MousePosition);
+            if (isHoveringHandle) State.SetPotentialInputTarget(handleId);
+
+            if (State.ActivelyPressedElementId == handleId && input.IsLeftMouseDown)
+            {
+                float deltaX = input.MousePosition.X - state.DragStartMouseX;
+                state.ColumnWidths[i] = Math.Max(20, state.ColumnResizeStartWidth + deltaX);
+            }
+            else if (State.ActivelyPressedElementId == handleId && !input.IsLeftMouseDown)
+            {
+                State.ClearActivePress(handleId);
+            }
+
+            if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
+            {
+                State.SetPotentialCaptorForFrame(handleId);
+                state.ResizingColumnIndex = i;
+                state.DragStartMouseX = input.MousePosition.X;
+                state.ColumnResizeStartWidth = state.ColumnWidths[i];
+            }
+
+            currentX += colWidth;
+        }
+
+        Context.Renderer.PopClipRect();
+    }
+
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle)
+    {
+        var input = Context.InputState;
+
+        Context.Renderer.PushClipRect(new Rect(contentBounds.X, contentBounds.Y, viewSize.X, viewSize.Y));
+
+        int firstVisibleRow = (int)Math.Floor(state.ScrollOffset.Y / rowHeight);
+        int visibleRowCount = (int)Math.Ceiling(viewSize.Y / rowHeight) + 1;
+        int lastVisibleRow = Math.Min(items.Count - 1, firstVisibleRow + visibleRowCount);
+
+        for (int i = firstVisibleRow; i <= lastVisibleRow; i++)
+        {
+            var item = items[i];
+            float rowY = contentBounds.Y + (i * rowHeight) - state.ScrollOffset.Y;
+            var rowBounds = new Rect(contentBounds.X, rowY, contentBounds.Width, rowHeight); // Use full width for selection
+            bool isSelected = i == selectedIndex;
+
+            int rowId = HashCode.Combine(id, "row", i);
+            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
+            {
+                selectedIndex = i;
+            }
+
+            float currentX = contentBounds.X - state.ScrollOffset.X;
+            for (int j = 0; j < columns.Count; j++)
+            {
+                var column = columns[j];
+                float colWidth = state.ColumnWidths[j];
+                var cellBounds = new Rect(currentX, rowY, colWidth, rowHeight);
+
+                var value = GetPropertyValue(item, column.DataPropertyName);
+                string cellText = value?.ToString() ?? string.Empty;
+
+                if (value is TimeSpan ts)
+                {
+                    cellText = $"{(int)ts.TotalMinutes:00}:{ts.Seconds:00}";
+                }
+
+                Context.Renderer.PushClipRect(cellBounds); // Clip text to cell
+                DrawTextPrimitive(cellBounds, cellText, rowStyle.Current, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
+                Context.Renderer.PopClipRect();
+
+                currentX += colWidth;
+            }
+        }
+
+        Context.Renderer.PopClipRect();
+    }
+
+    private static object? GetPropertyValue<T>(T item, string propertyName)
+    {
+        if (item == null || string.IsNullOrEmpty(propertyName)) return null;
+        var type = typeof(T);
+
+        if (!_propertyInfoCache.TryGetValue(type, out var propertyMap))
+        {
+            propertyMap = new Dictionary<string, PropertyInfo?>();
+            _propertyInfoCache[type] = propertyMap;
+        }
+
+        if (!propertyMap.TryGetValue(propertyName, out var propInfo))
+        {
+            propInfo = type.GetProperty(propertyName, BindingFlags.Public | BindingFlags.Instance);
+            propertyMap[propertyName] = propInfo;
+        }
+
+        return propInfo?.GetValue(item);
     }
 }
 </file>
@@ -4752,6 +5020,45 @@ public static class Button
 {
     public enum ActionMode { Release, Press }
     public enum ClickBehavior { Left, Right, Both }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\DataGridColumn.cs">
+// DirectUI/Source/Widgets/DataGridColumn.cs
+namespace DirectUI;
+
+/// <summary>
+/// Defines a column for the DataGrid control.
+/// </summary>
+public class DataGridColumn
+{
+    /// <summary>
+    /// The text displayed in the column header.
+    /// </summary>
+    public string HeaderText { get; }
+
+    /// <summary>
+    /// The initial width of the column. This can be changed by the user resizing the column.
+    /// </summary>
+    public float InitialWidth { get; }
+
+    /// <summary>
+    /// The name of the public property on the data item object from which to retrieve the cell value.
+    /// </summary>
+    public string DataPropertyName { get; }
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="DataGridColumn"/> class.
+    /// </summary>
+    /// <param name="headerText">The text to display in the column header.</param>
+    /// <param name="initialWidth">The initial width of the column.</param>
+    /// <param name="dataPropertyName">The name of the public property to bind to.</param>
+    public DataGridColumn(string headerText, float initialWidth, string dataPropertyName)
+    {
+        HeaderText = headerText;
+        InitialWidth = initialWidth;
+        DataPropertyName = dataPropertyName;
+    }
 }
 </file>
 
@@ -10810,119 +11117,79 @@ public static class Program
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\SonorizeLogic.cs">
-using DirectUI;
-using DirectUI.Core;
-using System.IO;
 using System.Numerics;
 using System.Text.Json;
-using System;
-using DirectUI.Backends.SkiaSharp; // Added for SilkNetWindowHost
-using TinyDialogsNet;
+using DirectUI;
+using DirectUI.Backends.SkiaSharp;
+using DirectUI.Core;
 
 namespace Sonorize;
 
 public class SonorizeLogic : IAppLogic
 {
     private readonly IWindowHost _host;
-    private Settings _settings;
+    private readonly Settings _settings;
     private readonly string _settingsFilePath = "settings.json";
 
-    // UI State
-    private int _selectedDirectoryIndex = -1;
-    private bool _isFileMenuOpen = false;
-    private int _fileMenuPopupId;
+    private readonly MenuBar _menuBar;
+    private readonly SettingsWindow _settingsWindow;
+    private readonly MusicLibrary _musicLibrary = new();
+
+    private int _selectedTrackIndex = -1;
+    private readonly DataGridColumn[] _columns;
+
 
     public SonorizeLogic(IWindowHost host)
     {
         _host = host;
+        _settings = LoadState();
 
-        // Enable modern window styles if using the SkiaSharp/Silk.NET backend
-        if (_host is SilkNetWindowHost silkHost)
-        {
-            // ========================================================================
-            // == CONFIGURING WINDOW BACKDROP AND TITLE BAR (WINDOWS 11+)           ==
-            // ========================================================================
-            // Uncomment ONE of the examples below to set the desired window style.
-            // These effects require Windows 11 (Build 22621 or newer). On older
-            // systems, they will fall back to a solid color window.
+        ConfigureWindowStyles(host);
 
-            // --- VALID COMBINATIONS ---
+        _menuBar = new(OpenSettingsModal);
+        _settingsWindow = new(_settings, _host);
 
-            // EXAMPLE 1: Modern Mica window with a dark title bar (standard Win11 look)
-            // RESULT: Semi-transparent background that shows a blurred desktop wallpaper.
-            //         Modern dark title bar and window borders.
-            silkHost.BackdropType = WindowBackdropType.Mica;
-            silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+        _columns =
+        [
+            new DataGridColumn("Title", 350, nameof(MusicFile.Title)),
+            new DataGridColumn("Artist", 250, nameof(MusicFile.Artist)),
+            new DataGridColumn("Album", 250, nameof(MusicFile.Album)),
+            new DataGridColumn("Duration", 100, nameof(MusicFile.Duration)),
+            new DataGridColumn("Genre", 150, nameof(MusicFile.Genre)),
+            new DataGridColumn("Year", 80, nameof(MusicFile.Year))
+        ];
 
-            // EXAMPLE 2: Modern Mica window with a light title bar
-            // RESULT: Same Mica background, but with a modern light title bar.
-            // silkHost.BackdropType = WindowBackdropType.Mica;
-            //silkHost.TitleBarTheme = WindowTitleBarTheme.Light;
-
-            // EXAMPLE 3: Modern Acrylic window with a dark title bar
-            // RESULT: Blurry, semi-transparent background showing windows behind this one.
-            //         Often used for modal dialogs or popups.
-            // silkHost.BackdropType = WindowBackdropType.Acrylic;
-            // silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
-
-            // EXAMPLE 4: Classic solid color window (to regain the pre-effects look)
-            // RESULT: A standard window with a solid background color and the OS-default
-            //         (non-modern) title bar.
-            // silkHost.BackdropType = WindowBackdropType.Default;
-            // silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
-
-            // EXAMPLE 5: Solid color window with a modern dark title bar
-            // RESULT: Solid background color but with the modern dark title bar and borders.
-            // silkHost.BackdropType = WindowBackdropType.Default;
-            // silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
-
-            // --- INVALID / AUTO-CORRECTED COMBINATION ---
-
-            // EXAMPLE 6 (INVALID): Mica/Acrylic with a default title bar
-            // SETTINGS: silkHost.BackdropType = WindowBackdropType.Mica;
-            //           silkHost.TitleBarTheme = WindowTitleBarTheme.Default;
-            //
-            // WHY IT'S INVALID: The modern backdrop effects (Mica, Acrylic) are part
-            // of the "immersive" Windows 11 UI system and REQUIRE an immersive
-            // title bar theme (either Dark or Light) to function correctly.
-            //
-            // WHAT HAPPENS: The code will detect this invalid combination. It will
-            // honor the request for a Mica backdrop, but will be FORCED to apply
-            // a modern title bar. It defaults to the Dark theme in this case.
-            //
-            // FINAL RESULT: Mica backdrop with a modern DARK title bar.
-        }
-
-        _fileMenuPopupId = "fileMenuPopup".GetHashCode();
-        LoadState();
+        // Start scanning for music files
+        _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
     }
 
-    private void LoadState()
+    private Settings LoadState()
     {
         try
         {
             if (File.Exists(_settingsFilePath))
             {
                 string json = File.ReadAllText(_settingsFilePath);
-                _settings = JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
-            }
-            else
-            {
-                _settings = new Settings();
+                return JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
             }
         }
         catch (Exception ex)
         {
             Console.WriteLine($"Error loading settings: {ex.Message}");
-            _settings = new Settings();
         }
+
+        return new();
     }
 
     public void SaveState()
     {
         try
         {
-            var options = new JsonSerializerOptions { WriteIndented = true };
+            JsonSerializerOptions options = new()
+            {
+                WriteIndented = true
+            };
+
             string json = JsonSerializer.Serialize(_settings, options);
             File.WriteAllText(_settingsFilePath, json);
             Console.WriteLine($"Settings saved to {_settingsFilePath}");
@@ -10933,17 +11200,206 @@ public class SonorizeLogic : IAppLogic
         }
     }
 
-    public void DrawUI(UIContext context)
+    private static void ConfigureWindowStyles(IWindowHost host)
     {
-        DrawMenuBar(context);
+        if (host is not SilkNetWindowHost silkHost)
+        {
+            return;
+        }
 
-        // Main application content would go here
-        UI.BeginVBoxContainer("mainContentBox", new Vector2(20, 50));
-        UI.Text("mainContent", "Main Application View", new Vector2(200, 30));
-        UI.EndVBoxContainer();
+        // ========================================================================
+        // == CONFIGURING WINDOW BACKDROP AND TITLE BAR (WINDOWS 11+)           ==
+        // ========================================================================
+        // This example enables a modern Mica window with a dark title bar.
+        // It requires Windows 11 (Build 22621 or newer). On older systems,
+        // it will fall back to a standard solid color window.
+        silkHost.BackdropType = WindowBackdropType.Default;
+        silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
     }
 
-    private void DrawMenuBar(UIContext context)
+    public void DrawUI(UIContext context)
+    {
+        _menuBar.Draw(context);
+
+        float menuBarHeight = 30f;
+        float padding = 10f;
+        var gridPos = new Vector2(padding, menuBarHeight + padding);
+        var gridSize = new Vector2(
+            context.Renderer.RenderTargetSize.X - (padding * 2),
+            context.Renderer.RenderTargetSize.Y - menuBarHeight - (padding * 2)
+        );
+
+        if (gridSize.X > 0 && gridSize.Y > 0)
+        {
+            UI.DataGrid<MusicFile>(
+                "musicGrid",
+                _musicLibrary.Files,
+                _columns,
+                ref _selectedTrackIndex,
+                gridSize,
+                gridPos
+            );
+        }
+    }
+
+    private void OpenSettingsModal()
+    {
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
+        {
+            // After settings window is closed, rescan library if OK was pressed.
+            if (resultCode == 0)
+            {
+                _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
+            }
+        });
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Data\MusicFile.cs">
+// Sonorize/Source/Data/MusicFile.cs
+namespace Sonorize;
+
+public class MusicFile
+{
+    public string Title { get; set; } = string.Empty;
+    public string Artist { get; set; } = string.Empty;
+    public string Album { get; set; } = string.Empty;
+    public string Genre { get; set; } = string.Empty;
+    public uint Year { get; set; }
+    public TimeSpan Duration { get; set; }
+    public string FilePath { get; set; } = string.Empty;
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Data\MusicLibrary.cs">
+// Sonorize/Source/Data/MusicLibrary.cs
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using TagLib;
+
+namespace Sonorize;
+
+public class MusicLibrary
+{
+    private List<MusicFile> _files = new();
+    private readonly object _lock = new();
+
+    public IReadOnlyList<MusicFile> Files
+    {
+        get
+        {
+            lock (_lock)
+            {
+                // Return a copy to prevent collection modified exceptions if the background task updates it during a render.
+                return new List<MusicFile>(_files);
+            }
+        }
+    }
+
+    private static readonly string[] SupportedExtensions = { ".mp3", ".flac", ".m4a", ".ogg", ".wav", ".wma", ".aac" };
+    private Task? _scanTask;
+
+    public void ScanDirectoriesAsync(IEnumerable<string> directories)
+    {
+        // Don't start a new scan if one is already running
+        if (_scanTask is not null && !_scanTask.IsCompleted) return;
+
+        var dirsToScan = directories.ToList(); // Create a copy
+
+        _scanTask = Task.Run(() =>
+        {
+            Console.WriteLine("Starting library scan...");
+            var foundFiles = new List<MusicFile>();
+            foreach (var dir in dirsToScan)
+            {
+                if (!Directory.Exists(dir)) continue;
+
+                try
+                {
+                    var filesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+                    foreach (var filePath in filesInDir)
+                    {
+                        try
+                        {
+                            using var tagFile = TagLib.File.Create(filePath);
+                            var musicFile = new MusicFile
+                            {
+                                Title = string.IsNullOrEmpty(tagFile.Tag.Title) ? Path.GetFileNameWithoutExtension(filePath) : tagFile.Tag.Title,
+                                Artist = tagFile.Tag.FirstPerformer ?? "Unknown Artist",
+                                Album = tagFile.Tag.Album ?? "Unknown Album",
+                                Genre = tagFile.Tag.FirstGenre ?? string.Empty,
+                                Year = tagFile.Tag.Year,
+                                Duration = tagFile.Properties.Duration,
+                                FilePath = filePath
+                            };
+                            foundFiles.Add(musicFile);
+                        }
+                        catch (CorruptFileException) { /* ignore */ }
+                        catch (UnsupportedFormatException) { /* ignore */ }
+                        catch (Exception ex) { Console.WriteLine($"Could not read tag for {filePath}: {ex.Message}"); }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error scanning directory {dir}: {ex.Message}");
+                }
+            }
+
+            var sortedFiles = foundFiles
+                .OrderBy(f => f.Artist)
+                .ThenBy(f => f.Album)
+                .ThenBy(f => f.Title)
+                .ToList();
+
+            lock (_lock)
+            {
+                _files = sortedFiles;
+            }
+            Console.WriteLine($"Scan complete. Found {_files.Count} files.");
+        });
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Settings\Settings.cs">
+using System.Collections.Generic;
+
+namespace Sonorize;
+
+public class Settings
+{
+    public List<string> Directories { get; set; } = new();
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\UI\MenuBar.cs">
+// Sonorize/Source/UI/MenuBar.cs
+using System;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class MenuBar
+{
+    private readonly Action _onOpenSettings;
+    private bool _isFileMenuOpen = false;
+    private readonly int _fileMenuPopupId;
+
+    public MenuBar(Action onOpenSettings)
+    {
+        _onOpenSettings = onOpenSettings ?? throw new ArgumentNullException(nameof(onOpenSettings));
+        _fileMenuPopupId = "fileMenuPopup".GetHashCode();
+    }
+
+    public void Draw(UIContext context)
     {
         var menuBarBg = new BoxStyle
         {
@@ -10955,11 +11411,11 @@ public class SonorizeLogic : IAppLogic
             BorderLengthRight = 0,
             Roundness = 0
         };
-        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, UI.Context.Renderer.RenderTargetSize.X, 30), menuBarBg);
+        context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, context.Renderer.RenderTargetSize.X, 30), menuBarBg);
 
         UI.BeginHBoxContainer("menuBar", new Vector2(5, 4), 5);
 
-        var fileButtonPos = UI.Context.Layout.GetCurrentPosition();
+        var fileButtonPos = context.Layout.GetCurrentPosition();
         var fileButtonSize = new Vector2(50, 22);
 
         if (_isFileMenuOpen && UI.State.ActivePopupId != _fileMenuPopupId)
@@ -10972,31 +11428,7 @@ public class SonorizeLogic : IAppLogic
             _isFileMenuOpen = !_isFileMenuOpen;
             if (_isFileMenuOpen)
             {
-                var popupPosition = new Vector2(fileButtonPos.X, fileButtonPos.Y + fileButtonSize.Y + 2);
-                var popupSize = new Vector2(150, 30);
-                var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, popupSize.X, popupSize.Y);
-
-                Action<UIContext> drawCallback = (ctx) =>
-                {
-                    var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
-                    ctx.Renderer.DrawBox(popupBounds, popupStyle);
-
-                    var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-                    itemTheme.Normal.FillColor = DefaultTheme.Transparent;
-                    itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
-                    itemTheme.Pressed.FillColor = DefaultTheme.Accent;
-
-                    // Use a regular UI.Button inside the popup's layout context
-                    UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
-                    if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0)))
-                    {
-                        UI.State.ClearActivePopup();
-                        _isFileMenuOpen = false;
-                        OpenSettingsModal();
-                    }
-                    UI.EndVBoxContainer();
-                };
-                UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
+                OpenMenuPopup(fileButtonPos, fileButtonSize);
             }
             else
             {
@@ -11006,12 +11438,57 @@ public class SonorizeLogic : IAppLogic
         UI.EndHBoxContainer();
     }
 
-    private void OpenSettingsModal()
+    private void OpenMenuPopup(Vector2 buttonPos, Vector2 buttonSize)
     {
-        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, DrawSettingsModal);
+        var popupPosition = new Vector2(buttonPos.X, buttonPos.Y + buttonSize.Y + 2);
+        var popupSize = new Vector2(150, 30);
+        var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, popupSize.X, popupSize.Y);
+
+        Action<UIContext> drawCallback = (ctx) =>
+        {
+            var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
+            ctx.Renderer.DrawBox(popupBounds, popupStyle);
+
+            var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+            itemTheme.Normal.FillColor = DefaultTheme.Transparent;
+            itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+            itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+            UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
+            if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0)))
+            {
+                UI.State.ClearActivePopup();
+                _isFileMenuOpen = false;
+                _onOpenSettings();
+            }
+            UI.EndVBoxContainer();
+        };
+        UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\UI\SettingsWindow.cs">
+using DirectUI;
+using DirectUI.Core;
+using System.Numerics;
+using TinyDialogsNet;
+
+namespace Sonorize;
+
+public class SettingsWindow
+{
+    private readonly Settings _settings;
+    private readonly IWindowHost _host;
+    private int _selectedDirectoryIndex = -1;
+
+    public SettingsWindow(Settings settings, IWindowHost host)
+    {
+        _settings = settings;
+        _host = host;
     }
 
-    private void DrawSettingsModal(UIContext context)
+    public void Draw(UIContext context)
     {
         UI.BeginVBoxContainer("settingsVBox", new Vector2(10, 10), 10);
 
@@ -11020,10 +11497,18 @@ public class SonorizeLogic : IAppLogic
 
         UI.Text("dirsHeader", "Directories");
 
-        // Directories List
+        DrawDirectoriesList();
+        DrawActionButtons();
+        DrawOkButton();
+
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawDirectoriesList()
+    {
         UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 200), out float innerWidth);
         {
-            var selectedStyle = new ButtonStylePack();
+            ButtonStylePack selectedStyle = new();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
             selectedStyle.ActiveHover.FillColor = DefaultTheme.Accent;
             selectedStyle.Normal.FillColor = new(0.15f, 0.15f, 0.15f, 1.0f);
@@ -11031,22 +11516,25 @@ public class SonorizeLogic : IAppLogic
             for (int i = 0; i < _settings.Directories.Count; i++)
             {
                 bool isSelected = i == _selectedDirectoryIndex;
-                if (UI.Button($"dir_{i}", _settings.Directories[i], new Vector2(innerWidth, 24), theme: selectedStyle, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), isActive: isSelected))
+
+                if (!UI.Button($"dir_{i}", _settings.Directories[i], new Vector2(innerWidth, 24), theme: selectedStyle, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), isActive: isSelected))
                 {
-                    _selectedDirectoryIndex = i;
+                    continue;
                 }
+
+                _selectedDirectoryIndex = i;
             }
         }
-        UI.EndScrollableRegion();
 
-        // Add/Remove Buttons
+        UI.EndScrollableRegion();
+    }
+
+    private void DrawActionButtons()
+    {
         UI.BeginHBoxContainer("dirsButtons", UI.Context.Layout.GetCurrentPosition(), 5);
         {
             if (UI.Button("addDir", "Add", new Vector2(80, 24)))
             {
-                // This uses TinyFileDialogs.Net, a lightweight, cross-platform
-                // wrapper for native OS dialogs. You must add the
-                // 'TinyFileDialogs.Net' NuGet package to the project for this to work.
                 var selectedPath = TinyDialogs.SelectFolderDialog("Select a folder to add to Sonorize");
 
                 if (!string.IsNullOrWhiteSpace(selectedPath.Path) && !_settings.Directories.Contains(selectedPath.Path))
@@ -11064,34 +11552,27 @@ public class SonorizeLogic : IAppLogic
             }
         }
         UI.EndHBoxContainer();
+    }
 
-        // OK Button - Positioned using layout containers
-        // This is a bit of a hack to position at the bottom right.
-        // A more robust layout system would handle this better.
-        float remainingY = 400 - UI.Context.Layout.GetCurrentPosition().Y;
-        float buttonY = UI.Context.Layout.GetCurrentPosition().Y + remainingY - 24 - 10;
-        float buttonX = 500 - 80 - 10;
+    private void DrawOkButton()
+    {
+        // Position at the bottom right.
+        float modalHeight = 400;
+        float modalWidth = 500;
+        float buttonHeight = 24;
+        float buttonWidth = 80;
+        float padding = 10;
+
+        float buttonY = modalHeight - buttonHeight - padding;
+        float buttonX = modalWidth - buttonWidth - padding;
 
         UI.BeginVBoxContainer("okButtonContainer", new Vector2(buttonX, buttonY));
-        if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
+        if (UI.Button("okSettings", "OK", new Vector2(buttonWidth, buttonHeight)))
         {
             _host.ModalWindowService.CloseModalWindow(0);
         }
         UI.EndVBoxContainer();
-
-        UI.EndVBoxContainer();
     }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Settings\Settings.cs">
-using System.Collections.Generic;
-
-namespace Sonorize;
-
-public class Settings
-{
-    public List<string> Directories { get; set; } = new();
 }
 </file>
 

@@ -1,4 +1,5 @@
-﻿using System.Text.Json;
+﻿using System.Numerics;
+using System.Text.Json;
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
@@ -13,6 +14,11 @@ public class SonorizeLogic : IAppLogic
 
     private readonly MenuBar _menuBar;
     private readonly SettingsWindow _settingsWindow;
+    private readonly MusicLibrary _musicLibrary = new();
+
+    private int _selectedTrackIndex = -1;
+    private readonly DataGridColumn[] _columns;
+
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -23,6 +29,19 @@ public class SonorizeLogic : IAppLogic
 
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host);
+
+        _columns =
+        [
+            new DataGridColumn("Title", 350, nameof(MusicFile.Title)),
+            new DataGridColumn("Artist", 250, nameof(MusicFile.Artist)),
+            new DataGridColumn("Album", 250, nameof(MusicFile.Album)),
+            new DataGridColumn("Duration", 100, nameof(MusicFile.Duration)),
+            new DataGridColumn("Genre", 150, nameof(MusicFile.Genre)),
+            new DataGridColumn("Year", 80, nameof(MusicFile.Year))
+        ];
+
+        // Start scanning for music files
+        _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
     }
 
     private Settings LoadState()
@@ -47,9 +66,9 @@ public class SonorizeLogic : IAppLogic
     {
         try
         {
-            JsonSerializerOptions options = new() 
-            { 
-                WriteIndented = true 
+            JsonSerializerOptions options = new()
+            {
+                WriteIndented = true
             };
 
             string json = JsonSerializer.Serialize(_settings, options);
@@ -75,7 +94,7 @@ public class SonorizeLogic : IAppLogic
         // This example enables a modern Mica window with a dark title bar.
         // It requires Windows 11 (Build 22621 or newer). On older systems,
         // it will fall back to a standard solid color window.
-        silkHost.BackdropType = WindowBackdropType.Mica;
+        silkHost.BackdropType = WindowBackdropType.Default;
         silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
     }
 
@@ -83,13 +102,36 @@ public class SonorizeLogic : IAppLogic
     {
         _menuBar.Draw(context);
 
-        UI.BeginVBoxContainer("mainContentBox", new(20, 50));
-        UI.Text("mainContent", "Main Application View", new(200, 30));
-        UI.EndVBoxContainer();
+        float menuBarHeight = 30f;
+        float padding = 10f;
+        var gridPos = new Vector2(padding, menuBarHeight + padding);
+        var gridSize = new Vector2(
+            context.Renderer.RenderTargetSize.X - (padding * 2),
+            context.Renderer.RenderTargetSize.Y - menuBarHeight - (padding * 2)
+        );
+
+        if (gridSize.X > 0 && gridSize.Y > 0)
+        {
+            UI.DataGrid<MusicFile>(
+                "musicGrid",
+                _musicLibrary.Files,
+                _columns,
+                ref _selectedTrackIndex,
+                gridSize,
+                gridPos
+            );
+        }
     }
 
     private void OpenSettingsModal()
     {
-        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw);
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
+        {
+            // After settings window is closed, rescan library if OK was pressed.
+            if (resultCode == 0)
+            {
+                _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
+            }
+        });
     }
 }
