@@ -1,0 +1,282 @@
+﻿using System;
+using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Input;
+using Silk.NET.Input;
+using Silk.NET.Maths;
+using Silk.NET.OpenGL;
+using Silk.NET.Windowing;
+using SkiaSharp;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+using Key = Silk.NET.Input.Key;
+
+namespace DirectUI.Backends.SkiaSharp;
+
+public class SilkNetWindowHost : Core.IWindowHost
+{
+    private readonly string _title;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly Color4 _backgroundColor;
+
+    private IWindow? _window;
+    private AppEngine? _appEngine;
+    private SilkNetRenderer? _renderer;
+    private SilkNetTextService? _textService;
+    private GL? _gl;
+    private GRContext? _grContext;
+    private SKSurface? _skSurface;
+    private GRBackendRenderTarget? _renderTarget;
+    private IInputContext? _inputContext;
+
+    private bool _isDisposed;
+
+    public IntPtr Handle => _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
+    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public SizeI ClientSize => new(_window?.Size.X ?? 0, _window?.Size.Y ?? 0);
+    public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
+    public IModalWindowService ModalWindowService { get; } = new SilkNetDummyModalWindowService();
+
+    public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
+    {
+        _title = title;
+        _width = width;
+        _height = height;
+        _backgroundColor = backgroundColor;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        var options = WindowOptions.Default;
+        options.Size = new Vector2D<int>(_width, _height);
+        options.Title = _title;
+        options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
+
+        _window = Window.Create(options);
+
+        _window.Load += () => OnLoad(uiDrawCallback, backgroundColor);
+        _window.Render += OnRender;
+        _window.Closing += OnClose;
+        _window.Resize += OnResize;
+
+        return true;
+    }
+
+    public void RunLoop() => _window?.Run();
+
+    private void OnLoad(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        _gl = _window!.CreateOpenGL();
+        _gl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+
+        var glInterface = GRGlInterface.Create();
+        _grContext = GRContext.CreateGl(glInterface);
+
+        _renderTarget = new GRBackendRenderTarget(_width, _height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
+        _skSurface = SKSurface.Create(_grContext, _renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
+
+        _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+        _textService = new SilkNetTextService();
+        _renderer = new SilkNetRenderer(_textService);
+        _appEngine.Initialize(_textService, _renderer);
+
+        _inputContext = _window.CreateInput();
+        foreach (var keyboard in _inputContext.Keyboards)
+        {
+            keyboard.KeyDown += OnKeyDown;
+            keyboard.KeyUp += OnKeyUp;
+            keyboard.KeyChar += OnKeyChar;
+        }
+        foreach (var mouse in _inputContext.Mice)
+        {
+            mouse.MouseDown += OnMouseDown;
+            mouse.MouseUp += OnMouseUp;
+            mouse.MouseMove += OnMouseMove;
+            mouse.Scroll += OnMouseWheel;
+        }
+    }
+
+    private void OnRender(double delta)
+    {
+        _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+
+        if (_skSurface is null || _renderer is null || _textService is null || _appEngine is null) return;
+
+        _renderer.SetCanvas(_skSurface.Canvas, new Vector2(_window!.Size.X, _window.Size.Y));
+        _appEngine.UpdateAndRender(_renderer, _textService);
+        _skSurface.Canvas.Flush();
+    }
+
+    private void OnResize(Vector2D<int> size)
+    {
+        _gl?.Viewport(size);
+
+        _renderTarget?.Dispose();
+        _skSurface?.Dispose();
+
+        _renderTarget = new GRBackendRenderTarget(size.X, size.Y, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
+        _skSurface = SKSurface.Create(_grContext, _renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
+    }
+
+    private void OnClose()
+    {
+        // The RunLoop will exit when this handler returns.
+        // Cleanup is handled by the finally block in ApplicationRunner.
+    }
+
+    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyPressed(MapKey(key));
+    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyReleased(MapKey(key));
+    private void OnKeyChar(IKeyboard keyboard, char c) => Input.AddCharacterInput(c);
+    private void OnMouseDown(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseDown(MapMouseButton(button));
+    private void OnMouseUp(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseUp(MapMouseButton(button));
+    private void OnMouseMove(IMouse mouse, Vector2 position) => Input.SetMousePosition((int)position.X, (int)position.Y);
+    private void OnMouseWheel(IMouse mouse, ScrollWheel scroll) => Input.AddMouseWheelDelta(scroll.Y);
+
+    private static Keys MapKey(Key key) => key switch
+    {
+        Key.Space => Keys.Space,
+        Key.Apostrophe => Keys.Unknown,
+        Key.Comma => Keys.Unknown,
+        Key.Minus => Keys.Unknown,
+        Key.Period => Keys.Unknown,
+        Key.Slash => Keys.Unknown,
+        Key.Number0 => Keys.D0,
+        Key.Number1 => Keys.D1,
+        Key.Number2 => Keys.D2,
+        Key.Number3 => Keys.D3,
+        Key.Number4 => Keys.D4,
+        Key.Number5 => Keys.D5,
+        Key.Number6 => Keys.D6,
+        Key.Number7 => Keys.D7,
+        Key.Number8 => Keys.D8,
+        Key.Number9 => Keys.D9,
+        Key.Semicolon => Keys.Unknown,
+        Key.Equal => Keys.Unknown,
+        Key.A => Keys.A,
+        Key.B => Keys.B,
+        Key.C => Keys.C,
+        Key.D => Keys.D,
+        Key.E => Keys.E,
+        Key.F => Keys.F,
+        Key.G => Keys.G,
+        Key.H => Keys.H,
+        Key.I => Keys.I,
+        Key.J => Keys.J,
+        Key.K => Keys.K,
+        Key.L => Keys.L,
+        Key.M => Keys.M,
+        Key.N => Keys.N,
+        Key.O => Keys.O,
+        Key.P => Keys.P,
+        Key.Q => Keys.Q,
+        Key.R => Keys.R,
+        Key.S => Keys.S,
+        Key.T => Keys.T,
+        Key.U => Keys.U,
+        Key.V => Keys.V,
+        Key.W => Keys.W,
+        Key.X => Keys.X,
+        Key.Y => Keys.Y,
+        Key.Z => Keys.Z,
+        Key.LeftBracket => Keys.Unknown,
+        Key.BackSlash => Keys.Unknown,
+        Key.RightBracket => Keys.Unknown,
+        Key.GraveAccent => Keys.Unknown,
+        Key.World1 => Keys.Unknown,
+        Key.World2 => Keys.Unknown,
+        Key.Escape => Keys.Escape,
+        Key.Enter => Keys.Enter,
+        Key.Tab => Keys.Tab,
+        Key.Backspace => Keys.Backspace,
+        Key.Insert => Keys.Insert,
+        Key.Delete => Keys.Delete,
+        Key.Right => Keys.RightArrow,
+        Key.Left => Keys.LeftArrow,
+        Key.Down => Keys.DownArrow,
+        Key.Up => Keys.UpArrow,
+        Key.PageUp => Keys.PageUp,
+        Key.PageDown => Keys.PageDown,
+        Key.Home => Keys.Home,
+        Key.End => Keys.End,
+        Key.CapsLock => Keys.CapsLock,
+        Key.ScrollLock => Keys.Unknown,
+        Key.NumLock => Keys.Unknown,
+        Key.PrintScreen => Keys.Unknown,
+        Key.Pause => Keys.Pause,
+        Key.F1 => Keys.F1,
+        Key.F2 => Keys.F2,
+        Key.F3 => Keys.F3,
+        Key.F4 => Keys.F4,
+        Key.F5 => Keys.F5,
+        Key.F6 => Keys.F6,
+        Key.F7 => Keys.F7,
+        Key.F8 => Keys.F8,
+        Key.F9 => Keys.F9,
+        Key.F10 => Keys.F10,
+        Key.F11 => Keys.F11,
+        Key.F12 => Keys.F12,
+        Key.Keypad0 => Keys.D0,
+        Key.Keypad1 => Keys.D1,
+        Key.Keypad2 => Keys.D2,
+        Key.Keypad3 => Keys.D3,
+        Key.Keypad4 => Keys.D4,
+        Key.Keypad5 => Keys.D5,
+        Key.Keypad6 => Keys.D6,
+        Key.Keypad7 => Keys.D7,
+        Key.Keypad8 => Keys.D8,
+        Key.Keypad9 => Keys.D9,
+        Key.ShiftLeft => Keys.Shift,
+        Key.ShiftRight => Keys.Shift,
+        Key.ControlLeft => Keys.Control,
+        Key.ControlRight => Keys.Control,
+        Key.AltLeft => Keys.Alt,
+        Key.AltRight => Keys.Alt,
+        Key.SuperLeft => Keys.LeftWindows,
+        Key.SuperRight => Keys.RightWindows,
+        Key.Menu => Keys.Menu,
+        _ => Keys.Unknown,
+    };
+
+    private static DirectUI.MouseButton MapMouseButton(Silk.NET.Input.MouseButton button) => button switch
+    {
+        Silk.NET.Input.MouseButton.Left => DirectUI.MouseButton.Left,
+        Silk.NET.Input.MouseButton.Right => DirectUI.MouseButton.Right,
+        Silk.NET.Input.MouseButton.Middle => DirectUI.MouseButton.Middle,
+        Silk.NET.Input.MouseButton.Button4 => DirectUI.MouseButton.XButton1,
+        Silk.NET.Input.MouseButton.Button5 => DirectUI.MouseButton.XButton2,
+        _ => DirectUI.MouseButton.Left,
+    };
+
+    public void Cleanup()
+    {
+        if (_isDisposed) return;
+        _appEngine?.Cleanup();
+        _renderer?.Cleanup();
+        _textService?.Cleanup();
+        _skSurface?.Dispose();
+        _renderTarget?.Dispose();
+        _grContext?.Dispose();
+        _gl?.Dispose();
+        _inputContext?.Dispose();
+        _window?.Dispose();
+        _isDisposed = true;
+    }
+
+    public void Dispose()
+    {
+        Cleanup();
+        GC.SuppressFinalize(this);
+    }
+
+    private class SilkNetDummyModalWindowService : IModalWindowService
+    {
+        public bool IsModalWindowOpen => false;
+        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+        {
+            Console.WriteLine($"Modal window '{title}' requested but not supported in Silk.NET backend.");
+            onClosedCallback?.Invoke(-1);
+        }
+        public void CloseModalWindow(int resultCode = 0) { }
+    }
+}

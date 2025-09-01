@@ -1,4 +1,5 @@
 using DirectUI.Backends.SDL3;
+using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
 using SDL3;
@@ -25,6 +26,7 @@ public static class ApplicationRunner
                 GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 GraphicsBackend.Direct2D => new Win32WindowHost("My D2D App", 1024, 768),
                 GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
+                GraphicsBackend.SkiaSharp => new SilkNetWindowHost("My Skia App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "Unsupported graphics backend.")
             };
 

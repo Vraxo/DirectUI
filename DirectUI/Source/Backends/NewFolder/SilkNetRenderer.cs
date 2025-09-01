@@ -1,0 +1,164 @@
+﻿using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using SkiaSharp;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends.SkiaSharp;
+
+public class SilkNetRenderer : IRenderer
+{
+    private SKCanvas? _canvas;
+    private Vector2 _renderTargetSize;
+    private readonly SilkNetTextService _textService;
+
+    public Vector2 RenderTargetSize => _renderTargetSize;
+
+    public SilkNetRenderer(SilkNetTextService textService)
+    {
+        _textService = textService;
+    }
+
+    public void SetCanvas(SKCanvas canvas, Vector2 size)
+    {
+        _canvas = canvas;
+        _renderTargetSize = size;
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth)
+    {
+        if (_canvas is null) return;
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(color.R, color.G, color.B, color.A),
+            StrokeWidth = strokeWidth,
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke
+        };
+        _canvas.DrawLine(p1.X, p1.Y, p2.X, p2.Y, paint);
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        if (_canvas is null || style is null) return;
+
+        var skRect = new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom);
+        float maxRadius = Math.Min(rect.Width, rect.Height) / 2f;
+        float radius = Math.Clamp(style.Roundness * maxRadius, 0, maxRadius);
+
+        // Draw fill
+        if (style.FillColor.A > 0)
+        {
+            using var fillPaint = new SKPaint
+            {
+                Color = new SKColor(style.FillColor.R, style.FillColor.G, style.FillColor.B, style.FillColor.A),
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            };
+            _canvas.DrawRoundRect(skRect, radius, radius, fillPaint);
+        }
+
+        // Draw border
+        if (style.BorderColor.A > 0 && style.BorderLength > 0)
+        {
+            using var borderPaint = new SKPaint
+            {
+                Color = new SKColor(style.BorderColor.R, style.BorderColor.G, style.BorderColor.B, style.BorderColor.A),
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = style.BorderLength
+            };
+            // Inset the rectangle slightly so the stroke is drawn on the edge, not half-in/half-out
+            skRect.Inflate(-style.BorderLength / 2f, -style.BorderLength / 2f);
+            _canvas.DrawRoundRect(skRect, radius, radius, borderPaint);
+        }
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color)
+    {
+        if (_canvas is null || string.IsNullOrEmpty(text)) return;
+
+        var typeface = _textService.GetOrCreateTypeface(style);
+        using var font = new SKFont(typeface, style.FontSize);
+        using var paint = new SKPaint(font)
+        {
+            Color = new SKColor(color.R, color.G, color.B, color.A),
+            IsAntialias = true
+        };
+
+        var bounds = new SKRect();
+        paint.MeasureText(text, ref bounds);
+
+        var textDrawPos = origin;
+
+        // Horizontal alignment
+        if (maxSize.X > 0)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - bounds.Width) / 2f - bounds.Left;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += maxSize.X - bounds.Width - bounds.Left;
+                    break;
+                default: // Left
+                    textDrawPos.X -= bounds.Left;
+                    break;
+            }
+        }
+        else
+        {
+            textDrawPos.X -= bounds.Left;
+        }
+
+
+        // Vertical alignment
+        if (maxSize.Y > 0)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Top:
+                    textDrawPos.Y -= bounds.Top; // Align top of text bounds to origin.Y
+                    break;
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y / 2f) - bounds.MidY;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += maxSize.Y - bounds.Bottom; // Align bottom of text bounds to bottom of layout rect
+                    break;
+            }
+        }
+        else
+        {
+            textDrawPos.Y -= bounds.Top;
+        }
+
+        _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        _canvas?.Save();
+        _canvas?.ClipRect(new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom), SKClipOperation.Intersect, true);
+    }
+
+    public void PopClipRect()
+    {
+        _canvas?.Restore();
+    }
+
+    public void Flush()
+    {
+        _canvas?.Flush();
+    }
+
+    public void Cleanup()
+    {
+        // Canvas is managed by the host
+        _canvas = null;
+    }
+}
