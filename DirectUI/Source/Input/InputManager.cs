@@ -133,6 +133,18 @@ public class InputManager
         }
     }
 
+    public void HardReset()
+    {
+        // Resets persistent state that might be invalid after losing focus,
+        // e.g. after a modal window closes.
+        _isLeftMouseButtonDown = false;
+        _isRightMouseButtonDown = false;
+        _isMiddleMouseButtonDown = false;
+        _heldKeys.Clear();
+        // Also clear per-frame state for good measure.
+        PrepareNextFrame();
+    }
+
     public void ProcessVeldridInput(Veldrid.InputSnapshot snapshot)
     {
         SetMousePosition((int)snapshot.MousePosition.X, (int)snapshot.MousePosition.Y);

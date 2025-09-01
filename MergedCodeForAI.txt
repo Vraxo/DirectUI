@@ -25,6 +25,9 @@ using DirectUI.Core; // For IRenderer, ITextService
 using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
+using Silk.NET.OpenAL;
+using System.Reflection.Emit;
+using System.Security.Cryptography;
 
 namespace DirectUI;
 
@@ -113,36 +116,6 @@ public class AppEngine
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during UI drawing: {ex}");
-        }
-        finally
-        {
-            _inputManager.PrepareNextFrame();
-        }
-    }
-
-    public void UpdateAndRenderModal(IRenderer renderer, ITextService textService, Action<UIContext> modalDrawCallback)
-    {
-        if (UI.IsRendering) return;
-
-        long currentTicks = _frameTimer.ElapsedTicks;
-        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
-        _lastFrameTicks = currentTicks;
-        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
-
-        try
-        {
-            InputState inputState = _inputManager.GetCurrentState();
-            UIContext uiContext = new UIContext(renderer, textService, inputState, deltaTime);
-            UI.BeginFrame(uiContext);
-
-            // Execute the modal-specific drawing logic
-            modalDrawCallback(uiContext);
-
-            UI.EndFrame();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An error occurred during modal UI drawing: {ex}");
         }
         finally
         {
@@ -1830,38 +1803,38 @@ public static partial class UI
     {
         IsRendering = true;
 
-        Context = context;
-        State ??= new UIPersistentState();
+        UI.Context = context;
+        UI.State ??= new UIPersistentState();
 
-        State.ResetFrameState(context.InputState);
+        UI.State.ResetFrameState(context.InputState);
 
-        Context.Layout.ClearStack();
-        Context.treeStateStack.Clear();
+        UI.Context.Layout.ClearStack();
+        UI.Context.treeStateStack.Clear();
     }
 
     public static void EndFrame()
     {
         // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
-        if (Context.InputState.WasLeftMousePressedThisFrame && State.InputCaptorId == 0 && !State.IsPopupOpen)
+        if (UI.Context.InputState.WasLeftMousePressedThisFrame && UI.State.InputCaptorId == 0 && !UI.State.IsPopupOpen)
         {
-            State.SetFocus(0);
+            UI.State.SetFocus(0);
         }
 
         HandlePopupLogic();
 
-        if (Context.Layout.ContainerStackCount > 0)
+        if (UI.Context.Layout.ContainerStackCount > 0)
         {
-            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.Layout.ContainerStackCount} containers left open at EndFrame.");
-            Context.Layout.ClearStack();
+            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {UI.Context.Layout.ContainerStackCount} containers left open at EndFrame.");
+            UI.Context.Layout.ClearStack();
         }
-        if (Context.treeStateStack.Count > 0)
+        if (UI.Context.treeStateStack.Count > 0)
         {
-            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {Context.treeStateStack.Count} trees left open at EndFrame.");
-            Context.treeStateStack.Clear();
+            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {UI.Context.treeStateStack.Count} trees left open at EndFrame.");
+            UI.Context.treeStateStack.Clear();
         }
 
         // It's important that IsRendering is set to false AFTER the context is cleared.
-        Context = null!;
+        UI.Context = null!;
         IsRendering = false;
     }
 
@@ -1870,20 +1843,20 @@ public static partial class UI
     /// </summary>
     private static void HandlePopupLogic()
     {
-        if (!State.IsPopupOpen) return;
+        if (!UI.State.IsPopupOpen) return;
 
         // If a mouse press occurred outside the popup's bounds, close the popup.
-        if (Context.InputState.WasLeftMousePressedThisFrame || Context.InputState.WasRightMousePressedThisFrame)
+        if (UI.Context.InputState.WasLeftMousePressedThisFrame || UI.Context.InputState.WasRightMousePressedThisFrame)
         {
-            if (!State.PopupBounds.Contains(Context.InputState.MousePosition))
+            if (!UI.State.PopupBounds.Contains(UI.Context.InputState.MousePosition))
             {
-                State.ClearActivePopup();
+                UI.State.ClearActivePopup();
                 return; // Don't draw the popup since we just closed it.
             }
         }
 
         // Execute the callback to draw the popup content.
-        State.PopupDrawCallback?.Invoke(Context);
+        UI.State.PopupDrawCallback?.Invoke(UI.Context);
     }
 
     /// <summary>
@@ -1897,8 +1870,8 @@ public static partial class UI
         if (!IsContextValid()) return false;
 
         int intId = widgetId.GetHashCode();
-        var state = State;
-        var input = Context.InputState;
+        var state = UI.State;
+        var input = UI.Context.InputState;
 
         // A context menu is opened if the right mouse button was pressed this frame,
         // and the potential input target is the widget we're checking.
@@ -1921,8 +1894,8 @@ public static partial class UI
     {
         if (!IsContextValid() || items is null || items.Length == 0) return -1;
 
-        var context = Context;
-        var state = State;
+        var context = UI.Context;
+        var state = UI.State;
         int intId = popupId.GetHashCode();
 
         // If a result for this menu is already available from the previous frame, consume and return it.
@@ -1976,7 +1949,7 @@ public static partial class UI
     // --- Helper Methods ---
     private static bool IsContextValid()
     {
-        if (Context?.Renderer is null || Context?.TextService is null)
+        if (UI.Context?.Renderer is null || UI.Context?.TextService is null)
         {
             Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid.");
             return false;
@@ -2443,8 +2416,8 @@ public static partial class UI
         Vector2 textOffset,
         bool isActive = false)
     {
-        var context = Context;
-        var state = State;
+        var context = UI.Context;
+        var state = UI.State;
         var renderer = context.Renderer;
         var textService = context.TextService;
         var input = context.InputState;
@@ -2588,7 +2561,7 @@ public static partial class UI
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        var renderer = Context.Renderer;
+        var renderer = UI.Context.Renderer;
 
         // Calculate a clean drawing origin without backend-specific corrections.
         Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y);
@@ -8309,6 +8282,7 @@ public class SilkNetTextService : ITextService
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetWindowHost.cs">
 using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using DirectUI.Core;
 using DirectUI.Input;
 using Silk.NET.Input;
@@ -8322,7 +8296,7 @@ using Key = Silk.NET.Input.Key;
 
 namespace DirectUI.Backends.SkiaSharp;
 
-public class SilkNetWindowHost : Core.IWindowHost
+public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 {
     private readonly string _title;
     private readonly int _width;
@@ -8341,11 +8315,24 @@ public class SilkNetWindowHost : Core.IWindowHost
 
     private bool _isDisposed;
 
+    // Modal state
+    private bool _isModalOpen;
+    private IWindow? _activeModalIWindow;
+    private Action<int>? _onModalClosedCallback;
+    private int _modalResultCode;
+
+    // P/Invoke for Win32 to enable true modal behavior
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
+
     public IntPtr Handle => _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
     public SizeI ClientSize => new(_window?.Size.X ?? 0, _window?.Size.Y ?? 0);
     public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
-    public IModalWindowService ModalWindowService { get; } = new SilkNetDummyModalWindowService();
+    public IModalWindowService ModalWindowService => this;
+    public bool IsModalWindowOpen => _isModalOpen;
+
 
     public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
     {
@@ -8408,6 +8395,10 @@ public class SilkNetWindowHost : Core.IWindowHost
 
     private void OnRender(double delta)
     {
+        // Don't render the main window if a modal is open.
+        // This prevents input issues and makes the modal feel more exclusive.
+        if (_isModalOpen) return;
+
         _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
 
         if (_skSurface is null || _renderer is null || _textService is null || _appEngine is null) return;
@@ -8434,13 +8425,139 @@ public class SilkNetWindowHost : Core.IWindowHost
         // Cleanup is handled by the finally block in ApplicationRunner.
     }
 
-    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyPressed(MapKey(key));
-    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyReleased(MapKey(key));
-    private void OnKeyChar(IKeyboard keyboard, char c) => Input.AddCharacterInput(c);
-    private void OnMouseDown(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseDown(MapMouseButton(button));
-    private void OnMouseUp(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseUp(MapMouseButton(button));
-    private void OnMouseMove(IMouse mouse, Vector2 position) => Input.SetMousePosition((int)position.X, (int)position.Y);
-    private void OnMouseWheel(IMouse mouse, ScrollWheel scroll) => Input.AddMouseWheelDelta(scroll.Y);
+    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) { if (!_isModalOpen) Input.AddKeyPressed(MapKey(key)); }
+    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) { if (!_isModalOpen) Input.AddKeyReleased(MapKey(key)); }
+    private void OnKeyChar(IKeyboard keyboard, char c) { if (!_isModalOpen) Input.AddCharacterInput(c); }
+    private void OnMouseDown(IMouse mouse, Silk.NET.Input.MouseButton button) { if (!_isModalOpen) Input.SetMouseDown(MapMouseButton(button)); }
+    private void OnMouseUp(IMouse mouse, Silk.NET.Input.MouseButton button) { if (!_isModalOpen) Input.SetMouseUp(MapMouseButton(button)); }
+    private void OnMouseMove(IMouse mouse, Vector2 position) { if (!_isModalOpen) Input.SetMousePosition((int)position.X, (int)position.Y); }
+    private void OnMouseWheel(IMouse mouse, ScrollWheel scroll) { if (!_isModalOpen) Input.AddMouseWheelDelta(scroll.Y); }
+
+
+    public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+    {
+        if (_isModalOpen || _window is null) return;
+
+        _isModalOpen = true;
+        _onModalClosedCallback = onClosedCallback;
+        _modalResultCode = -1; // Default to canceled/closed
+
+        var parentHwnd = Handle;
+        if (parentHwnd != IntPtr.Zero)
+        {
+            EnableWindow(parentHwnd, false);
+        }
+
+        var options = WindowOptions.Default;
+        options.Size = new Vector2D<int>(width, height);
+        options.Title = title;
+        options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
+        options.WindowBorder = WindowBorder.Fixed;
+        options.ShouldSwapAutomatically = false; // We will control the render loop and buffer swapping.
+
+        _activeModalIWindow = Window.Create(options);
+
+        // --- Resources for the modal window ---
+        AppEngine? modalAppEngine = null;
+        SilkNetRenderer? modalRenderer = null;
+        SilkNetTextService? modalTextService = null;
+        IInputContext? modalInputContext = null;
+        GL? modalGl = null;
+        GRContext? modalGrContext = null;
+        SKSurface? modalSkSurface = null;
+        GRBackendRenderTarget? modalRenderTarget = null;
+
+        _activeModalIWindow.Load += () =>
+        {
+            modalGl = _activeModalIWindow.CreateOpenGL();
+            modalGl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+            var glInterface = GRGlInterface.Create();
+            modalGrContext = GRContext.CreateGl(glInterface);
+            modalRenderTarget = new GRBackendRenderTarget(width, height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
+            modalSkSurface = SKSurface.Create(modalGrContext, modalRenderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
+
+            modalAppEngine = new AppEngine(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 25f, 1.0f));
+            modalTextService = new SilkNetTextService();
+            modalRenderer = new SilkNetRenderer(modalTextService);
+            modalAppEngine.Initialize(modalTextService, modalRenderer);
+
+            modalInputContext = _activeModalIWindow.CreateInput();
+            foreach (var kbd in modalInputContext.Keyboards)
+            {
+                kbd.KeyDown += (_, key, _) => modalAppEngine.Input.AddKeyPressed(MapKey(key));
+                kbd.KeyUp += (_, key, _) => modalAppEngine.Input.AddKeyReleased(MapKey(key));
+                kbd.KeyChar += (_, c) => modalAppEngine.Input.AddCharacterInput(c);
+            }
+            foreach (var m in modalInputContext.Mice)
+            {
+                m.MouseDown += (_, btn) => modalAppEngine.Input.SetMouseDown(MapMouseButton(btn));
+                m.MouseUp += (_, btn) => modalAppEngine.Input.SetMouseUp(MapMouseButton(btn));
+                m.MouseMove += (_, pos) => modalAppEngine.Input.SetMousePosition((int)pos.X, (int)pos.Y);
+                m.Scroll += (_, scroll) => modalAppEngine.Input.AddMouseWheelDelta(scroll.Y);
+            }
+        };
+
+        // This Render handler is now only for the modal window.
+        _activeModalIWindow.Render += (delta) =>
+        {
+            modalGl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+            if (modalSkSurface != null && modalRenderer != null && modalTextService != null && modalAppEngine != null)
+            {
+                modalRenderer.SetCanvas(modalSkSurface.Canvas, new Vector2(_activeModalIWindow.Size.X, _activeModalIWindow.Size.Y));
+                modalAppEngine.UpdateAndRender(modalRenderer, modalTextService);
+                modalSkSurface.Canvas.Flush();
+            }
+        };
+
+        // Manually initialize the window, which fires the Load event
+        _activeModalIWindow.Initialize();
+        _activeModalIWindow.IsVisible = true;
+
+        // --- MANUAL MODAL EVENT LOOP ---
+        while (!_activeModalIWindow.IsClosing)
+        {
+            // Pump events for the main window AND the modal window.
+            // This is the key change: DoEvents on the main window processes events for all
+            // windows on the thread, keeping the main window from becoming unresponsive.
+            _window.DoEvents();
+
+            if (!_activeModalIWindow.IsClosing)
+            {
+                _activeModalIWindow.DoRender(); // Trigger the Render event for the modal
+                _activeModalIWindow.SwapBuffers(); // Manually swap buffers for the modal
+            }
+        }
+
+        // --- CLEANUP ---
+        modalAppEngine?.Cleanup();
+        modalRenderer?.Cleanup();
+        modalTextService?.Cleanup();
+        modalSkSurface?.Dispose();
+        modalRenderTarget?.Dispose();
+        modalGrContext?.Dispose();
+        modalGl?.Dispose();
+        modalInputContext?.Dispose();
+
+        _activeModalIWindow.Dispose();
+        _activeModalIWindow = null;
+
+        if (parentHwnd != IntPtr.Zero)
+        {
+            EnableWindow(parentHwnd, true);
+            // This is important to bring focus back to the main window after the modal closes.
+            _window?.Focus();
+        }
+
+        _onModalClosedCallback?.Invoke(_modalResultCode);
+        _isModalOpen = false;
+    }
+
+    public void CloseModalWindow(int resultCode = 0)
+    {
+        _modalResultCode = resultCode;
+        _activeModalIWindow?.Close();
+    }
+
 
     private static Keys MapKey(Key key) => key switch
     {
@@ -8576,17 +8693,6 @@ public class SilkNetWindowHost : Core.IWindowHost
     {
         Cleanup();
         GC.SuppressFinalize(this);
-    }
-
-    private class SilkNetDummyModalWindowService : IModalWindowService
-    {
-        public bool IsModalWindowOpen => false;
-        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
-        {
-            Console.WriteLine($"Modal window '{title}' requested but not supported in Silk.NET backend.");
-            onClosedCallback?.Invoke(-1);
-        }
-        public void CloseModalWindow(int resultCode = 0) { }
     }
 }
 </file>
@@ -9935,11 +10041,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
-        
+
         try
         {
             Interlocked.Increment(ref s_sdlInitCount);
-            
+
             if (s_sdlInitCount == 1)
             {
                 if (!SDL.Init(SDL.InitFlags.Video))
@@ -9950,7 +10056,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             Interlocked.Increment(ref s_ttfInitCount);
-            
+
             if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
@@ -9970,7 +10076,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
-            
+
             if (_rendererPtr == nint.Zero)
             {
                 Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
@@ -10026,7 +10132,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private void ModalRunLoop()
     {
         bool modalRunning = true;
-        
+
         while (modalRunning)
         {
             while (SDL.PollEvent(out SDL.Event ev))
@@ -10081,7 +10187,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
         if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
         {
-            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
+            _appEngine.UpdateAndRender(_renderer, _textService);
         }
 
         SDL.RenderPresent(_rendererPtr);
@@ -10119,7 +10225,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         Interlocked.Decrement(ref s_sdlInitCount);
-        
+
         if (s_sdlInitCount == 0)
         {
             Console.WriteLine("Final SDL.Quit()..");
@@ -10127,7 +10233,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         _isDisposed = true;
-        
+
         GC.SuppressFinalize(this);
         Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
@@ -10477,7 +10583,7 @@ public interface IWindowHost : IDisposable
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Program.cs">
 using DirectUI;
 
-namespace Daw;
+namespace Sonorize;
 
 public static class Program
 {
@@ -10493,25 +10599,219 @@ public static class Program
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\SonorizeLogic.cs">
 using DirectUI;
 using DirectUI.Core;
+using System.IO;
+using System.Numerics;
+using System.Text.Json;
+using System;
 
-namespace Daw;
+namespace Sonorize;
 
 public class SonorizeLogic : IAppLogic
 {
+    private readonly IWindowHost _host;
+    private Settings _settings;
+    private readonly string _settingsFilePath = "settings.json";
+
+    // UI State
+    private int _selectedDirectoryIndex = -1;
+    private bool _isFileMenuOpen = false;
+    private int _fileMenuPopupId;
+
     public SonorizeLogic(IWindowHost host)
     {
-
+        _host = host;
+        _fileMenuPopupId = "fileMenuPopup".GetHashCode();
+        LoadState();
     }
 
-    public void DrawUI(UIContext context)
+    private void LoadState()
     {
-        throw new NotImplementedException();
+        try
+        {
+            if (File.Exists(_settingsFilePath))
+            {
+                string json = File.ReadAllText(_settingsFilePath);
+                _settings = JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
+            }
+            else
+            {
+                _settings = new Settings();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+            _settings = new Settings();
+        }
     }
 
     public void SaveState()
     {
-        throw new NotImplementedException();
+        try
+        {
+            var options = new JsonSerializerOptions { WriteIndented = true };
+            string json = JsonSerializer.Serialize(_settings, options);
+            File.WriteAllText(_settingsFilePath, json);
+            Console.WriteLine($"Settings saved to {_settingsFilePath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
     }
+
+    public void DrawUI(UIContext context)
+    {
+        DrawMenuBar(context);
+
+        // Main application content would go here
+        UI.BeginVBoxContainer("mainContentBox", new Vector2(20, 50));
+        UI.Text("mainContent", "Main Application View", new Vector2(200, 30));
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawMenuBar(UIContext context)
+    {
+        var menuBarBg = new BoxStyle
+        {
+            FillColor = new(0.1f, 0.1f, 0.1f, 1.0f),
+            BorderColor = new(0.05f, 0.05f, 0.05f, 1.0f),
+            BorderLengthBottom = 1f,
+            BorderLengthTop = 0,
+            BorderLengthLeft = 0,
+            BorderLengthRight = 0,
+            Roundness = 0
+        };
+        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, UI.Context.Renderer.RenderTargetSize.X, 30), menuBarBg);
+
+        UI.BeginHBoxContainer("menuBar", new Vector2(5, 4), 5);
+
+        var fileButtonPos = UI.Context.Layout.GetCurrentPosition();
+        var fileButtonSize = new Vector2(50, 22);
+
+        if (_isFileMenuOpen && UI.State.ActivePopupId != _fileMenuPopupId)
+        {
+            _isFileMenuOpen = false;
+        }
+
+        if (UI.Button("fileMenu", "File", fileButtonSize, isActive: _isFileMenuOpen))
+        {
+            _isFileMenuOpen = !_isFileMenuOpen;
+            if (_isFileMenuOpen)
+            {
+                var popupPosition = new Vector2(fileButtonPos.X, fileButtonPos.Y + fileButtonSize.Y + 2);
+                var popupSize = new Vector2(150, 30);
+                var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, popupSize.X, popupSize.Y);
+
+                Action<UIContext> drawCallback = (ctx) =>
+                {
+                    var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
+                    ctx.Renderer.DrawBox(popupBounds, popupStyle);
+
+                    var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+                    itemTheme.Normal.FillColor = DefaultTheme.Transparent;
+                    itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+                    itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+                    // Use a regular UI.Button inside the popup's layout context
+                    UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
+                    if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0)))
+                    {
+                        UI.State.ClearActivePopup();
+                        _isFileMenuOpen = false;
+                        OpenSettingsModal();
+                    }
+                    UI.EndVBoxContainer();
+                };
+                UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
+            }
+            else
+            {
+                UI.State.ClearActivePopup();
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void OpenSettingsModal()
+    {
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, DrawSettingsModal);
+    }
+
+    private void DrawSettingsModal(UIContext context)
+    {
+        UI.BeginVBoxContainer("settingsVBox", new Vector2(10, 10), 10);
+
+        UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
+        UI.Separator(480, verticalPadding: 2);
+
+        UI.Text("dirsHeader", "Directories");
+
+        // Directories List
+        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 200), out float innerWidth);
+        {
+            var selectedStyle = new ButtonStylePack();
+            selectedStyle.Active.FillColor = DefaultTheme.Accent;
+            selectedStyle.ActiveHover.FillColor = DefaultTheme.Accent;
+            selectedStyle.Normal.FillColor = new(0.15f, 0.15f, 0.15f, 1.0f);
+
+            for (int i = 0; i < _settings.Directories.Count; i++)
+            {
+                bool isSelected = i == _selectedDirectoryIndex;
+                if (UI.Button($"dir_{i}", _settings.Directories[i], new Vector2(innerWidth, 24), theme: selectedStyle, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), isActive: isSelected))
+                {
+                    _selectedDirectoryIndex = i;
+                }
+            }
+        }
+        UI.EndScrollableRegion();
+
+        // Add/Remove Buttons
+        UI.BeginHBoxContainer("dirsButtons", UI.Context.Layout.GetCurrentPosition(), 5);
+        {
+            if (UI.Button("addDir", "Add", new Vector2(80, 24)))
+            {
+                // In a real app, this would open a folder browser dialog.
+                _settings.Directories.Add($"New Directory {_settings.Directories.Count + 1}");
+            }
+            if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
+            {
+                if (_selectedDirectoryIndex >= 0 && _selectedDirectoryIndex < _settings.Directories.Count)
+                {
+                    _settings.Directories.RemoveAt(_selectedDirectoryIndex);
+                    _selectedDirectoryIndex = -1; // Deselect
+                }
+            }
+        }
+        UI.EndHBoxContainer();
+
+        // OK Button - Positioned using layout containers
+        // This is a bit of a hack to position at the bottom right.
+        // A more robust layout system would handle this better.
+        float remainingY = 400 - UI.Context.Layout.GetCurrentPosition().Y;
+        float buttonY = UI.Context.Layout.GetCurrentPosition().Y + remainingY - 24 - 10;
+        float buttonX = 500 - 80 - 10;
+
+        UI.BeginVBoxContainer("okButtonContainer", new Vector2(buttonX, buttonY));
+        if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
+        {
+            _host.ModalWindowService.CloseModalWindow(0);
+        }
+        UI.EndVBoxContainer();
+
+        UI.EndVBoxContainer();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Settings\Settings.cs">
+using System.Collections.Generic;
+
+namespace Sonorize;
+
+public class Settings
+{
+    public List<string> Directories { get; set; } = new();
 }
 </file>
 
