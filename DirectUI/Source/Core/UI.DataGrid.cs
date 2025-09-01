@@ -24,6 +24,7 @@ public static partial class UI
     /// <param name="size">The total size of the data grid control.</param>
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
     /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
+    /// <param name="trimCellText">If true, text that overflows a cell's width will be truncated and appended with an ellipsis (...).</param>
     public static void DataGrid<T>(
         string id,
         IReadOnlyList<T> items,
@@ -31,7 +32,8 @@ public static partial class UI
         ref int selectedIndex,
         Vector2 size,
         Vector2 position = default,
-        bool autoSizeColumns = false)
+        bool autoSizeColumns = false,
+        bool trimCellText = false)
     {
         if (!IsContextValid()) return;
 
@@ -115,6 +117,9 @@ public static partial class UI
         bool isHoveringContent = contentBounds.Contains(Context.InputState.MousePosition);
         if (isHoveringContent && Context.InputState.ScrollDelta != 0)
         {
+            // Scroll delta is inverted: up is positive, but content moves down (offset increases)
+            // A standard mouse wheel tick is 120, and the delta is usually +/- 1.0f in the input system.
+            // Scrolling by 3 rows feels natural.
             scrollOffset.Y -= Context.InputState.ScrollDelta * rowHeight * 3;
         }
 
@@ -123,7 +128,7 @@ public static partial class UI
         scrollOffset.Y = Math.Clamp(scrollOffset.Y, 0, Math.Max(0, totalContentHeight - viewHeight));
         state.ScrollOffset = scrollOffset; // Assign back before drawing rows
 
-        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle);
+        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle, trimCellText);
 
         // --- Draw Scrollbars ---
         // Re-read from state in case it was modified, then modify and write back.
@@ -212,7 +217,35 @@ public static partial class UI
         Context.Renderer.PopClipRect();
     }
 
-    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle)
+    private static string TrimTextWithEllipsis(string text, float maxWidth, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || maxWidth <= 0) return string.Empty;
+
+        var textService = UI.Context.TextService;
+        const string ellipsis = "...";
+
+        var fullSize = textService.MeasureText(text, style);
+        if (fullSize.X <= maxWidth) return text;
+
+        var ellipsisSize = textService.MeasureText(ellipsis, style);
+        if (ellipsisSize.X > maxWidth) return string.Empty; // Not even ellipsis fits
+
+        // Use a copy of the string to trim
+        string trimmed = text;
+        while (trimmed.Length > 0)
+        {
+            var tempText = trimmed + ellipsis;
+            if (textService.MeasureText(tempText, style).X <= maxWidth)
+            {
+                return tempText;
+            }
+            trimmed = trimmed.Substring(0, trimmed.Length - 1);
+        }
+
+        return ellipsis; // If nothing else fits
+    }
+
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText)
     {
         var input = Context.InputState;
 
@@ -250,8 +283,24 @@ public static partial class UI
                     cellText = $"{(int)ts.TotalMinutes:00}:{ts.Seconds:00}";
                 }
 
+                string textToDraw = cellText;
+                var textMargin = new Vector2(5, 0);
+
+                if (trimCellText)
+                {
+                    float availableWidth = cellBounds.Width - (textMargin.X * 2);
+                    if (availableWidth > 0)
+                    {
+                        var measuredSize = Context.TextService.MeasureText(cellText, rowStyle.Current);
+                        if (measuredSize.X > availableWidth)
+                        {
+                            textToDraw = TrimTextWithEllipsis(cellText, availableWidth, rowStyle.Current);
+                        }
+                    }
+                }
+
                 Context.Renderer.PushClipRect(cellBounds); // Clip text to cell
-                DrawTextPrimitive(cellBounds, cellText, rowStyle.Current, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
+                DrawTextPrimitive(cellBounds, textToDraw, rowStyle.Current, new Alignment(HAlignment.Left, VAlignment.Center), textMargin);
                 Context.Renderer.PopClipRect();
 
                 currentX += colWidth;
