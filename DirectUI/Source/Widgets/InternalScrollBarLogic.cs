@@ -110,7 +110,7 @@ internal class InternalScrollBarLogic
 
         if (input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
-            state.SetPotentialCaptorForFrame(_id);
+            state.RequestClickCapture(_id, 10);
             state.SetFocus(_id);
             _isThumbPressed = true;
 

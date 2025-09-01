@@ -64,7 +64,7 @@ public static partial class UI
         {
             if (isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
             {
-                state.SetButtonPotentialCaptorForFrame(id);
+                state.RequestClickCapture(id, 1);
                 state.SetFocus(id);
                 isPressed = true;
             }

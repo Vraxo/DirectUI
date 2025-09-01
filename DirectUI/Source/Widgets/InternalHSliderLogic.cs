@@ -47,7 +47,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.SetPotentialCaptorForFrame(GlobalIntId);
+                state.RequestClickCapture(GlobalIntId, 10);
                 state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)

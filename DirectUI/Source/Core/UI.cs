@@ -29,6 +29,11 @@ public static partial class UI
 
     public static void EndFrame()
     {
+        var winner = UI.State.ClickCaptureServer.GetWinner();
+        if (winner.HasValue)
+        {
+            UI.State.SetPotentialCaptorForFrame(winner.Value);
+        }
         // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
         if (UI.Context.InputState.WasLeftMousePressedThisFrame && UI.State.InputCaptorId == 0 && !UI.State.IsPopupOpen)
         {

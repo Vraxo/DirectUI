@@ -69,6 +69,7 @@ public class UIPersistentState
     public int InputCaptorId { get; private set; } = 0;
     private bool captureAttemptedThisFrame = false;
     public bool NonSliderElementClaimedPress { get; private set; } = false;
+    public ClickCaptureServer ClickCaptureServer { get; } = new();
 
 
     /// <summary>
@@ -76,6 +77,7 @@ public class UIPersistentState
     /// </summary>
     public void ResetFrameState(InputState input)
     {
+        ClickCaptureServer.Clear();
         DragInProgressFromPreviousFrame = input.IsLeftMouseDown && ActivelyPressedElementId != 0;
         PotentialInputTargetId = 0;
         InputCaptorId = 0;
@@ -140,6 +142,11 @@ public class UIPersistentState
         // The last widget drawn under the mouse is the topmost one, so it should always
         // be allowed to set itself as the potential target, overwriting any widget drawn beneath it.
         PotentialInputTargetId = id;
+    }
+
+    public void RequestClickCapture(int id, int layer)
+    {
+        ClickCaptureServer.RequestCapture(id, layer);
     }
 
     public void SetPotentialCaptorForFrame(int id)
