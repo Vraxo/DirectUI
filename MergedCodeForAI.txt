@@ -10817,6 +10817,7 @@ using System.Numerics;
 using System.Text.Json;
 using System;
 using DirectUI.Backends.SkiaSharp; // Added for SilkNetWindowHost
+using TinyDialogsNet;
 
 namespace Sonorize;
 
@@ -11043,8 +11044,15 @@ public class SonorizeLogic : IAppLogic
         {
             if (UI.Button("addDir", "Add", new Vector2(80, 24)))
             {
-                // In a real app, this would open a folder browser dialog.
-                _settings.Directories.Add($"New Directory {_settings.Directories.Count + 1}");
+                // This uses TinyFileDialogs.Net, a lightweight, cross-platform
+                // wrapper for native OS dialogs. You must add the
+                // 'TinyFileDialogs.Net' NuGet package to the project for this to work.
+                var selectedPath = TinyDialogs.SelectFolderDialog("Select a folder to add to Sonorize");
+
+                if (!string.IsNullOrWhiteSpace(selectedPath.Path) && !_settings.Directories.Contains(selectedPath.Path))
+                {
+                    _settings.Directories.Add(selectedPath.Path);
+                }
             }
             if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
             {
