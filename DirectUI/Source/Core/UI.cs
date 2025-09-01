@@ -18,38 +18,38 @@ public static partial class UI
     {
         IsRendering = true;
 
-        Context = context;
-        State ??= new UIPersistentState();
+        UI.Context = context;
+        UI.State ??= new UIPersistentState();
 
-        State.ResetFrameState(context.InputState);
+        UI.State.ResetFrameState(context.InputState);
 
-        Context.Layout.ClearStack();
-        Context.treeStateStack.Clear();
+        UI.Context.Layout.ClearStack();
+        UI.Context.treeStateStack.Clear();
     }
 
     public static void EndFrame()
     {
         // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
-        if (Context.InputState.WasLeftMousePressedThisFrame && State.InputCaptorId == 0 && !State.IsPopupOpen)
+        if (UI.Context.InputState.WasLeftMousePressedThisFrame && UI.State.InputCaptorId == 0 && !UI.State.IsPopupOpen)
         {
-            State.SetFocus(0);
+            UI.State.SetFocus(0);
         }
 
         HandlePopupLogic();
 
-        if (Context.Layout.ContainerStackCount > 0)
+        if (UI.Context.Layout.ContainerStackCount > 0)
         {
-            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {Context.Layout.ContainerStackCount} containers left open at EndFrame.");
-            Context.Layout.ClearStack();
+            Console.WriteLine($"Warning: Mismatch in Begin/End container calls. {UI.Context.Layout.ContainerStackCount} containers left open at EndFrame.");
+            UI.Context.Layout.ClearStack();
         }
-        if (Context.treeStateStack.Count > 0)
+        if (UI.Context.treeStateStack.Count > 0)
         {
-            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {Context.treeStateStack.Count} trees left open at EndFrame.");
-            Context.treeStateStack.Clear();
+            Console.WriteLine($"Warning: Mismatch in Begin/End Tree calls. {UI.Context.treeStateStack.Count} trees left open at EndFrame.");
+            UI.Context.treeStateStack.Clear();
         }
 
         // It's important that IsRendering is set to false AFTER the context is cleared.
-        Context = null!;
+        UI.Context = null!;
         IsRendering = false;
     }
 
@@ -58,20 +58,20 @@ public static partial class UI
     /// </summary>
     private static void HandlePopupLogic()
     {
-        if (!State.IsPopupOpen) return;
+        if (!UI.State.IsPopupOpen) return;
 
         // If a mouse press occurred outside the popup's bounds, close the popup.
-        if (Context.InputState.WasLeftMousePressedThisFrame || Context.InputState.WasRightMousePressedThisFrame)
+        if (UI.Context.InputState.WasLeftMousePressedThisFrame || UI.Context.InputState.WasRightMousePressedThisFrame)
         {
-            if (!State.PopupBounds.Contains(Context.InputState.MousePosition))
+            if (!UI.State.PopupBounds.Contains(UI.Context.InputState.MousePosition))
             {
-                State.ClearActivePopup();
+                UI.State.ClearActivePopup();
                 return; // Don't draw the popup since we just closed it.
             }
         }
 
         // Execute the callback to draw the popup content.
-        State.PopupDrawCallback?.Invoke(Context);
+        UI.State.PopupDrawCallback?.Invoke(UI.Context);
     }
 
     /// <summary>
@@ -85,8 +85,8 @@ public static partial class UI
         if (!IsContextValid()) return false;
 
         int intId = widgetId.GetHashCode();
-        var state = State;
-        var input = Context.InputState;
+        var state = UI.State;
+        var input = UI.Context.InputState;
 
         // A context menu is opened if the right mouse button was pressed this frame,
         // and the potential input target is the widget we're checking.
@@ -109,8 +109,8 @@ public static partial class UI
     {
         if (!IsContextValid() || items is null || items.Length == 0) return -1;
 
-        var context = Context;
-        var state = State;
+        var context = UI.Context;
+        var state = UI.State;
         int intId = popupId.GetHashCode();
 
         // If a result for this menu is already available from the previous frame, consume and return it.
@@ -164,7 +164,7 @@ public static partial class UI
     // --- Helper Methods ---
     private static bool IsContextValid()
     {
-        if (Context?.Renderer is null || Context?.TextService is null)
+        if (UI.Context?.Renderer is null || UI.Context?.TextService is null)
         {
             Console.WriteLine($"Error: UI method called outside BeginFrame/EndFrame or context is invalid.");
             return false;

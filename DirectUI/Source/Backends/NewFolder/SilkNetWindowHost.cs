@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Numerics;
+using System.Runtime.InteropServices;
 using DirectUI.Core;
 using DirectUI.Input;
 using Silk.NET.Input;
@@ -38,6 +39,10 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     private Action<int>? _onModalClosedCallback;
     private int _modalResultCode;
 
+    // P/Invoke for Win32 to enable true modal behavior
+    [DllImport("user32.dll", SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool EnableWindow(IntPtr hWnd, bool bEnable);
 
     public IntPtr Handle => _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
@@ -108,6 +113,8 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 
     private void OnRender(double delta)
     {
+        // Don't render the main window if a modal is open.
+        // This prevents input issues and makes the modal feel more exclusive.
         if (_isModalOpen) return;
 
         _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
@@ -153,6 +160,12 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _onModalClosedCallback = onClosedCallback;
         _modalResultCode = -1; // Default to canceled/closed
 
+        var parentHwnd = Handle;
+        if (parentHwnd != IntPtr.Zero)
+        {
+            EnableWindow(parentHwnd, false);
+        }
+
         var options = WindowOptions.Default;
         options.Size = new Vector2D<int>(width, height);
         options.Title = title;
@@ -181,7 +194,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             modalRenderTarget = new GRBackendRenderTarget(width, height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
             modalSkSurface = SKSurface.Create(modalGrContext, modalRenderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
 
-            modalAppEngine = new AppEngine(drawCallback, _backgroundColor);
+            modalAppEngine = new AppEngine(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f));
             modalTextService = new SilkNetTextService();
             modalRenderer = new SilkNetRenderer(modalTextService);
             modalAppEngine.Initialize(modalTextService, modalRenderer);
@@ -208,7 +221,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             if (modalSkSurface != null && modalRenderer != null && modalTextService != null && modalAppEngine != null)
             {
                 modalRenderer.SetCanvas(modalSkSurface.Canvas, new Vector2(_activeModalIWindow.Size.X, _activeModalIWindow.Size.Y));
-                modalAppEngine.UpdateAndRenderModal(modalRenderer, modalTextService, drawCallback);
+                modalAppEngine.UpdateAndRender(modalRenderer, modalTextService);
                 modalSkSurface.Canvas.Flush();
             }
         };
@@ -231,6 +244,13 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         // After modal returns
         _activeModalIWindow.Dispose();
         _activeModalIWindow = null;
+
+        if (parentHwnd != IntPtr.Zero)
+        {
+            EnableWindow(parentHwnd, true);
+            // This is important to bring focus back to the main window after the modal closes.
+            _window?.Focus();
+        }
 
         _onModalClosedCallback?.Invoke(_modalResultCode);
         _isModalOpen = false;

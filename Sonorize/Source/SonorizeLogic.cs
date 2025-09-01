@@ -114,12 +114,15 @@ public class SonorizeLogic : IAppLogic
                     itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
                     itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
-                    if (UI.DrawButtonPrimitive("settingsBtn".GetHashCode(), popupBounds, "Settings", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
+                    // Use a regular UI.Button inside the popup's layout context
+                    UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
+                    if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0)))
                     {
                         UI.State.ClearActivePopup();
                         _isFileMenuOpen = false;
                         OpenSettingsModal();
                     }
+                    UI.EndVBoxContainer();
                 };
                 UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
             }
@@ -183,9 +186,14 @@ public class SonorizeLogic : IAppLogic
         }
         UI.EndHBoxContainer();
 
-        // OK Button
-        var okButtonPos = new Vector2(480 - 80 + 10, 400 - 24 - 10);
-        UI.BeginVBoxContainer("okButtonContainer", okButtonPos);
+        // OK Button - Positioned using layout containers
+        // This is a bit of a hack to position at the bottom right.
+        // A more robust layout system would handle this better.
+        float remainingY = 400 - UI.Context.Layout.GetCurrentPosition().Y;
+        float buttonY = UI.Context.Layout.GetCurrentPosition().Y + remainingY - 24 - 10;
+        float buttonX = 500 - 80 - 10;
+
+        UI.BeginVBoxContainer("okButtonContainer", new Vector2(buttonX, buttonY));
         if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
         {
             _host.ModalWindowService.CloseModalWindow(0);

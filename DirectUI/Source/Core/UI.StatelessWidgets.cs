@@ -11,7 +11,7 @@ public static partial class UI
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    public static bool DrawButtonPrimitive(
+    internal static bool DrawButtonPrimitive(
         int id,
         Vortice.Mathematics.Rect bounds,
         string text,
@@ -23,8 +23,8 @@ public static partial class UI
         Vector2 textOffset,
         bool isActive = false)
     {
-        var context = Context;
-        var state = State;
+        var context = UI.Context;
+        var state = UI.State;
         var renderer = context.Renderer;
         var textService = context.TextService;
         var input = context.InputState;
@@ -168,7 +168,7 @@ public static partial class UI
     {
         if (string.IsNullOrEmpty(text)) return;
 
-        var renderer = Context.Renderer;
+        var renderer = UI.Context.Renderer;
 
         // Calculate a clean drawing origin without backend-specific corrections.
         Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y);

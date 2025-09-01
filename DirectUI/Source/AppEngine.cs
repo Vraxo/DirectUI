@@ -7,6 +7,9 @@ using DirectUI.Core; // For IRenderer, ITextService
 using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
+using Silk.NET.OpenAL;
+using System.Reflection.Emit;
+using System.Security.Cryptography;
 
 namespace DirectUI;
 
@@ -95,36 +98,6 @@ public class AppEngine
         catch (Exception ex)
         {
             Console.WriteLine($"An error occurred during UI drawing: {ex}");
-        }
-        finally
-        {
-            _inputManager.PrepareNextFrame();
-        }
-    }
-
-    public void UpdateAndRenderModal(IRenderer renderer, ITextService textService, Action<UIContext> modalDrawCallback)
-    {
-        if (UI.IsRendering) return;
-
-        long currentTicks = _frameTimer.ElapsedTicks;
-        float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
-        _lastFrameTicks = currentTicks;
-        deltaTime = Math.Min(deltaTime, 1.0f / 15.0f);
-
-        try
-        {
-            InputState inputState = _inputManager.GetCurrentState();
-            UIContext uiContext = new UIContext(renderer, textService, inputState, deltaTime);
-            UI.BeginFrame(uiContext);
-
-            // Execute the modal-specific drawing logic
-            modalDrawCallback(uiContext);
-
-            UI.EndFrame();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"An error occurred during modal UI drawing: {ex}");
         }
         finally
         {

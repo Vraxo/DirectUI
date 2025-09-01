@@ -72,11 +72,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
-        
+
         try
         {
             Interlocked.Increment(ref s_sdlInitCount);
-            
+
             if (s_sdlInitCount == 1)
             {
                 if (!SDL.Init(SDL.InitFlags.Video))
@@ -87,7 +87,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             Interlocked.Increment(ref s_ttfInitCount);
-            
+
             if (s_ttfInitCount == 1)
             {
                 if (!TTF.Init())
@@ -107,7 +107,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             _rendererPtr = SDL.CreateRenderer(_windowPtr, null);
-            
+
             if (_rendererPtr == nint.Zero)
             {
                 Console.WriteLine($"Renderer could not be created! SDL Error: {SDL.GetError()}");
@@ -163,7 +163,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private void ModalRunLoop()
     {
         bool modalRunning = true;
-        
+
         while (modalRunning)
         {
             while (SDL.PollEvent(out SDL.Event ev))
@@ -218,7 +218,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 
         if (_renderer is not null && _textService is not null && _appEngine is not null && _modalDrawCallback is not null)
         {
-            _appEngine.UpdateAndRenderModal(_renderer, _textService, _modalDrawCallback);
+            _appEngine.UpdateAndRender(_renderer, _textService);
         }
 
         SDL.RenderPresent(_rendererPtr);
@@ -256,7 +256,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         Interlocked.Decrement(ref s_sdlInitCount);
-        
+
         if (s_sdlInitCount == 0)
         {
             Console.WriteLine("Final SDL.Quit()..");
@@ -264,7 +264,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         }
 
         _isDisposed = true;
-        
+
         GC.SuppressFinalize(this);
         Console.WriteLine($"SDL3WindowHost '{_title}' cleaned up. (SDL_Init count: {s_sdlInitCount}, TTF_Init count: {s_ttfInitCount})");
     }
