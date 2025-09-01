@@ -75,6 +75,15 @@ public class AudioPlayer : IDisposable
         return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetPosition(_stream)) : 0;
     }
 
+    /// <summary>
+    /// Gets the total length of the current stream in seconds.
+    /// </summary>
+    public double GetLength()
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetLength(_stream)) : 0;
+    }
+
     private void StopInternal()
     {
         if (_stream != 0)

@@ -2005,13 +2005,17 @@ public static partial class UI
     /// <param name="selectedIndex">A reference to the index of the currently selected item.</param>
     /// <param name="size">The total size of the data grid control.</param>
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
+    /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
+    /// <param name="trimCellText">If true, text that overflows a cell's width will be truncated and appended with an ellipsis (...).</param>
     public static void DataGrid<T>(
         string id,
         IReadOnlyList<T> items,
         IReadOnlyList<DataGridColumn> columns,
         ref int selectedIndex,
         Vector2 size,
-        Vector2 position = default)
+        Vector2 position = default,
+        bool autoSizeColumns = false,
+        bool trimCellText = false)
     {
         if (!IsContextValid()) return;
 
@@ -2045,31 +2049,68 @@ public static partial class UI
         // --- Layout Calculation ---
         var headerBounds = new Rect(drawPos.X, drawPos.Y, size.X, headerHeight);
         var contentBounds = new Rect(drawPos.X, drawPos.Y + headerHeight, size.X, size.Y - headerHeight);
-        float totalContentWidth = state.ColumnWidths.Sum();
         float totalContentHeight = items.Count * rowHeight;
+
+        // Determine scrollbar visibility and available content view size
+        bool vScrollVisible = totalContentHeight > contentBounds.Height;
+        float viewWidth = contentBounds.Width - (vScrollVisible ? scrollbarThickness : 0);
+
+        // Auto-size columns if requested
+        if (autoSizeColumns)
+        {
+            float totalInitialWidth = columns.Sum(c => c.InitialWidth);
+            if (totalInitialWidth > 0 && viewWidth > 0)
+            {
+                float scaleFactor = viewWidth / totalInitialWidth;
+                state.ColumnWidths.Clear();
+                float accumulatedWidth = 0;
+                for (int i = 0; i < columns.Count; i++)
+                {
+                    // For all but the last column, calculate and round.
+                    if (i < columns.Count - 1)
+                    {
+                        float newWidth = (float)Math.Round(columns[i].InitialWidth * scaleFactor);
+                        state.ColumnWidths.Add(newWidth);
+                        accumulatedWidth += newWidth;
+                    }
+                    else // For the last column, use the remaining space to avoid rounding errors.
+                    {
+                        state.ColumnWidths.Add(Math.Max(20, viewWidth - accumulatedWidth)); // Ensure a minimum width
+                    }
+                }
+            }
+        }
+
+        float totalContentWidth = state.ColumnWidths.Sum();
+        bool hScrollVisible = !autoSizeColumns && totalContentWidth > contentBounds.Width;
+        float viewHeight = contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0);
+
 
         // --- Draw Main Background ---
         Context.Renderer.DrawBox(gridBounds, gridStyle);
 
         // --- Draw Header ---
-        DrawDataGridHeader(intId, state, columns, headerBounds, headerStyle);
+        DrawDataGridHeader(intId, state, columns, headerBounds, headerStyle, !autoSizeColumns);
 
         // --- Handle Scrolling and Draw Rows ---
-        bool hScrollVisible = totalContentWidth > contentBounds.Width;
-        bool vScrollVisible = totalContentHeight > contentBounds.Height;
-
-        float viewWidth = contentBounds.Width - (vScrollVisible ? scrollbarThickness : 0);
-        float viewHeight = contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0);
-
-        // Use a local variable for the struct to avoid CS1612
         var scrollOffset = state.ScrollOffset;
+
+        // Handle Mouse Wheel Scrolling
+        bool isHoveringContent = contentBounds.Contains(Context.InputState.MousePosition);
+        if (isHoveringContent && Context.InputState.ScrollDelta != 0)
+        {
+            // Scroll delta is inverted: up is positive, but content moves down (offset increases)
+            // A standard mouse wheel tick is 120, and the delta is usually +/- 1.0f in the input system.
+            // Scrolling by 3 rows feels natural.
+            scrollOffset.Y -= Context.InputState.ScrollDelta * rowHeight * 3;
+        }
 
         // Clamp scroll offsets
         scrollOffset.X = Math.Clamp(scrollOffset.X, 0, Math.Max(0, totalContentWidth - viewWidth));
         scrollOffset.Y = Math.Clamp(scrollOffset.Y, 0, Math.Max(0, totalContentHeight - viewHeight));
         state.ScrollOffset = scrollOffset; // Assign back before drawing rows
 
-        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle);
+        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle, trimCellText);
 
         // --- Draw Scrollbars ---
         // Re-read from state in case it was modified, then modify and write back.
@@ -2080,7 +2121,7 @@ public static partial class UI
                 id + "_vscroll",
                 scrollOffset.Y,
                 new Vector2(contentBounds.Right - scrollbarThickness, contentBounds.Y),
-                contentBounds.Height,
+                contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0), // Adjust track height if HScroll is visible
                 totalContentHeight,
                 viewHeight,
                 scrollbarThickness
@@ -2111,7 +2152,7 @@ public static partial class UI
         state.ColumnWidths.AddRange(columns.Select(c => c.InitialWidth));
     }
 
-    private static void DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style)
+    private static void DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style, bool allowColumnResize)
     {
         var input = Context.InputState;
         float currentX = headerBounds.X - state.ScrollOffset.X;
@@ -2125,38 +2166,68 @@ public static partial class UI
             Context.Renderer.DrawBox(colHeaderBounds, style);
             DrawTextPrimitive(colHeaderBounds, columns[i].HeaderText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
 
-            // Column Resizer Handle
-            var handleId = HashCode.Combine(id, "resize", i);
-            var handleBounds = new Rect(currentX + colWidth - 2, headerBounds.Y, 4, headerBounds.Height);
-
-            bool isHoveringHandle = handleBounds.Contains(input.MousePosition);
-            if (isHoveringHandle) State.SetPotentialInputTarget(handleId);
-
-            if (State.ActivelyPressedElementId == handleId && input.IsLeftMouseDown)
+            if (allowColumnResize)
             {
-                float deltaX = input.MousePosition.X - state.DragStartMouseX;
-                state.ColumnWidths[i] = Math.Max(20, state.ColumnResizeStartWidth + deltaX);
-            }
-            else if (State.ActivelyPressedElementId == handleId && !input.IsLeftMouseDown)
-            {
-                State.ClearActivePress(handleId);
-            }
+                // Column Resizer Handle
+                var handleId = HashCode.Combine(id, "resize", i);
+                var handleBounds = new Rect(currentX + colWidth - 2, headerBounds.Y, 4, headerBounds.Height);
 
-            if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
-            {
-                State.SetPotentialCaptorForFrame(handleId);
-                state.ResizingColumnIndex = i;
-                state.DragStartMouseX = input.MousePosition.X;
-                state.ColumnResizeStartWidth = state.ColumnWidths[i];
-            }
+                bool isHoveringHandle = handleBounds.Contains(input.MousePosition);
+                if (isHoveringHandle) State.SetPotentialInputTarget(handleId);
 
+                if (State.ActivelyPressedElementId == handleId && input.IsLeftMouseDown)
+                {
+                    float deltaX = input.MousePosition.X - state.DragStartMouseX;
+                    state.ColumnWidths[i] = Math.Max(20, state.ColumnResizeStartWidth + deltaX);
+                }
+                else if (State.ActivelyPressedElementId == handleId && !input.IsLeftMouseDown)
+                {
+                    State.ClearActivePress(handleId);
+                }
+
+                if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
+                {
+                    State.SetPotentialCaptorForFrame(handleId);
+                    state.ResizingColumnIndex = i;
+                    state.DragStartMouseX = input.MousePosition.X;
+                    state.ColumnResizeStartWidth = state.ColumnWidths[i];
+                }
+            }
             currentX += colWidth;
         }
 
         Context.Renderer.PopClipRect();
     }
 
-    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle)
+    private static string TrimTextWithEllipsis(string text, float maxWidth, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text) || maxWidth <= 0) return string.Empty;
+
+        var textService = UI.Context.TextService;
+        const string ellipsis = "...";
+
+        var fullSize = textService.MeasureText(text, style);
+        if (fullSize.X <= maxWidth) return text;
+
+        var ellipsisSize = textService.MeasureText(ellipsis, style);
+        if (ellipsisSize.X > maxWidth) return string.Empty; // Not even ellipsis fits
+
+        // Use a copy of the string to trim
+        string trimmed = text;
+        while (trimmed.Length > 0)
+        {
+            var tempText = trimmed + ellipsis;
+            if (textService.MeasureText(tempText, style).X <= maxWidth)
+            {
+                return tempText;
+            }
+            trimmed = trimmed.Substring(0, trimmed.Length - 1);
+        }
+
+        return ellipsis; // If nothing else fits
+    }
+
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText)
     {
         var input = Context.InputState;
 
@@ -2194,8 +2265,24 @@ public static partial class UI
                     cellText = $"{(int)ts.TotalMinutes:00}:{ts.Seconds:00}";
                 }
 
+                string textToDraw = cellText;
+                var textMargin = new Vector2(5, 0);
+
+                if (trimCellText)
+                {
+                    float availableWidth = cellBounds.Width - (textMargin.X * 2);
+                    if (availableWidth > 0)
+                    {
+                        var measuredSize = Context.TextService.MeasureText(cellText, rowStyle.Current);
+                        if (measuredSize.X > availableWidth)
+                        {
+                            textToDraw = TrimTextWithEllipsis(cellText, availableWidth, rowStyle.Current);
+                        }
+                    }
+                }
+
                 Context.Renderer.PushClipRect(cellBounds); // Clip text to cell
-                DrawTextPrimitive(cellBounds, cellText, rowStyle.Current, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
+                DrawTextPrimitive(cellBounds, textToDraw, rowStyle.Current, new Alignment(HAlignment.Left, VAlignment.Center), textMargin);
                 Context.Renderer.PopClipRect();
 
                 currentX += colWidth;
@@ -11122,6 +11209,7 @@ using System.Text.Json;
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
+using Sonorize.Audio;
 
 namespace Sonorize;
 
@@ -11134,8 +11222,10 @@ public class SonorizeLogic : IAppLogic
     private readonly MenuBar _menuBar;
     private readonly SettingsWindow _settingsWindow;
     private readonly MusicLibrary _musicLibrary = new();
+    private readonly AudioPlayer _audioPlayer;
 
     private int _selectedTrackIndex = -1;
+    private int _previousSelectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
 
 
@@ -11148,6 +11238,7 @@ public class SonorizeLogic : IAppLogic
 
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host);
+        _audioPlayer = new AudioPlayer();
 
         _columns =
         [
@@ -11198,6 +11289,10 @@ public class SonorizeLogic : IAppLogic
         {
             Console.WriteLine($"Error saving settings: {ex.Message}");
         }
+        finally
+        {
+            _audioPlayer.Dispose();
+        }
     }
 
     private static void ConfigureWindowStyles(IWindowHost host)
@@ -11237,8 +11332,21 @@ public class SonorizeLogic : IAppLogic
                 _columns,
                 ref _selectedTrackIndex,
                 gridSize,
-                gridPos
+                gridPos,
+                autoSizeColumns: true,
+                trimCellText: true
             );
+        }
+
+        // Check for selection change to play music
+        if (_selectedTrackIndex != _previousSelectedTrackIndex)
+        {
+            if (_selectedTrackIndex >= 0 && _selectedTrackIndex < _musicLibrary.Files.Count)
+            {
+                var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
+                _audioPlayer.Play(trackToPlay.FilePath);
+            }
+            _previousSelectedTrackIndex = _selectedTrackIndex;
         }
     }
 
@@ -11252,6 +11360,111 @@ public class SonorizeLogic : IAppLogic
                 _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
             }
         });
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Audio\AudioPlayer.cs">
+using System;
+using ManagedBass;
+
+namespace Sonorize.Audio;
+
+public class AudioPlayer : IDisposable
+{
+    private int _stream;
+    private bool _isDisposed;
+
+    public bool IsPlaying => Bass.ChannelIsActive(_stream) == PlaybackState.Playing;
+
+    public AudioPlayer()
+    {
+        if (!Bass.Init())
+            throw new Exception("Failed to initialize audio device.");
+    }
+
+    /// <summary>
+    /// Loads an audio file (M4A, MP3, WAV, etc.) and starts playback.
+    /// </summary>
+    public void Play(string filePath)
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (!System.IO.File.Exists(filePath)) throw new ArgumentException("File does not exist", nameof(filePath));
+
+        StopInternal();
+
+        _stream = Bass.CreateStream(filePath, 0, 0, BassFlags.Default);
+        if (_stream == 0)
+            throw new Exception($"Failed to create audio stream: {Bass.LastError}");
+
+        Bass.ChannelPlay(_stream);
+    }
+
+    public void Pause()
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (_stream != 0)
+            Bass.ChannelPause(_stream);
+    }
+
+    public void Resume()
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (_stream != 0)
+            Bass.ChannelPlay(_stream);
+    }
+
+    public void Stop()
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        StopInternal();
+    }
+
+    /// <summary>
+    /// Seeks to the specified position in seconds.
+    /// </summary>
+    public void Seek(double seconds)
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (_stream != 0)
+        {
+            long pos = Bass.ChannelSeconds2Bytes(_stream, seconds);
+            Bass.ChannelSetPosition(_stream, pos);
+        }
+    }
+
+    /// <summary>
+    /// Gets the current playback position in seconds.
+    /// </summary>
+    public double GetPosition()
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetPosition(_stream)) : 0;
+    }
+
+    private void StopInternal()
+    {
+        if (_stream != 0)
+        {
+            Bass.ChannelStop(_stream);
+            Bass.StreamFree(_stream);
+            _stream = 0;
+        }
+    }
+
+    public void Dispose()
+    {
+        if (_isDisposed) return;
+
+        StopInternal();
+        Bass.Free();
+        _isDisposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    ~AudioPlayer()
+    {
+        Dispose();
     }
 }
 </file>
