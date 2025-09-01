@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Entire file content here
+using System;
 using System.Collections.Generic;
 using Vortice.Mathematics;
 
@@ -86,13 +87,9 @@ public class UIPersistentState
         DragInProgressFromPreviousFrame = input.IsLeftMouseDown && ActivelyPressedElementId != 0;
         PotentialInputTargetId = 0;
 
-        // Reset the captor for visual "press" feedback if the mouse is not held down.
-        if (!input.IsLeftMouseDown)
-        {
-            InputCaptorId = 0;
-            _inputCaptorLayer = -1;
-            ActivelyPressedElementId = 0;
-        }
+        // The logic for clearing active press state was moved to UI.EndFrame
+        // and the control's own mouse-up handler to fix a bug where the state
+        // was cleared before the control could process the mouse-up event.
 
         // At the start of the frame, the winner from the *last* frame becomes the active winner for this frame.
         PressActionWinnerId = _nextFramePressWinnerId;
@@ -181,11 +178,23 @@ public class UIPersistentState
         _nextFramePressWinnerId = id;
     }
 
+    /// <summary>
+    /// Resets all state related to an active mouse press.
+    /// </summary>
+    public void ClearAllActivePressState()
+    {
+        ActivelyPressedElementId = 0;
+        InputCaptorId = 0;
+        _inputCaptorLayer = -1;
+    }
+
     public void ClearActivePress(int id)
     {
+        // When a control that initiated a press is done with it (e.g., on mouse up),
+        // it clears the global state.
         if (ActivelyPressedElementId == id)
         {
-            ActivelyPressedElementId = 0;
+            ClearAllActivePressState();
         }
     }
 

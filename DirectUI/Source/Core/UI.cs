@@ -1,4 +1,5 @@
-﻿using System;
+﻿// Entire file content here
+using System;
 using System.Numerics;
 
 namespace DirectUI;
@@ -44,6 +45,15 @@ public static partial class UI
         }
 
         HandlePopupLogic();
+
+        // After all widgets are processed, check for stale active press state.
+        // If the mouse is up, but a widget is still marked as 'actively pressed',
+        // it means that widget was not drawn this frame (e.g. it disappeared),
+        // so we must clear the state globally to prevent it getting stuck.
+        if (!UI.Context.InputState.IsLeftMouseDown && UI.State.ActivelyPressedElementId != 0)
+        {
+            UI.State.ClearAllActivePressState();
+        }
 
         if (UI.Context.Layout.ContainerStackCount > 0)
         {
