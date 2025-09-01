@@ -3,6 +3,7 @@ using System.Text.Json;
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
+using Sonorize.Audio;
 
 namespace Sonorize;
 
@@ -15,8 +16,10 @@ public class SonorizeLogic : IAppLogic
     private readonly MenuBar _menuBar;
     private readonly SettingsWindow _settingsWindow;
     private readonly MusicLibrary _musicLibrary = new();
+    private readonly AudioPlayer _audioPlayer;
 
     private int _selectedTrackIndex = -1;
+    private int _previousSelectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
 
 
@@ -29,6 +32,7 @@ public class SonorizeLogic : IAppLogic
 
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host);
+        _audioPlayer = new AudioPlayer();
 
         _columns =
         [
@@ -79,6 +83,10 @@ public class SonorizeLogic : IAppLogic
         {
             Console.WriteLine($"Error saving settings: {ex.Message}");
         }
+        finally
+        {
+            _audioPlayer.Dispose();
+        }
     }
 
     private static void ConfigureWindowStyles(IWindowHost host)
@@ -122,6 +130,17 @@ public class SonorizeLogic : IAppLogic
                 autoSizeColumns: true,
                 trimCellText: true
             );
+        }
+
+        // Check for selection change to play music
+        if (_selectedTrackIndex != _previousSelectedTrackIndex)
+        {
+            if (_selectedTrackIndex >= 0 && _selectedTrackIndex < _musicLibrary.Files.Count)
+            {
+                var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
+                _audioPlayer.Play(trackToPlay.FilePath);
+            }
+            _previousSelectedTrackIndex = _selectedTrackIndex;
         }
     }
 
