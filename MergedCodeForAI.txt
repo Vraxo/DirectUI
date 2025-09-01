@@ -1154,6 +1154,54 @@ public class VBoxContainerState : ILayoutContainer
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\ClickCaptureRequest.cs">
+namespace DirectUI;
+
+public readonly struct ClickCaptureRequest
+{
+    public int Id { get; }
+    public int Layer { get; }
+
+    public ClickCaptureRequest(int id, int layer)
+    {
+        Id = id;
+        Layer = layer;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\ClickCaptureServer.cs">
+using System.Collections.Generic;
+using System.Linq;
+
+namespace DirectUI;
+
+public class ClickCaptureServer
+{
+    private readonly List<ClickCaptureRequest> _requests = new();
+
+    public void RequestCapture(int id, int layer)
+    {
+        _requests.Add(new ClickCaptureRequest(id, layer));
+    }
+
+    public int? GetWinner()
+    {
+        if (_requests.Count == 0)
+        {
+            return null;
+        }
+
+        return _requests.OrderByDescending(r => r.Layer).First().Id;
+    }
+
+    public void Clear()
+    {
+        _requests.Clear();
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\TextMetrics.cs">
 // DirectUI/Core/TextMetrics.cs
 using System.Numerics;
@@ -1834,6 +1882,11 @@ public static partial class UI
 
     public static void EndFrame()
     {
+        var winner = UI.State.ClickCaptureServer.GetWinner();
+        if (winner.HasValue)
+        {
+            UI.State.SetPotentialCaptorForFrame(winner.Value);
+        }
         // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
         if (UI.Context.InputState.WasLeftMousePressedThisFrame && UI.State.InputCaptorId == 0 && !UI.State.IsPopupOpen)
         {
@@ -2812,7 +2865,7 @@ public static partial class UI
         {
             if (isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
             {
-                state.SetButtonPotentialCaptorForFrame(id);
+                state.RequestClickCapture(id, 1);
                 state.SetFocus(id);
                 isPressed = true;
             }
@@ -3453,6 +3506,7 @@ public class UIPersistentState
     public int InputCaptorId { get; private set; } = 0;
     private bool captureAttemptedThisFrame = false;
     public bool NonSliderElementClaimedPress { get; private set; } = false;
+    public ClickCaptureServer ClickCaptureServer { get; } = new();
 
 
     /// <summary>
@@ -3460,6 +3514,7 @@ public class UIPersistentState
     /// </summary>
     public void ResetFrameState(InputState input)
     {
+        ClickCaptureServer.Clear();
         DragInProgressFromPreviousFrame = input.IsLeftMouseDown && ActivelyPressedElementId != 0;
         PotentialInputTargetId = 0;
         InputCaptorId = 0;
@@ -3524,6 +3579,11 @@ public class UIPersistentState
         // The last widget drawn under the mouse is the topmost one, so it should always
         // be allowed to set itself as the potential target, overwriting any widget drawn beneath it.
         PotentialInputTargetId = id;
+    }
+
+    public void RequestClickCapture(int id, int layer)
+    {
+        ClickCaptureServer.RequestCapture(id, layer);
     }
 
     public void SetPotentialCaptorForFrame(int id)
@@ -4866,7 +4926,7 @@ public static class DefaultTheme
     public static readonly Color Black = new Color(0, 0, 0, 255);
     public static readonly Color Transparent = new Color(0, 0, 0, 0);
 
-    /*
+    
     // --- ACTIVE THEME: DAW ---
     public static readonly Color NormalFill = DAWThemeColors.Control;
     public static readonly Color NormalBorder = DAWThemeColors.Border;
@@ -4879,7 +4939,7 @@ public static class DefaultTheme
     public static readonly Color DisabledText = DAWThemeColors.DisabledText;
     public static readonly Color FocusBorder = DAWThemeColors.Accent; // Use Accent for focus border
     public static readonly Color Text = DAWThemeColors.Text;
-    */
+
 
     /*
     // --- ACTIVE THEME: Unity Editor (Dark) ---
@@ -4896,8 +4956,8 @@ public static class DefaultTheme
     public static readonly Color Text = UnityEditorThemeColors.Text;
     */
 
-
-    // --- ACTIVE THEME: Original ---
+    /*
+    // --- BACKUP THEME: Original ---
     // To restore the original theme, comment out the "UE5" block above
     // and uncomment this block below.
     public static readonly Color NormalFill = OriginalColors.NormalFill;
@@ -4911,7 +4971,7 @@ public static class DefaultTheme
     public static readonly Color DisabledText = OriginalColors.DisabledText;
     public static readonly Color FocusBorder = new Color(135, 206, 250, 255); // LightSkyBlue
     public static readonly Color Text = OriginalColors.Text;
-
+    */
 }
 </file>
 
@@ -5730,7 +5790,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.SetPotentialCaptorForFrame(GlobalIntId);
+                state.RequestClickCapture(GlobalIntId, 10);
                 state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
@@ -6022,7 +6082,7 @@ internal class InternalScrollBarLogic
 
         if (input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
-            state.SetPotentialCaptorForFrame(_id);
+            state.RequestClickCapture(_id, 10);
             state.SetFocus(_id);
             _isThumbPressed = true;
 
@@ -6293,7 +6353,7 @@ internal class InternalVSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.SetPotentialCaptorForFrame(GlobalIntId);
+                state.RequestClickCapture(GlobalIntId, 10);
                 state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)
