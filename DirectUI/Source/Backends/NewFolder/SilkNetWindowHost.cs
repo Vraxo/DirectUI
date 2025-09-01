@@ -101,7 +101,9 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 
             if (IsModalWindowOpen && _activeModalIWindow != null && !_activeModalIWindow.IsClosing)
             {
-                // Modal is active. Render it.
+                // Modal is active. Make its context current before rendering.
+                _activeModalIWindow.GLContext?.MakeCurrent();
+
                 _modalGl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
                 if (_modalSkSurface != null && _modalRenderer != null && _modalTextService != null && _modalAppEngine != null)
                 {
@@ -113,7 +115,8 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             }
             else if (!IsModalWindowOpen)
             {
-                // Main window is active. Render it.
+                // Main window is active. Make its context current before rendering.
+                _window.GLContext?.MakeCurrent();
                 OnRender(0); // Pass a dummy delta.
                 _window.SwapBuffers();
             }
