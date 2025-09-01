@@ -252,6 +252,7 @@ public static class Application
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppRunner.cs">
 using DirectUI.Backends.SDL3;
+using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
 using SDL3;
@@ -278,6 +279,7 @@ public static class ApplicationRunner
                 GraphicsBackend.Raylib => new RaylibWindowHost("My Raylib App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 GraphicsBackend.Direct2D => new Win32WindowHost("My D2D App", 1024, 768),
                 GraphicsBackend.SDL3 => new SDL3WindowHost("My SDL3 App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
+                GraphicsBackend.SkiaSharp => new SilkNetWindowHost("My Skia App", 1024, 768, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f)),
                 _ => throw new ArgumentOutOfRangeException(nameof(backend), backend, "Unsupported graphics backend.")
             };
 
@@ -363,7 +365,8 @@ public enum GraphicsBackend
 {
     Direct2D,
     Raylib,
-    SDL3
+    SDL3,
+    SkiaSharp
 }
 </file>
 
@@ -7957,6 +7960,637 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetRenderer.cs">
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using SkiaSharp;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
+
+namespace DirectUI.Backends.SkiaSharp;
+
+public class SilkNetRenderer : IRenderer
+{
+    private SKCanvas? _canvas;
+    private Vector2 _renderTargetSize;
+    private readonly SilkNetTextService _textService;
+
+    public Vector2 RenderTargetSize => _renderTargetSize;
+
+    public SilkNetRenderer(SilkNetTextService textService)
+    {
+        _textService = textService;
+    }
+
+    public void SetCanvas(SKCanvas canvas, Vector2 size)
+    {
+        _canvas = canvas;
+        _renderTargetSize = size;
+    }
+
+    public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth)
+    {
+        if (_canvas is null) return;
+        using var paint = new SKPaint
+        {
+            Color = new SKColor(color.R, color.G, color.B, color.A),
+            StrokeWidth = strokeWidth,
+            IsAntialias = true,
+            Style = SKPaintStyle.Stroke
+        };
+        _canvas.DrawLine(p1.X, p1.Y, p2.X, p2.Y, paint);
+    }
+
+    public void DrawBox(Rect rect, BoxStyle style)
+    {
+        if (_canvas is null || style is null) return;
+
+        var skRect = new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom);
+        float maxRadius = Math.Min(rect.Width, rect.Height) / 2f;
+        float radius = Math.Clamp(style.Roundness * maxRadius, 0, maxRadius);
+
+        // Draw fill
+        if (style.FillColor.A > 0)
+        {
+            using var fillPaint = new SKPaint
+            {
+                Color = new SKColor(style.FillColor.R, style.FillColor.G, style.FillColor.B, style.FillColor.A),
+                IsAntialias = true,
+                Style = SKPaintStyle.Fill
+            };
+            _canvas.DrawRoundRect(skRect, radius, radius, fillPaint);
+        }
+
+        // Draw border
+        if (style.BorderColor.A > 0 && style.BorderLength > 0)
+        {
+            using var borderPaint = new SKPaint
+            {
+                Color = new SKColor(style.BorderColor.R, style.BorderColor.G, style.BorderColor.B, style.BorderColor.A),
+                IsAntialias = true,
+                Style = SKPaintStyle.Stroke,
+                StrokeWidth = style.BorderLength
+            };
+            // Inset the rectangle slightly so the stroke is drawn on the edge, not half-in/half-out
+            skRect.Inflate(-style.BorderLength / 2f, -style.BorderLength / 2f);
+            _canvas.DrawRoundRect(skRect, radius, radius, borderPaint);
+        }
+    }
+
+    public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color)
+    {
+        if (_canvas is null || string.IsNullOrEmpty(text)) return;
+
+        var typeface = _textService.GetOrCreateTypeface(style);
+        using var font = new SKFont(typeface, style.FontSize);
+        using var paint = new SKPaint(font)
+        {
+            Color = new SKColor(color.R, color.G, color.B, color.A),
+            IsAntialias = true
+        };
+
+        var bounds = new SKRect();
+        paint.MeasureText(text, ref bounds);
+
+        var textDrawPos = origin;
+
+        // Horizontal alignment
+        if (maxSize.X > 0)
+        {
+            switch (alignment.Horizontal)
+            {
+                case HAlignment.Center:
+                    textDrawPos.X += (maxSize.X - bounds.Width) / 2f - bounds.Left;
+                    break;
+                case HAlignment.Right:
+                    textDrawPos.X += maxSize.X - bounds.Width - bounds.Left;
+                    break;
+                default: // Left
+                    textDrawPos.X -= bounds.Left;
+                    break;
+            }
+        }
+        else
+        {
+            textDrawPos.X -= bounds.Left;
+        }
+
+
+        // Vertical alignment
+        if (maxSize.Y > 0)
+        {
+            switch (alignment.Vertical)
+            {
+                case VAlignment.Top:
+                    textDrawPos.Y -= bounds.Top; // Align top of text bounds to origin.Y
+                    break;
+                case VAlignment.Center:
+                    textDrawPos.Y += (maxSize.Y / 2f) - bounds.MidY;
+                    break;
+                case VAlignment.Bottom:
+                    textDrawPos.Y += maxSize.Y - bounds.Bottom; // Align bottom of text bounds to bottom of layout rect
+                    break;
+            }
+        }
+        else
+        {
+            textDrawPos.Y -= bounds.Top;
+        }
+
+        _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
+    }
+
+    public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
+    {
+        _canvas?.Save();
+        _canvas?.ClipRect(new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom), SKClipOperation.Intersect, true);
+    }
+
+    public void PopClipRect()
+    {
+        _canvas?.Restore();
+    }
+
+    public void Flush()
+    {
+        _canvas?.Flush();
+    }
+
+    public void Cleanup()
+    {
+        // Canvas is managed by the host
+        _canvas = null;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetTextLayout.cs">
+using System;
+using System.Numerics;
+using DirectUI.Core;
+using SkiaSharp;
+using Typography.OpenFont;
+
+namespace DirectUI.Backends.SkiaSharp;
+
+internal class SilkNetTextLayout : ITextLayout
+{
+    public Vector2 Size { get; }
+    public string Text { get; }
+
+    public SilkNetTextLayout(string text, SKTypeface typeface, ButtonStyle style)
+    {
+        Text = text;
+        using var font = new SKFont(typeface, style.FontSize);
+        using var paint = new SKPaint(font);
+        var rect = new SKRect();
+        paint.MeasureText(text, ref rect);
+        Size = new Vector2(rect.Width, rect.Height);
+    }
+    public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
+    {
+        if (string.IsNullOrEmpty(Text)) return new TextHitTestMetrics(Vector2.Zero, Vector2.Zero);
+
+        float approxCharWidth = Size.X / Math.Max(1, Text.Length);
+        float x = textPosition * approxCharWidth;
+        float width = approxCharWidth;
+
+        if (isTrailingHit) x += approxCharWidth;
+        x = Math.Clamp(x, 0, Size.X);
+
+        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(width, Size.Y));
+    }
+
+    public TextHitTestResult HitTestPoint(Vector2 point)
+    {
+        if (string.IsNullOrEmpty(Text))
+        {
+            return new TextHitTestResult(0, false, false, new TextHitTestMetrics(Vector2.Zero, Vector2.Zero));
+        }
+
+        bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
+
+        float approxCharWidth = (Text.Length > 0) ? Size.X / Text.Length : 0;
+        int textPosition = 0;
+        bool isTrailingHit = false;
+
+        if (approxCharWidth > 0)
+        {
+            textPosition = (int)(point.X / approxCharWidth);
+            isTrailingHit = (point.X % approxCharWidth) > (approxCharWidth / 2f);
+        }
+
+        textPosition = Math.Clamp(textPosition, 0, Text.Length);
+        if (isTrailingHit && textPosition < Text.Length)
+        {
+            textPosition++;
+        }
+        textPosition = Math.Clamp(textPosition, 0, Text.Length);
+
+        float hitMetricX = (textPosition == 0) ? 0 : (textPosition * approxCharWidth);
+        if (isTrailingHit && textPosition > 0) hitMetricX -= approxCharWidth;
+
+        return new TextHitTestResult(textPosition, isTrailingHit, isInside,
+            new TextHitTestMetrics(new Vector2(hitMetricX, 0), new Vector2(approxCharWidth, Size.Y)));
+    }
+    public void Dispose()
+    {
+        // This class doesn't own unmanaged resources directly
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetTextService.cs">
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Core;
+using SkiaSharp;
+using Typography.OpenFont;
+using Vortice.DirectWrite; // For FontWeight, etc.
+
+namespace DirectUI.Backends.SkiaSharp;
+
+public class SilkNetTextService : ITextService
+{
+    private readonly Dictionary<FontKey, SKTypeface> _typefaceCache = new();
+    private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
+    private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
+
+    private readonly struct FontKey : IEquatable<FontKey>
+    {
+        private readonly string FontName;
+        private readonly FontWeight FontWeight;
+        private readonly FontStyle FontStyle;
+
+        public FontKey(ButtonStyle style)
+        {
+            FontName = style.FontName;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+        }
+
+        public bool Equals(FontKey other) => FontName == other.FontName && FontWeight == other.FontWeight && FontStyle == other.FontStyle;
+        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontWeight, FontStyle);
+    }
+    private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
+    {
+        private readonly string Text;
+        private readonly FontKey FontKey;
+        private readonly float FontSize;
+        public TextLayoutCacheKey(string text, ButtonStyle style)
+        {
+            Text = text;
+            FontKey = new FontKey(style);
+            FontSize = style.FontSize;
+        }
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && FontKey.Equals(other.FontKey) && FontSize.Equals(other.FontSize);
+        public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey, FontSize);
+    }
+    public SKTypeface GetOrCreateTypeface(ButtonStyle style)
+    {
+        var key = new FontKey(style);
+        if (_typefaceCache.TryGetValue(key, out var typeface))
+        {
+            return typeface;
+        }
+
+        SKFontStyleWeight weight = (SKFontStyleWeight)style.FontWeight;
+        SKFontStyleSlant slant = style.FontStyle == FontStyle.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
+
+        typeface = SKTypeface.FromFamilyName(style.FontName, weight, SKFontStyleWidth.Normal, slant);
+        _typefaceCache[key] = typeface;
+        return typeface;
+    }
+    public Vector2 MeasureText(string text, ButtonStyle style)
+    {
+        if (string.IsNullOrEmpty(text)) return Vector2.Zero;
+
+        var typeface = GetOrCreateTypeface(style);
+        using var font = new SKFont(typeface, style.FontSize);
+        using var paint = new SKPaint(font);
+        var rect = new SKRect();
+        paint.MeasureText(text, ref rect);
+        return new Vector2(rect.Width, rect.Height);
+    }
+
+    public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
+    {
+        var key = new TextLayoutCacheKey(text, style);
+        if (_textLayoutCache.TryGetValue(key, out var layout))
+        {
+            return layout;
+        }
+
+        var typeface = GetOrCreateTypeface(style);
+        var newLayout = new SilkNetTextLayout(text, typeface, style);
+        _textLayoutCache[key] = newLayout;
+        return newLayout;
+    }
+
+    public void Cleanup()
+    {
+        foreach (var typeface in _typefaceCache.Values)
+        {
+            typeface.Dispose();
+        }
+        _typefaceCache.Clear();
+        _textLayoutCache.Clear();
+        _textSizeCache.Clear();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetWindowHost.cs">
+using System;
+using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Input;
+using Silk.NET.Input;
+using Silk.NET.Maths;
+using Silk.NET.OpenGL;
+using Silk.NET.Windowing;
+using SkiaSharp;
+using Vortice.Mathematics;
+using SizeI = Vortice.Mathematics.SizeI;
+using Key = Silk.NET.Input.Key;
+
+namespace DirectUI.Backends.SkiaSharp;
+
+public class SilkNetWindowHost : Core.IWindowHost
+{
+    private readonly string _title;
+    private readonly int _width;
+    private readonly int _height;
+    private readonly Color4 _backgroundColor;
+
+    private IWindow? _window;
+    private AppEngine? _appEngine;
+    private SilkNetRenderer? _renderer;
+    private SilkNetTextService? _textService;
+    private GL? _gl;
+    private GRContext? _grContext;
+    private SKSurface? _skSurface;
+    private GRBackendRenderTarget? _renderTarget;
+    private IInputContext? _inputContext;
+
+    private bool _isDisposed;
+
+    public IntPtr Handle => _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
+    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public SizeI ClientSize => new(_window?.Size.X ?? 0, _window?.Size.Y ?? 0);
+    public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
+    public IModalWindowService ModalWindowService { get; } = new SilkNetDummyModalWindowService();
+
+    public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
+    {
+        _title = title;
+        _width = width;
+        _height = height;
+        _backgroundColor = backgroundColor;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        var options = WindowOptions.Default;
+        options.Size = new Vector2D<int>(_width, _height);
+        options.Title = _title;
+        options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
+
+        _window = Window.Create(options);
+
+        _window.Load += () => OnLoad(uiDrawCallback, backgroundColor);
+        _window.Render += OnRender;
+        _window.Closing += OnClose;
+        _window.Resize += OnResize;
+
+        return true;
+    }
+
+    public void RunLoop() => _window?.Run();
+
+    private void OnLoad(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        _gl = _window!.CreateOpenGL();
+        _gl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+
+        var glInterface = GRGlInterface.Create();
+        _grContext = GRContext.CreateGl(glInterface);
+
+        _renderTarget = new GRBackendRenderTarget(_width, _height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
+        _skSurface = SKSurface.Create(_grContext, _renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
+
+        _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+        _textService = new SilkNetTextService();
+        _renderer = new SilkNetRenderer(_textService);
+        _appEngine.Initialize(_textService, _renderer);
+
+        _inputContext = _window.CreateInput();
+        foreach (var keyboard in _inputContext.Keyboards)
+        {
+            keyboard.KeyDown += OnKeyDown;
+            keyboard.KeyUp += OnKeyUp;
+            keyboard.KeyChar += OnKeyChar;
+        }
+        foreach (var mouse in _inputContext.Mice)
+        {
+            mouse.MouseDown += OnMouseDown;
+            mouse.MouseUp += OnMouseUp;
+            mouse.MouseMove += OnMouseMove;
+            mouse.Scroll += OnMouseWheel;
+        }
+    }
+
+    private void OnRender(double delta)
+    {
+        _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+
+        if (_skSurface is null || _renderer is null || _textService is null || _appEngine is null) return;
+
+        _renderer.SetCanvas(_skSurface.Canvas, new Vector2(_window!.Size.X, _window.Size.Y));
+        _appEngine.UpdateAndRender(_renderer, _textService);
+        _skSurface.Canvas.Flush();
+    }
+
+    private void OnResize(Vector2D<int> size)
+    {
+        _gl?.Viewport(size);
+
+        _renderTarget?.Dispose();
+        _skSurface?.Dispose();
+
+        _renderTarget = new GRBackendRenderTarget(size.X, size.Y, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
+        _skSurface = SKSurface.Create(_grContext, _renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
+    }
+
+    private void OnClose()
+    {
+        // The RunLoop will exit when this handler returns.
+        // Cleanup is handled by the finally block in ApplicationRunner.
+    }
+
+    private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyPressed(MapKey(key));
+    private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) => Input.AddKeyReleased(MapKey(key));
+    private void OnKeyChar(IKeyboard keyboard, char c) => Input.AddCharacterInput(c);
+    private void OnMouseDown(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseDown(MapMouseButton(button));
+    private void OnMouseUp(IMouse mouse, Silk.NET.Input.MouseButton button) => Input.SetMouseUp(MapMouseButton(button));
+    private void OnMouseMove(IMouse mouse, Vector2 position) => Input.SetMousePosition((int)position.X, (int)position.Y);
+    private void OnMouseWheel(IMouse mouse, ScrollWheel scroll) => Input.AddMouseWheelDelta(scroll.Y);
+
+    private static Keys MapKey(Key key) => key switch
+    {
+        Key.Space => Keys.Space,
+        Key.Apostrophe => Keys.Unknown,
+        Key.Comma => Keys.Unknown,
+        Key.Minus => Keys.Unknown,
+        Key.Period => Keys.Unknown,
+        Key.Slash => Keys.Unknown,
+        Key.Number0 => Keys.D0,
+        Key.Number1 => Keys.D1,
+        Key.Number2 => Keys.D2,
+        Key.Number3 => Keys.D3,
+        Key.Number4 => Keys.D4,
+        Key.Number5 => Keys.D5,
+        Key.Number6 => Keys.D6,
+        Key.Number7 => Keys.D7,
+        Key.Number8 => Keys.D8,
+        Key.Number9 => Keys.D9,
+        Key.Semicolon => Keys.Unknown,
+        Key.Equal => Keys.Unknown,
+        Key.A => Keys.A,
+        Key.B => Keys.B,
+        Key.C => Keys.C,
+        Key.D => Keys.D,
+        Key.E => Keys.E,
+        Key.F => Keys.F,
+        Key.G => Keys.G,
+        Key.H => Keys.H,
+        Key.I => Keys.I,
+        Key.J => Keys.J,
+        Key.K => Keys.K,
+        Key.L => Keys.L,
+        Key.M => Keys.M,
+        Key.N => Keys.N,
+        Key.O => Keys.O,
+        Key.P => Keys.P,
+        Key.Q => Keys.Q,
+        Key.R => Keys.R,
+        Key.S => Keys.S,
+        Key.T => Keys.T,
+        Key.U => Keys.U,
+        Key.V => Keys.V,
+        Key.W => Keys.W,
+        Key.X => Keys.X,
+        Key.Y => Keys.Y,
+        Key.Z => Keys.Z,
+        Key.LeftBracket => Keys.Unknown,
+        Key.BackSlash => Keys.Unknown,
+        Key.RightBracket => Keys.Unknown,
+        Key.GraveAccent => Keys.Unknown,
+        Key.World1 => Keys.Unknown,
+        Key.World2 => Keys.Unknown,
+        Key.Escape => Keys.Escape,
+        Key.Enter => Keys.Enter,
+        Key.Tab => Keys.Tab,
+        Key.Backspace => Keys.Backspace,
+        Key.Insert => Keys.Insert,
+        Key.Delete => Keys.Delete,
+        Key.Right => Keys.RightArrow,
+        Key.Left => Keys.LeftArrow,
+        Key.Down => Keys.DownArrow,
+        Key.Up => Keys.UpArrow,
+        Key.PageUp => Keys.PageUp,
+        Key.PageDown => Keys.PageDown,
+        Key.Home => Keys.Home,
+        Key.End => Keys.End,
+        Key.CapsLock => Keys.CapsLock,
+        Key.ScrollLock => Keys.Unknown,
+        Key.NumLock => Keys.Unknown,
+        Key.PrintScreen => Keys.Unknown,
+        Key.Pause => Keys.Pause,
+        Key.F1 => Keys.F1,
+        Key.F2 => Keys.F2,
+        Key.F3 => Keys.F3,
+        Key.F4 => Keys.F4,
+        Key.F5 => Keys.F5,
+        Key.F6 => Keys.F6,
+        Key.F7 => Keys.F7,
+        Key.F8 => Keys.F8,
+        Key.F9 => Keys.F9,
+        Key.F10 => Keys.F10,
+        Key.F11 => Keys.F11,
+        Key.F12 => Keys.F12,
+        Key.Keypad0 => Keys.D0,
+        Key.Keypad1 => Keys.D1,
+        Key.Keypad2 => Keys.D2,
+        Key.Keypad3 => Keys.D3,
+        Key.Keypad4 => Keys.D4,
+        Key.Keypad5 => Keys.D5,
+        Key.Keypad6 => Keys.D6,
+        Key.Keypad7 => Keys.D7,
+        Key.Keypad8 => Keys.D8,
+        Key.Keypad9 => Keys.D9,
+        Key.ShiftLeft => Keys.Shift,
+        Key.ShiftRight => Keys.Shift,
+        Key.ControlLeft => Keys.Control,
+        Key.ControlRight => Keys.Control,
+        Key.AltLeft => Keys.Alt,
+        Key.AltRight => Keys.Alt,
+        Key.SuperLeft => Keys.LeftWindows,
+        Key.SuperRight => Keys.RightWindows,
+        Key.Menu => Keys.Menu,
+        _ => Keys.Unknown,
+    };
+
+    private static DirectUI.MouseButton MapMouseButton(Silk.NET.Input.MouseButton button) => button switch
+    {
+        Silk.NET.Input.MouseButton.Left => DirectUI.MouseButton.Left,
+        Silk.NET.Input.MouseButton.Right => DirectUI.MouseButton.Right,
+        Silk.NET.Input.MouseButton.Middle => DirectUI.MouseButton.Middle,
+        Silk.NET.Input.MouseButton.Button4 => DirectUI.MouseButton.XButton1,
+        Silk.NET.Input.MouseButton.Button5 => DirectUI.MouseButton.XButton2,
+        _ => DirectUI.MouseButton.Left,
+    };
+
+    public void Cleanup()
+    {
+        if (_isDisposed) return;
+        _appEngine?.Cleanup();
+        _renderer?.Cleanup();
+        _textService?.Cleanup();
+        _skSurface?.Dispose();
+        _renderTarget?.Dispose();
+        _grContext?.Dispose();
+        _gl?.Dispose();
+        _inputContext?.Dispose();
+        _window?.Dispose();
+        _isDisposed = true;
+    }
+
+    public void Dispose()
+    {
+        Cleanup();
+        GC.SuppressFinalize(this);
+    }
+
+    private class SilkNetDummyModalWindowService : IModalWindowService
+    {
+        public bool IsModalWindowOpen => false;
+        public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
+        {
+            Console.WriteLine($"Modal window '{title}' requested but not supported in Silk.NET backend.");
+            onClosedCallback?.Invoke(-1);
+        }
+        public void CloseModalWindow(int resultCode = 0) { }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibRenderer.cs">
 // DirectUI/Backends/Raylib/RaylibRenderer.cs
 using System;
@@ -9840,2176 +10474,43 @@ public interface IWindowHost : IDisposable
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\AdsrEnvelope.cs">
-using System;
-
-namespace Daw.Audio;
-
-/// <summary>
-/// A simple, linear ADSR (Attack, Decay, Sustain, Release) envelope generator.
-/// </summary>
-public class AdsrEnvelope
-{
-    public enum AdsrState { Idle, Attack, Decay, Sustain, Release }
-
-    private readonly int _sampleRate;
-    private float _attackRate;
-    private float _decayRate;
-    private float _releaseRate;
-
-    public AdsrState State { get; private set; } = AdsrState.Idle;
-    public float Output { get; private set; }
-
-    public float AttackTime { get; set; } = 0.01f;
-    public float DecayTime { get; set; } = 0.1f;
-    public float SustainLevel { get; set; } = 0.7f;
-    public float ReleaseTime { get; set; } = 0.2f;
-
-    public AdsrEnvelope(int sampleRate)
-    {
-        _sampleRate = Math.Max(1, sampleRate);
-        UpdateRates();
-    }
-
-    private void UpdateRates()
-    {
-        _attackRate = AttackTime > 0 ? 1.0f / (AttackTime * _sampleRate) : 1.0f;
-        _decayRate = DecayTime > 0 ? (1.0f - SustainLevel) / (DecayTime * _sampleRate) : 1.0f;
-        _releaseRate = ReleaseTime > 0 ? SustainLevel / (ReleaseTime * _sampleRate) : 1.0f;
-    }
-
-    public void NoteOn()
-    {
-        UpdateRates(); // Recalculate in case properties changed
-        State = AdsrState.Attack;
-        Output = 0.0f;
-    }
-
-    public void NoteOff()
-    {
-        State = AdsrState.Release;
-    }
-
-    public float Process()
-    {
-        switch (State)
-        {
-            case AdsrState.Idle:
-                Output = 0.0f;
-                break;
-            case AdsrState.Attack:
-                Output += _attackRate;
-                if (Output >= 1.0f)
-                {
-                    Output = 1.0f;
-                    State = AdsrState.Decay;
-                }
-                break;
-            case AdsrState.Decay:
-                Output -= _decayRate;
-                if (Output <= SustainLevel)
-                {
-                    Output = SustainLevel;
-                    State = AdsrState.Sustain;
-                }
-                break;
-            case AdsrState.Sustain:
-                Output = SustainLevel;
-                break;
-            case AdsrState.Release:
-                Output -= _releaseRate;
-                if (Output <= 0.0f)
-                {
-                    Output = 0.0f;
-                    State = AdsrState.Idle;
-                }
-                break;
-        }
-        return Output;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\AudioEngine.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using CSCore;
-using CSCore.CoreAudioAPI;
-using CSCore.SoundOut;
-
-namespace Daw.Audio;
-
-/// <summary>
-/// Manages audio output and hosts the synthesizer voices.
-/// </summary>
-public class AudioEngine : IDisposable
-{
-    private readonly ISoundOut _soundOut;
-    private readonly MixingSampleSource _mixer;
-    private readonly List<SynthesizerVoice> _voices = new();
-    private const int MaxVoices = 32; // Limit polyphony
-
-    public AudioEngine()
-    {
-        // Use WasapiOut in exclusive mode with a low latency buffer (20ms).
-        // This is the best practice for a DAW to minimize the delay between a note event and the audible sound.
-        _soundOut = new WasapiOut(true, AudioClientShareMode.Exclusive, 20);
-
-        // Use our new custom mixer.
-        _mixer = new MixingSampleSource(1, 44100);
-
-        // Create a pool of synthesizer voices to be reused.
-        for (int i = 0; i < MaxVoices; i++)
-        {
-            _voices.Add(new SynthesizerVoice(44100));
-        }
-
-        _soundOut.Initialize(_mixer.ToWaveSource());
-        _soundOut.Play();
-    }
-
-    public void NoteOn(int pitch, int velocity)
-    {
-        // Find a free (inactive) voice to play the note.
-        var voice = _voices.FirstOrDefault(v => !v.IsActive);
-        if (voice != null)
-        {
-            // The mixer needs to be aware of the voice to process its audio.
-            _mixer.AddSource(voice);
-            voice.NoteOn(pitch, velocity);
-        }
-        else
-        {
-            Console.WriteLine("Warning: No free voices available (polyphony limit reached).");
-        }
-    }
-
-    public void NoteOff(int pitch)
-    {
-        // Find all voices currently playing this pitch and trigger their release phase.
-        var freq = (float)SynthesizerVoice.MidiToFrequency(pitch);
-        foreach (var voice in _voices.Where(v => v.IsActive && Math.Abs(v.Frequency - freq) < 0.1))
-        {
-            voice.NoteOff();
-        }
-    }
-
-    /// <summary>
-    /// Tells all currently active voices to start their release phase.
-    /// This is thread-safe and can be called from any thread.
-    /// </summary>
-    public void StopAllVoices()
-    {
-        foreach (var voice in _voices.Where(v => v.IsActive))
-        {
-            voice.NoteOff();
-        }
-    }
-
-
-    /// <summary>
-    /// Called periodically to clean up voices that have finished their release phase.
-    /// </summary>
-    public void Update()
-    {
-        // Find voices that are part of the mixer but are no longer active
-        var inactiveVoices = _mixer.GetSources()
-                                   .OfType<SynthesizerVoice>()
-                                   .Where(v => !v.IsActive)
-                                   .ToList();
-
-        // Remove them from the mixer so they are no longer processed
-        foreach (var voice in inactiveVoices)
-        {
-            _mixer.RemoveSource(voice);
-        }
-    }
-
-
-    public void Dispose()
-    {
-        _soundOut?.Stop();
-        _soundOut?.Dispose();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\DawAppLogic.cs">
-using System;
-using System.Numerics;
-using Daw.Audio;
-using Daw.Core;
-using Daw.Views;
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Program.cs">
 using DirectUI;
-using DirectUI.Core;
-using Vortice.Mathematics;
 
 namespace Daw;
 
-public class DawAppLogic : IAppLogic
+public static class Program
 {
-    private readonly AudioEngine _audioEngine;
-    private readonly MidiEngine _midiEngine;
-    private Song _song;
-    private const string SongFilePath = "mysong.dawjson";
-
-    // --- UI State ---
-    private int _activeTrackIndex = 0;
-    private float _leftPanelWidth = 150;
-    private float _bottomPanelHeight = 100; // State for the new velocity panel
-    private PianoRollTool _currentTool = PianoRollTool.Select;
-
-    // --- Child Views ---
-    private readonly MenuBarView _menuBarView;
-    private readonly TransportView _transportView;
-    private readonly TimelineView _timelineView;
-    private readonly TrackListView _trackListView;
-    private readonly PianoRollToolbarView _pianoRollToolbarView;
-    private readonly PianoRollView _pianoRollView;
-    private readonly IWindowHost _host;
-
-    /// <summary>
-    /// A small helper class to robustly manage state passed to and from a modal dialog.
-    /// This avoids potential C# closure issues with ref-modified variables.
-    /// </summary>
-    private class RenameModalState
+    [STAThread]
+    public static void Main()
     {
-        public string Name;
-        public RenameModalState(string initialName) { Name = initialName; }
+        var backend = GraphicsBackend.SkiaSharp;
+        ApplicationRunner.Run(backend, host => new SonorizeLogic(host));
     }
+}
+</file>
 
-    public DawAppLogic(IWindowHost host)
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\SonorizeLogic.cs">
+using DirectUI;
+using DirectUI.Core;
+
+namespace Daw;
+
+public class SonorizeLogic : IAppLogic
+{
+    public SonorizeLogic(IWindowHost host)
     {
-        _host = host;
-        _audioEngine = new AudioEngine();
-        _midiEngine = new MidiEngine(_audioEngine);
-        _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
 
-        _menuBarView = new MenuBarView();
-        _transportView = new TransportView(_midiEngine);
-        _timelineView = new TimelineView();
-        _trackListView = new TrackListView();
-        _pianoRollToolbarView = new PianoRollToolbarView();
-        _pianoRollView = new PianoRollView();
-    }
-
-    private static Song CreateDefaultSong()
-    {
-        var song = new Song { Tempo = 120 };
-        var leadTrack = new MidiTrack("Lead Melody");
-        song.Tracks.Add(leadTrack);
-
-        // Basic C Major Scale
-        leadTrack.Events.Add(new NoteEvent(0, 480, 60, 100));     // C
-        leadTrack.Events.Add(new NoteEvent(500, 480, 62, 100));    // D
-        leadTrack.Events.Add(new NoteEvent(1000, 480, 64, 100));   // E
-        leadTrack.Events.Add(new NoteEvent(1500, 480, 65, 100));   // F
-        leadTrack.Events.Add(new NoteEvent(2000, 480, 67, 100));   // G
-        leadTrack.Events.Add(new NoteEvent(2500, 480, 69, 100));   // A
-        leadTrack.Events.Add(new NoteEvent(3000, 480, 71, 100));   // B
-        leadTrack.Events.Add(new NoteEvent(3500, 480, 72, 100));   // C
-        return song;
     }
 
     public void DrawUI(UIContext context)
     {
-        // Poll the engine every frame for time-sensitive updates like looping
-        _midiEngine.Update();
-
-        var windowSize = context.Renderer.RenderTargetSize;
-
-        // Ensure active track index is always valid before drawing
-        if (_activeTrackIndex >= _song.Tracks.Count)
-        {
-            _activeTrackIndex = Math.Max(0, _song.Tracks.Count - 1);
-        }
-
-        // --- Step 1: Draw the entire UI. ---
-        // This allows all components to process input and update their internal state for this frame.
-        DrawTopBar(windowSize);
-        DrawMainContent(windowSize);
-
-        // --- Step 2: Handle actions that were generated during the draw pass. ---
-        // This is the correct order for an immediate-mode GUI.
-        HandleGlobalActions();
-        HandleTrackActions();
-    }
-
-    private void HandleGlobalActions()
-    {
-        var fileAction = _menuBarView.GetAction();
-        switch (fileAction)
-        {
-            case MenuBarView.FileAction.Save:
-                SongSerializer.Save(_song, SongFilePath);
-                break;
-            case MenuBarView.FileAction.Load:
-                _midiEngine.Stop();
-                _song = SongSerializer.Load(SongFilePath) ?? CreateDefaultSong();
-                _activeTrackIndex = 0;
-                break;
-            case MenuBarView.FileAction.Export:
-                _midiEngine.ExportToMidiFile(_song, "export.mid");
-                break;
-        }
-    }
-
-    private void HandleTrackActions()
-    {
-        var (action, index) = _trackListView.GetAction();
-        if (action == TrackListView.TrackAction.None) return;
-
-        switch (action)
-        {
-            case TrackListView.TrackAction.Delete:
-                if (index >= 0 && index < _song.Tracks.Count)
-                {
-                    _song.Tracks.RemoveAt(index);
-                }
-                break;
-            case TrackListView.TrackAction.Rename:
-                if (index >= 0 && index < _song.Tracks.Count)
-                {
-                    PromptForTrackName(index);
-                }
-                break;
-            case TrackListView.TrackAction.MoveUp:
-                if (index > 0 && index < _song.Tracks.Count)
-                {
-                    var track = _song.Tracks[index];
-                    _song.Tracks.RemoveAt(index);
-                    _song.Tracks.Insert(index - 1, track);
-                    _activeTrackIndex = index - 1; // Keep selection on the moved track
-                }
-                break;
-            case TrackListView.TrackAction.MoveDown:
-                if (index >= 0 && index < _song.Tracks.Count - 1)
-                {
-                    var track = _song.Tracks[index];
-                    _song.Tracks.RemoveAt(index);
-                    _song.Tracks.Insert(index + 1, track);
-                    _activeTrackIndex = index + 1; // Keep selection on the moved track
-                }
-                break;
-        }
-    }
-
-    private void PromptForTrackName(int trackIndex)
-    {
-        // Use a state object to robustly capture the string being modified by the modal.
-        var modalState = new RenameModalState(_song.Tracks[trackIndex].Name);
-
-        Console.WriteLine($"[RENAME-LOG] Opening rename dialog for track {trackIndex}. Initial name: '{modalState.Name}'.");
-
-        Action<UIContext> drawCallback = (ctx) =>
-        {
-            // This is the UI for the modal window. It's drawn every frame the modal is open.
-            UI.BeginVBoxContainer("rename_vbox", new Vector2(10, 10), 15);
-
-            UI.Text("rename_prompt", "Enter new track name:");
-
-            // The 'ref modalState.Name' here modifies the field on the captured 'modalState' object.
-            if (UI.InputText("rename_input", ref modalState.Name, new Vector2(280, 25)))
-            {
-                // This log will fire every time a character is typed in the InputText widget.
-                Console.WriteLine($"[RENAME-LOG] InputText changed. In-modal name is now: '{modalState.Name}'");
-            }
-
-            var hboxPos = UI.Context.Layout.GetCurrentPosition();
-            UI.BeginHBoxContainer("rename_buttons", hboxPos, 10);
-            if (UI.Button("rename_ok", "OK", new Vector2(80, 25)))
-            {
-                // Close the modal and indicate success with result code 0.
-                _host.ModalWindowService.CloseModalWindow(0);
-            }
-            if (UI.Button("rename_cancel", "Cancel", new Vector2(80, 25)))
-            {
-                // Close the modal and indicate cancellation with result code 1.
-                _host.ModalWindowService.CloseModalWindow(1);
-            }
-            UI.EndHBoxContainer();
-
-            UI.EndVBoxContainer();
-        };
-
-        // This is the callback that executes *after* the modal window is closed.
-        Action<int> onClosedCallback = (resultCode) =>
-        {
-            // This is the crucial moment. We log the value from our state object.
-            Console.WriteLine($"[RENAME-LOG] Closed dialog for track {trackIndex}. Result code: {resultCode}.");
-            Console.WriteLine($"[RENAME-LOG] Final captured value of name: '{modalState.Name}'.");
-
-            if (resultCode == 0 && !string.IsNullOrWhiteSpace(modalState.Name))
-            {
-                // If OK was pressed and the name is valid, apply the change.
-                _song.Tracks[trackIndex].Name = modalState.Name;
-                Console.WriteLine($"[RENAME-LOG] SUCCESS: Applied new name '{modalState.Name}' to track {trackIndex}.");
-            }
-            else
-            {
-                // If Cancel was pressed or the name is invalid, do not change anything.
-                Console.WriteLine($"[RENAME-LOG] CANCELED: Rename aborted. Track name remains '{_song.Tracks[trackIndex].Name}'.");
-            }
-        };
-
-        _host.ModalWindowService.OpenModalWindow("Rename Track", 300, 160, drawCallback, onClosedCallback);
-    }
-
-    private void DrawTopBar(Vector2 windowSize)
-    {
-        var topBarArea = new Rect(0, 0, windowSize.X, DawMetrics.TopBarHeight);
-        var style = new BoxStyle { FillColor = DawTheme.PanelBackground, BorderColor = DawTheme.Border, BorderLengthBottom = 1, Roundness = 0 };
-        UI.Context.Renderer.DrawBox(topBarArea, style);
-
-        // Position menu bar and transport within the top bar
-        _menuBarView.Draw(new Vector2(0, 0));
-        _transportView.Draw(new Vector2(0, 30), _song);
-    }
-
-    private void DrawMainContent(Vector2 windowSize)
-    {
-        // Left Panel for Track List
-        UI.BeginResizableVPanel("track_list_panel", ref _leftPanelWidth, HAlignment.Left, topOffset: DawMetrics.TopBarHeight, minWidth: 100, maxWidth: 300);
-        _trackListView.Draw(_song, ref _activeTrackIndex);
-        UI.EndResizableVPanel();
-
-        // Right side for Timeline and Piano Roll
-        float mainContentX = _leftPanelWidth;
-        float mainContentWidth = windowSize.X - _leftPanelWidth;
-
-        // Container for the main editing area (Timeline + Piano Roll + Velocity Pane)
-        UI.BeginResizableHPanel("editor_panel", ref _bottomPanelHeight,
-            reservedLeftSpace: mainContentX,
-            reservedRightSpace: 0,
-            topOffset: DawMetrics.TopBarHeight,
-            minHeight: 50, maxHeight: 300);
-
-        // This inner part is the Velocity Editor Pane
-        var velocityPaneArea = new Rect(
-            mainContentX,
-            windowSize.Y - _bottomPanelHeight,
-            mainContentWidth,
-            _bottomPanelHeight
-        );
-
-        // Draw the background for the velocity pane
-        UI.Context.Renderer.DrawBox(velocityPaneArea, new BoxStyle { FillColor = DawTheme.Background, Roundness = 0 });
-
-        // --- FIX: Actually call the method to draw the velocity bars ---
-        _pianoRollView.DrawVelocityPane(velocityPaneArea);
-
-        UI.EndResizableHPanel();
-
-
-        // Calculate the area available for the upper section (Timeline and Piano Roll)
-        float upperAreaHeight = windowSize.Y - DawMetrics.TopBarHeight - _bottomPanelHeight;
-        if (upperAreaHeight < 0) upperAreaHeight = 0;
-
-        // Timeline
-        var timelineArea = new Rect(mainContentX, DawMetrics.TopBarHeight, mainContentWidth, DawMetrics.TimelineHeight);
-        float timelineBottom = timelineArea.Y + timelineArea.Height;
-        if (timelineBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
-        {
-            _timelineView.Draw(timelineArea, _song, _pianoRollView.GetPanOffset(), _pianoRollView.GetZoom());
-        }
-
-
-        // Toolbar for Piano Roll Tools
-        float toolbarY = DawMetrics.TopBarHeight + DawMetrics.TimelineHeight;
-        var toolbarArea = new Rect(mainContentX, toolbarY, mainContentWidth, DawMetrics.PianoRollToolbarHeight);
-        float toolbarBottom = toolbarArea.Y + toolbarArea.Height;
-        if (toolbarBottom <= upperAreaHeight + DawMetrics.TopBarHeight)
-        {
-            _pianoRollToolbarView.Draw(toolbarArea, ref _currentTool);
-        }
-
-        // Piano Roll
-        float pianoRollY = toolbarY + DawMetrics.PianoRollToolbarHeight;
-        float availablePianoRollHeight = windowSize.Y - pianoRollY - _bottomPanelHeight;
-        if (availablePianoRollHeight > 0)
-        {
-            var pianoRollArea = new Rect(mainContentX, pianoRollY, mainContentWidth, availablePianoRollHeight);
-            var activeTrack = (_song.Tracks.Count > 0) ? _song.Tracks[_activeTrackIndex] : null;
-            _pianoRollView.Draw(pianoRollArea, activeTrack, _song, _midiEngine.IsPlaying, _midiEngine.CurrentTimeMs, _currentTool);
-        }
+        throw new NotImplementedException();
     }
 
     public void SaveState()
     {
-        SongSerializer.Save(_song, SongFilePath);
-        _midiEngine.Dispose();
-        _audioEngine.Dispose();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\DawMetrics.cs">
-namespace Daw.Views;
-
-/// <summary>
-/// Defines shared constants for layout, grid, and pitch to ensure consistency
-/// between the Timeline, Piano Roll, and other views.
-/// </summary>
-public static class DawMetrics
-{
-    // --- Layout ---
-    public const float TopBarHeight = 70;
-    public const float TimelineHeight = 40;
-    public const float PianoRollToolbarHeight = 40;
-    public const float KeyboardWidth = 80;
-
-    // --- Grid & Zoom ---
-    public const float BasePixelsPerMs = 0.1f;
-    public const float NoteHeight = 20;
-
-    // --- Pitch Range ---
-    public const int MinPitch = 24; // C1
-    public const int MaxPitch = 108; // C8
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\DawTheme.cs">
-using DirectUI;
-using Vortice.Mathematics;
-
-namespace Daw;
-
-public static class DawTheme
-{
-    // Core Palette
-    public static readonly Color4 Background = new(21 / 255f, 21 / 255f, 21 / 255f, 1f);       // #151515
-    public static readonly Color4 PanelBackground = new(43 / 255f, 43 / 255f, 43 / 255f, 1f);  // #2B2B2B
-    public static readonly Color4 ControlFill = new(58 / 255f, 58 / 255f, 58 / 255f, 1f);      // #3A3A3A
-    public static readonly Color4 ControlFillHover = new(70 / 255f, 70 / 255f, 70 / 255f, 1f); // #464646
-    public static readonly Color4 Border = new(30 / 255f, 30 / 255f, 30 / 255f, 1f);           // #1E1E1E
-    public static readonly Color4 Text = new(211 / 255f, 211 / 255f, 211 / 255f, 1f);          // #D3D3D3
-    public static readonly Color4 TextDim = new(130 / 255f, 130 / 255f, 130 / 255f, 1f);       // #828282
-
-    // Accent Palette (for notes, selections, etc.)
-    public static readonly Color4 Accent = new(0 / 255f, 119 / 255f, 204 / 255f, 1f);          // #0077CC
-    public static readonly Color4 AccentBright = new(0 / 255f, 153 / 255f, 255 / 255f, 1f);   // #0099FF
-    public static readonly Color4 Selection = Colors.Yellow;
-
-    // Piano Roll Specific
-    public static readonly Color4 PianoRollGrid = new(54 / 255f, 54 / 255f, 54 / 255f, 1f);    // #363636
-    public static readonly Color4 PianoRollGridAccent = new(80 / 255f, 80 / 255f, 80 / 255f, 1f); // #505050
-    public static readonly Color4 PianoWhiteKey = new(218 / 255f, 218 / 255f, 218 / 255f, 1f); // #DADADA
-    public static readonly Color4 PianoBlackKey = new(30 / 255f, 30 / 255f, 30 / 255f, 1f);   // #1E1E1E
-
-    // Pre-configured Styles
-    public static readonly ButtonStylePack TransportButton;
-    public static readonly ButtonStylePack ToolbarButton;
-    public static readonly ButtonStylePack LoopToggleStyle;
-
-    static DawTheme()
-    {
-        ToolbarButton = new ButtonStylePack
-        {
-            Roundness = 0.2f,
-            BorderLength = 1f,
-        };
-        ToolbarButton.Normal.FillColor = ControlFill;
-        ToolbarButton.Normal.BorderColor = Border;
-        ToolbarButton.Hover.FillColor = ControlFillHover;
-        ToolbarButton.Hover.BorderColor = Border;
-        ToolbarButton.Pressed.FillColor = AccentBright;
-        ToolbarButton.Pressed.BorderColor = Accent;
-
-        TransportButton = new ButtonStylePack
-        {
-            Roundness = 0.5f,
-            BorderLength = 0f,
-        };
-        TransportButton.Normal.FillColor = Colors.Transparent;
-        TransportButton.Hover.FillColor = ControlFillHover;
-        TransportButton.Pressed.FillColor = Accent;
-
-        LoopToggleStyle = new ButtonStylePack
-        {
-            Roundness = 0.2f,
-            BorderLength = 1f,
-        };
-        LoopToggleStyle.Normal.FillColor = ControlFill;
-        LoopToggleStyle.Normal.BorderColor = Border;
-        LoopToggleStyle.Hover.FillColor = ControlFillHover;
-        LoopToggleStyle.Hover.BorderColor = AccentBright;
-        LoopToggleStyle.Active.FillColor = Accent;
-        LoopToggleStyle.Active.BorderColor = AccentBright;
-        LoopToggleStyle.ActiveHover.FillColor = AccentBright;
-        LoopToggleStyle.ActiveHover.BorderColor = Accent;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MenuBarView.cs">
-using System.Numerics;
-using DirectUI;
-using Vortice.Mathematics;
-
-namespace Daw.Views;
-
-public class MenuBarView
-{
-    public enum FileAction { None, Save, Load, Export }
-
-    private FileAction _requestedAction = FileAction.None;
-
-    public void Draw(Vector2 position)
-    {
-        _requestedAction = FileAction.None;
-
-        UI.BeginHBoxContainer("menubar", position, 0);
-
-        // Using a dropdown menu style would be the next step.
-        // For now, these are direct action buttons.
-        DrawMenuButton("File", new[] { "Save", "Load", "Export MIDI" }, HandleFileAction);
-        DrawMenuButton("Edit", new[] { "Undo", "Redo" });
-        DrawMenuButton("View", new[] { "Zoom In", "Zoom Out" });
-
-        UI.EndHBoxContainer();
-    }
-
-    private void HandleFileAction(string item)
-    {
-        _requestedAction = item switch
-        {
-            "Save" => FileAction.Save,
-            "Load" => FileAction.Load,
-            "Export MIDI" => FileAction.Export,
-            _ => FileAction.None
-        };
-    }
-
-    public FileAction GetAction()
-    {
-        return _requestedAction;
-    }
-
-    private void DrawMenuButton(string text, string[] items, Action<string>? onItemSelected = null)
-    {
-        var buttonId = $"menu_button_{text}";
-        var menuButtonStyle = new ButtonStylePack
-        {
-            Roundness = 0,
-            BorderLength = 0
-        };
-        menuButtonStyle.Normal.FillColor = Colors.Transparent;
-        menuButtonStyle.Hover.FillColor = DawTheme.ControlFillHover;
-
-        if (UI.Button(buttonId, text, new Vector2(0, 30), autoWidth: true, textMargin: new Vector2(10, 0), theme: menuButtonStyle))
-        {
-            // Placeholder for future dropdown logic. For now, top-level buttons do nothing.
-            // A real implementation would open a popup here.
-            // For simplicity, we make the first item the default action.
-            if (onItemSelected != null && items.Length > 0)
-            {
-                onItemSelected(items[0]);
-            }
-        }
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MidiEngine.cs">
-using System;
-using System.Collections.Concurrent;
-using System.Linq;
-using Daw.Core;
-using Melanchall.DryWetMidi.Common;
-using Melanchall.DryWetMidi.Core;
-using Melanchall.DryWetMidi.Interaction;
-using Melanchall.DryWetMidi.Multimedia;
-
-namespace Daw.Audio;
-
-/// <summary>
-/// Provides core DAW functionality for converting a Song to MIDI,
-/// playing it back through the internal AudioEngine, and exporting it as a .mid file.
-/// </summary>
-public class MidiEngine : IDisposable
-{
-    private readonly AudioEngine _audioEngine;
-    private Playback? _playback;
-    private Song? _currentSong;
-
-    public bool IsPlaying => _playback?.IsRunning ?? false;
-    public long CurrentTimeMs
-    {
-        get
-        {
-            if (_playback is null || !_playback.IsRunning) return 0;
-
-            // For looped playback, we need to add the loop start time back to get the correct timeline position
-            if (_currentSong is { IsLoopingEnabled: true } && _currentSong.LoopEndMs > _currentSong.LoopStartMs)
-            {
-                long loopRelativeTime = (long)_playback.GetCurrentTime<MetricTimeSpan>().TotalMilliseconds;
-                return _currentSong.LoopStartMs + loopRelativeTime;
-            }
-
-            return (long)_playback.GetCurrentTime<MetricTimeSpan>().TotalMilliseconds;
-        }
-    }
-
-    public MidiEngine(AudioEngine audioEngine)
-    {
-        _audioEngine = audioEngine ?? throw new ArgumentNullException(nameof(audioEngine));
-    }
-
-    /// <summary>
-    /// This method should be called every frame to handle non-time-critical updates like audio engine cleanup.
-    /// </summary>
-    public void Update()
-    {
-        // Clean up any finished voices from the mixer. This is not time-critical.
-        _audioEngine.Update();
-    }
-
-    /// <summary>
-    /// Converts a Song object into a DryWetMIDI MidiFile object.
-    /// </summary>
-    /// <param name="song">The song to convert.</param>
-    /// <returns>A MidiFile instance representing the song.</returns>
-    public MidiFile ConvertToMidiFile(Song song)
-    {
-        var midiFile = new MidiFile();
-        var tempoMap = TempoMap.Create(new TicksPerQuarterNoteTimeDivision(480), Tempo.FromBeatsPerMinute(song.Tempo));
-
-        // CRITICAL FIX: The MIDI file must contain a SetTempoEvent for the playback engine to know the correct speed.
-        // We create a "conductor track" for this and other meta-events.
-        var conductorTrack = new TrackChunk();
-        conductorTrack.Events.Add(new SetTempoEvent(Tempo.FromBeatsPerMinute(song.Tempo).MicrosecondsPerQuarterNote));
-        midiFile.Chunks.Add(conductorTrack);
-
-        foreach (var songTrack in song.Tracks)
-        {
-            var trackChunk = new TrackChunk();
-
-            var notes = songTrack.Events.Select(noteEvent =>
-            {
-                var startTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.StartTimeMs);
-                var durationTimeSpan = new MetricTimeSpan(0, 0, 0, noteEvent.DurationMs);
-
-                long timeInTicks = TimeConverter.ConvertTo<MidiTimeSpan>(startTimeSpan, tempoMap).TimeSpan;
-                long durationInTicks = LengthConverter.ConvertTo<MidiTimeSpan>(durationTimeSpan, timeInTicks, tempoMap).TimeSpan;
-
-                return new Note((SevenBitNumber)noteEvent.Pitch, durationInTicks, timeInTicks)
-                {
-                    Velocity = (SevenBitNumber)noteEvent.Velocity
-                };
-            });
-
-            trackChunk.AddObjects(notes);
-            midiFile.Chunks.Add(trackChunk);
-        }
-
-        return midiFile;
-    }
-
-    /// <summary>
-    /// Exports the given song to a standard MIDI (.mid) file.
-    /// </summary>
-    /// <param name="song">The song to export.</param>
-    /// <param name="filePath">The path to save the .mid file.</param>
-    public void ExportToMidiFile(Song song, string filePath)
-    {
-        var midiFile = ConvertToMidiFile(song);
-        midiFile.Write(filePath, overwriteFile: true);
-        Console.WriteLine($"Song successfully exported to '{filePath}'.");
-    }
-
-    /// <summary>
-    /// Plays the given song using the internal AudioEngine.
-    /// </summary>
-    /// <param name="song">The song to play.</param>
-    public void Play(Song song)
-    {
-        Stop();
-
-        var midiFile = ConvertToMidiFile(song);
-        _currentSong = song;
-
-        Playback playback;
-
-        if (song.IsLoopingEnabled && song.LoopEndMs > song.LoopStartMs)
-        {
-            var tempoMap = midiFile.GetTempoMap();
-            var loopStart = new MetricTimeSpan(0, 0, 0, (int)song.LoopStartMs);
-            var loopEnd = new MetricTimeSpan(0, 0, 0, (int)song.LoopEndMs);
-            long loopStartTimeTicks = TimeConverter.ConvertFrom(loopStart, tempoMap);
-            long loopEndTimeTicks = TimeConverter.ConvertFrom(loopEnd, tempoMap);
-
-            var loopedTrackChunk = new TrackChunk();
-            loopedTrackChunk.Events.Add(new SetTempoEvent(Tempo.FromBeatsPerMinute(song.Tempo).MicrosecondsPerQuarterNote));
-
-            var notes = midiFile.GetNotes();
-            var notesInLoop = notes.Where(n => n.Time < loopEndTimeTicks && n.EndTime > loopStartTimeTicks);
-
-            foreach (var note in notesInLoop)
-            {
-                long newStartTicks = Math.Max(note.Time, loopStartTimeTicks);
-                long newEndTicks = Math.Min(note.EndTime, loopEndTimeTicks);
-                newStartTicks -= loopStartTimeTicks;
-                newEndTicks -= loopStartTimeTicks;
-
-                if (newEndTicks > newStartTicks)
-                {
-                    var newNote = new Note(note.NoteNumber, newEndTicks - newStartTicks, newStartTicks)
-                    {
-                        Velocity = note.Velocity,
-                        OffVelocity = note.OffVelocity,
-                        Channel = note.Channel
-                    };
-                    loopedTrackChunk.AddObjects(new[] { newNote });
-                }
-            }
-
-            var loopedMidiFile = new MidiFile(loopedTrackChunk);
-            playback = loopedMidiFile.GetTimedEvents().Select(e => e.Event).GetPlayback(loopedMidiFile.GetTempoMap());
-            playback.Loop = true;
-        }
-        else
-        {
-            var allEvents = midiFile.Chunks.OfType<TrackChunk>().SelectMany(c => c.Events);
-            playback = allEvents.GetPlayback(midiFile.GetTempoMap());
-        }
-
-        _playback = playback;
-        _playback.NotesPlaybackStarted += OnNotesPlaybackStarted;
-        _playback.NotesPlaybackFinished += OnNotesPlaybackFinished;
-        _playback.Start();
-    }
-
-    public void Stop()
-    {
-        if (_playback != null)
-        {
-            _playback.Stop();
-            _playback.NotesPlaybackStarted -= OnNotesPlaybackStarted;
-            _playback.NotesPlaybackFinished -= OnNotesPlaybackFinished;
-            _playback.Dispose();
-            _playback = null;
-        }
-        _audioEngine.StopAllVoices();
-        _currentSong = null;
-    }
-
-    private void OnNotesPlaybackStarted(object? sender, NotesEventArgs e)
-    {
-        foreach (var note in e.Notes)
-        {
-            _audioEngine.NoteOn(note.NoteNumber, note.Velocity);
-        }
-    }
-
-    private void OnNotesPlaybackFinished(object? sender, NotesEventArgs e)
-    {
-        foreach (var note in e.Notes)
-        {
-            _audioEngine.NoteOff(note.NoteNumber);
-        }
-    }
-
-    public void Dispose()
-    {
-        Stop();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MidiTrack.cs">
-using System.Collections.Generic;
-
-namespace Daw.Core;
-
-/// <summary>
-/// Represents a single track in a song, containing its own list of notes and properties.
-/// </summary>
-public class MidiTrack
-{
-    public string Name { get; set; } = "New Track";
-    public List<NoteEvent> Events { get; set; } = new();
-
-    // Future properties could include: MidiChannel, Instrument, Mute, Solo, etc.
-
-    // Parameterless constructor for serialization
-    public MidiTrack() { }
-
-    public MidiTrack(string name)
-    {
-        Name = name;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\MixingSampleSource.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using CSCore;
-
-namespace Daw.Audio;
-
-/// <summary>
-/// A custom sample source that mixes multiple input sources by summing their samples.
-/// This replaces the need for a specific mixing class from the CSCore library.
-/// </summary>
-public class MixingSampleSource : ISampleSource
-{
-    private readonly List<ISampleSource> _sampleSources = new();
-    private readonly object _lockObject = new();
-    private float[]? _sourceBuffer;
-
-    public WaveFormat WaveFormat { get; }
-    public long Position { get; set; }
-    public long Length => 0; // Infinite
-    public bool CanSeek => false;
-
-    public MixingSampleSource(int channels, int sampleRate)
-    {
-        WaveFormat = new WaveFormat(sampleRate, 32, channels, AudioEncoding.IeeeFloat);
-    }
-
-    public void AddSource(ISampleSource source)
-    {
-        lock (_lockObject)
-        {
-            if (!_sampleSources.Contains(source))
-            {
-                _sampleSources.Add(source);
-            }
-        }
-    }
-
-    public void RemoveSource(ISampleSource source)
-    {
-        lock (_lockObject)
-        {
-            _sampleSources.Remove(source);
-        }
-    }
-
-    public IReadOnlyList<ISampleSource> GetSources()
-    {
-        lock (_lockObject)
-        {
-            return _sampleSources.ToList();
-        }
-    }
-
-
-    public int Read(float[] buffer, int offset, int count)
-    {
-        // Ensure our temporary buffer for reading from sources is large enough
-        if (_sourceBuffer == null || _sourceBuffer.Length < count)
-        {
-            _sourceBuffer = new float[count];
-        }
-
-        // Clear the main output buffer first
-        Array.Clear(buffer, offset, count);
-
-        // Create a thread-safe copy of the sources to iterate over
-        ISampleSource[] sourcesToProcess;
-        lock (_lockObject)
-        {
-            sourcesToProcess = _sampleSources.ToArray();
-        }
-
-        // Read from each source and sum its output into the main buffer
-        foreach (var source in sourcesToProcess)
-        {
-            int read = source.Read(_sourceBuffer, 0, count);
-            for (int i = 0; i < read; i++)
-            {
-                buffer[offset + i] += _sourceBuffer[i];
-            }
-        }
-
-        // We are not doing any clipping here. If the sum of sources
-        // exceeds 1.0f, it will clip. For this simple synth, that is acceptable.
-        return count;
-    }
-
-    public void Dispose()
-    {
-        // This mixer does not own the sources, so it does not dispose them.
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\NoteEvent.cs">
-namespace Daw.Core;
-
-/// <summary>
-/// Represents a single musical note on the timeline.
-/// Now a mutable class to allow for interactive editing.
-/// </summary>
-public class NoteEvent
-{
-    public int StartTimeMs { get; set; }
-    public int DurationMs { get; set; }
-    public int Pitch { get; set; }
-    public int Velocity { get; set; }
-
-    public NoteEvent(int startTimeMs, int durationMs, int pitch, int velocity)
-    {
-        StartTimeMs = startTimeMs;
-        DurationMs = durationMs;
-        Pitch = pitch;
-        Velocity = velocity;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\PianoRollTool.cs">
-namespace Daw.Views;
-
-public enum PianoRollTool
-{
-    Select,
-    Pencil
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Song.cs">
-using System.Collections.Generic;
-
-namespace Daw.Core;
-
-/// <summary>
-/// Represents a song, containing a timeline of notes and metadata like tempo.
-/// </summary>
-public class Song
-{
-    /// <summary>
-    /// The tempo of the song in beats per minute (BPM).
-    /// </summary>
-    public double Tempo { get; set; } = 120.0;
-
-    /// <summary>
-    /// The list of tracks that make up the song.
-    /// </summary>
-    public List<MidiTrack> Tracks { get; set; } = new();
-
-    /// <summary>
-    /// Gets or sets whether playback looping is enabled.
-    /// </summary>
-    public bool IsLoopingEnabled { get; set; } = false;
-
-    /// <summary>
-    /// The start time of the loop region in milliseconds.
-    /// </summary>
-    public long LoopStartMs { get; set; } = 0;
-
-    /// <summary>
-    /// The end time of the loop region in milliseconds.
-    /// </summary>
-    public long LoopEndMs { get; set; } = 4000; // Default 2 measures at 120bpm
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\SongSerializer.cs">
-using System;
-using System.IO;
-using System.Text.Json;
-
-namespace Daw.Core;
-
-/// <summary>
-/// Handles saving and loading Song objects to and from JSON files.
-/// </summary>
-public static class SongSerializer
-{
-    private static readonly JsonSerializerOptions _options = new()
-    {
-        WriteIndented = true,
-        PropertyNamingPolicy = JsonNamingPolicy.CamelCase
-    };
-
-    /// <summary>
-    /// Saves a Song object to a specified JSON file path.
-    /// </summary>
-    /// <param name="song">The song to save.</param>
-    /// <param name="filePath">The path of the file (e.g., "mysong.dawjson").</param>
-    public static void Save(Song song, string filePath)
-    {
-        try
-        {
-            string jsonString = JsonSerializer.Serialize(song, _options);
-            File.WriteAllText(filePath, jsonString);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error saving song to '{filePath}': {ex.Message}");
-            // Depending on the application, you might want to re-throw or handle this differently.
-        }
-    }
-
-    /// <summary>
-    /// Loads a Song object from a specified JSON file path.
-    /// </summary>
-    /// <param name="filePath">The path of the file to load.</param>
-    /// <returns>The loaded Song object, or null if loading fails.</returns>
-    public static Song? Load(string filePath)
-    {
-        if (!File.Exists(filePath))
-        {
-            Console.WriteLine($"Error: File not found at '{filePath}'.");
-            return null;
-        }
-
-        try
-        {
-            string jsonString = File.ReadAllText(filePath);
-            var song = JsonSerializer.Deserialize<Song>(jsonString, _options);
-            return song;
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading song from '{filePath}': {ex.Message}");
-            return null;
-        }
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\SynthesizerVoice.cs">
-using CSCore;
-using CSCore.Streams;
-using System;
-
-namespace Daw.Audio;
-
-/// <summary>
-/// Represents a single note being played by the synthesizer.
-/// Implements ISampleSource to be used by CSCore's audio pipeline.
-/// </summary>
-public class SynthesizerVoice : ISampleSource
-{
-    private readonly SineGenerator _sineGenerator;
-    private readonly AdsrEnvelope _adsr;
-
-    public WaveFormat WaveFormat { get; }
-    public long Position { get; set; }
-
-    // SineGenerator is an infinite source, so it has no defined length.
-    public long Length => 0;
-
-    // A synthesizer generates a continuous stream, so it cannot be seeked.
-    public bool CanSeek => false;
-
-    // A public property to read the frequency for NoteOff matching.
-    public float Frequency => (float)_sineGenerator.Frequency;
-
-    public SynthesizerVoice(int sampleRate)
-    {
-        // FIX: The WaveFormat must match the mixer's format, which is 32-bit float.
-        WaveFormat = new WaveFormat(sampleRate, 32, 1, AudioEncoding.IeeeFloat);
-
-        _sineGenerator = new SineGenerator(sampleRate, 0, 0) { Amplitude = 0.2f };
-        _adsr = new AdsrEnvelope(sampleRate)
-        {
-            AttackTime = 0.01f,
-            DecayTime = 0.1f,
-            SustainLevel = 0.7f,
-            ReleaseTime = 0.2f
-        };
-    }
-
-    public void NoteOn(int pitch, int velocity)
-    {
-        _sineGenerator.Frequency = (float)MidiToFrequency(pitch);
-        _sineGenerator.Amplitude = (velocity / 127f) * 0.2f; // Velocity affects amplitude
-        _adsr.NoteOn();
-    }
-
-    public void NoteOff()
-    {
-        _adsr.NoteOff();
-    }
-
-    /// <summary>
-    /// Returns true if the voice is currently active (i.e., not in the idle state of its envelope).
-    /// </summary>
-    public bool IsActive => _adsr.State != AdsrEnvelope.AdsrState.Idle;
-
-    public int Read(float[] buffer, int offset, int count)
-    {
-        // SineGenerator is infinite, so it will always fill the buffer.
-        int samplesRead = count;
-        _sineGenerator.Read(buffer, offset, count);
-
-        // Apply the ADSR envelope to each sample
-        for (int i = 0; i < samplesRead; i++)
-        {
-            buffer[offset + i] *= _adsr.Process();
-        }
-
-        return samplesRead;
-    }
-
-    /// <summary>
-    /// Converts a MIDI note number (pitch) to its corresponding frequency in Hz.
-    /// </summary>
-    public static double MidiToFrequency(int midiNote)
-    {
-        return 440.0 * Math.Pow(2.0, (midiNote - 69.0) / 12.0);
-    }
-
-    public void Dispose()
-    {
-        // This class doesn't own unmanaged resources directly.
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\PianoRollState.cs">
-using System.Collections.Generic;
-using System.Numerics;
-using Daw.Core;
-using Vortice.Mathematics;
-
-namespace Daw.Views;
-
-/// <summary>
-/// Encapsulates the shared state for the piano roll and its child components (like the velocity pane).
-/// This separates the data model of the view from the drawing and input handling logic.
-/// </summary>
-public class PianoRollState
-{
-    // --- Interaction State ---
-    public List<NoteEvent> SelectedNotes { get; } = new();
-    public NoteEvent? NoteBeingDragged { get; set; } // The primary note driving the drag
-    public NoteEvent? VelocityBarBeingDragged { get; set; }
-    public Vector2 DragStartOffset { get; set; }
-    public bool IsResizingRight { get; set; }
-    public bool IsPanning { get; set; }
-
-    // --- Box Selection State ---
-    public bool IsBoxSelecting { get; set; } = false;
-    public Vector2 BoxSelectionStart { get; set; }
-    public Rect SelectionBox { get; set; }
-
-
-    // --- Viewport State ---
-    public Vector2 PanOffset { get; set; } = Vector2.Zero;
-    public float Zoom { get; set; } = 1.0f;
-
-    // Helper to get the single selected note, if there is one.
-    public NoteEvent? GetSingleSelectedNote() => SelectedNotes.Count == 1 ? SelectedNotes[0] : null;
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\PianoRollToolbarView.cs">
-using System.Numerics;
-using DirectUI;
-using Vortice.Mathematics;
-
-namespace Daw.Views;
-
-public class PianoRollToolbarView
-{
-    public void Draw(Rect viewArea, ref PianoRollTool currentTool)
-    {
-        UI.Context.Renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0 });
-
-        UI.BeginHBoxContainer("pianoroll_toolbar", viewArea.TopLeft + new Vector2(5, 5), 5);
-
-        // Select Tool Button
-        bool isSelectActive = currentTool == PianoRollTool.Select;
-        if (UI.Button("tool_select", "↗", new Vector2(30, 30), DawTheme.LoopToggleStyle, isActive: isSelectActive))
-        {
-            currentTool = PianoRollTool.Select;
-        }
-
-        // Pencil Tool Button
-        bool isPencilActive = currentTool == PianoRollTool.Pencil;
-        if (UI.Button("tool_pencil", "✎", new Vector2(30, 30), DawTheme.LoopToggleStyle, isActive: isPencilActive))
-        {
-            currentTool = PianoRollTool.Pencil;
-        }
-
-        UI.EndHBoxContainer();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\PianoRollView.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using Daw.Core;
-using DirectUI;
-using DirectUI.Core;
-using DirectUI.Input;
-using Vortice.Mathematics;
-
-namespace Daw.Views;
-
-public class PianoRollView
-{
-    // --- State & Child Views ---
-    private readonly PianoRollState _state = new();
-    private readonly VelocityPaneView _velocityPaneView = new();
-    private MidiTrack? _activeTrack;
-    private Song? _song;
-    private PianoRollTool _currentTool;
-    private readonly bool[] _isBlackKey = new bool[12];
-
-    // --- Drag state for multi-note move ---
-    private Dictionary<NoteEvent, (int StartTime, int Pitch)> _dragStartStates = new();
-
-
-    // Public accessors for linked views (like Timeline)
-    public Vector2 GetPanOffset() => _state.PanOffset;
-    public float GetZoom() => _state.Zoom;
-
-    public PianoRollView()
-    {
-        var blackKeys = new[] { 1, 3, 6, 8, 10 }; // C#, D#, F#, G#, A#
-        for (int i = 0; i < 12; i++)
-        {
-            _isBlackKey[i] = blackKeys.Contains(i);
-        }
-    }
-
-    public void Draw(Rect viewArea, MidiTrack? activeTrack, Song song, bool isPlaying, long currentTimeMs, PianoRollTool currentTool)
-    {
-        _activeTrack = activeTrack;
-        _song = song;
-        _currentTool = currentTool;
-        var renderer = UI.Context.Renderer;
-        var input = UI.Context.InputState;
-
-        var gridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
-
-        HandleInput(input, gridArea);
-
-        if (_activeTrack != null)
-        {
-            DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
-            DrawGrid(gridArea, song.Tempo);
-            DrawNotes(gridArea);
-            DrawSelectionBox();
-            DrawPlaybackCursor(gridArea, isPlaying, currentTimeMs);
-        }
-        else
-        {
-            // Center the "No track selected" text
-            var textSize = UI.Context.TextService.MeasureText("No track selected. Please add or select a track.", new ButtonStyle());
-            var textPos = new Vector2(
-                gridArea.X + (gridArea.Width - textSize.X) / 2,
-                gridArea.Y + (gridArea.Height - textSize.Y) / 2
-            );
-            UI.Text("no_track_selected", "No track selected. Please add or select a track.", textPos);
-        }
-    }
-
-    public void DrawVelocityPane(Rect velocityArea)
-    {
-        // Delegate drawing and input handling to the specialized child view
-        _velocityPaneView.Draw(velocityArea, UI.Context, _state, _activeTrack, _state.PanOffset, _state.Zoom);
-    }
-
-    private void HandleInput(InputState input, Rect gridArea)
-    {
-        if (_song is null || _activeTrack is null) return;
-
-        bool isHoveringGrid = gridArea.Contains(input.MousePosition);
-
-        // Panning (Middle Mouse)
-        if (input.WasMiddleMousePressedThisFrame && isHoveringGrid) _state.IsPanning = true;
-        if (!input.IsMiddleMouseDown) _state.IsPanning = false;
-        if (_state.IsPanning) _state.PanOffset += input.MousePosition - input.PreviousMousePosition;
-
-        // Zooming (Scroll Wheel)
-        if (isHoveringGrid && input.ScrollDelta != 0)
-        {
-            _state.Zoom += input.ScrollDelta * 0.1f * _state.Zoom;
-            _state.Zoom = Math.Clamp(_state.Zoom, 0.1f, 10f);
-        }
-
-        // Left Mouse Button Down
-        if (input.WasLeftMousePressedThisFrame && isHoveringGrid)
-        {
-            HandleLeftClick(input, gridArea);
-        }
-
-        // Left Mouse Button Drag
-        if (_state.IsBoxSelecting)
-        {
-            float x = Math.Min(_state.BoxSelectionStart.X, input.MousePosition.X);
-            float y = Math.Min(_state.BoxSelectionStart.Y, input.MousePosition.Y);
-            float width = Math.Abs(_state.BoxSelectionStart.X - input.MousePosition.X);
-            float height = Math.Abs(_state.BoxSelectionStart.Y - input.MousePosition.Y);
-            _state.SelectionBox = new Rect(x, y, width, height);
-        }
-
-        // Left Mouse Button Up
-        if (!input.IsLeftMouseDown)
-        {
-            if (_state.IsBoxSelecting)
-            {
-                FinalizeBoxSelection(gridArea);
-            }
-            _state.IsBoxSelecting = false;
-            _state.NoteBeingDragged = null;
-            _state.IsResizingRight = false;
-            _dragStartStates.Clear();
-        }
-
-        // Drag/Resize logic
-        if (_currentTool == PianoRollTool.Select)
-        {
-            HandleDragAndResize(input, gridArea);
-        }
-    }
-
-    private void FinalizeBoxSelection(Rect gridArea)
-    {
-        _state.SelectedNotes.Clear();
-        if (_activeTrack == null) return;
-
-        foreach (var note in _activeTrack.Events)
-        {
-            var notePos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            var noteWidth = note.DurationMs * DawMetrics.BasePixelsPerMs * _state.Zoom;
-            var noteRect = new Rect(notePos.X, notePos.Y, noteWidth, DawMetrics.NoteHeight);
-
-            // Manual AABB intersection check
-            bool intersects = _state.SelectionBox.Left < noteRect.Right &&
-                              _state.SelectionBox.Right > noteRect.Left &&
-                              _state.SelectionBox.Top < noteRect.Bottom &&
-                              _state.SelectionBox.Bottom > noteRect.Top;
-
-            if (intersects)
-            {
-                _state.SelectedNotes.Add(note);
-            }
-        }
-    }
-
-    private void HandleLeftClick(InputState input, Rect gridArea)
-    {
-        var (hitNote, isEdge) = HitTestNotes(input.MousePosition, gridArea);
-        bool isShiftHeld = input.HeldKeys.Contains(Keys.Shift);
-
-        switch (_currentTool)
-        {
-            case PianoRollTool.Select:
-                if (hitNote != null)
-                {
-                    if (isShiftHeld)
-                    {
-                        // Add or remove from selection with Shift
-                        if (_state.SelectedNotes.Contains(hitNote)) _state.SelectedNotes.Remove(hitNote);
-                        else _state.SelectedNotes.Add(hitNote);
-                    }
-                    else
-                    {
-                        // If not already selected, clear selection and select only this one
-                        if (!_state.SelectedNotes.Contains(hitNote))
-                        {
-                            _state.SelectedNotes.Clear();
-                            _state.SelectedNotes.Add(hitNote);
-                        }
-                    }
-
-                    if (isEdge && _state.SelectedNotes.Count == 1)
-                    {
-                        _state.IsResizingRight = true;
-                    }
-                    else
-                    {
-                        // Prepare for multi-note drag
-                        _state.NoteBeingDragged = hitNote;
-                        var noteScreenPos = GridToScreen(hitNote.StartTimeMs, hitNote.Pitch, gridArea);
-                        _state.DragStartOffset = input.MousePosition - noteScreenPos;
-                        _dragStartStates = _state.SelectedNotes.ToDictionary(n => n, n => (n.StartTimeMs, n.Pitch));
-                    }
-                }
-                else
-                {
-                    // Clicked on empty space
-                    if (!isShiftHeld) _state.SelectedNotes.Clear();
-                    _state.IsBoxSelecting = true;
-                    _state.BoxSelectionStart = input.MousePosition;
-                    _state.SelectionBox = new Rect(input.MousePosition.X, input.MousePosition.Y, 0, 0);
-                }
-                break;
-
-            case PianoRollTool.Pencil:
-                if (hitNote != null)
-                {
-                    _activeTrack?.Events.Remove(hitNote);
-                    if (_state.SelectedNotes.Contains(hitNote)) _state.SelectedNotes.Remove(hitNote);
-                }
-                else
-                {
-                    AddNewNote(input.MousePosition, gridArea);
-                }
-                break;
-        }
-    }
-
-    private void HandleDragAndResize(InputState input, Rect gridArea)
-    {
-        if (_song is null) return;
-
-        float msPerBeat = (float)(60000.0 / _song.Tempo);
-        float quantization = msPerBeat / 4; // 16th note snapping
-
-        // Multi-note drag
-        if (_state.NoteBeingDragged != null)
-        {
-            var targetNoteScreenPos = input.MousePosition - _state.DragStartOffset;
-            var (targetTime, targetPitch) = ScreenToGrid(targetNoteScreenPos, gridArea);
-
-            var dragNoteStart = _dragStartStates[_state.NoteBeingDragged];
-            int timeDelta = (int)targetTime - dragNoteStart.StartTime;
-            int pitchDelta = targetPitch - dragNoteStart.Pitch;
-
-            foreach (var note in _state.SelectedNotes)
-            {
-                var originalState = _dragStartStates[note];
-                float newTime = originalState.StartTime + timeDelta;
-                note.StartTimeMs = (int)(Math.Round(newTime / quantization) * quantization);
-                note.Pitch = originalState.Pitch + pitchDelta;
-            }
-        }
-
-        // Single-note resize
-        var singleSelected = _state.GetSingleSelectedNote();
-        if (_state.IsResizingRight && singleSelected != null)
-        {
-            var gridPos = ScreenToGrid(input.MousePosition, gridArea);
-            float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
-            int newDuration = (int)endEdgeTime - singleSelected.StartTimeMs;
-            singleSelected.DurationMs = Math.Max((int)quantization, newDuration);
-        }
-
-        // Multi-note deletion
-        if (_state.SelectedNotes.Count > 0 && input.PressedKeys.Contains(Keys.Delete))
-        {
-            foreach (var note in _state.SelectedNotes) _activeTrack?.Events.Remove(note);
-            _state.SelectedNotes.Clear();
-        }
-    }
-
-    private void AddNewNote(Vector2 screenPos, Rect gridArea)
-    {
-        if (_song == null || _activeTrack == null) return;
-        var (time, pitch) = ScreenToGrid(screenPos, gridArea);
-
-        float msPerBeat = (float)(60000.0 / _song.Tempo);
-        float msPer16th = msPerBeat / 4;
-        time = (int)(Math.Round(time / msPer16th) * msPer16th);
-
-        var newNote = new NoteEvent((int)time, (int)msPer16th * 2, pitch, 100);
-        _activeTrack.Events.Add(newNote);
-        _state.SelectedNotes.Clear();
-        _state.SelectedNotes.Add(newNote);
-    }
-
-    private void DrawKeyboard(Rect keyboardArea)
-    {
-        var renderer = UI.Context.Renderer;
-        float pitchHeight = keyboardArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
-
-        for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
-        {
-            float y = keyboardArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
-            var keyRect = new Rect(keyboardArea.X, y, keyboardArea.Width, pitchHeight);
-
-            bool isBlack = _isBlackKey[pitch % 12];
-            var keyColor = isBlack ? DawTheme.PianoBlackKey : DawTheme.PianoWhiteKey;
-            var textColor = isBlack ? DawTheme.PianoWhiteKey : DawTheme.PianoBlackKey;
-
-            renderer.DrawBox(keyRect, new BoxStyle { FillColor = keyColor, BorderColor = DawTheme.Border, BorderLengthLeft = 0, Roundness = 0 });
-
-            if (pitch % 12 == 0)
-            {
-                UI.Text($"key_label_{pitch}", $"C{pitch / 12 - 1}",
-                    new Vector2(keyRect.Left + 5, keyRect.Top),
-                    new ButtonStyle { FontColor = textColor, FontSize = 10 });
-            }
-        }
-    }
-
-    private void DrawGrid(Rect gridArea, double tempo)
-    {
-        var renderer = UI.Context.Renderer;
-        float msPerBeat = (float)(60000.0 / tempo);
-        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _state.Zoom;
-        float pixelsPerBeat = msPerBeat * pixelsPerMs;
-
-        for (int pitch = DawMetrics.MaxPitch; pitch >= DawMetrics.MinPitch; pitch--)
-        {
-            float y = gridArea.Y + (DawMetrics.MaxPitch - pitch) * pitchHeight;
-            var color = _isBlackKey[pitch % 12] ? DawTheme.PanelBackground : DawTheme.Background;
-            renderer.DrawBox(new Rect(gridArea.X, y, gridArea.Width, pitchHeight), new BoxStyle { FillColor = color, Roundness = 0 });
-        }
-
-        float startX = gridArea.X - (_state.PanOffset.X % pixelsPerBeat);
-        int beatIndex = (int)(_state.PanOffset.X / pixelsPerBeat);
-
-        for (float x = startX; x < gridArea.Right; x += pixelsPerBeat)
-        {
-            bool isMeasure = beatIndex % 4 == 0;
-            var color = isMeasure ? DawTheme.PianoRollGridAccent : DawTheme.PianoRollGrid;
-            renderer.DrawLine(new Vector2(x, gridArea.Y), new Vector2(x, gridArea.Bottom), color, 1f);
-            beatIndex++;
-        }
-
-        if (_song != null && _song.IsLoopingEnabled)
-        {
-            float loopStartX = gridArea.X + (_song.LoopStartMs * pixelsPerMs) - _state.PanOffset.X;
-            float loopEndX = gridArea.X + (_song.LoopEndMs * pixelsPerMs) - _state.PanOffset.X;
-            var loopRect = new Rect(loopStartX, gridArea.Y, loopEndX - loopStartX, gridArea.Height);
-
-            var loopOverlayColor = new Color4(DawTheme.Accent.R, DawTheme.Accent.G, DawTheme.Accent.B, 0.2f);
-            renderer.DrawBox(loopRect, new BoxStyle { FillColor = loopOverlayColor, Roundness = 0, BorderLength = 0 });
-        }
-    }
-
-    private void DrawNotes(Rect gridArea)
-    {
-        if (_song == null || _activeTrack == null) return;
-        var renderer = UI.Context.Renderer;
-
-        foreach (var note in _activeTrack.Events)
-        {
-            var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _state.Zoom);
-            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
-
-            if (noteRect.Right < gridArea.X || noteRect.X > gridArea.Right)
-                continue;
-
-            bool isSelected = _state.SelectedNotes.Contains(note);
-            var style = new BoxStyle
-            {
-                FillColor = DawTheme.Accent,
-                BorderColor = isSelected ? DawTheme.Selection : DawTheme.AccentBright,
-                BorderLength = isSelected ? 2f : 1f,
-                Roundness = 0.1f
-            };
-            renderer.DrawBox(noteRect, style);
-        }
-    }
-
-    private void DrawSelectionBox()
-    {
-        if (!_state.IsBoxSelecting) return;
-        var style = new BoxStyle
-        {
-            FillColor = new Color4(DawTheme.Selection.R, DawTheme.Selection.G, DawTheme.Selection.B, 0.2f),
-            BorderColor = DawTheme.Selection,
-            BorderLength = 1f,
-            Roundness = 0f
-        };
-        UI.Context.Renderer.DrawBox(_state.SelectionBox, style);
-    }
-
-
-    private void DrawPlaybackCursor(Rect gridArea, bool isPlaying, long currentTimeMs)
-    {
-        if (!isPlaying) return;
-
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * _state.Zoom;
-        float cursorX = gridArea.X + (currentTimeMs * pixelsPerMs) - _state.PanOffset.X;
-
-        if (cursorX < gridArea.X || cursorX > gridArea.Right) return;
-
-        var renderer = UI.Context.Renderer;
-        renderer.DrawLine(
-            new Vector2(cursorX, gridArea.Y),
-            new Vector2(cursorX, gridArea.Bottom),
-            DawTheme.AccentBright,
-            2f);
-    }
-
-    private (NoteEvent? note, bool isEdge) HitTestNotes(Vector2 screenPos, Rect gridArea)
-    {
-        if (_song == null || _activeTrack == null) return (null, false);
-        const float edgeWidth = 8f;
-
-        foreach (var note in _activeTrack.Events.AsEnumerable().Reverse())
-        {
-            var noteScreenPos = GridToScreen(note.StartTimeMs, note.Pitch, gridArea);
-            float width = (note.DurationMs * DawMetrics.BasePixelsPerMs * _state.Zoom);
-            var noteRect = new Rect(noteScreenPos.X, noteScreenPos.Y, width, DawMetrics.NoteHeight);
-
-            if (noteRect.Contains(screenPos))
-            {
-                bool isEdge = screenPos.X > noteRect.Right - edgeWidth;
-                return (note, isEdge);
-            }
-        }
-        return (null, false);
-    }
-
-    private Vector2 GridToScreen(float timeMs, int pitch, Rect gridArea)
-    {
-        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
-        float x = gridArea.X + (timeMs * DawMetrics.BasePixelsPerMs * _state.Zoom) - _state.PanOffset.X;
-        float y = gridArea.Y + ((DawMetrics.MaxPitch - pitch) * pitchHeight) - _state.PanOffset.Y;
-        return new Vector2(x, y);
-    }
-
-    private (float timeMs, int pitch) ScreenToGrid(Vector2 screenPos, Rect gridArea)
-    {
-        float pitchHeight = gridArea.Height / (DawMetrics.MaxPitch - DawMetrics.MinPitch + 1);
-        float timeMs = (screenPos.X - gridArea.X + _state.PanOffset.X) / (DawMetrics.BasePixelsPerMs * _state.Zoom);
-        int pitch = DawMetrics.MaxPitch - (int)((screenPos.Y - gridArea.Y + _state.PanOffset.Y) / pitchHeight);
-
-        timeMs = Math.Max(0, timeMs);
-        pitch = Math.Clamp(pitch, DawMetrics.MinPitch, DawMetrics.MaxPitch);
-
-        return (timeMs, pitch);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\TimelineView.cs">
-using System;
-using System.Numerics;
-using Daw.Core;
-using DirectUI;
-using Vortice.Mathematics;
-
-namespace Daw.Views;
-
-public class TimelineView
-{
-    private bool _isDraggingLoop;
-
-    public void Draw(Rect viewArea, Song song, Vector2 panOffset, float zoom)
-    {
-        var renderer = UI.Context.Renderer;
-
-        // Draw background
-        renderer.DrawBox(viewArea, new BoxStyle { FillColor = DawTheme.PanelBackground, Roundness = 0, BorderColor = DawTheme.Border, BorderLengthBottom = 1 });
-
-        // Define the interactive grid area, excluding the keyboard space
-        var timelineGridArea = new Rect(viewArea.X + DawMetrics.KeyboardWidth, viewArea.Y, viewArea.Width - DawMetrics.KeyboardWidth, viewArea.Height);
-
-        HandleInput(timelineGridArea, song, panOffset, zoom);
-        DrawRuler(timelineGridArea, song, panOffset, zoom);
-        DrawLoopRegion(timelineGridArea, song, panOffset, zoom);
-    }
-
-    private void HandleInput(Rect gridArea, Song song, Vector2 panOffset, float zoom)
-    {
-        var input = UI.Context.InputState;
-        var mousePos = input.MousePosition;
-        bool isHovering = gridArea.Contains(mousePos);
-
-        if (isHovering && input.WasLeftMousePressedThisFrame)
-        {
-            _isDraggingLoop = true;
-            // Start dragging, set start point.
-            float time = ScreenToTime(mousePos.X, gridArea, panOffset, zoom);
-            song.LoopStartMs = (long)time;
-            song.LoopEndMs = (long)time; // Collapse to start point initially
-        }
-
-        if (!input.IsLeftMouseDown)
-        {
-            _isDraggingLoop = false;
-        }
-
-        if (_isDraggingLoop)
-        {
-            // Update end point while dragging
-            float time = ScreenToTime(mousePos.X, gridArea, panOffset, zoom);
-            song.LoopEndMs = (long)time;
-        }
-
-        // After dragging is finished, ensure start is always less than end
-        if (!_isDraggingLoop && song.LoopStartMs > song.LoopEndMs)
-        {
-            (song.LoopEndMs, song.LoopStartMs) = (song.LoopStartMs, song.LoopEndMs); // Tuple swap
-        }
-    }
-
-    private void DrawRuler(Rect gridArea, Song song, Vector2 panOffset, float zoom)
-    {
-        var renderer = UI.Context.Renderer;
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        float msPerBeat = (float)(60000.0 / song.Tempo);
-        float pixelsPerBeat = msPerBeat * pixelsPerMs;
-        float pixelsPerMeasure = pixelsPerBeat * 4;
-
-        // Don't draw if beats are too close together
-        if (pixelsPerBeat < 5) return;
-
-        // Calculate the first visible beat number based on panning
-        int firstBeat = (int)Math.Floor(panOffset.X / pixelsPerBeat);
-        float startX = gridArea.X - (panOffset.X % pixelsPerBeat);
-
-        var textStyle = new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 };
-
-        for (float x = startX; x < gridArea.Right; x += pixelsPerBeat, firstBeat++)
-        {
-            if (x < gridArea.X) continue;
-
-            bool isMeasure = firstBeat % 4 == 0;
-            float lineY = isMeasure ? gridArea.Y + gridArea.Height * 0.5f : gridArea.Y + gridArea.Height * 0.75f;
-            renderer.DrawLine(new Vector2(x, lineY), new Vector2(x, gridArea.Bottom), DawTheme.PianoRollGridAccent, 1f);
-
-            if (isMeasure)
-            {
-                int measureNumber = (firstBeat / 4) + 1;
-                UI.Text($"measure_label_{measureNumber}", measureNumber.ToString(), new Vector2(x + 3, gridArea.Y + 5), textStyle);
-            }
-        }
-    }
-
-    private void DrawLoopRegion(Rect gridArea, Song song, Vector2 panOffset, float zoom)
-    {
-        if (!song.IsLoopingEnabled) return;
-
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        float start = song.LoopStartMs;
-        float end = song.LoopEndMs;
-
-        // Handle the case where the user is dragging from right to left
-        if (_isDraggingLoop && start > end)
-        {
-            (end, start) = (start, end);
-        }
-
-        float startX = gridArea.X + (start * pixelsPerMs) - panOffset.X;
-        float endX = gridArea.X + (end * pixelsPerMs) - panOffset.X;
-
-        var loopRect = new Rect(startX, gridArea.Y, endX - startX, gridArea.Height);
-
-        // Clamp to visible area for drawing
-        loopRect.X = Math.Max(loopRect.X, gridArea.X);
-        loopRect.Width = Math.Min(endX, gridArea.Right) - loopRect.X;
-
-        if (loopRect.Width > 0)
-        {
-            var color = new Color4(DawTheme.AccentBright.R, DawTheme.AccentBright.G, DawTheme.AccentBright.B, 0.4f);
-            UI.Context.Renderer.DrawBox(loopRect, new BoxStyle { FillColor = color, Roundness = 0 });
-        }
-    }
-
-    private float ScreenToTime(float screenX, Rect gridArea, Vector2 panOffset, float zoom)
-    {
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        float timeMs = (screenX - gridArea.X + panOffset.X) / pixelsPerMs;
-        return Math.Max(0, timeMs);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\TrackListView.cs">
-using System;
-using System.Numerics;
-using Daw.Core;
-using DirectUI;
-
-namespace Daw.Views;
-
-public class TrackListView
-{
-    public enum TrackAction { None, Rename, Delete, MoveUp, MoveDown }
-    private (TrackAction, int) _requestedAction = (TrackAction.None, -1);
-
-    // State to remember which track's context menu is active across frames
-    private int _contextMenuTrackIndex = -1;
-
-    public void Draw(Song song, ref int activeTrackIndex)
-    {
-        UI.Text("track_list_header", "Tracks");
-        UI.Separator(100); // Use a dynamic width later
-
-        for (int i = 0; i < song.Tracks.Count; i++)
-        {
-            var track = song.Tracks[i];
-            bool isActive = (i == activeTrackIndex);
-            string trackId = $"track_{i}";
-
-            // --- Draw the main track button ---
-            var theme = new ButtonStylePack();
-            theme.Normal.FillColor = isActive ? DawTheme.Accent : DawTheme.ControlFill;
-            theme.Hover.FillColor = isActive ? DawTheme.AccentBright : DawTheme.ControlFillHover;
-            theme.Pressed.FillColor = DawTheme.AccentBright;
-
-            if (UI.Button(trackId, track.Name, new Vector2(120, 30), theme, isActive: isActive, clickBehavior: DirectUI.Button.ClickBehavior.Left))
-            {
-                activeTrackIndex = i;
-            }
-
-            // --- Open Context Menu on Right-Click ---
-            if (UI.BeginContextMenu(trackId))
-            {
-                // Remember which track's menu we need to draw and check for results
-                _contextMenuTrackIndex = i;
-                Console.WriteLine($"[DEBUG] Opening context menu for track index: {i}");
-            }
-        }
-
-        // --- Draw the Active Context Menu (if any) ---
-        // This is now outside the loop, so we check for the result every frame.
-        if (_contextMenuTrackIndex != -1)
-        {
-            // The context menu system is modal, so only one can be open.
-            // We use the index to generate a unique ID.
-            int choice = UI.ContextMenu($"track_context_{_contextMenuTrackIndex}", new[] { "Rename", "Delete", "Move Up", "Move Down" });
-
-            if (choice != -1)
-            {
-                Console.WriteLine($"[DEBUG] ContextMenu returned choice: {choice} for track index: {_contextMenuTrackIndex}");
-                switch (choice)
-                {
-                    case 0: _requestedAction = (TrackAction.Rename, _contextMenuTrackIndex); break;
-                    case 1: _requestedAction = (TrackAction.Delete, _contextMenuTrackIndex); break;
-                    case 2: _requestedAction = (TrackAction.MoveUp, _contextMenuTrackIndex); break;
-                    case 3: _requestedAction = (TrackAction.MoveDown, _contextMenuTrackIndex); break;
-                }
-                Console.WriteLine($"[DEBUG] RequestedAction set to: {_requestedAction.Item1}");
-
-                // We got a result, so stop showing the menu.
-                _contextMenuTrackIndex = -1;
-            }
-            // If the popup was closed by clicking away, UI.State.IsPopupOpen will become false.
-            // We should stop trying to draw the menu in that case.
-            else if (!UI.State.IsPopupOpen)
-            {
-                _contextMenuTrackIndex = -1;
-            }
-        }
-
-        if (UI.Button("add_track_button", "+ Add Track", new Vector2(120, 25), DawTheme.ToolbarButton))
-        {
-            song.Tracks.Add(new MidiTrack($"Track {song.Tracks.Count + 1}"));
-            // Automatically select the new track
-            activeTrackIndex = song.Tracks.Count - 1;
-        }
-    }
-
-    /// <summary>
-    /// Allows the main app logic to poll for a requested action for a specific track.
-    /// This "consumes" the action, resetting it to None after being read.
-    /// </summary>
-    public (TrackAction action, int trackIndex) GetAction()
-    {
-        var actionToReturn = _requestedAction;
-        if (actionToReturn.Item1 != TrackAction.None)
-        {
-            Console.WriteLine($"[DEBUG] DawAppLogic is consuming action: {actionToReturn.Item1} for index {actionToReturn.Item2}");
-            // Reset the action immediately after it's been read to ensure it only fires once.
-            _requestedAction = (TrackAction.None, -1);
-        }
-        return actionToReturn;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\TransportView.cs">
-using System.Numerics;
-using Daw.Audio;
-using Daw.Core;
-using DirectUI;
-
-namespace Daw.Views;
-
-public class TransportView
-{
-    private readonly MidiEngine _midiEngine;
-    private string _tempoString = "120.0";
-
-    public TransportView(MidiEngine midiEngine)
-    {
-        _midiEngine = midiEngine;
-    }
-
-    public void Draw(Vector2 position, Song song)
-    {
-        UI.BeginHBoxContainer("transport_controls", position, 10);
-
-        // Play Button
-        if (UI.Button("play_button", "▶", new Vector2(30, 30), theme: DawTheme.TransportButton))
-        {
-            _midiEngine.Play(song);
-        }
-
-        // Stop Button
-        if (UI.Button("stop_button", "■", new Vector2(30, 30), theme: DawTheme.TransportButton))
-        {
-            _midiEngine.Stop();
-        }
-
-        // Loop Button
-        bool isLooping = song.IsLoopingEnabled;
-        if (UI.Button("loop_button", "Loop", new Vector2(60, 30), theme: DawTheme.LoopToggleStyle, isActive: isLooping))
-        {
-            song.IsLoopingEnabled = !isLooping;
-        }
-
-        // Tempo Display and Input
-        UI.BeginVBoxContainer("tempo_vbox", UI.Context.Layout.GetCurrentPosition(), 2);
-        UI.Text("tempo_label", "BPM", style: new ButtonStyle { FontColor = DawTheme.TextDim, FontSize = 10 });
-        
-        // Only update the tempo string from the song if the input box is not focused
-        if (UI.State.FocusedElementId != "tempo_input".GetHashCode())
-        {
-            _tempoString = song.Tempo.ToString("F1");
-        }
-
-        if (UI.InputText("tempo_input", ref _tempoString, new Vector2(50, 20)))
-        {
-            if (double.TryParse(_tempoString, out double newTempo))
-            {
-                song.Tempo = newTempo;
-            }
-        }
-        UI.EndVBoxContainer();
-
-        UI.EndHBoxContainer();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Daw\Source\Views\VelocityPaneView.cs">
-using System.Linq;
-using System.Numerics;
-using Daw.Core;
-using DirectUI;
-using DirectUI.Input;
-using Vortice.Mathematics;
-
-namespace Daw.Views;
-
-/// <summary>
-/// A dedicated view responsible for drawing and handling input for the note velocity editor.
-/// </summary>
-public class VelocityPaneView
-{
-    public void Draw(Rect viewArea, UIContext context, PianoRollState state, MidiTrack? track, Vector2 panOffset, float zoom)
-    {
-        // Background and border are drawn by the parent layout (DawAppLogic)
-        HandleVelocityInput(context.InputState, viewArea, state, track);
-        DrawVelocityBars(context, viewArea, state, track, panOffset, zoom);
-    }
-
-    private void HandleVelocityInput(InputState input, Rect velocityArea, PianoRollState state, MidiTrack? track)
-    {
-        if (track is null) return;
-
-        bool isHoveringVelocity = velocityArea.Contains(input.MousePosition);
-
-        if (isHoveringVelocity && input.WasLeftMousePressedThisFrame)
-        {
-            var hitNote = HitTestVelocityBars(input.MousePosition, velocityArea, track, state.PanOffset, state.Zoom);
-            if (hitNote != null)
-            {
-                state.VelocityBarBeingDragged = hitNote;
-                state.SelectedNotes.Clear();
-                state.SelectedNotes.Add(hitNote);
-            }
-        }
-
-        if (!input.IsLeftMouseDown)
-        {
-            state.VelocityBarBeingDragged = null;
-        }
-
-        if (state.VelocityBarBeingDragged != null)
-        {
-            float mouseY = input.MousePosition.Y;
-            float areaY = velocityArea.Y;
-            float areaHeight = velocityArea.Height;
-
-            // Calculate velocity (0-127) based on vertical mouse position within the pane
-            float ratio = 1.0f - (mouseY - areaY) / areaHeight;
-            int newVelocity = (int)(Math.Clamp(ratio, 0f, 1f) * 127);
-
-            state.VelocityBarBeingDragged.Velocity = newVelocity;
-        }
-    }
-
-    private void DrawVelocityBars(UIContext context, Rect velocityArea, PianoRollState state, MidiTrack? track, Vector2 panOffset, float zoom)
-    {
-        // FIX: Add a null check to prevent crashing when no track is selected.
-        if (track is null) return;
-
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        const float chordOffset = 4f; // Pixels to shift each note in a chord
-
-        // Group notes by start time to handle chords
-        var notesByTime = track.Events.GroupBy(n => n.StartTimeMs).OrderBy(g => g.Key);
-
-        foreach (var chord in notesByTime)
-        {
-            int noteIndexInChord = 0;
-            foreach (var note in chord)
-            {
-                float baseNoteStartPx = (note.StartTimeMs * pixelsPerMs) - panOffset.X;
-                float noteStartPx = baseNoteStartPx + (noteIndexInChord * chordOffset);
-                float noteEndPx = noteStartPx + 2f; // The bar is just a thin line
-
-                // Culling: Only draw bars for notes that are horizontally visible
-                if (noteEndPx < 0 || noteStartPx > velocityArea.Width)
-                {
-                    noteIndexInChord++;
-                    continue;
-                }
-
-                float barHeight = (note.Velocity / 127f) * velocityArea.Height;
-                var barRect = new Rect(
-                    velocityArea.X + noteStartPx,
-                    velocityArea.Y + (velocityArea.Height - barHeight), // Anchor to bottom
-                    2f, // Fixed width for velocity "lollipops"
-                    barHeight
-                );
-
-                var color = state.SelectedNotes.Contains(note) ? DawTheme.Selection : DawTheme.AccentBright;
-
-                // The main line of the bar
-                context.Renderer.DrawBox(barRect, new BoxStyle { FillColor = color, Roundness = 0 });
-
-                // The "head" of the lollipop
-                var headRect = new Rect(velocityArea.X + noteStartPx - 2, barRect.Y - 2, 6, 6);
-                context.Renderer.DrawBox(headRect, new BoxStyle { FillColor = color, Roundness = 0.5f });
-
-                noteIndexInChord++;
-            }
-        }
-    }
-
-    private NoteEvent? HitTestVelocityBars(Vector2 screenPos, Rect velocityArea, MidiTrack track, Vector2 panOffset, float zoom)
-    {
-        float pixelsPerMs = DawMetrics.BasePixelsPerMs * zoom;
-        const float chordOffset = 4f;
-
-        var notesByTime = track.Events.GroupBy(n => n.StartTimeMs).OrderBy(g => g.Key);
-
-        // Iterate in reverse to hit-test topmost notes first if they overlap
-        foreach (var chord in notesByTime.Reverse())
-        {
-            int noteIndexInChord = 0;
-            foreach (var note in chord)
-            {
-                float baseNoteStartPx = (note.StartTimeMs * pixelsPerMs) - panOffset.X;
-                float noteStartPx = velocityArea.X + baseNoteStartPx + (noteIndexInChord * chordOffset);
-
-                var hitRect = new Rect(noteStartPx - 4, velocityArea.Y, 8, velocityArea.Height); // 8px wide hit area
-
-                if (hitRect.Contains(screenPos))
-                {
-                    return note;
-                }
-                noteIndexInChord++;
-            }
-        }
-        return null;
+        throw new NotImplementedException();
     }
 }
 </file>
