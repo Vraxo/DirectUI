@@ -82,6 +82,16 @@ public static partial class UI
         // Use a local variable for the struct to avoid CS1612
         var scrollOffset = state.ScrollOffset;
 
+        // Handle Mouse Wheel Scrolling
+        bool isHoveringContent = contentBounds.Contains(Context.InputState.MousePosition);
+        if (isHoveringContent && Context.InputState.ScrollDelta != 0)
+        {
+            // Scroll delta is inverted: up is positive, but content moves down (offset increases)
+            // A standard mouse wheel tick is 120, and the delta is usually +/- 1.0f in the input system.
+            // Scrolling by 3 rows feels natural.
+            scrollOffset.Y -= Context.InputState.ScrollDelta * rowHeight * 3;
+        }
+
         // Clamp scroll offsets
         scrollOffset.X = Math.Clamp(scrollOffset.X, 0, Math.Max(0, totalContentWidth - viewWidth));
         scrollOffset.Y = Math.Clamp(scrollOffset.Y, 0, Math.Max(0, totalContentHeight - viewHeight));
@@ -98,7 +108,7 @@ public static partial class UI
                 id + "_vscroll",
                 scrollOffset.Y,
                 new Vector2(contentBounds.Right - scrollbarThickness, contentBounds.Y),
-                contentBounds.Height,
+                contentBounds.Height - (hScrollVisible ? scrollbarThickness : 0), // Adjust track height if HScroll is visible
                 totalContentHeight,
                 viewHeight,
                 scrollbarThickness
