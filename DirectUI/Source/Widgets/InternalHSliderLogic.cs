@@ -47,6 +47,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
+                state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
                 if (state.TrySetActivePress(GlobalIntId, 10))
                 {
                     state.SetFocus(GlobalIntId);

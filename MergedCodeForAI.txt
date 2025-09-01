@@ -1171,8 +1171,12 @@ public readonly struct ClickCaptureRequest
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\ClickCaptureServer.cs">
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Raylib_cs;
+using Silk.NET.Input;
+using System.Text.RegularExpressions;
 
 namespace DirectUI;
 
@@ -1183,6 +1187,7 @@ public class ClickCaptureServer
     public void RequestCapture(int id, int layer)
     {
         _requests.Add(new ClickCaptureRequest(id, layer));
+        Console.WriteLine($"[CAPTURE-REQUEST] ID: {id}, Layer: {layer}");
     }
 
     public int? GetWinner()
@@ -1192,7 +1197,15 @@ public class ClickCaptureServer
             return null;
         }
 
-        return _requests.OrderByDescending(r => r.Layer).First().Id;
+        var winner = _requests.OrderByDescending(r => r.Layer).First();
+
+        if (_requests.Count > 1) // Only log if there was a contest
+        {
+            var candidates = string.Join(", ", _requests.Select(r => $"[ID: {r.Id}, L: {r.Layer}]"));
+            Console.WriteLine($"[CAPTURE-RESOLVED] Candidates: {candidates} -> Winner: ID {winner.Id} (Layer {winner.Layer})");
+        }
+
+        return winner.Id;
     }
 
     public void Clear()
@@ -1705,8 +1718,14 @@ public static partial class UI
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (isHoveringHandle) State.SetPotentialInputTarget(intId);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame) State.SetPotentialCaptorForFrame(intId);
+
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            {
+                State.TrySetActivePress(intId, 10);
+            }
+
             if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
@@ -1795,8 +1814,14 @@ public static partial class UI
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (isHoveringHandle) State.SetPotentialInputTarget(intId);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame) State.SetPotentialCaptorForFrame(intId);
+
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            {
+                State.TrySetActivePress(intId, 10);
+            }
+
             if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
@@ -1882,12 +1907,15 @@ public static partial class UI
 
     public static void EndFrame()
     {
-        var winner = UI.State.ClickCaptureServer.GetWinner();
-        if (winner.HasValue)
+        // At the end of the frame, resolve the winner from all click requests made this frame.
+        // This winner's action (for Press mode) will be triggered in the next frame.
+        var pressWinner = UI.State.ClickCaptureServer.GetWinner();
+        if (pressWinner.HasValue)
         {
-            UI.State.SetPotentialCaptorForFrame(winner.Value);
+            UI.State.SetNextFramePressWinner(pressWinner.Value);
         }
-        // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
+
+        // If a click happened but no UI element captured it, and no popup was open, clear focus.
         if (UI.Context.InputState.WasLeftMousePressedThisFrame && UI.State.InputCaptorId == 0 && !UI.State.IsPopupOpen)
         {
             UI.State.SetFocus(0);
@@ -2240,10 +2268,12 @@ public static partial class UI
 
                 if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
                 {
-                    State.SetPotentialCaptorForFrame(handleId);
-                    state.ResizingColumnIndex = i;
-                    state.DragStartMouseX = input.MousePosition.X;
-                    state.ColumnResizeStartWidth = state.ColumnWidths[i];
+                    if (State.TrySetActivePress(handleId, 10))
+                    {
+                        state.ResizingColumnIndex = i;
+                        state.DragStartMouseX = input.MousePosition.X;
+                        state.ColumnResizeStartWidth = state.ColumnWidths[i];
+                    }
                 }
             }
             currentX += colWidth;
@@ -2822,7 +2852,8 @@ public static partial class UI
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
         Vector2 textOffset,
-        bool isActive = false)
+        bool isActive = false,
+        int layer = 1)
     {
         var context = UI.Context;
         var state = UI.State;
@@ -2851,32 +2882,44 @@ public static partial class UI
         bool anyActionHeld = primaryActionHeld || secondaryActionHeld;
 
 
+        // Handle MOUSE UP
         if (!anyActionHeld && isPressed)
         {
             if (isHovering && clickMode == DirectUI.Button.ActionMode.Release)
             {
-                wasClickedThisFrame = true;
+                // A click happens on release IF this button was the one that initially captured the input.
+                if (state.InputCaptorId == id)
+                {
+                    wasClickedThisFrame = true;
+                    Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
+                }
             }
             state.ClearActivePress(id);
             isPressed = false;
         }
 
-        if (anyActionPressedThisFrame)
+        // Handle MOUSE DOWN
+        if (anyActionPressedThisFrame && isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
         {
-            if (isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
+            // Any button, regardless of mode, registers its intent to be clicked.
+            state.ClickCaptureServer.RequestCapture(id, layer);
+            // It also tries to become the "active" element for immediate visual feedback.
+            if (state.TrySetActivePress(id, layer))
             {
-                state.RequestClickCapture(id, 1);
                 state.SetFocus(id);
-                isPressed = true;
             }
         }
 
-        if (!wasClickedThisFrame && clickMode == DirectUI.Button.ActionMode.Press && state.InputCaptorId == id)
+        // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution.
+        if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
         {
             wasClickedThisFrame = true;
+            Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
         }
 
         // --- Style Resolution ---
+        // Re-check `isPressed` for correct visual state, as it might have changed above.
+        isPressed = state.ActivelyPressedElementId == id;
         ButtonStyle currentStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
 
         // --- Drawing ---
@@ -3503,10 +3546,13 @@ public class UIPersistentState
 
     // --- Input State (reset each frame) ---
     public int PotentialInputTargetId { get; private set; } = 0;
-    public int InputCaptorId { get; private set; } = 0;
-    private bool captureAttemptedThisFrame = false;
-    public bool NonSliderElementClaimedPress { get; private set; } = false;
+    public int InputCaptorId { get; private set; } = 0; // The element that captured the press for RELEASE mode.
+    private int _inputCaptorLayer = -1; // The layer of the currently active press.
     public ClickCaptureServer ClickCaptureServer { get; } = new();
+
+    // The winner of a 'Press' action, resolved at the end of the previous frame.
+    public int PressActionWinnerId { get; private set; }
+    private int _nextFramePressWinnerId;
 
 
     /// <summary>
@@ -3517,9 +3563,18 @@ public class UIPersistentState
         ClickCaptureServer.Clear();
         DragInProgressFromPreviousFrame = input.IsLeftMouseDown && ActivelyPressedElementId != 0;
         PotentialInputTargetId = 0;
-        InputCaptorId = 0;
-        captureAttemptedThisFrame = false;
-        NonSliderElementClaimedPress = false;
+
+        // Reset the captor for visual "press" feedback if the mouse is not held down.
+        if (!input.IsLeftMouseDown)
+        {
+            InputCaptorId = 0;
+            _inputCaptorLayer = -1;
+            ActivelyPressedElementId = 0;
+        }
+
+        // At the start of the frame, the winner from the *last* frame becomes the active winner for this frame.
+        PressActionWinnerId = _nextFramePressWinnerId;
+        _nextFramePressWinnerId = 0; // Clear the staging variable.
 
         // At the start of the frame, transfer the popup result from the previous frame
         // to the current frame's readable state.
@@ -3581,24 +3636,23 @@ public class UIPersistentState
         PotentialInputTargetId = id;
     }
 
-    public void RequestClickCapture(int id, int layer)
+    // Used for immediate visual feedback (which element is currently held down)
+    public bool TrySetActivePress(int id, int layer)
     {
-        ClickCaptureServer.RequestCapture(id, layer);
+        if (layer > _inputCaptorLayer)
+        {
+            _inputCaptorLayer = layer;
+            InputCaptorId = id; // This element is the captor for release checks
+            ActivelyPressedElementId = id; // This element is visually pressed
+            return true;
+        }
+        return false;
     }
 
-    public void SetPotentialCaptorForFrame(int id)
+    // Called at the end of the frame to set the winner for the next frame's Press actions
+    public void SetNextFramePressWinner(int id)
     {
-        captureAttemptedThisFrame = true;
-        InputCaptorId = id;
-        ActivelyPressedElementId = id;
-    }
-
-    public void SetButtonPotentialCaptorForFrame(int id)
-    {
-        captureAttemptedThisFrame = true;
-        InputCaptorId = id;
-        ActivelyPressedElementId = id;
-        NonSliderElementClaimedPress = true;
+        _nextFramePressWinnerId = id;
     }
 
     public void ClearActivePress(int id)
@@ -5282,56 +5336,61 @@ internal class InputText
 
         // --- Focus Management && Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        if (isHovering)
+        {
+            uiState.SetPotentialInputTarget(intId);
+        }
+
         bool isActive = uiState.ActivelyPressedElementId == intId;
 
-        // BUG FIX: Handle losing active press state on mouse up.
-        // Without this, the control would lock all other input after being clicked.
         if (isActive && !input.IsLeftMouseDown)
         {
             uiState.ClearActivePress(intId);
         }
 
-        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
+        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled && uiState.PotentialInputTargetId == intId)
         {
-            uiState.SetFocus(intId);
-            uiState.SetPotentialCaptorForFrame(intId); // Claim the press
-
-            // --- BEGIN: Caret positioning logic on click ---
-            // We need to temporarily calculate drawing info here for hit-testing.
-            // This is the only place we need to do this, as keyboard input moves the caret programmatically.
-            finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
-            var styleForHitTest = finalTheme.Current;
-            var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
-            var contentRectForHitTest = new Rect(
-                bounds.X + textMargin.X,
-                bounds.Y + textMargin.Y,
-                Math.Max(0, bounds.Width - textMargin.X * 2),
-                Math.Max(0, bounds.Height - textMargin.Y * 2)
-            );
-
-            // Use ITextService to get the text layout
-            var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-            if (textLayout is not null)
+            if (uiState.TrySetActivePress(intId, 1))
             {
-                float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
-                float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
+                uiState.SetFocus(intId);
 
-                var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
+                // --- BEGIN: Caret positioning logic on click ---
+                // We need to temporarily calculate drawing info here for hit-testing.
+                // This is the only place we need to do this, as keyboard input moves the caret programmatically.
+                finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
+                var styleForHitTest = finalTheme.Current;
+                var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
+                var contentRectForHitTest = new Rect(
+                    bounds.X + textMargin.X,
+                    bounds.Y + textMargin.Y,
+                    Math.Max(0, bounds.Width - textMargin.X * 2),
+                    Math.Max(0, bounds.Height - textMargin.Y * 2)
+                );
 
-                int newCaretPos = hitTestResult.TextPosition;
-                if (hitTestResult.IsTrailingHit)
+                // Use ITextService to get the text layout
+                var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+                if (textLayout is not null)
                 {
-                    newCaretPos++;
+                    float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
+                    float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
+
+                    var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
+
+                    int newCaretPos = hitTestResult.TextPosition;
+                    if (hitTestResult.IsTrailingHit)
+                    {
+                        newCaretPos++;
+                    }
+
+                    state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
+
+                    // Reset blink and update scroll to show caret.
+                    state.IsBlinkOn = true;
+                    state.BlinkTimer = 0;
+                    UpdateView(text, state, size, textMargin);
                 }
-
-                state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
-
-                // Reset blink and update scroll to show caret.
-                state.IsBlinkOn = true;
-                state.BlinkTimer = 0;
-                UpdateView(text, state, size, textMargin);
+                // --- END: Caret positioning logic on click ---
             }
-            // --- END: Caret positioning logic on click ---
         }
 
         // --- Input Processing ---
@@ -5790,13 +5849,15 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.RequestClickCapture(GlobalIntId, 10);
-                state.SetFocus(GlobalIntId);
-
-                if (isTrackHovered && !isGrabberHovered)
+                if (state.TrySetActivePress(GlobalIntId, 10))
                 {
-                    pendingTrackClickValueJump = true;
-                    trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
+                    state.SetFocus(GlobalIntId);
+
+                    if (isTrackHovered && !isGrabberHovered)
+                    {
+                        pendingTrackClickValueJump = true;
+                        trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
+                    }
                 }
             }
         }
@@ -5925,11 +5986,13 @@ internal class InternalKnobLogic
 
         if (!disabled && isHovering && input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
-            state.SetPotentialCaptorForFrame(_id);
-            state.SetFocus(_id);
-            _isPressed = true;
-            _dragStartPosition = input.MousePosition;
-            _valueAtDragStart = currentValue;
+            if (state.TrySetActivePress(_id, 1))
+            {
+                state.SetFocus(_id);
+                _isPressed = true;
+                _dragStartPosition = input.MousePosition;
+                _valueAtDragStart = currentValue;
+            }
         }
 
         if (_isPressed)
@@ -5945,7 +6008,7 @@ internal class InternalKnobLogic
                 valueChanged = true;
             }
         }
-        
+
         // --- Drawing ---
         // Base
         renderer.DrawBox(bounds, finalTheme.BaseStyle);
@@ -5963,7 +6026,7 @@ internal class InternalKnobLogic
         );
 
         renderer.DrawLine(indicatorStart, indicatorEnd, finalTheme.IndicatorColor, finalTheme.IndicatorThickness);
-        
+
         return valueChanged;
     }
 }
@@ -6082,30 +6145,33 @@ internal class InternalScrollBarLogic
 
         if (input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
-            state.RequestClickCapture(_id, 10);
-            state.SetFocus(_id);
-            _isThumbPressed = true;
-
-            if (_isThumbHovered)
+            // Use a high layer to ensure scrollbars win input capture over content.
+            if (state.TrySetActivePress(_id, 10))
             {
-                _dragStartMousePos = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
-                _dragStartScrollOffset = currentScrollOffset;
-            }
-            else // Clicked on track
-            {
-                float mousePosOnTrack = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
-                float thumbStart = IsVertical ? thumbBounds.Y : thumbBounds.X;
-                float thumbEnd = thumbStart + thumbLength;
+                state.SetFocus(_id);
+                _isThumbPressed = true;
 
-                float pageAmount = VisibleSize;
-                if (mousePosOnTrack < thumbStart)
+                if (_isThumbHovered)
                 {
-                    return Math.Max(0, currentScrollOffset - pageAmount);
+                    _dragStartMousePos = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+                    _dragStartScrollOffset = currentScrollOffset;
                 }
-                else if (mousePosOnTrack > thumbEnd)
+                else // Clicked on track
                 {
-                    float maxScroll = ContentSize - VisibleSize;
-                    return Math.Min(maxScroll, currentScrollOffset + pageAmount);
+                    float mousePosOnTrack = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+                    float thumbStart = IsVertical ? thumbBounds.Y : thumbBounds.X;
+                    float thumbEnd = thumbStart + thumbLength;
+
+                    float pageAmount = VisibleSize;
+                    if (mousePosOnTrack < thumbStart)
+                    {
+                        return Math.Max(0, currentScrollOffset - pageAmount);
+                    }
+                    else if (mousePosOnTrack > thumbEnd)
+                    {
+                        float maxScroll = ContentSize - VisibleSize;
+                        return Math.Min(maxScroll, currentScrollOffset + pageAmount);
+                    }
                 }
             }
         }
@@ -6225,7 +6291,7 @@ internal abstract class InternalSliderLogic
             newValue = HandleInput(context.InputState, currentValue);
         }
 
-        if (pendingTrackClickValueJump && state.InputCaptorId == GlobalIntId && !state.NonSliderElementClaimedPress)
+        if (pendingTrackClickValueJump && state.InputCaptorId == GlobalIntId)
         {
             newValue = ConvertPositionToValue(trackClickPosition);
             newValue = ApplyStep(newValue);
@@ -6353,13 +6419,15 @@ internal class InternalVSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.RequestClickCapture(GlobalIntId, 10);
-                state.SetFocus(GlobalIntId);
-
-                if (isTrackHovered && !isGrabberHovered)
+                if (state.TrySetActivePress(GlobalIntId, 10))
                 {
-                    pendingTrackClickValueJump = true;
-                    trackClickPosition = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
+                    state.SetFocus(GlobalIntId);
+
+                    if (isTrackHovered && !isGrabberHovered)
+                    {
+                        pendingTrackClickValueJump = true;
+                        trackClickPosition = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
+                    }
                 }
             }
         }

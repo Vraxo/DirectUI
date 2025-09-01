@@ -111,6 +111,7 @@ internal class InternalScrollBarLogic
         if (input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
             // Use a high layer to ensure scrollbars win input capture over content.
+            state.ClickCaptureServer.RequestCapture(_id, 10);
             if (state.TrySetActivePress(_id, 10))
             {
                 state.SetFocus(_id);

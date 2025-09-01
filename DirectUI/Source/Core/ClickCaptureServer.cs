@@ -1,5 +1,9 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using Raylib_cs;
+using Silk.NET.Input;
+using System.Text.RegularExpressions;
 
 namespace DirectUI;
 
@@ -10,6 +14,7 @@ public class ClickCaptureServer
     public void RequestCapture(int id, int layer)
     {
         _requests.Add(new ClickCaptureRequest(id, layer));
+        Console.WriteLine($"[CAPTURE-REQUEST] ID: {id}, Layer: {layer}");
     }
 
     public int? GetWinner()
@@ -19,7 +24,15 @@ public class ClickCaptureServer
             return null;
         }
 
-        return _requests.OrderByDescending(r => r.Layer).First().Id;
+        var winner = _requests.OrderByDescending(r => r.Layer).First();
+
+        if (_requests.Count > 1) // Only log if there was a contest
+        {
+            var candidates = string.Join(", ", _requests.Select(r => $"[ID: {r.Id}, L: {r.Layer}]"));
+            Console.WriteLine($"[CAPTURE-RESOLVED] Candidates: {candidates} -> Winner: ID {winner.Id} (Layer {winner.Layer})");
+        }
+
+        return winner.Id;
     }
 
     public void Clear()

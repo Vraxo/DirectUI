@@ -60,7 +60,7 @@ public static partial class UI
                 if (state.InputCaptorId == id)
                 {
                     wasClickedThisFrame = true;
-                    Console.WriteLine($"[CLICK-RELEASE] ID: {id}, Text: '{text}'");
+                    Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
                 }
             }
             state.ClearActivePress(id);
@@ -83,7 +83,7 @@ public static partial class UI
         if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
         {
             wasClickedThisFrame = true;
-            Console.WriteLine($"[CLICK-PRESS] ID: {id}, Text: '{text}'");
+            Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
         }
 
         // --- Style Resolution ---
