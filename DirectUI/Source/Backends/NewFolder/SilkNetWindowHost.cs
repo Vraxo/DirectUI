@@ -14,6 +14,14 @@ using Key = Silk.NET.Input.Key;
 
 namespace DirectUI.Backends.SkiaSharp;
 
+public enum WindowBackdropType
+{
+    Default,
+    Mica,
+    Acrylic,
+    Tabbed,
+}
+
 public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 {
     private readonly string _title;
@@ -62,6 +70,9 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     public IModalWindowService ModalWindowService => this;
     public bool IsModalWindowOpen => _activeModalIWindow != null;
 
+    public WindowBackdropType BackdropType { get; set; } = WindowBackdropType.Default;
+    public bool UseDarkMode { get; set; } = true;
+
     public SilkNetWindowHost(string title, int width, int height, Color4 backgroundColor)
     {
         _title = title;
@@ -77,6 +88,12 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         options.Title = _title;
         options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
         options.ShouldSwapAutomatically = false; // Required for our manual render loop
+
+        // On modern Windows, always request a transparent framebuffer to allow for effects like Mica/Acrylic.
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            options.TransparentFramebuffer = true;
+        }
 
         _window = Window.Create(options);
         if (_window == null) return false;
@@ -171,7 +188,11 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     private void OnLoad(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
     {
         _gl = _window!.CreateOpenGL();
-        _gl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+
+        bool useTransparentBg = BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+        Color4 finalBackgroundColor = useTransparentBg ? new Color4(0, 0, 0, 0) : _backgroundColor;
+
+        _gl.ClearColor(finalBackgroundColor.R, finalBackgroundColor.G, finalBackgroundColor.B, finalBackgroundColor.A);
 
         var glInterface = GRGlInterface.Create();
         _grContext = GRContext.CreateGl(glInterface);
@@ -179,10 +200,12 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _renderTarget = new GRBackendRenderTarget(_width, _height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
         _skSurface = SKSurface.Create(_grContext, _renderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
 
-        _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+        _appEngine = new AppEngine(uiDrawCallback, finalBackgroundColor);
         _textService = new SilkNetTextService();
         _renderer = new SilkNetRenderer(_textService);
         _appEngine.Initialize(_textService, _renderer);
+
+        ApplyWindowStyles(); // Apply styles after window handle is available
 
         _inputContext = _window.CreateInput();
         foreach (var keyboard in _inputContext.Keyboards)
@@ -228,6 +251,34 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         // Cleanup is handled by the finally block in ApplicationRunner.
     }
 
+    private void ApplyWindowStyles()
+    {
+        if (!OperatingSystem.IsWindows()) return;
+
+        var hwnd = _window?.Native.Win32?.Hwnd ?? IntPtr.Zero;
+        if (hwnd == IntPtr.Zero) return;
+
+        // Set dark mode before backdrop type for better transition
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 17763))
+        {
+            int useDarkMode = UseDarkMode ? 1 : 0;
+            DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+        }
+
+        // Set backdrop type (Mica/Acrylic) - requires Windows 11 Build 22621+
+        if (BackdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621))
+        {
+            int backdropValue = BackdropType switch
+            {
+                WindowBackdropType.Mica => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_MAINWINDOW,
+                WindowBackdropType.Acrylic => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW,
+                WindowBackdropType.Tabbed => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TABBEDWINDOW,
+                _ => (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_AUTO
+            };
+            DwmApi.DwmSetWindowAttribute(hwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
+        }
+    }
+
     private void OnKeyDown(IKeyboard keyboard, Key key, int scancode) { if (!IsModalWindowOpen) Input.AddKeyPressed(MapKey(key)); }
     private void OnKeyUp(IKeyboard keyboard, Key key, int scancode) { if (!IsModalWindowOpen) Input.AddKeyReleased(MapKey(key)); }
     private void OnKeyChar(IKeyboard keyboard, char c) { if (!IsModalWindowOpen) Input.AddCharacterInput(c); }
@@ -256,18 +307,45 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         options.WindowBorder = WindowBorder.Fixed;
         options.ShouldSwapAutomatically = false;
 
+        if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
+        {
+            options.TransparentFramebuffer = true;
+        }
+
         _activeModalIWindow = Window.Create(options);
 
         _activeModalIWindow.Load += () =>
         {
             _modalGl = _activeModalIWindow.CreateOpenGL();
-            _modalGl.ClearColor(_backgroundColor.R, _backgroundColor.G, _backgroundColor.B, _backgroundColor.A);
+            var modalBgColor = new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f);
+            bool useTransparentModalBg = OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
+
+            if (useTransparentModalBg)
+            {
+                _modalGl.ClearColor(0, 0, 0, 0);
+                modalBgColor = new Color4(0, 0, 0, 0);
+
+                var modalHwnd = _activeModalIWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
+                if (modalHwnd != IntPtr.Zero)
+                {
+                    int useDarkMode = UseDarkMode ? 1 : 0;
+                    DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
+
+                    int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Acrylic for modals
+                    DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
+                }
+            }
+            else
+            {
+                _modalGl.ClearColor(modalBgColor.R, modalBgColor.G, modalBgColor.B, modalBgColor.A);
+            }
+
             var glInterface = GRGlInterface.Create();
             _modalGrContext = GRContext.CreateGl(glInterface);
             _modalRenderTarget = new GRBackendRenderTarget(width, height, 0, 8, new GRGlFramebufferInfo(0, (uint)GLEnum.Rgba8));
             _modalSkSurface = SKSurface.Create(_modalGrContext, _modalRenderTarget, GRSurfaceOrigin.BottomLeft, SKColorType.Rgba8888);
 
-            _modalAppEngine = new AppEngine(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 25f, 1.0f));
+            _modalAppEngine = new AppEngine(drawCallback, modalBgColor);
             _modalTextService = new SilkNetTextService();
             _modalRenderer = new SilkNetRenderer(_modalTextService);
             _modalAppEngine.Initialize(_modalTextService, _modalRenderer);

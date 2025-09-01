@@ -4,6 +4,7 @@ using System.IO;
 using System.Numerics;
 using System.Text.Json;
 using System;
+using DirectUI.Backends.SkiaSharp; // Added for SilkNetWindowHost
 
 namespace Sonorize;
 
@@ -21,6 +22,14 @@ public class SonorizeLogic : IAppLogic
     public SonorizeLogic(IWindowHost host)
     {
         _host = host;
+
+        // Enable modern window styles if using the SkiaSharp/Silk.NET backend
+        if (_host is SilkNetWindowHost silkHost)
+        {
+            silkHost.BackdropType = WindowBackdropType.Mica;
+            silkHost.UseDarkMode = true;
+        }
+
         _fileMenuPopupId = "fileMenuPopup".GetHashCode();
         LoadState();
     }
