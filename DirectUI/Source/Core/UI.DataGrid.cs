@@ -263,7 +263,7 @@ public static partial class UI
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
-            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
+            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
             {
                 selectedIndex = i;
             }
