@@ -1,6 +1,7 @@
 ﻿// Widgets/InternalHSliderLogic.cs
 using System;
 using System.Numerics;
+using System.Text.RegularExpressions;
 using DirectUI.Core;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -46,7 +47,7 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.SetButtonPotentialCaptorForFrame(GlobalIntId);
+                state.SetPotentialCaptorForFrame(GlobalIntId);
                 state.SetFocus(GlobalIntId);
 
                 if (isTrackHovered && !isGrabberHovered)

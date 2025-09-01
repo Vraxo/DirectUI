@@ -136,6 +136,9 @@ public class UIPersistentState
         {
             return;
         }
+
+        // The last widget drawn under the mouse is the topmost one, so it should always
+        // be allowed to set itself as the potential target, overwriting any widget drawn beneath it.
         PotentialInputTargetId = id;
     }
 

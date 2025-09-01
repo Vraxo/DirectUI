@@ -11317,11 +11317,12 @@ public class SonorizeLogic : IAppLogic
         _menuBar.Draw(context);
 
         float menuBarHeight = 30f;
+        float playbackControlsHeight = 40f; // Space for the slider
         float padding = 10f;
         var gridPos = new Vector2(padding, menuBarHeight + padding);
         var gridSize = new Vector2(
             context.Renderer.RenderTargetSize.X - (padding * 2),
-            context.Renderer.RenderTargetSize.Y - menuBarHeight - (padding * 2)
+            context.Renderer.RenderTargetSize.Y - menuBarHeight - playbackControlsHeight - (padding * 2)
         );
 
         if (gridSize.X > 0 && gridSize.Y > 0)
@@ -11348,6 +11349,64 @@ public class SonorizeLogic : IAppLogic
             }
             _previousSelectedTrackIndex = _selectedTrackIndex;
         }
+
+        DrawPlaybackControls(context);
+    }
+
+    private void DrawPlaybackControls(UIContext context)
+    {
+        float playbackControlsHeight = 40f;
+        float padding = 10f;
+        var windowSize = context.Renderer.RenderTargetSize;
+
+        var controlsY = windowSize.Y - playbackControlsHeight;
+        var controlsRect = new Vortice.Mathematics.Rect(0, controlsY, windowSize.X, playbackControlsHeight);
+
+        // Draw a background for the controls area
+        var bgStyle = new BoxStyle
+        {
+            FillColor = new(0.1f, 0.1f, 0.1f, 1.0f),
+            BorderColor = new(0.05f, 0.05f, 0.05f, 1.0f),
+            BorderLengthTop = 1f,
+            BorderLengthBottom = 0,
+            BorderLengthLeft = 0,
+            BorderLengthRight = 0,
+            Roundness = 0
+        };
+        context.Renderer.DrawBox(controlsRect, bgStyle);
+
+        // Get audio state
+        double currentPosition = _audioPlayer.GetPosition();
+        double totalDuration = _audioPlayer.GetLength();
+        bool isAudioLoaded = totalDuration > 0;
+
+        // Use a container to position the slider
+        var sliderAreaHeight = 20f;
+        var sliderAreaY = controlsY + (playbackControlsHeight - sliderAreaHeight) / 2f;
+        UI.BeginVBoxContainer("playbackControls", new Vector2(padding, sliderAreaY));
+        {
+            var sliderWidth = windowSize.X - (padding * 2);
+            var sliderSize = new Vector2(sliderWidth, sliderAreaHeight);
+
+            float sliderValue = (float)currentPosition;
+
+            float newSliderValue = UI.HSlider(
+                id: "seekSlider",
+                currentValue: sliderValue,
+                minValue: 0f,
+                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
+                size: sliderSize,
+                disabled: !isAudioLoaded
+            );
+
+            // If user dragged the slider (and audio is loaded), seek to new position.
+            // Check for a meaningful change to avoid seeking due to float precision issues.
+            if (isAudioLoaded && Math.Abs(newSliderValue - sliderValue) > 0.01f)
+            {
+                _audioPlayer.Seek(newSliderValue);
+            }
+        }
+        UI.EndVBoxContainer();
     }
 
     private void OpenSettingsModal()
@@ -11440,6 +11499,15 @@ public class AudioPlayer : IDisposable
     {
         if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
         return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetPosition(_stream)) : 0;
+    }
+
+    /// <summary>
+    /// Gets the total length of the current stream in seconds.
+    /// </summary>
+    public double GetLength()
+    {
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetLength(_stream)) : 0;
     }
 
     private void StopInternal()
