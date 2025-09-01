@@ -67,56 +67,61 @@ internal class InputText
 
         // --- Focus Management && Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
+        if (isHovering)
+        {
+            uiState.SetPotentialInputTarget(intId);
+        }
+
         bool isActive = uiState.ActivelyPressedElementId == intId;
 
-        // BUG FIX: Handle losing active press state on mouse up.
-        // Without this, the control would lock all other input after being clicked.
         if (isActive && !input.IsLeftMouseDown)
         {
             uiState.ClearActivePress(intId);
         }
 
-        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled)
+        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled && uiState.PotentialInputTargetId == intId)
         {
-            uiState.SetFocus(intId);
-            uiState.SetPotentialCaptorForFrame(intId); // Claim the press
-
-            // --- BEGIN: Caret positioning logic on click ---
-            // We need to temporarily calculate drawing info here for hit-testing.
-            // This is the only place we need to do this, as keyboard input moves the caret programmatically.
-            finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
-            var styleForHitTest = finalTheme.Current;
-            var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
-            var contentRectForHitTest = new Rect(
-                bounds.X + textMargin.X,
-                bounds.Y + textMargin.Y,
-                Math.Max(0, bounds.Width - textMargin.X * 2),
-                Math.Max(0, bounds.Height - textMargin.Y * 2)
-            );
-
-            // Use ITextService to get the text layout
-            var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-            if (textLayout is not null)
+            if (uiState.TrySetActivePress(intId, 1))
             {
-                float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
-                float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
+                uiState.SetFocus(intId);
 
-                var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
+                // --- BEGIN: Caret positioning logic on click ---
+                // We need to temporarily calculate drawing info here for hit-testing.
+                // This is the only place we need to do this, as keyboard input moves the caret programmatically.
+                finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
+                var styleForHitTest = finalTheme.Current;
+                var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
+                var contentRectForHitTest = new Rect(
+                    bounds.X + textMargin.X,
+                    bounds.Y + textMargin.Y,
+                    Math.Max(0, bounds.Width - textMargin.X * 2),
+                    Math.Max(0, bounds.Height - textMargin.Y * 2)
+                );
 
-                int newCaretPos = hitTestResult.TextPosition;
-                if (hitTestResult.IsTrailingHit)
+                // Use ITextService to get the text layout
+                var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+                if (textLayout is not null)
                 {
-                    newCaretPos++;
+                    float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
+                    float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
+
+                    var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
+
+                    int newCaretPos = hitTestResult.TextPosition;
+                    if (hitTestResult.IsTrailingHit)
+                    {
+                        newCaretPos++;
+                    }
+
+                    state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
+
+                    // Reset blink and update scroll to show caret.
+                    state.IsBlinkOn = true;
+                    state.BlinkTimer = 0;
+                    UpdateView(text, state, size, textMargin);
                 }
-
-                state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
-
-                // Reset blink and update scroll to show caret.
-                state.IsBlinkOn = true;
-                state.BlinkTimer = 0;
-                UpdateView(text, state, size, textMargin);
+                // --- END: Caret positioning logic on click ---
             }
-            // --- END: Caret positioning logic on click ---
         }
 
         // --- Input Processing ---

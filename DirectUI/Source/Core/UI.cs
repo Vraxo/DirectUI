@@ -29,12 +29,15 @@ public static partial class UI
 
     public static void EndFrame()
     {
-        var winner = UI.State.ClickCaptureServer.GetWinner();
-        if (winner.HasValue)
+        // At the end of the frame, resolve the winner from all click requests made this frame.
+        // This winner's action (for Press mode) will be triggered in the next frame.
+        var pressWinner = UI.State.ClickCaptureServer.GetWinner();
+        if (pressWinner.HasValue)
         {
-            UI.State.SetPotentialCaptorForFrame(winner.Value);
+            UI.State.SetNextFramePressWinner(pressWinner.Value);
         }
-        // If a click happened this frame but no UI element captured it, and no popup was open, clear focus.
+
+        // If a click happened but no UI element captured it, and no popup was open, clear focus.
         if (UI.Context.InputState.WasLeftMousePressedThisFrame && UI.State.InputCaptorId == 0 && !UI.State.IsPopupOpen)
         {
             UI.State.SetFocus(0);

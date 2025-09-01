@@ -62,11 +62,13 @@ internal class InternalKnobLogic
 
         if (!disabled && isHovering && input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
-            state.SetPotentialCaptorForFrame(_id);
-            state.SetFocus(_id);
-            _isPressed = true;
-            _dragStartPosition = input.MousePosition;
-            _valueAtDragStart = currentValue;
+            if (state.TrySetActivePress(_id, 1))
+            {
+                state.SetFocus(_id);
+                _isPressed = true;
+                _dragStartPosition = input.MousePosition;
+                _valueAtDragStart = currentValue;
+            }
         }
 
         if (_isPressed)
@@ -82,7 +84,7 @@ internal class InternalKnobLogic
                 valueChanged = true;
             }
         }
-        
+
         // --- Drawing ---
         // Base
         renderer.DrawBox(bounds, finalTheme.BaseStyle);
@@ -100,7 +102,7 @@ internal class InternalKnobLogic
         );
 
         renderer.DrawLine(indicatorStart, indicatorEnd, finalTheme.IndicatorColor, finalTheme.IndicatorThickness);
-        
+
         return valueChanged;
     }
 }

@@ -71,7 +71,7 @@ internal abstract class InternalSliderLogic
             newValue = HandleInput(context.InputState, currentValue);
         }
 
-        if (pendingTrackClickValueJump && state.InputCaptorId == GlobalIntId && !state.NonSliderElementClaimedPress)
+        if (pendingTrackClickValueJump && state.InputCaptorId == GlobalIntId)
         {
             newValue = ConvertPositionToValue(trackClickPosition);
             newValue = ApplyStep(newValue);

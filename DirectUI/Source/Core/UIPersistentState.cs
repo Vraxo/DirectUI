@@ -66,10 +66,13 @@ public class UIPersistentState
 
     // --- Input State (reset each frame) ---
     public int PotentialInputTargetId { get; private set; } = 0;
-    public int InputCaptorId { get; private set; } = 0;
-    private bool captureAttemptedThisFrame = false;
-    public bool NonSliderElementClaimedPress { get; private set; } = false;
+    public int InputCaptorId { get; private set; } = 0; // The element that captured the press for RELEASE mode.
+    private int _inputCaptorLayer = -1; // The layer of the currently active press.
     public ClickCaptureServer ClickCaptureServer { get; } = new();
+
+    // The winner of a 'Press' action, resolved at the end of the previous frame.
+    public int PressActionWinnerId { get; private set; }
+    private int _nextFramePressWinnerId;
 
 
     /// <summary>
@@ -80,9 +83,18 @@ public class UIPersistentState
         ClickCaptureServer.Clear();
         DragInProgressFromPreviousFrame = input.IsLeftMouseDown && ActivelyPressedElementId != 0;
         PotentialInputTargetId = 0;
-        InputCaptorId = 0;
-        captureAttemptedThisFrame = false;
-        NonSliderElementClaimedPress = false;
+
+        // Reset the captor for visual "press" feedback if the mouse is not held down.
+        if (!input.IsLeftMouseDown)
+        {
+            InputCaptorId = 0;
+            _inputCaptorLayer = -1;
+            ActivelyPressedElementId = 0;
+        }
+
+        // At the start of the frame, the winner from the *last* frame becomes the active winner for this frame.
+        PressActionWinnerId = _nextFramePressWinnerId;
+        _nextFramePressWinnerId = 0; // Clear the staging variable.
 
         // At the start of the frame, transfer the popup result from the previous frame
         // to the current frame's readable state.
@@ -144,24 +156,23 @@ public class UIPersistentState
         PotentialInputTargetId = id;
     }
 
-    public void RequestClickCapture(int id, int layer)
+    // Used for immediate visual feedback (which element is currently held down)
+    public bool TrySetActivePress(int id, int layer)
     {
-        ClickCaptureServer.RequestCapture(id, layer);
+        if (layer > _inputCaptorLayer)
+        {
+            _inputCaptorLayer = layer;
+            InputCaptorId = id; // This element is the captor for release checks
+            ActivelyPressedElementId = id; // This element is visually pressed
+            return true;
+        }
+        return false;
     }
 
-    public void SetPotentialCaptorForFrame(int id)
+    // Called at the end of the frame to set the winner for the next frame's Press actions
+    public void SetNextFramePressWinner(int id)
     {
-        captureAttemptedThisFrame = true;
-        InputCaptorId = id;
-        ActivelyPressedElementId = id;
-    }
-
-    public void SetButtonPotentialCaptorForFrame(int id)
-    {
-        captureAttemptedThisFrame = true;
-        InputCaptorId = id;
-        ActivelyPressedElementId = id;
-        NonSliderElementClaimedPress = true;
+        _nextFramePressWinnerId = id;
     }
 
     public void ClearActivePress(int id)

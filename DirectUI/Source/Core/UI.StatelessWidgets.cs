@@ -21,7 +21,8 @@ public static partial class UI
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
         Vector2 textOffset,
-        bool isActive = false)
+        bool isActive = false,
+        int layer = 1)
     {
         var context = UI.Context;
         var state = UI.State;
@@ -50,32 +51,44 @@ public static partial class UI
         bool anyActionHeld = primaryActionHeld || secondaryActionHeld;
 
 
+        // Handle MOUSE UP
         if (!anyActionHeld && isPressed)
         {
             if (isHovering && clickMode == DirectUI.Button.ActionMode.Release)
             {
-                wasClickedThisFrame = true;
+                // A click happens on release IF this button was the one that initially captured the input.
+                if (state.InputCaptorId == id)
+                {
+                    wasClickedThisFrame = true;
+                    Console.WriteLine($"[CLICK-RELEASE] ID: {id}, Text: '{text}'");
+                }
             }
             state.ClearActivePress(id);
             isPressed = false;
         }
 
-        if (anyActionPressedThisFrame)
+        // Handle MOUSE DOWN
+        if (anyActionPressedThisFrame && isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
         {
-            if (isHovering && state.PotentialInputTargetId == id && !state.DragInProgressFromPreviousFrame)
+            // Any button, regardless of mode, registers its intent to be clicked.
+            state.ClickCaptureServer.RequestCapture(id, layer);
+            // It also tries to become the "active" element for immediate visual feedback.
+            if (state.TrySetActivePress(id, layer))
             {
-                state.RequestClickCapture(id, 1);
                 state.SetFocus(id);
-                isPressed = true;
             }
         }
 
-        if (!wasClickedThisFrame && clickMode == DirectUI.Button.ActionMode.Press && state.InputCaptorId == id)
+        // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution.
+        if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
         {
             wasClickedThisFrame = true;
+            Console.WriteLine($"[CLICK-PRESS] ID: {id}, Text: '{text}'");
         }
 
         // --- Style Resolution ---
+        // Re-check `isPressed` for correct visual state, as it might have changed above.
+        isPressed = state.ActivelyPressedElementId == id;
         ButtonStyle currentStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
 
         // --- Drawing ---

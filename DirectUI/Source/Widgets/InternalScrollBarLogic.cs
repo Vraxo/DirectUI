@@ -110,30 +110,33 @@ internal class InternalScrollBarLogic
 
         if (input.WasLeftMousePressedThisFrame && state.PotentialInputTargetId == _id)
         {
-            state.RequestClickCapture(_id, 10);
-            state.SetFocus(_id);
-            _isThumbPressed = true;
-
-            if (_isThumbHovered)
+            // Use a high layer to ensure scrollbars win input capture over content.
+            if (state.TrySetActivePress(_id, 10))
             {
-                _dragStartMousePos = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
-                _dragStartScrollOffset = currentScrollOffset;
-            }
-            else // Clicked on track
-            {
-                float mousePosOnTrack = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
-                float thumbStart = IsVertical ? thumbBounds.Y : thumbBounds.X;
-                float thumbEnd = thumbStart + thumbLength;
+                state.SetFocus(_id);
+                _isThumbPressed = true;
 
-                float pageAmount = VisibleSize;
-                if (mousePosOnTrack < thumbStart)
+                if (_isThumbHovered)
                 {
-                    return Math.Max(0, currentScrollOffset - pageAmount);
+                    _dragStartMousePos = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+                    _dragStartScrollOffset = currentScrollOffset;
                 }
-                else if (mousePosOnTrack > thumbEnd)
+                else // Clicked on track
                 {
-                    float maxScroll = ContentSize - VisibleSize;
-                    return Math.Min(maxScroll, currentScrollOffset + pageAmount);
+                    float mousePosOnTrack = IsVertical ? input.MousePosition.Y : input.MousePosition.X;
+                    float thumbStart = IsVertical ? thumbBounds.Y : thumbBounds.X;
+                    float thumbEnd = thumbStart + thumbLength;
+
+                    float pageAmount = VisibleSize;
+                    if (mousePosOnTrack < thumbStart)
+                    {
+                        return Math.Max(0, currentScrollOffset - pageAmount);
+                    }
+                    else if (mousePosOnTrack > thumbEnd)
+                    {
+                        float maxScroll = ContentSize - VisibleSize;
+                        return Math.Min(maxScroll, currentScrollOffset + pageAmount);
+                    }
                 }
             }
         }

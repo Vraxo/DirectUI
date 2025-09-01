@@ -205,10 +205,12 @@ public static partial class UI
 
                 if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
                 {
-                    State.SetPotentialCaptorForFrame(handleId);
-                    state.ResizingColumnIndex = i;
-                    state.DragStartMouseX = input.MousePosition.X;
-                    state.ColumnResizeStartWidth = state.ColumnWidths[i];
+                    if (State.TrySetActivePress(handleId, 10))
+                    {
+                        state.ResizingColumnIndex = i;
+                        state.DragStartMouseX = input.MousePosition.X;
+                        state.ColumnResizeStartWidth = state.ColumnWidths[i];
+                    }
                 }
             }
             currentX += colWidth;
@@ -263,7 +265,7 @@ public static partial class UI
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
-            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
+            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
             {
                 selectedIndex = i;
             }

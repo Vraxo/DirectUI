@@ -47,13 +47,15 @@ internal class InternalHSliderLogic : InternalSliderLogic
         {
             if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
             {
-                state.RequestClickCapture(GlobalIntId, 10);
-                state.SetFocus(GlobalIntId);
-
-                if (isTrackHovered && !isGrabberHovered)
+                if (state.TrySetActivePress(GlobalIntId, 10))
                 {
-                    pendingTrackClickValueJump = true;
-                    trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
+                    state.SetFocus(GlobalIntId);
+
+                    if (isTrackHovered && !isGrabberHovered)
+                    {
+                        pendingTrackClickValueJump = true;
+                        trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
+                    }
                 }
             }
         }

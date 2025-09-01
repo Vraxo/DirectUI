@@ -188,8 +188,14 @@ public static partial class UI
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (isHoveringHandle) State.SetPotentialInputTarget(intId);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame) State.SetPotentialCaptorForFrame(intId);
+
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            {
+                State.TrySetActivePress(intId, 10);
+            }
+
             if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
@@ -278,8 +284,14 @@ public static partial class UI
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
             if (isHoveringHandle) State.SetPotentialInputTarget(intId);
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame) State.SetPotentialCaptorForFrame(intId);
+
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            {
+                State.TrySetActivePress(intId, 10);
+            }
+
             if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+
             if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
