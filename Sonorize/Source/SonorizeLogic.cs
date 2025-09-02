@@ -3,7 +3,6 @@ using System.Text.Json;
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
-using ManagedBass;
 using Sonorize.Audio;
 
 namespace Sonorize;
@@ -17,19 +16,11 @@ public class SonorizeLogic : IAppLogic
     private readonly MenuBar _menuBar;
     private readonly SettingsWindow _settingsWindow;
     private readonly MusicLibrary _musicLibrary = new();
-    private readonly AudioPlayer _audioPlayer;
+    private readonly PlaybackManager _playbackManager;
 
     private int _selectedTrackIndex = -1;
-    private int _previousSelectedTrackIndex = -1;
-    private string? _currentlyPlayingFilePath;
+
     private readonly DataGridColumn[] _columns;
-
-    private enum PlaybackEndAction { NextInQueue, RepeatSong, DoNothing }
-    private PlaybackEndAction _playbackEndAction = PlaybackEndAction.NextInQueue;
-    private bool _isShuffleActive = false;
-    private readonly Random _random = new();
-    private PlaybackState _lastPlaybackState = PlaybackState.Stopped;
-
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -40,7 +31,7 @@ public class SonorizeLogic : IAppLogic
 
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host);
-        _audioPlayer = new AudioPlayer();
+        _playbackManager = new PlaybackManager(new AudioPlayer());
 
         _columns =
         [
@@ -93,7 +84,7 @@ public class SonorizeLogic : IAppLogic
         }
         finally
         {
-            _audioPlayer.Dispose();
+            _playbackManager.Dispose();
         }
     }
 
@@ -118,8 +109,13 @@ public class SonorizeLogic : IAppLogic
     {
         _menuBar.Draw(context);
 
+        // Update playback manager every frame. This checks for song completion.
+        _playbackManager.Update();
+        // Keep the playback manager's tracklist in sync with the library.
+        _playbackManager.SetTracklist(_musicLibrary.Files);
+
         float menuBarHeight = 30f;
-        float playbackControlsHeight = 70f; // Increased for buttons
+        float playbackControlsHeight = 70f;
         float padding = 10f;
         var gridPos = new Vector2(padding, menuBarHeight + padding);
         var gridSize = new Vector2(
@@ -127,6 +123,7 @@ public class SonorizeLogic : IAppLogic
             context.Renderer.RenderTargetSize.Y - menuBarHeight - playbackControlsHeight - (padding * 2)
         );
 
+        int previousSelectedTrackIndex = _selectedTrackIndex;
         if (gridSize.X > 0 && gridSize.Y > 0)
         {
             UI.DataGrid<MusicFile>(
@@ -141,109 +138,20 @@ public class SonorizeLogic : IAppLogic
             );
         }
 
-        UpdatePlaybackState();
-
-        // Check for selection change to play music
-        if (_selectedTrackIndex != _previousSelectedTrackIndex)
+        // Sync state between UI selection and playback manager
+        if (_selectedTrackIndex != previousSelectedTrackIndex)
         {
-            if (_selectedTrackIndex >= 0 && _selectedTrackIndex < _musicLibrary.Files.Count)
-            {
-                var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
-                // Only play if the file path is different from the currently playing song.
-                // This prevents restarting the song when sorting the grid or when auto-advancing.
-                if (trackToPlay.FilePath != _currentlyPlayingFilePath)
-                {
-                    _audioPlayer.Play(trackToPlay.FilePath);
-                    _currentlyPlayingFilePath = trackToPlay.FilePath;
-                    _lastPlaybackState = _audioPlayer.CurrentState;
-                }
-            }
-            else
-            {
-                // If selection is cleared (index is -1), stop playback.
-                _audioPlayer.Stop();
-                _currentlyPlayingFilePath = null;
-                _lastPlaybackState = PlaybackState.Stopped;
-            }
-            _previousSelectedTrackIndex = _selectedTrackIndex;
+            // User selected a new track in the grid: tell the manager to play it.
+            _playbackManager.Play(_selectedTrackIndex);
         }
-
+        else if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
+        {
+            // Playback manager changed the track (e.g., next song): update grid selection.
+            _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
+        }
 
         DrawPlaybackControls(context);
     }
-
-    private void UpdatePlaybackState()
-    {
-        var currentState = _audioPlayer.CurrentState;
-        // Check if the song just finished playing
-        if (_lastPlaybackState == PlaybackState.Playing && currentState == PlaybackState.Stopped)
-        {
-            HandleSongFinished();
-        }
-        _lastPlaybackState = currentState;
-    }
-
-    private void HandleSongFinished()
-    {
-        if (_musicLibrary.Files.Count == 0 || _selectedTrackIndex < 0)
-        {
-            _currentlyPlayingFilePath = null;
-            _lastPlaybackState = PlaybackState.Stopped;
-            return;
-        }
-
-        int nextIndex = -1;
-
-        switch (_playbackEndAction)
-        {
-            case PlaybackEndAction.DoNothing:
-                _currentlyPlayingFilePath = null;
-                _lastPlaybackState = PlaybackState.Stopped;
-                _selectedTrackIndex = -1; // Deselect track
-                _previousSelectedTrackIndex = -1;
-                return;
-
-            case PlaybackEndAction.RepeatSong:
-                nextIndex = _selectedTrackIndex;
-                break;
-
-            case PlaybackEndAction.NextInQueue:
-                if (_isShuffleActive)
-                {
-                    if (_musicLibrary.Files.Count <= 1)
-                    {
-                        nextIndex = 0;
-                    }
-                    else
-                    {
-                        do
-                        {
-                            nextIndex = _random.Next(_musicLibrary.Files.Count);
-                        } while (nextIndex == _selectedTrackIndex);
-                    }
-                }
-                else
-                {
-                    nextIndex = _selectedTrackIndex + 1;
-                    if (nextIndex >= _musicLibrary.Files.Count)
-                    {
-                        nextIndex = 0; // Wrap around
-                    }
-                }
-                break;
-        }
-
-        if (nextIndex != -1)
-        {
-            _selectedTrackIndex = nextIndex;
-            _previousSelectedTrackIndex = nextIndex; // Important to prevent re-triggering playback from main loop
-            var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
-            _audioPlayer.Play(trackToPlay.FilePath);
-            _currentlyPlayingFilePath = trackToPlay.FilePath;
-            _lastPlaybackState = _audioPlayer.CurrentState;
-        }
-    }
-
 
     private void DrawPlaybackControls(UIContext context)
     {
@@ -267,11 +175,11 @@ public class SonorizeLogic : IAppLogic
         };
         context.Renderer.DrawBox(controlsRect, bgStyle);
 
-        // Get audio state
-        double currentPosition = _audioPlayer.GetPosition();
-        double totalDuration = _audioPlayer.GetLength();
+        // Get audio state from the playback manager
+        double currentPosition = _playbackManager.CurrentPosition;
+        double totalDuration = _playbackManager.TotalDuration;
         bool isAudioLoaded = totalDuration > 0;
-        bool isTrackSelected = _selectedTrackIndex >= 0;
+        bool isAnyTrackAvailable = _musicLibrary.Files.Any();
 
         // Use a container to layout slider and buttons
         UI.BeginVBoxContainer("playbackVBox", new Vector2(padding, controlsY + 5), 5);
@@ -293,7 +201,7 @@ public class SonorizeLogic : IAppLogic
 
             if (isAudioLoaded && Math.Abs(newSliderValue - sliderValue) > 0.01f)
             {
-                _audioPlayer.Seek(newSliderValue);
+                _playbackManager.Seek(newSliderValue);
             }
 
             // --- Buttons ---
@@ -301,7 +209,7 @@ public class SonorizeLogic : IAppLogic
             var totalButtonsWidth = (buttonSize.X * 5) + (5 * 4); // 5 buttons, 4 gaps
             var buttonsStartX = (windowSize.X - totalButtonsWidth) / 2;
             var buttonsY = UI.Context.Layout.GetCurrentPosition().Y + 5; // Add some padding from slider
-            const int controlsLayer = 10; // Use a higher layer for controls
+            const int controlsLayer = 10;
 
             var iconButtonTheme = new ButtonStylePack { FontSize = 16f };
             var toggleButtonTheme = new ButtonStylePack { FontSize = 16f };
@@ -313,79 +221,38 @@ public class SonorizeLogic : IAppLogic
 
             UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, buttonsY), 5);
             {
-                if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isTrackSelected, layer: controlsLayer, isActive: _isShuffleActive))
+                bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
+                if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, isActive: isShuffleActive))
                 {
-                    _isShuffleActive = !_isShuffleActive;
+                    _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
                 }
 
-                if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
+                if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
                 {
-                    if (_musicLibrary.Files.Count > 0)
-                    {
-                        _selectedTrackIndex--;
-                        if (_selectedTrackIndex < 0)
-                        {
-                            _selectedTrackIndex = _musicLibrary.Files.Count - 1;
-                        }
-                    }
+                    _playbackManager.Previous();
                 }
 
-                string playPauseText = _audioPlayer.IsPlaying ? "⏸" : "▶";
-                if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
+                string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
+                if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
                 {
-                    if (_audioPlayer.IsPlaying)
-                    {
-                        _audioPlayer.Pause();
-                    }
-                    else
-                    {
-                        if (isAudioLoaded && _audioPlayer.CurrentState == PlaybackState.Paused)
-                        {
-                            _audioPlayer.Resume();
-                        }
-                        else if (isTrackSelected)
-                        {
-                            // This will trigger the selection changed logic to play the track
-                            _previousSelectedTrackIndex = -1;
-                        }
-                    }
+                    _playbackManager.TogglePlayPause();
                 }
 
-                if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
+                if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
                 {
-                    if (_musicLibrary.Files.Count > 0)
-                    {
-                        if (_isShuffleActive)
-                        {
-                            if (_musicLibrary.Files.Count > 1)
-                            {
-                                int current = _selectedTrackIndex;
-                                int next;
-                                do { next = _random.Next(_musicLibrary.Files.Count); } while (next == current);
-                                _selectedTrackIndex = next;
-                            }
-                            else
-                            {
-                                _selectedTrackIndex = 0;
-                            }
-                        }
-                        else
-                        {
-                            _selectedTrackIndex = (_selectedTrackIndex + 1) % _musicLibrary.Files.Count;
-                        }
-                    }
+                    _playbackManager.Next();
                 }
 
-                string repeatText = _playbackEndAction switch
+                string repeatText = _playbackManager.EndAction switch
                 {
                     PlaybackEndAction.NextInQueue => "🔁",
                     PlaybackEndAction.RepeatSong => "🔂",
                     PlaybackEndAction.DoNothing => "➡",
                     _ => "?"
                 };
-                if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
+                if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
                 {
-                    _playbackEndAction = (PlaybackEndAction)(((int)_playbackEndAction + 1) % 3);
+                    _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
                 }
             }
             UI.EndHBoxContainer();
