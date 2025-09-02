@@ -1,5 +1,6 @@
 ﻿// Entire file content here
 using System;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using DirectUI.Core;
@@ -61,6 +62,9 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     private GRBackendRenderTarget? _modalRenderTarget;
     private Action<int>? _onModalClosedCallback;
     private int _modalResultCode;
+    private readonly Stopwatch _throttleTimer = new();
+    private long _lastMainRepaintTicks;
+    private static readonly long _modalRepaintIntervalTicks = Stopwatch.Frequency / 10;
 
     // P/Invoke for Win32 to enable true modal behavior
     [DllImport("user32.dll", SetLastError = true)]
@@ -87,6 +91,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _width = width;
         _height = height;
         _backgroundColor = backgroundColor;
+        _throttleTimer.Start();
     }
 
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
@@ -127,10 +132,24 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             // Process windowing and input events for all windows
             _window.DoEvents();
 
-            // 1) Render the main window every frame
-            _window.GLContext?.MakeCurrent();
-            OnRender(0);               // your existing main-window draw logic
-            _window.SwapBuffers();
+            bool renderMainWindow = !IsModalWindowOpen;
+            if (IsModalWindowOpen)
+            {
+                long currentTicks = _throttleTimer.ElapsedTicks;
+                if (currentTicks - _lastMainRepaintTicks > _modalRepaintIntervalTicks)
+                {
+                    renderMainWindow = true;
+                    _lastMainRepaintTicks = currentTicks;
+                }
+            }
+
+            // 1) Render the main window (conditionally)
+            if (renderMainWindow)
+            {
+                _window.GLContext?.MakeCurrent();
+                OnRender(0);
+                _window.SwapBuffers();
+            }
 
             // 2) If a modal is open, render it on top
             if (IsModalWindowOpen
@@ -369,6 +388,11 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     public void OpenModalWindow(string title, int width, int height, Action<UIContext> drawCallback, Action<int>? onClosedCallback = null)
     {
         if (IsModalWindowOpen || _window is null) return;
+
+        _window.GLContext?.MakeCurrent();
+        OnRender(0);
+        _window.SwapBuffers();
+        _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
 
         _onModalClosedCallback = onClosedCallback;
         _modalResultCode = -1; // Default to canceled/closed

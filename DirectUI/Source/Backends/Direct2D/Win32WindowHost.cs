@@ -14,6 +14,9 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     private int modalResultCode;
     private Action<int>? onModalClosedCallback;
     private bool _isModalClosing;
+    private readonly System.Diagnostics.Stopwatch _throttleTimer = new();
+    private long _lastModalRepaintTicks;
+    private static readonly long _modalRepaintIntervalTicks = System.Diagnostics.Stopwatch.Frequency / 10;
 
     public bool IsModalWindowOpen
     {
@@ -27,6 +30,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     public Win32WindowHost(string title = "DirectUI Win32 Host", int width = 800, int height = 600)
         : base(title, width, height)
     {
+        _throttleTimer.Start();
     }
 
     public InputManager Input => appServices?.AppEngine.Input ?? new();
@@ -140,16 +144,14 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public override void FrameUpdate()
     {
-        // If a modal window is open, this host window is disabled. Standard message-based
-        // invalidation (which relies on WM_PAINT) will not work reliably because
-        // disabled windows may not process paint messages. To prevent the window from
-        // appearing frozen or being wiped clean by the OS, we must call its paint logic
-        // directly on every frame update from the main application loop.
-        // The UI will appear static as no input is being received, which is the
-        // desired effect.
         if (IsModalWindowOpen)
         {
-            OnPaint();
+            long currentTicks = _throttleTimer.ElapsedTicks;
+            if (currentTicks - _lastModalRepaintTicks > _modalRepaintIntervalTicks)
+            {
+                OnPaint();
+                _lastModalRepaintTicks = currentTicks;
+            }
         }
         else
         {
@@ -260,8 +262,8 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         if (activeModalWindow.CreateAsModal())
         {
-            // FIX: Explicitly assign to the instance field 'this.onModalClosedCallback'
-            // to avoid the local variable shadowing it.
+            OnPaint();
+            _lastModalRepaintTicks = _throttleTimer.ElapsedTicks;
             this.onModalClosedCallback = onClosedCallback;
             modalResultCode = -1;
             Console.WriteLine("Modal window opened successfully.");
