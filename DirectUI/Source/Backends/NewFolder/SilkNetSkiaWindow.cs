@@ -33,7 +33,7 @@ public class SilkNetSkiaWindow : IDisposable
     public SizeI ClientSize => new(IWindow.Size.X, IWindow.Size.Y);
     public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
 
-    public SilkNetSkiaWindow(string title, int width, int height, SilkNetWindowHost owner, bool isModal)
+    public SilkNetSkiaWindow(string title, int width, int height, SilkNetWindowHost owner, bool isModal, Vector2D<int>? position = null)
     {
         _owner = owner;
         _isModal = isModal;
@@ -44,6 +44,11 @@ public class SilkNetSkiaWindow : IDisposable
         options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
         options.ShouldSwapAutomatically = false;
         options.WindowBorder = isModal ? WindowBorder.Fixed : WindowBorder.Resizable;
+
+        if (position.HasValue)
+        {
+            options.Position = position.Value;
+        }
 
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {

@@ -4,6 +4,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DirectUI.Core;
 using DirectUI.Input;
+using Silk.NET.Maths;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -120,7 +121,17 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _onModalClosedCallback = onClosedCallback;
         _modalResultCode = -1;
 
-        _activeModalWindow = new SilkNetSkiaWindow(title, width, height, this, isModal: true);
+        Vector2D<int>? centeredPosition = null;
+        if (_mainWindow?.IWindow != null)
+        {
+            var parentPos = _mainWindow.IWindow.Position;
+            var parentSize = _mainWindow.IWindow.Size;
+            int x = parentPos.X + (parentSize.X - width) / 2;
+            int y = parentPos.Y + (parentSize.Y - height) / 2;
+            centeredPosition = new Vector2D<int>(x, y);
+        }
+
+        _activeModalWindow = new SilkNetSkiaWindow(title, width, height, this, isModal: true, centeredPosition);
         if (!_activeModalWindow.Initialize(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f)))
         {
             HandleModalClose(); // Cleanup if init fails
