@@ -51,13 +51,6 @@ public static partial class UI
 
         InitializeDataGridState(state, intId, columns);
 
-        // Preserve selected item instance across sorts
-        T? selectedItem = default;
-        if (selectedIndex >= 0 && selectedIndex < items.Count)
-        {
-            selectedItem = items[selectedIndex];
-        }
-
         // --- Style Definitions ---
         float headerHeight = 28f;
         float rowHeight = 24f;
@@ -114,27 +107,8 @@ public static partial class UI
         // --- Draw Main Background ---
         Context.Renderer.DrawBox(gridBounds, gridStyle);
 
-        // --- Draw Header and check for sort requests ---
+        // --- Draw Header ---
         DrawDataGridHeader(intId, state, columns, headerBounds, headerStyle, !autoSizeColumns);
-
-        // --- Sort Data if needed ---
-        IReadOnlyList<T> itemsToRender = items;
-        List<T>? sortedList = null;
-        if (state.SortColumnIndex != -1)
-        {
-            sortedList = SortData(items, columns, state);
-            itemsToRender = sortedList;
-        }
-
-        // --- Update selected index after sorting ---
-        if (selectedItem != null && sortedList != null)
-        {
-            selectedIndex = sortedList.IndexOf(selectedItem);
-        }
-        else if (selectedItem == null)
-        {
-            selectedIndex = -1;
-        }
 
         // --- Handle Scrolling and Draw Rows ---
         var scrollOffset = state.ScrollOffset;
@@ -154,7 +128,7 @@ public static partial class UI
         scrollOffset.Y = Math.Clamp(scrollOffset.Y, 0, Math.Max(0, totalContentHeight - viewHeight));
         state.ScrollOffset = scrollOffset; // Assign back before drawing rows
 
-        DrawDataGridRows(intId, itemsToRender, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle, trimCellText);
+        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle, trimCellText);
 
         // --- Draw Scrollbars ---
         // Re-read from state in case it was modified, then modify and write back.
@@ -196,9 +170,8 @@ public static partial class UI
         state.ColumnWidths.AddRange(columns.Select(c => c.InitialWidth));
     }
 
-    private static bool DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style, bool allowColumnResize)
+    private static void DrawDataGridHeader(int id, DataGridState state, IReadOnlyList<DataGridColumn> columns, Rect headerBounds, ButtonStyle style, bool allowColumnResize)
     {
-        bool sortStateChanged = false;
         var input = Context.InputState;
         float currentX = headerBounds.X - state.ScrollOffset.X;
 
@@ -208,40 +181,8 @@ public static partial class UI
         {
             float colWidth = state.ColumnWidths[i];
             var colHeaderBounds = new Rect(currentX, headerBounds.Y, colWidth, headerBounds.Height);
-
-            // --- Header Button & Sorting Logic ---
-            string headerText = columns[i].HeaderText;
-            if (state.SortColumnIndex == i)
-            {
-                headerText += (state.SortDirection == SortDirection.Ascending) ? " ▲" : " ▼";
-            }
-
-            var headerButtonId = HashCode.Combine(id, "header", i);
-            var headerThemeId = HashCode.Combine(headerButtonId, "theme");
-            var headerTheme = State.GetOrCreateElement<ButtonStylePack>(headerThemeId);
-
-            // Set up a theme that uses the base style but has hover/pressed states
-            headerTheme.Normal = new ButtonStyle(style);
-            headerTheme.Hover.FillColor = DefaultTheme.HoverFill;
-            headerTheme.Hover.BorderColor = style.BorderColor;
-            headerTheme.Pressed.FillColor = DefaultTheme.Accent;
-            headerTheme.Pressed.BorderColor = style.BorderColor;
-
-            // Use DrawButtonPrimitive for click detection. Layer 5 is above rows (1) and below scrollbars (10).
-            if (DrawButtonPrimitive(headerButtonId, colHeaderBounds, headerText, headerTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0), layer: 5))
-            {
-                if (state.SortColumnIndex == i)
-                {
-                    state.SortDirection = (state.SortDirection == SortDirection.Ascending) ? SortDirection.Descending : SortDirection.Ascending;
-                }
-                else
-                {
-                    state.SortColumnIndex = i;
-                    state.SortDirection = SortDirection.Ascending;
-                }
-                sortStateChanged = true;
-            }
-
+            Context.Renderer.DrawBox(colHeaderBounds, style);
+            DrawTextPrimitive(colHeaderBounds, columns[i].HeaderText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
 
             if (allowColumnResize)
             {
@@ -276,7 +217,6 @@ public static partial class UI
         }
 
         Context.Renderer.PopClipRect();
-        return sortStateChanged;
     }
 
     private static string TrimTextWithEllipsis(string text, float maxWidth, ButtonStyle style)
@@ -390,38 +330,5 @@ public static partial class UI
         }
 
         return propInfo?.GetValue(item);
-    }
-
-    private static List<T> SortData<T>(IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state)
-    {
-        if (state.SortColumnIndex < 0 || state.SortColumnIndex >= columns.Count)
-        {
-            return items.ToList();
-        }
-
-        var sortColumn = columns[state.SortColumnIndex];
-        string propertyName = sortColumn.DataPropertyName;
-
-        try
-        {
-            Func<T, object?> keySelector = item => GetPropertyValue(item, propertyName);
-
-            IEnumerable<T> sortedQuery;
-            if (state.SortDirection == SortDirection.Ascending)
-            {
-                sortedQuery = items.OrderBy(keySelector, Comparer<object>.Default);
-            }
-            else
-            {
-                sortedQuery = items.OrderByDescending(keySelector, Comparer<object>.Default);
-            }
-
-            return sortedQuery.ToList();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error during sorting on property '{propertyName}': {ex.Message}");
-            return items.ToList();
-        }
     }
 }
