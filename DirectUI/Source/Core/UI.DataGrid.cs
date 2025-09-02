@@ -246,17 +246,47 @@ public static partial class UI
 
         Context.Renderer.PushClipRect(headerBounds);
 
+        // Create a temporary ButtonStylePack for the header for hover feedback
+        var headerTheme = new ButtonStylePack { Roundness = 0, BorderLength = 0 };
+        headerTheme.Normal = new ButtonStyle(style);
+        headerTheme.Pressed = new ButtonStyle(style);
+        headerTheme.Hover = new ButtonStyle(style);
+        // Make hover slightly brighter for feedback
+        var hoverColor = headerTheme.Hover.FillColor;
+        hoverColor.R = (byte)Math.Min(255, (int)(hoverColor.R * 1.1f));
+        hoverColor.G = (byte)Math.Min(255, (int)(hoverColor.G * 1.1f));
+        hoverColor.B = (byte)Math.Min(255, (int)(hoverColor.B * 1.1f));
+        headerTheme.Hover.FillColor = hoverColor;
+
         for (int i = 0; i < columns.Count; i++)
         {
             float colWidth = state.ColumnWidths[i];
             var colHeaderBounds = new Rect(currentX, headerBounds.Y, colWidth, headerBounds.Height);
 
-            // Header click for sorting
+            // Header click for sorting using a proper button primitive
             int headerId = HashCode.Combine(id, "header", i);
-            bool isHeaderHovering = colHeaderBounds.Contains(input.MousePosition);
-            if (isHeaderHovering) State.SetPotentialInputTarget(headerId);
+            string headerText = columns[i].HeaderText;
+            if (state.SortColumnIndex == i)
+            {
+                headerText += state.SortAscending ? " ▲" : " ▼";
+            }
 
-            if (isHeaderHovering && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == headerId)
+            // Use DrawButtonPrimitive with a high layer to prevent click-through
+            bool wasHeaderClicked = DrawButtonPrimitive(
+                id: headerId,
+                bounds: colHeaderBounds,
+                text: headerText,
+                theme: headerTheme,
+                disabled: false,
+                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
+                clickMode: DirectUI.Button.ActionMode.Press, // Use Press mode for fair arbitration
+                clickBehavior: DirectUI.Button.ClickBehavior.Left,
+                textOffset: new Vector2(5, 0),
+                isActive: false,
+                layer: 5 // High layer to win against grid rows
+            );
+
+            if (wasHeaderClicked)
             {
                 if (state.SortColumnIndex == i)
                 {
@@ -268,17 +298,6 @@ public static partial class UI
                     state.SortAscending = true;
                 }
             }
-
-
-            Context.Renderer.DrawBox(colHeaderBounds, style);
-
-            string headerText = columns[i].HeaderText;
-            if (state.SortColumnIndex == i)
-            {
-                headerText += state.SortAscending ? " ▲" : " ▼";
-            }
-
-            DrawTextPrimitive(colHeaderBounds, headerText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
 
             if (allowColumnResize)
             {
@@ -301,6 +320,7 @@ public static partial class UI
 
                 if (isHoveringHandle && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == handleId)
                 {
+                    // Use a higher layer for the resize handle than the header button itself
                     if (State.TrySetActivePress(handleId, 10))
                     {
                         state.ResizingColumnIndex = i;
