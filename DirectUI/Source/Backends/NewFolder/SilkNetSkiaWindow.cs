@@ -9,6 +9,7 @@ using SkiaSharp;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 using Key = Silk.NET.Input.Key;
+using Silk.NET.GLFW;
 
 namespace DirectUI.Backends.SkiaSharp;
 

@@ -28,12 +28,17 @@ namespace DirectUI.Backends.SkiaSharp
         private static readonly long _modalRepaintIntervalTicks = Stopwatch.Frequency / 10;
         private bool _isDisposed;
 
-        // Win32 fallback for Windows
+        // Win32 fallback (only on Windows) for precise positioning
 #if WINDOWS
         [DllImport("user32.dll", SetLastError = true)]
         private static extern bool SetWindowPos(
-            IntPtr hWnd, IntPtr hWndInsertAfter,
-            int X, int Y, int cx, int cy, uint uFlags);
+            IntPtr hWnd,
+            IntPtr hWndInsertAfter,
+            int X,
+            int Y,
+            int cx,
+            int cy,
+            uint uFlags);
 
         private const uint SWP_NOSIZE     = 0x0001;
         private const uint SWP_NOZORDER   = 0x0004;
@@ -50,17 +55,14 @@ namespace DirectUI.Backends.SkiaSharp
 
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr SetWindowLongPtr(
-            IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+            IntPtr hWnd,
+            int nIndex,
+            IntPtr dwNewLong);
         private const int GWL_HWNDPARENT = -8;
 
-        public IntPtr Handle
-            => _mainWindow?.Handle ?? IntPtr.Zero;
-
-        public InputManager Input
-            => _mainWindow?.Input ?? new InputManager();
-
-        public SizeI ClientSize
-            => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
+        public IntPtr Handle => _mainWindow?.Handle ?? IntPtr.Zero;
+        public InputManager Input => _mainWindow?.Input ?? new InputManager();
+        public SizeI ClientSize => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
 
         public bool ShowFpsCounter
         {
@@ -92,11 +94,19 @@ namespace DirectUI.Backends.SkiaSharp
 
         public void RunLoop()
         {
-            if (_mainWindow == null) return;
+            if (_mainWindow == null)
+                return;
 
+            // 1) Create GL/Skia contexts (still hidden)
             _mainWindow.IWindow.Initialize();
+
+            // 2) Pre‐render one frame off‐screen to avoid the blank flash
+            _mainWindow.Render();
+
+            // 3) Now show the main window with its first frame already painted
             _mainWindow.IWindow.IsVisible = true;
 
+            // 4) Enter the regular event/render loop
             while (!_mainWindow.IWindow.IsClosing)
             {
                 _mainWindow.IWindow.DoEvents();
@@ -133,7 +143,7 @@ namespace DirectUI.Backends.SkiaSharp
             if (IsModalWindowOpen || _mainWindow == null)
                 return;
 
-            // 1) Compute true center
+            // Compute centered coords relative to parent
             var parentPos = _mainWindow.IWindow.Position;
             var parentSize = _mainWindow.IWindow.Size;
             var center = new Vector2D<int>(
@@ -144,7 +154,7 @@ namespace DirectUI.Backends.SkiaSharp
             _onModalClosedCallback = onClosedCallback;
             _modalResultCode = -1;
 
-            // 2) Create off‐screen so you never see 0,0
+            // Create the modal window hidden off‐screen
             var offscreen = new Vector2D<int>(-10000, -10000);
             _activeModalWindow = new SilkNetSkiaWindow(
                 title, width, height, this, isModal: true, initialPosition: offscreen);
@@ -157,16 +167,16 @@ namespace DirectUI.Backends.SkiaSharp
                 return;
             }
 
-            // 3) Force native creation (still hidden offscreen)
+            // Force native handle creation (still hidden)
             _activeModalWindow.IWindow.Initialize();
 
-            // 4) OS-level parenting
+            // Tell the OS about the owner relationship
             var modalHwnd = _activeModalWindow.Handle;
             var parentHwnd = Handle;
             if (modalHwnd != IntPtr.Zero && parentHwnd != IntPtr.Zero)
                 SetWindowLongPtr(modalHwnd, GWL_HWNDPARENT, parentHwnd);
 
-            // 5) Pre-show reposition to center
+            // Cross‐platform reposition (Win32 fallback on Windows)
             if (modalHwnd != IntPtr.Zero)
             {
 #if WINDOWS
@@ -181,25 +191,13 @@ namespace DirectUI.Backends.SkiaSharp
 #endif
             }
 
-            // 6) Show it
+            // Pre‐render the modal’s first frame off‐screen
+            _activeModalWindow.Render();
+
+            // Now reveal the modal with no blank flash
             _activeModalWindow.IWindow.IsVisible = true;
 
-            // 7) Immediately re-position again after show
-            if (modalHwnd != IntPtr.Zero)
-            {
-#if WINDOWS
-                SetWindowPos(
-                    modalHwnd,
-                    IntPtr.Zero,
-                    center.X, center.Y,
-                    0, 0,
-                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
-#else
-                _activeModalWindow.IWindow.Position = center;
-#endif
-            }
-
-            // 8) Disable & repaint parent to avoid blank‐frame
+            // Disable and repaint the parent to avoid a blank‐frame
             if (parentHwnd != IntPtr.Zero)
             {
                 EnableWindow(parentHwnd, false);
@@ -211,7 +209,9 @@ namespace DirectUI.Backends.SkiaSharp
 
         public void CloseModalWindow(int resultCode = 0)
         {
-            if (!IsModalWindowOpen) return;
+            if (!IsModalWindowOpen)
+                return;
+
             _modalResultCode = resultCode;
             _activeModalWindow?.IWindow.Close();
         }
