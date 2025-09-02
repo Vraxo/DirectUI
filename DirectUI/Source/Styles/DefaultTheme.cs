@@ -85,7 +85,7 @@ public static class DefaultTheme
     public static readonly Color Black = new Color(0, 0, 0, 255);
     public static readonly Color Transparent = new Color(0, 0, 0, 0);
 
-    
+    /*
     // --- ACTIVE THEME: DAW ---
     public static readonly Color NormalFill = DAWThemeColors.Control;
     public static readonly Color NormalBorder = DAWThemeColors.Border;
@@ -98,7 +98,7 @@ public static class DefaultTheme
     public static readonly Color DisabledText = DAWThemeColors.DisabledText;
     public static readonly Color FocusBorder = DAWThemeColors.Accent; // Use Accent for focus border
     public static readonly Color Text = DAWThemeColors.Text;
-
+    */
 
     /*
     // --- ACTIVE THEME: Unity Editor (Dark) ---
@@ -115,10 +115,7 @@ public static class DefaultTheme
     public static readonly Color Text = UnityEditorThemeColors.Text;
     */
 
-    /*
-    // --- BACKUP THEME: Original ---
-    // To restore the original theme, comment out the "UE5" block above
-    // and uncomment this block below.
+    // --- ACTIVE THEME: Original ---
     public static readonly Color NormalFill = OriginalColors.NormalFill;
     public static readonly Color NormalBorder = OriginalColors.NormalBorder;
     public static readonly Color HoverFill = OriginalColors.HoverFill;
@@ -130,5 +127,4 @@ public static class DefaultTheme
     public static readonly Color DisabledText = OriginalColors.DisabledText;
     public static readonly Color FocusBorder = new Color(135, 206, 250, 255); // LightSkyBlue
     public static readonly Color Text = OriginalColors.Text;
-    */
 }
