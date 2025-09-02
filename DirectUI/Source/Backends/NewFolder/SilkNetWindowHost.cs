@@ -389,34 +389,26 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     {
         if (IsModalWindowOpen || _window is null) return;
 
-        _window.GLContext?.MakeCurrent();
-        OnRender(0);
-        _window.SwapBuffers();
-        _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
+        // --- REORDERED LOGIC TO PREVENT FLASHING ---
 
+        // 1. Set callbacks and default result code.
         _onModalClosedCallback = onClosedCallback;
-        _modalResultCode = -1; // Default to canceled/closed
+        _modalResultCode = -1;
 
-        var parentHwnd = Handle;
-        if (parentHwnd != IntPtr.Zero)
-        {
-            EnableWindow(parentHwnd, false);
-        }
-
+        // 2. Create the modal window object, but keep it hidden.
         var options = WindowOptions.Default;
         options.Size = new Vector2D<int>(width, height);
         options.Title = title;
         options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
         options.WindowBorder = WindowBorder.Fixed;
         options.ShouldSwapAutomatically = false;
-
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {
             options.TransparentFramebuffer = true;
         }
-
         _activeModalIWindow = Window.Create(options);
 
+        // 3. Hook up the Load event handler which contains all the heavy graphics initialization.
         _activeModalIWindow.Load += () =>
         {
             _modalGl = _activeModalIWindow.CreateOpenGL();
@@ -426,24 +418,18 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             if (useTransparentModalBg)
             {
                 if (TitleBarTheme == WindowTitleBarTheme.Light)
-                {
                     modalBgColor = new Color4(243 / 255f, 243 / 255f, 243 / 255f, 1 / 255f);
-                }
                 else
-                {
                     modalBgColor = new Color4(0, 0, 0, 1 / 255f);
-                }
 
                 _modalGl.ClearColor(modalBgColor.R, modalBgColor.G, modalBgColor.B, modalBgColor.A);
 
                 var modalHwnd = _activeModalIWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
                 if (modalHwnd != IntPtr.Zero)
                 {
-                    // Unify theming logic with ApplyWindowStyles
-                    int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1; // Default and Dark map to 1 (dark)
+                    int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1;
                     DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
-
-                    int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Acrylic for modals
+                    int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW;
                     DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
                 }
             }
@@ -479,7 +465,24 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             }
         };
 
+        // 4. Run the initialization. This is the slow part. The main window is still enabled and interactive.
         _activeModalIWindow.Initialize();
+
+        // 5. Now that the modal is fully prepared, perform the quick final steps.
+        // 5a. Force one final, complete render of the main window so it's not blank.
+        _window.GLContext?.MakeCurrent();
+        OnRender(0);
+        _window.SwapBuffers();
+        _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
+
+        // 5b. Disable the main window.
+        var parentHwnd = Handle;
+        if (parentHwnd != IntPtr.Zero)
+        {
+            EnableWindow(parentHwnd, false);
+        }
+
+        // 5c. Finally, make the fully-prepared modal window visible.
         _activeModalIWindow.IsVisible = true;
     }
 
