@@ -64,7 +64,7 @@ public static partial class UI
             }
         }
 
-        bool clicked = DrawButtonPrimitive(
+        ClickResult clickResult = DrawButtonPrimitive(
             intId,
             widgetBounds,
             text,
@@ -84,6 +84,6 @@ public static partial class UI
         }
 
         Context.Layout.AdvanceLayout(finalSize);
-        return clicked;
+        return clickResult != ClickResult.None;
     }
 }

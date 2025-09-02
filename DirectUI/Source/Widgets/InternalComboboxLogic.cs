@@ -58,7 +58,7 @@ internal class InternalComboboxLogic
             Button.ActionMode.Release,
             Button.ClickBehavior.Left,
             new Vector2(5, 0)
-        );
+        ) != ClickResult.None;
 
         if (clicked && !disabled)
         {
@@ -98,7 +98,7 @@ internal class InternalComboboxLogic
 
                         int itemId = HashCode.Combine(id, "item", i);
 
-                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
+                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)) != ClickResult.None)
                         {
                             // A selection was made. Post the result to be picked up next frame.
                             state.SetPopupResult(id, i);

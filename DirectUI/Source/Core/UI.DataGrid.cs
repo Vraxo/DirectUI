@@ -22,6 +22,7 @@ public static partial class UI
     /// <param name="columns">The column definitions for the grid.</param>
     /// <param name="selectedIndex">A reference to the index of the currently selected item in the original 'items' list.</param>
     /// <param name="size">The total size of the data grid control.</param>
+    /// <param name="rowDoubleClicked">An output parameter that is true if a row was double-clicked this frame.</param>
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
     /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
     /// <param name="trimCellText">If true, text that overflows a cell's width will be truncated and appended with an ellipsis (...).</param>
@@ -31,15 +32,21 @@ public static partial class UI
         IReadOnlyList<DataGridColumn> columns,
         ref int selectedIndex,
         Vector2 size,
+        out bool rowDoubleClicked,
         Vector2 position = default,
         bool autoSizeColumns = false,
         bool trimCellText = false)
     {
-        if (!IsContextValid()) return;
+        if (!IsContextValid())
+        {
+            rowDoubleClicked = false;
+            return;
+        }
 
         int intId = id.GetHashCode();
         var state = State.GetOrCreateElement<DataGridState>(intId);
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
+        rowDoubleClicked = false;
 
         // Culling
         var gridBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
@@ -174,7 +181,7 @@ public static partial class UI
         Context.Layout.PushClipRect(contentClipRect);
         Context.Renderer.PushClipRect(contentClipRect);
 
-        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText);
+        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText, out rowDoubleClicked);
 
         // Pop clip rects
         Context.Renderer.PopClipRect();
@@ -293,7 +300,7 @@ public static partial class UI
                 textOffset: new Vector2(5, 0),
                 isActive: false,
                 layer: 5 // High layer to win against grid rows
-            );
+            ) != ClickResult.None;
 
             if (wasHeaderClicked)
             {
@@ -372,9 +379,10 @@ public static partial class UI
         return ellipsis; // If nothing else fits
     }
 
-    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText)
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText, out bool rowDoubleClicked)
     {
         var input = Context.InputState;
+        rowDoubleClicked = false;
 
         int firstVisibleRow = (int)Math.Floor(state.ScrollOffset.Y / rowHeight);
         int visibleRowCount = (int)Math.Ceiling(viewSize.Y / rowHeight) + 1;
@@ -388,9 +396,15 @@ public static partial class UI
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
-            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
+            var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected);
+
+            if (clickResult != ClickResult.None)
             {
                 selectedIndex = i;
+                if (clickResult == ClickResult.DoubleClick)
+                {
+                    rowDoubleClicked = true;
+                }
             }
 
             float currentX = contentBounds.X - state.ScrollOffset.X;

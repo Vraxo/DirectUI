@@ -12,6 +12,7 @@ public class UIContext
     public ITextService TextService { get; }
     public InputState InputState { get; }
     public float DeltaTime { get; }
+    public float TotalTime { get; }
 
     // Layout and state management
     public UILayoutManager Layout { get; }
@@ -19,12 +20,13 @@ public class UIContext
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
 
-    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime)
+    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime)
     {
         Renderer = renderer;
         TextService = textService;
         InputState = inputState;
         DeltaTime = deltaTime;
+        TotalTime = totalTime;
         Layout = new UILayoutManager();
     }
 }

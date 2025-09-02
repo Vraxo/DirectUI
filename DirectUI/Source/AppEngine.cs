@@ -72,6 +72,7 @@ public class AppEngine
         long currentTicks = _frameTimer.ElapsedTicks;
         float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
         _lastFrameTicks = currentTicks;
+        float totalTime = (float)_frameTimer.Elapsed.TotalSeconds;
 
         // Clamp delta time to avoid huge jumps (e.g., when debugging or window is moved)
         deltaTime = Math.Min(deltaTime, 1.0f / 15.0f); // Clamp to a minimum of 15 FPS
@@ -83,7 +84,7 @@ public class AppEngine
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);

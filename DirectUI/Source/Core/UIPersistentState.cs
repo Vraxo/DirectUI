@@ -67,6 +67,11 @@ public class UIPersistentState
     public bool DragInProgressFromPreviousFrame { get; private set; } = false;
     public int FocusedElementId { get; private set; } = 0;
 
+    // --- Double Click State ---
+    public int LastClickedElementId { get; private set; } = 0;
+    public float LastClickTime { get; private set; } = -1.0f;
+    public const float DoubleClickThreshold = 0.4f; // 400ms
+
     // --- Input State (reset each frame) ---
     public int PotentialInputTargetId { get; private set; } = 0;
     public int InputCaptorId { get; private set; } = 0; // The element that captured the press for RELEASE mode.
@@ -202,5 +207,25 @@ public class UIPersistentState
     public void SetFocus(int id)
     {
         FocusedElementId = id;
+    }
+
+    // --- Click Management ---
+    public ClickResult RegisterClick(int id)
+    {
+        float currentTime = UI.Context.TotalTime;
+        if (LastClickedElementId == id && (currentTime - LastClickTime) < DoubleClickThreshold)
+        {
+            // Double click detected, reset state
+            LastClickedElementId = 0;
+            LastClickTime = -1.0f;
+            return ClickResult.DoubleClick;
+        }
+        else
+        {
+            // Single click, update state
+            LastClickedElementId = id;
+            LastClickTime = currentTime;
+            return ClickResult.Click;
+        }
     }
 }

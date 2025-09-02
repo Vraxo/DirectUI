@@ -165,7 +165,7 @@ public static partial class UI
 
                     int itemId = HashCode.Combine(intId, "item", i);
 
-                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)))
+                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)) != ClickResult.None)
                     {
                         state.SetPopupResult(intId, i);
                         state.ClearActivePopup();

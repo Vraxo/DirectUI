@@ -24,7 +24,13 @@ public class SettingsWindow
         UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
         UI.Separator(480, verticalPadding: 2);
 
-        UI.Text("dirsHeader", "Directories");
+        UI.Text("playbackHeader", "Playback");
+        bool playOnDoubleClick = _settings.PlayOnDoubleClick;
+        UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
+        _settings.PlayOnDoubleClick = playOnDoubleClick;
+        UI.Separator(480, verticalPadding: 2);
+
+        UI.Text("dirsHeader", "Music Library Directories");
 
         DrawDirectoriesList();
         DrawActionButtons();
@@ -35,7 +41,7 @@ public class SettingsWindow
 
     private void DrawDirectoriesList()
     {
-        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 200), out float innerWidth);
+        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 160), out float innerWidth);
         {
             ButtonStylePack selectedStyle = new();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;

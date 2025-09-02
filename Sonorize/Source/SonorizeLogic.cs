@@ -126,6 +126,7 @@ public class SonorizeLogic : IAppLogic
         );
 
         int previousSelectedTrackIndex = _selectedTrackIndex;
+        bool rowDoubleClicked = false;
         if (gridSize.X > 0 && gridSize.Y > 0)
         {
             UI.DataGrid<MusicFile>(
@@ -134,19 +135,32 @@ public class SonorizeLogic : IAppLogic
                 _columns,
                 ref _selectedTrackIndex,
                 gridSize,
+                out rowDoubleClicked,
                 gridPos,
                 autoSizeColumns: true,
                 trimCellText: true
             );
         }
 
+        bool selectionChanged = _selectedTrackIndex != previousSelectedTrackIndex;
+
         // Sync state between UI selection and playback manager
-        if (_selectedTrackIndex != previousSelectedTrackIndex)
+        if (_settings.PlayOnDoubleClick)
         {
-            // User selected a new track in the grid: tell the manager to play it.
-            _playbackManager.Play(_selectedTrackIndex);
+            if (rowDoubleClicked)
+            {
+                _playbackManager.Play(_selectedTrackIndex);
+            }
         }
-        else if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
+        else // Play on single click
+        {
+            if (selectionChanged)
+            {
+                _playbackManager.Play(_selectedTrackIndex);
+            }
+        }
+
+        if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
         {
             // Playback manager changed the track (e.g., next song): update grid selection.
             _selectedTrackIndex = _playbackManager.CurrentTrackIndex;

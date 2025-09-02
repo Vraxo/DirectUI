@@ -5,13 +5,15 @@ using Vortice.Mathematics;
 
 namespace DirectUI;
 
+public enum ClickResult { None, Click, DoubleClick }
+
 public static partial class UI
 {
     /// <summary>
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    internal static bool DrawButtonPrimitive(
+    internal static ClickResult DrawButtonPrimitive(
         int id,
         Vortice.Mathematics.Rect bounds,
         string text,
@@ -29,6 +31,8 @@ public static partial class UI
         var renderer = context.Renderer;
         var textService = context.TextService;
         var input = context.InputState;
+
+        ClickResult clickResult = ClickResult.None;
 
         // --- State Calculation ---
         bool isFocused = !disabled && state.FocusedElementId == id;
@@ -50,7 +54,6 @@ public static partial class UI
         }
 
         // --- Click Detection ---
-        bool wasClickedThisFrame = false;
         bool isPressed = state.ActivelyPressedElementId == id;
 
         bool primaryActionPressedThisFrame = (clickBehavior is DirectUI.Button.ClickBehavior.Left or DirectUI.Button.ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
@@ -70,8 +73,7 @@ public static partial class UI
                 // A click happens on release IF this button was the one that initially captured the input.
                 if (state.InputCaptorId == id)
                 {
-                    wasClickedThisFrame = true;
-                    Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
+                    clickResult = state.RegisterClick(id);
                 }
             }
             state.ClearActivePress(id);
@@ -93,8 +95,7 @@ public static partial class UI
         // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution.
         if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
         {
-            wasClickedThisFrame = true;
-            Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
+            clickResult = state.RegisterClick(id);
         }
 
         // --- Style Resolution ---
@@ -112,7 +113,7 @@ public static partial class UI
             DrawTextPrimitive(bounds, text, currentStyle, textAlignment, textOffset);
         }
 
-        return wasClickedThisFrame;
+        return clickResult;
     }
 
     /// <summary>

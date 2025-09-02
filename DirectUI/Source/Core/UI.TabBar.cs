@@ -49,7 +49,7 @@ public static partial class UI
             var position = Context.Layout.GetCurrentPosition();
             var bounds = new Rect(position.X, position.Y, tabSize.X, tabSize.Y);
 
-            bool wasClicked = DrawButtonPrimitive(
+            var clickResult = DrawButtonPrimitive(
                 buttonId,
                 bounds,
                 tabLabels[i],
@@ -62,7 +62,7 @@ public static partial class UI
                 isActive: i == activeIndex
             );
 
-            if (wasClicked)
+            if (clickResult != ClickResult.None)
             {
                 activeIndex = i;
             }
