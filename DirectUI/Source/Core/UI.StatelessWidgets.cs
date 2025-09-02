@@ -35,6 +35,17 @@ public static partial class UI
         bool isHovering = !disabled && bounds.Width > 0 && bounds.Height > 0 && bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         if (isHovering)
         {
+            // A widget is only truly hovered if the mouse is within its bounds
+            // AND within the current layout clip rect. This prevents interaction
+            // with elements that are drawn outside their container's clipped area.
+            var currentClip = context.Layout.GetCurrentClipRect();
+            if (!currentClip.Contains(input.MousePosition.X, input.MousePosition.Y))
+            {
+                isHovering = false;
+            }
+        }
+        if (isHovering)
+        {
             state.SetPotentialInputTarget(id);
         }
 

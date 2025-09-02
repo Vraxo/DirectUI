@@ -169,7 +169,16 @@ public static partial class UI
         int displayIndex = (currentSelectedItem != null) ? sortedItems.IndexOf(currentSelectedItem) : -1;
         int displayIndexBeforeDraw = displayIndex;
 
+        // Define and push clip rect for content area
+        var contentClipRect = new Rect(contentBounds.X, contentBounds.Y, viewWidth, viewHeight);
+        Context.Layout.PushClipRect(contentClipRect);
+        Context.Renderer.PushClipRect(contentClipRect);
+
         DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText);
+
+        // Pop clip rects
+        Context.Renderer.PopClipRect();
+        Context.Layout.PopClipRect();
 
         // After drawing, if the user clicked a different row, the displayIndex will have changed.
         // We need to find the new item in the original list and update the caller's selectedIndex.
@@ -367,8 +376,6 @@ public static partial class UI
     {
         var input = Context.InputState;
 
-        Context.Renderer.PushClipRect(new Rect(contentBounds.X, contentBounds.Y, viewSize.X, viewSize.Y));
-
         int firstVisibleRow = (int)Math.Floor(state.ScrollOffset.Y / rowHeight);
         int visibleRowCount = (int)Math.Ceiling(viewSize.Y / rowHeight) + 1;
         int lastVisibleRow = Math.Min(items.Count - 1, firstVisibleRow + visibleRowCount);
@@ -377,7 +384,7 @@ public static partial class UI
         {
             var item = items[i];
             float rowY = contentBounds.Y + (i * rowHeight) - state.ScrollOffset.Y;
-            var rowBounds = new Rect(contentBounds.X, rowY, contentBounds.Width, rowHeight); // Use full width for selection
+            var rowBounds = new Rect(contentBounds.X, rowY, viewSize.X, rowHeight); // Use view width for selection
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
@@ -424,8 +431,6 @@ public static partial class UI
                 currentX += colWidth;
             }
         }
-
-        Context.Renderer.PopClipRect();
     }
 
     private static object? GetPropertyValue<T>(T item, string propertyName)
