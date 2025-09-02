@@ -4,6 +4,8 @@ using System.Numerics;
 
 namespace DirectUI;
 
+internal enum SortDirection { Ascending, Descending }
+
 internal class DataGridState
 {
     public int Id { get; set; }
@@ -14,4 +16,8 @@ internal class DataGridState
     // State for column resizing drag operation
     public float ColumnResizeStartWidth { get; set; }
     public float DragStartMouseX { get; set; }
+
+    // New properties for sorting
+    public int SortColumnIndex { get; set; } = -1;
+    public SortDirection SortDirection { get; set; } = SortDirection.Ascending;
 }
