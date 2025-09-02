@@ -199,15 +199,21 @@ public class SonorizeLogic : IAppLogic
             }
 
             // --- Buttons ---
-            var buttonSize = new Vector2(80, 24);
+            var buttonSize = new Vector2(35, 24); // Make buttons more compact for icons
             var totalButtonsWidth = (buttonSize.X * 4) + (5 * 3); // 4 buttons, 3 gaps
             var buttonsStartX = (windowSize.X - totalButtonsWidth) / 2;
             var buttonsY = UI.Context.Layout.GetCurrentPosition().Y + 5; // Add some padding from slider
             const int controlsLayer = 10; // Use a higher layer for controls
 
+            // A theme for the icon buttons to make symbols a bit larger
+            var iconButtonTheme = new ButtonStylePack
+            {
+                FontSize = 16f
+            };
+
             UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, buttonsY), 5);
             {
-                if (UI.Button("prevTrack", "Previous", buttonSize, disabled: !isTrackSelected, layer: controlsLayer))
+                if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
                 {
                     if (_musicLibrary.Files.Count > 0)
                     {
@@ -219,8 +225,8 @@ public class SonorizeLogic : IAppLogic
                     }
                 }
 
-                string playPauseText = _audioPlayer.IsPlaying ? "Pause" : "Play";
-                if (UI.Button("playPause", playPauseText, buttonSize, disabled: !isTrackSelected, layer: controlsLayer))
+                string playPauseText = _audioPlayer.IsPlaying ? "⏸" : "▶";
+                if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
                 {
                     if (_audioPlayer.IsPlaying)
                     {
@@ -240,12 +246,12 @@ public class SonorizeLogic : IAppLogic
                     }
                 }
 
-                if (UI.Button("stopTrack", "Stop", buttonSize, disabled: !isAudioLoaded, layer: controlsLayer))
+                if (UI.Button("stopTrack", "⏹", buttonSize, theme: iconButtonTheme, disabled: !isAudioLoaded, layer: controlsLayer))
                 {
                     _audioPlayer.Stop();
                 }
 
-                if (UI.Button("nextTrack", "Next", buttonSize, disabled: !isTrackSelected, layer: controlsLayer))
+                if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
                 {
                     if (_musicLibrary.Files.Count > 0)
                     {
