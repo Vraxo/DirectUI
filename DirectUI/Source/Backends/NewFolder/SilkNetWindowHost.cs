@@ -125,11 +125,26 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             _window.DoEvents(); // Process events for ALL windows on the thread.
 
             // --- Main Window Rendering ---
-            // Always render the main window. Input handlers prevent new interactions
-            // when a modal is open, so this just redraws the last state, preventing
-            // the window from appearing "wiped" or frozen.
             _window.GLContext?.MakeCurrent();
-            OnRender(0); // Pass a dummy delta.
+
+            // If a modal is open, prevent the main window's UI logic from running,
+            // which would corrupt the shared UI state needed by the modal.
+            // Just redraw the background to keep the window from looking wiped.
+            if (IsModalWindowOpen)
+            {
+                _gl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
+                if (_appEngine != null && _skSurface != null)
+                {
+                    var bgColor = _appEngine.BackgroundColor;
+                    _skSurface.Canvas.Clear(new SKColor((byte)(bgColor.R * 255), (byte)(bgColor.G * 255), (byte)(bgColor.B * 255), (byte)(bgColor.A * 255)));
+                    _skSurface.Canvas.Flush();
+                }
+            }
+            else
+            {
+                OnRender(0); // Normal rendering
+            }
+
             _window.SwapBuffers();
 
 

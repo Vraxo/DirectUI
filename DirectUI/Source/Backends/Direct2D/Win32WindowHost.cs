@@ -112,18 +112,20 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             return;
         }
 
-        // The 3D rendering pass has been removed.
-        // We now proceed directly to 2D UI rendering.
         appServices.GraphicsDevice.BeginDraw();
         try
         {
-            // We now always clear the background for the 2D UI.
             if (appServices.AppEngine is not null && appServices.GraphicsDevice.RenderTarget is not null)
             {
                 appServices.GraphicsDevice.RenderTarget.Clear(appServices.AppEngine.BackgroundColor);
             }
 
-            appServices?.AppEngine?.UpdateAndRender(appServices.Renderer, appServices.TextService);
+            // If a modal is open, this host window is disabled and should not process UI logic.
+            // Just clearing the background is enough to keep it from looking "wiped" by the OS.
+            if (!IsModalWindowOpen)
+            {
+                appServices?.AppEngine?.UpdateAndRender(appServices.Renderer, appServices.TextService);
+            }
         }
         catch (Exception ex)
         {

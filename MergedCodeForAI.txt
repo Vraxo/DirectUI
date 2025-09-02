@@ -90,6 +90,7 @@ public class AppEngine
         long currentTicks = _frameTimer.ElapsedTicks;
         float deltaTime = (float)(currentTicks - _lastFrameTicks) / Stopwatch.Frequency;
         _lastFrameTicks = currentTicks;
+        float totalTime = (float)_frameTimer.Elapsed.TotalSeconds;
 
         // Clamp delta time to avoid huge jumps (e.g., when debugging or window is moved)
         deltaTime = Math.Min(deltaTime, 1.0f / 15.0f); // Clamp to a minimum of 15 FPS
@@ -101,7 +102,7 @@ public class AppEngine
             // Get the immutable input state for this frame from the InputManager
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(renderer, textService, inputState, deltaTime);
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime);
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);
@@ -1334,7 +1335,7 @@ public static partial class UI
             }
         }
 
-        bool clicked = DrawButtonPrimitive(
+        ClickResult clickResult = DrawButtonPrimitive(
             intId,
             widgetBounds,
             text,
@@ -1354,7 +1355,7 @@ public static partial class UI
         }
 
         Context.Layout.AdvanceLayout(finalSize);
-        return clicked;
+        return clickResult != ClickResult.None;
     }
 }
 </file>
@@ -2047,7 +2048,7 @@ public static partial class UI
 
                     int itemId = HashCode.Combine(intId, "item", i);
 
-                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)))
+                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)) != ClickResult.None)
                     {
                         state.SetPopupResult(intId, i);
                         state.ClearActivePopup();
@@ -2100,6 +2101,7 @@ public static partial class UI
     /// <param name="columns">The column definitions for the grid.</param>
     /// <param name="selectedIndex">A reference to the index of the currently selected item in the original 'items' list.</param>
     /// <param name="size">The total size of the data grid control.</param>
+    /// <param name="rowDoubleClicked">An output parameter that is true if a row was double-clicked this frame.</param>
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
     /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
     /// <param name="trimCellText">If true, text that overflows a cell's width will be truncated and appended with an ellipsis (...).</param>
@@ -2109,15 +2111,21 @@ public static partial class UI
         IReadOnlyList<DataGridColumn> columns,
         ref int selectedIndex,
         Vector2 size,
+        out bool rowDoubleClicked,
         Vector2 position = default,
         bool autoSizeColumns = false,
         bool trimCellText = false)
     {
-        if (!IsContextValid()) return;
+        if (!IsContextValid())
+        {
+            rowDoubleClicked = false;
+            return;
+        }
 
         int intId = id.GetHashCode();
         var state = State.GetOrCreateElement<DataGridState>(intId);
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
+        rowDoubleClicked = false;
 
         // Culling
         var gridBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
@@ -2252,7 +2260,7 @@ public static partial class UI
         Context.Layout.PushClipRect(contentClipRect);
         Context.Renderer.PushClipRect(contentClipRect);
 
-        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText);
+        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText, out rowDoubleClicked);
 
         // Pop clip rects
         Context.Renderer.PopClipRect();
@@ -2371,7 +2379,7 @@ public static partial class UI
                 textOffset: new Vector2(5, 0),
                 isActive: false,
                 layer: 5 // High layer to win against grid rows
-            );
+            ) != ClickResult.None;
 
             if (wasHeaderClicked)
             {
@@ -2450,9 +2458,10 @@ public static partial class UI
         return ellipsis; // If nothing else fits
     }
 
-    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText)
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText, out bool rowDoubleClicked)
     {
         var input = Context.InputState;
+        rowDoubleClicked = false;
 
         int firstVisibleRow = (int)Math.Floor(state.ScrollOffset.Y / rowHeight);
         int visibleRowCount = (int)Math.Ceiling(viewSize.Y / rowHeight) + 1;
@@ -2466,9 +2475,15 @@ public static partial class UI
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
-            if (DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected))
+            var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected);
+
+            if (clickResult != ClickResult.None)
             {
                 selectedIndex = i;
+                if (clickResult == ClickResult.DoubleClick)
+                {
+                    rowDoubleClicked = true;
+                }
             }
 
             float currentX = contentBounds.X - state.ScrollOffset.X;
@@ -2972,13 +2987,15 @@ using Vortice.Mathematics;
 
 namespace DirectUI;
 
+public enum ClickResult { None, Click, DoubleClick }
+
 public static partial class UI
 {
     /// <summary>
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    internal static bool DrawButtonPrimitive(
+    internal static ClickResult DrawButtonPrimitive(
         int id,
         Vortice.Mathematics.Rect bounds,
         string text,
@@ -2996,6 +3013,8 @@ public static partial class UI
         var renderer = context.Renderer;
         var textService = context.TextService;
         var input = context.InputState;
+
+        ClickResult clickResult = ClickResult.None;
 
         // --- State Calculation ---
         bool isFocused = !disabled && state.FocusedElementId == id;
@@ -3017,7 +3036,6 @@ public static partial class UI
         }
 
         // --- Click Detection ---
-        bool wasClickedThisFrame = false;
         bool isPressed = state.ActivelyPressedElementId == id;
 
         bool primaryActionPressedThisFrame = (clickBehavior is DirectUI.Button.ClickBehavior.Left or DirectUI.Button.ClickBehavior.Both) && input.WasLeftMousePressedThisFrame;
@@ -3037,8 +3055,7 @@ public static partial class UI
                 // A click happens on release IF this button was the one that initially captured the input.
                 if (state.InputCaptorId == id)
                 {
-                    wasClickedThisFrame = true;
-                    Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
+                    clickResult = state.RegisterClick(id);
                 }
             }
             state.ClearActivePress(id);
@@ -3060,8 +3077,7 @@ public static partial class UI
         // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution.
         if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
         {
-            wasClickedThisFrame = true;
-            Console.WriteLine($"[CLICK-ACTION] ID: {id}, Text: '{text}'");
+            clickResult = state.RegisterClick(id);
         }
 
         // --- Style Resolution ---
@@ -3079,7 +3095,7 @@ public static partial class UI
             DrawTextPrimitive(bounds, text, currentStyle, textAlignment, textOffset);
         }
 
-        return wasClickedThisFrame;
+        return clickResult;
     }
 
     /// <summary>
@@ -3325,7 +3341,7 @@ public static partial class UI
             var position = Context.Layout.GetCurrentPosition();
             var bounds = new Rect(position.X, position.Y, tabSize.X, tabSize.Y);
 
-            bool wasClicked = DrawButtonPrimitive(
+            var clickResult = DrawButtonPrimitive(
                 buttonId,
                 bounds,
                 tabLabels[i],
@@ -3338,7 +3354,7 @@ public static partial class UI
                 isActive: i == activeIndex
             );
 
-            if (wasClicked)
+            if (clickResult != ClickResult.None)
             {
                 activeIndex = i;
             }
@@ -3413,7 +3429,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false))
+            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false) != ClickResult.None)
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -3429,7 +3445,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false))
+        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false) != ClickResult.None)
         {
             clickedNode = node;
         }
@@ -3466,6 +3482,7 @@ public class UIContext
     public ITextService TextService { get; }
     public InputState InputState { get; }
     public float DeltaTime { get; }
+    public float TotalTime { get; }
 
     // Layout and state management
     public UILayoutManager Layout { get; }
@@ -3473,12 +3490,13 @@ public class UIContext
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
 
-    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime)
+    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime)
     {
         Renderer = renderer;
         TextService = textService;
         InputState = inputState;
         DeltaTime = deltaTime;
+        TotalTime = totalTime;
         Layout = new UILayoutManager();
     }
 }
@@ -3694,6 +3712,11 @@ public class UIPersistentState
     public bool DragInProgressFromPreviousFrame { get; private set; } = false;
     public int FocusedElementId { get; private set; } = 0;
 
+    // --- Double Click State ---
+    public int LastClickedElementId { get; private set; } = 0;
+    public float LastClickTime { get; private set; } = -1.0f;
+    public const float DoubleClickThreshold = 0.4f; // 400ms
+
     // --- Input State (reset each frame) ---
     public int PotentialInputTargetId { get; private set; } = 0;
     public int InputCaptorId { get; private set; } = 0; // The element that captured the press for RELEASE mode.
@@ -3829,6 +3852,26 @@ public class UIPersistentState
     public void SetFocus(int id)
     {
         FocusedElementId = id;
+    }
+
+    // --- Click Management ---
+    public ClickResult RegisterClick(int id)
+    {
+        float currentTime = UI.Context.TotalTime;
+        if (LastClickedElementId == id && (currentTime - LastClickTime) < DoubleClickThreshold)
+        {
+            // Double click detected, reset state
+            LastClickedElementId = 0;
+            LastClickTime = -1.0f;
+            return ClickResult.DoubleClick;
+        }
+        else
+        {
+            // Single click, update state
+            LastClickedElementId = id;
+            LastClickTime = currentTime;
+            return ClickResult.Click;
+        }
     }
 }
 </file>
@@ -5896,7 +5939,7 @@ internal class InternalComboboxLogic
             Button.ActionMode.Release,
             Button.ClickBehavior.Left,
             new Vector2(5, 0)
-        );
+        ) != ClickResult.None;
 
         if (clicked && !disabled)
         {
@@ -5936,7 +5979,7 @@ internal class InternalComboboxLogic
 
                         int itemId = HashCode.Combine(id, "item", i);
 
-                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)))
+                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)) != ClickResult.None)
                         {
                             // A selection was made. Post the result to be picked up next frame.
                             state.SetPopupResult(id, i);
@@ -11644,6 +11687,7 @@ public class SonorizeLogic : IAppLogic
         );
 
         int previousSelectedTrackIndex = _selectedTrackIndex;
+        bool rowDoubleClicked = false;
         if (gridSize.X > 0 && gridSize.Y > 0)
         {
             UI.DataGrid<MusicFile>(
@@ -11652,19 +11696,32 @@ public class SonorizeLogic : IAppLogic
                 _columns,
                 ref _selectedTrackIndex,
                 gridSize,
+                out rowDoubleClicked,
                 gridPos,
                 autoSizeColumns: true,
                 trimCellText: true
             );
         }
 
+        bool selectionChanged = _selectedTrackIndex != previousSelectedTrackIndex;
+
         // Sync state between UI selection and playback manager
-        if (_selectedTrackIndex != previousSelectedTrackIndex)
+        if (_settings.PlayOnDoubleClick)
         {
-            // User selected a new track in the grid: tell the manager to play it.
-            _playbackManager.Play(_selectedTrackIndex);
+            if (rowDoubleClicked)
+            {
+                _playbackManager.Play(_selectedTrackIndex);
+            }
         }
-        else if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
+        else // Play on single click
+        {
+            if (selectionChanged)
+            {
+                _playbackManager.Play(_selectedTrackIndex);
+            }
+        }
+
+        if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
         {
             // Playback manager changed the track (e.g., next song): update grid selection.
             _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
@@ -12094,6 +12151,7 @@ namespace Sonorize;
 public class Settings
 {
     public List<string> Directories { get; set; } = new();
+    public bool PlayOnDoubleClick { get; set; } = true;
 }
 </file>
 
@@ -12423,7 +12481,13 @@ public class SettingsWindow
         UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
         UI.Separator(480, verticalPadding: 2);
 
-        UI.Text("dirsHeader", "Directories");
+        UI.Text("playbackHeader", "Playback");
+        bool playOnDoubleClick = _settings.PlayOnDoubleClick;
+        UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
+        _settings.PlayOnDoubleClick = playOnDoubleClick;
+        UI.Separator(480, verticalPadding: 2);
+
+        UI.Text("dirsHeader", "Music Library Directories");
 
         DrawDirectoriesList();
         DrawActionButtons();
@@ -12434,7 +12498,7 @@ public class SettingsWindow
 
     private void DrawDirectoriesList()
     {
-        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 200), out float innerWidth);
+        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 160), out float innerWidth);
         {
             ButtonStylePack selectedStyle = new();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
