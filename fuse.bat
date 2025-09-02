@@ -7,7 +7,7 @@ echo Scanning folders:
 echo   - D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source
 echo ==================================================
 
-Fuse.exe "D:\Parsa Stuff\Visual Studio\DirectUI\MergedCodeForAI.txt" "D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source" "D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source" "D:\Parsa Stuff\Visual Studio\DirectUI\Cherris\Source"
+Fuse.exe "D:\Parsa Stuff\Visual Studio\DirectUI\MergedCodeForAI.txt" "D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source" "D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source"
 
 echo ==================================================
 echo Fuse process finished. Press any key to close this window.

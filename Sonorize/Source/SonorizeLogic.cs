@@ -111,7 +111,7 @@ public class SonorizeLogic : IAppLogic
         _menuBar.Draw(context);
 
         float menuBarHeight = 30f;
-        float playbackControlsHeight = 40f; // Space for the slider
+        float playbackControlsHeight = 70f; // Increased for buttons
         float padding = 10f;
         var gridPos = new Vector2(padding, menuBarHeight + padding);
         var gridSize = new Vector2(
@@ -149,7 +149,7 @@ public class SonorizeLogic : IAppLogic
 
     private void DrawPlaybackControls(UIContext context)
     {
-        float playbackControlsHeight = 40f;
+        float playbackControlsHeight = 70f; // Increased for buttons
         float padding = 10f;
         var windowSize = context.Renderer.RenderTargetSize;
 
@@ -173,15 +173,14 @@ public class SonorizeLogic : IAppLogic
         double currentPosition = _audioPlayer.GetPosition();
         double totalDuration = _audioPlayer.GetLength();
         bool isAudioLoaded = totalDuration > 0;
+        bool isTrackSelected = _selectedTrackIndex >= 0;
 
-        // Use a container to position the slider
-        var sliderAreaHeight = 20f;
-        var sliderAreaY = controlsY + (playbackControlsHeight - sliderAreaHeight) / 2f;
-        UI.BeginVBoxContainer("playbackControls", new Vector2(padding, sliderAreaY));
+        // Use a container to layout slider and buttons
+        UI.BeginVBoxContainer("playbackVBox", new Vector2(padding, controlsY + 5), 5);
         {
+            // --- Slider ---
             var sliderWidth = windowSize.X - (padding * 2);
-            var sliderSize = new Vector2(sliderWidth, sliderAreaHeight);
-
+            var sliderSize = new Vector2(sliderWidth, 10);
             float sliderValue = (float)currentPosition;
 
             float newSliderValue = UI.HSlider(
@@ -190,18 +189,79 @@ public class SonorizeLogic : IAppLogic
                 minValue: 0f,
                 maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
                 size: sliderSize,
-                disabled: !isAudioLoaded
+                disabled: !isAudioLoaded,
+                grabberSize: new Vector2(10, 20)
             );
 
-            // If user dragged the slider (and audio is loaded), seek to new position.
-            // Check for a meaningful change to avoid seeking due to float precision issues.
             if (isAudioLoaded && Math.Abs(newSliderValue - sliderValue) > 0.01f)
             {
                 _audioPlayer.Seek(newSliderValue);
             }
+
+            // --- Buttons ---
+            var buttonSize = new Vector2(80, 24);
+            var totalButtonsWidth = (buttonSize.X * 4) + (5 * 3); // 4 buttons, 3 gaps
+            var buttonsStartX = (windowSize.X - totalButtonsWidth) / 2;
+            var buttonsY = UI.Context.Layout.GetCurrentPosition().Y + 5; // Add some padding from slider
+            const int controlsLayer = 10; // Use a higher layer for controls
+
+            UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, buttonsY), 5);
+            {
+                if (UI.Button("prevTrack", "Previous", buttonSize, disabled: !isTrackSelected, layer: controlsLayer))
+                {
+                    if (_musicLibrary.Files.Count > 0)
+                    {
+                        _selectedTrackIndex--;
+                        if (_selectedTrackIndex < 0)
+                        {
+                            _selectedTrackIndex = _musicLibrary.Files.Count - 1;
+                        }
+                    }
+                }
+
+                string playPauseText = _audioPlayer.IsPlaying ? "Pause" : "Play";
+                if (UI.Button("playPause", playPauseText, buttonSize, disabled: !isTrackSelected, layer: controlsLayer))
+                {
+                    if (_audioPlayer.IsPlaying)
+                    {
+                        _audioPlayer.Pause();
+                    }
+                    else
+                    {
+                        if (isAudioLoaded)
+                        {
+                            _audioPlayer.Resume();
+                        }
+                        else if (isTrackSelected)
+                        {
+                            var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
+                            _audioPlayer.Play(trackToPlay.FilePath);
+                        }
+                    }
+                }
+
+                if (UI.Button("stopTrack", "Stop", buttonSize, disabled: !isAudioLoaded, layer: controlsLayer))
+                {
+                    _audioPlayer.Stop();
+                }
+
+                if (UI.Button("nextTrack", "Next", buttonSize, disabled: !isTrackSelected, layer: controlsLayer))
+                {
+                    if (_musicLibrary.Files.Count > 0)
+                    {
+                        _selectedTrackIndex++;
+                        if (_selectedTrackIndex >= _musicLibrary.Files.Count)
+                        {
+                            _selectedTrackIndex = 0;
+                        }
+                    }
+                }
+            }
+            UI.EndHBoxContainer();
         }
         UI.EndVBoxContainer();
     }
+
 
     private void OpenSettingsModal()
     {

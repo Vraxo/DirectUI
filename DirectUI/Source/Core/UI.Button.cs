@@ -20,7 +20,8 @@ public static partial class UI
         Vector2? textOffset = null,
         Vector2? origin = null,
         object? userData = null,
-        bool isActive = false)
+        bool isActive = false,
+        int layer = 1)
     {
         if (!IsContextValid()) return false;
 
@@ -73,7 +74,8 @@ public static partial class UI
             clickMode,
             clickBehavior,
             textOffset ?? Vector2.Zero,
-            isActive: isActive
+            isActive: isActive,
+            layer: layer
         );
 
         if (pushedClip)
