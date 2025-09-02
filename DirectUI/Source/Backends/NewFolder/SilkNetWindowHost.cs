@@ -164,17 +164,17 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             _activeModalWindow.IWindow.Position = centeredPosition.Value;
         }
 
-        // 5. Render parent once more and disable it.
-        _mainWindow.Render();
-        _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
+        // 5. NOW, make the fully configured and positioned modal window visible.
+        _activeModalWindow.IWindow.IsVisible = true;
 
+        // 6. FINALLY, disable the parent window AFTER the modal is visible.
         if (Handle != IntPtr.Zero)
         {
             EnableWindow(Handle, false);
         }
 
-        // 6. NOW, make the fully configured and positioned modal window visible.
-        _activeModalWindow.IWindow.IsVisible = true;
+        // Set the last repaint time for throttling the disabled parent.
+        _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
     }
 
     public void CloseModalWindow(int resultCode = 0)
