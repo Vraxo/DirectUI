@@ -18,10 +18,7 @@ public class SonorizeLogic : IAppLogic
     private readonly MusicLibrary _musicLibrary = new();
     private readonly PlaybackManager _playbackManager;
     private readonly PlaybackControlsView _playbackControlsView;
-
-    private int _selectedTrackIndex = -1;
-
-    private readonly DataGridColumn[] _columns;
+    private readonly LibraryView _libraryView;
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -34,16 +31,7 @@ public class SonorizeLogic : IAppLogic
         _settingsWindow = new(_settings, _host);
         _playbackManager = new PlaybackManager(new AudioPlayer());
         _playbackControlsView = new PlaybackControlsView(_playbackManager);
-
-        _columns =
-        [
-            new DataGridColumn("Title", 350, nameof(MusicFile.Title)),
-            new DataGridColumn("Artist", 250, nameof(MusicFile.Artist)),
-            new DataGridColumn("Album", 250, nameof(MusicFile.Album)),
-            new DataGridColumn("Duration", 100, nameof(MusicFile.Duration)),
-            new DataGridColumn("Genre", 150, nameof(MusicFile.Genre)),
-            new DataGridColumn("Year", 80, nameof(MusicFile.Year))
-        ];
+        _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
 
         // Start scanning for music files
         _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -113,8 +101,6 @@ public class SonorizeLogic : IAppLogic
 
         // Update playback manager every frame. This checks for song completion.
         _playbackManager.Update();
-        // Keep the playback manager's tracklist in sync with the library.
-        _playbackManager.SetTracklist(_musicLibrary.Files);
 
         float menuBarHeight = 30f;
         float playbackControlsHeight = 70f;
@@ -125,46 +111,7 @@ public class SonorizeLogic : IAppLogic
             context.Renderer.RenderTargetSize.Y - menuBarHeight - playbackControlsHeight - (padding * 2)
         );
 
-        int previousSelectedTrackIndex = _selectedTrackIndex;
-        bool rowDoubleClicked = false;
-        if (gridSize.X > 0 && gridSize.Y > 0)
-        {
-            UI.DataGrid<MusicFile>(
-                "musicGrid",
-                _musicLibrary.Files,
-                _columns,
-                ref _selectedTrackIndex,
-                gridSize,
-                out rowDoubleClicked,
-                gridPos,
-                autoSizeColumns: true,
-                trimCellText: true
-            );
-        }
-
-        bool selectionChanged = _selectedTrackIndex != previousSelectedTrackIndex;
-
-        // Sync state between UI selection and playback manager
-        if (_settings.PlayOnDoubleClick)
-        {
-            if (rowDoubleClicked)
-            {
-                _playbackManager.Play(_selectedTrackIndex);
-            }
-        }
-        else // Play on single click
-        {
-            if (selectionChanged)
-            {
-                _playbackManager.Play(_selectedTrackIndex);
-            }
-        }
-
-        if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
-        {
-            // Playback manager changed the track (e.g., next song): update grid selection.
-            _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
-        }
+        _libraryView.Draw(context, gridPos, gridSize);
 
         _playbackControlsView.Draw(context);
     }

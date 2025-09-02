@@ -2982,6 +2982,7 @@ public static partial class UI
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.StatelessWidgets.cs">
+// Entire file content here
 using System.Numerics;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
@@ -3076,8 +3077,9 @@ public static partial class UI
             }
         }
 
-        // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution.
-        if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
+        // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution,
+        // AND it is still the element that has captured input (i.e., no higher layer element has stolen the press).
+        if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id && state.InputCaptorId == id)
         {
             clickResult = state.RegisterClick(id);
         }
@@ -8940,7 +8942,7 @@ public class SilkNetSkiaWindow : IDisposable
     public SizeI ClientSize => new(IWindow.Size.X, IWindow.Size.Y);
     public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
 
-    public SilkNetSkiaWindow(string title, int width, int height, SilkNetWindowHost owner, bool isModal)
+    public SilkNetSkiaWindow(string title, int width, int height, SilkNetWindowHost owner, bool isModal, Vector2D<int>? position = null)
     {
         _owner = owner;
         _isModal = isModal;
@@ -8951,6 +8953,11 @@ public class SilkNetSkiaWindow : IDisposable
         options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
         options.ShouldSwapAutomatically = false;
         options.WindowBorder = isModal ? WindowBorder.Fixed : WindowBorder.Resizable;
+
+        if (position.HasValue)
+        {
+            options.Position = position.Value;
+        }
 
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {
@@ -9053,7 +9060,7 @@ public class SilkNetSkiaWindow : IDisposable
     {
         if (!OperatingSystem.IsWindows() || Handle == IntPtr.Zero) return;
 
-        var backdropType = _isModal ? WindowBackdropType.Acrylic : _owner.BackdropType;
+        var backdropType = _owner.BackdropType;
         var titleBarTheme = _owner.TitleBarTheme;
         bool wantsModernBackdrop = backdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
 
@@ -9396,6 +9403,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using DirectUI.Core;
 using DirectUI.Input;
+using Silk.NET.Maths;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -9512,7 +9520,17 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _onModalClosedCallback = onClosedCallback;
         _modalResultCode = -1;
 
-        _activeModalWindow = new SilkNetSkiaWindow(title, width, height, this, isModal: true);
+        Vector2D<int>? centeredPosition = null;
+        if (_mainWindow?.IWindow != null)
+        {
+            var parentPos = _mainWindow.IWindow.Position;
+            var parentSize = _mainWindow.IWindow.Size;
+            int x = parentPos.X + (parentSize.X - width) / 2;
+            int y = parentPos.Y + (parentSize.Y - height) / 2;
+            centeredPosition = new Vector2D<int>(x, y);
+        }
+
+        _activeModalWindow = new SilkNetSkiaWindow(title, width, height, this, isModal: true, centeredPosition);
         if (!_activeModalWindow.Initialize(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f)))
         {
             HandleModalClose(); // Cleanup if init fails
@@ -12173,6 +12191,8 @@ namespace Sonorize;
 public class PlaybackControlsView
 {
     private readonly PlaybackManager _playbackManager;
+    private bool _isSeekSliderDragging;
+    private float _seekSliderValueDuringDrag;
 
     public PlaybackControlsView(PlaybackManager playbackManager)
     {
@@ -12218,25 +12238,20 @@ public class PlaybackControlsView
         double totalDuration = _playbackManager.TotalDuration;
         bool isAudioLoaded = totalDuration > 0;
 
+        int seekSliderId = "seekSlider".GetHashCode();
+        bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+
+        // The value passed TO the slider. If not dragging, it's the player's real time.
+        // If we are dragging, it's the value from the last frame's drag to provide continuity.
+        float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+
         Vector2 sliderSize = new(sliderWidth, 10);
-        float sliderValue = (float)currentPosition;
-
-        ButtonStylePack grabberTheme = new()
-        {
-            Roundness = 1.0f // Fully round
-        };
-
-        SliderStyle theme = new()
-        {
-            Background =
-            {
-                Roundness = 1
-            }
-        };
+        ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
+        SliderStyle theme = new() { Background = { Roundness = 1 } };
 
         float newSliderValue = UI.HSlider(
             id: "seekSlider",
-            currentValue: sliderValue,
+            currentValue: sliderInputValue,
             minValue: 0f,
             maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
             size: sliderSize,
@@ -12246,10 +12261,24 @@ public class PlaybackControlsView
             theme: theme
         );
 
-        if (isAudioLoaded && float.Abs(newSliderValue - sliderValue) > 0.01f)
+        // If dragging, store the new value. The audio is NOT updated yet.
+        if (isCurrentlyDragging)
         {
-            _playbackManager.Seek(newSliderValue);
+            _seekSliderValueDuringDrag = newSliderValue;
         }
+
+        // If we just released the slider, NOW we seek the audio.
+        if (_isSeekSliderDragging && !isCurrentlyDragging)
+        {
+            if (isAudioLoaded)
+            {
+                // Use the value from the final frame of dragging.
+                _playbackManager.Seek(_seekSliderValueDuringDrag);
+            }
+        }
+
+        // Update state for next frame.
+        _isSeekSliderDragging = isCurrentlyDragging;
     }
 
     private void DrawControlButtons(UIContext context)
@@ -12264,13 +12293,13 @@ public class PlaybackControlsView
         const int controlsLayer = 10;
 
         ButtonStylePack iconButtonTheme = new()
-        { 
-            FontSize = 16f 
+        {
+            FontSize = 16f
         };
 
         ButtonStylePack toggleButtonTheme = new()
         {
-            FontSize = 16f 
+            FontSize = 16f
         };
 
         toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
