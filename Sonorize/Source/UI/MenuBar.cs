@@ -42,7 +42,7 @@ public class MenuBar
             _isFileMenuOpen = false;
         }
 
-        if (UI.Button("fileMenu", "File", fileButtonSize, isActive: _isFileMenuOpen))
+        if (UI.Button("fileMenu", "File", fileButtonSize, isActive: _isFileMenuOpen, layer: 20))
         {
             _isFileMenuOpen = !_isFileMenuOpen;
             if (_isFileMenuOpen)
@@ -74,7 +74,7 @@ public class MenuBar
             itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
             UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
-            if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0)))
+            if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), layer: 50))
             {
                 UI.State.ClearActivePopup();
                 _isFileMenuOpen = false;
