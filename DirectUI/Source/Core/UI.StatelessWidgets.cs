@@ -1,4 +1,5 @@
-﻿using System.Numerics;
+﻿// Entire file content here
+using System.Numerics;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
@@ -92,8 +93,9 @@ public static partial class UI
             }
         }
 
-        // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution.
-        if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id)
+        // For 'Press' mode, the click is triggered if this button was the winner from the *previous* frame's resolution,
+        // AND it is still the element that has captured input (i.e., no higher layer element has stolen the press).
+        if (clickMode == DirectUI.Button.ActionMode.Press && state.PressActionWinnerId == id && state.InputCaptorId == id)
         {
             clickResult = state.RegisterClick(id);
         }
