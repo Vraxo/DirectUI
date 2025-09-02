@@ -7,6 +7,8 @@ namespace Sonorize;
 public class PlaybackControlsView
 {
     private readonly PlaybackManager _playbackManager;
+    private bool _isSeekSliderDragging;
+    private float _seekSliderValueDuringDrag;
 
     public PlaybackControlsView(PlaybackManager playbackManager)
     {
@@ -52,25 +54,20 @@ public class PlaybackControlsView
         double totalDuration = _playbackManager.TotalDuration;
         bool isAudioLoaded = totalDuration > 0;
 
+        int seekSliderId = "seekSlider".GetHashCode();
+        bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+
+        // The value passed TO the slider. If not dragging, it's the player's real time.
+        // If we are dragging, it's the value from the last frame's drag to provide continuity.
+        float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+
         Vector2 sliderSize = new(sliderWidth, 10);
-        float sliderValue = (float)currentPosition;
-
-        ButtonStylePack grabberTheme = new()
-        {
-            Roundness = 1.0f // Fully round
-        };
-
-        SliderStyle theme = new()
-        {
-            Background =
-            {
-                Roundness = 1
-            }
-        };
+        ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
+        SliderStyle theme = new() { Background = { Roundness = 1 } };
 
         float newSliderValue = UI.HSlider(
             id: "seekSlider",
-            currentValue: sliderValue,
+            currentValue: sliderInputValue,
             minValue: 0f,
             maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
             size: sliderSize,
@@ -80,10 +77,24 @@ public class PlaybackControlsView
             theme: theme
         );
 
-        if (isAudioLoaded && float.Abs(newSliderValue - sliderValue) > 0.01f)
+        // If dragging, store the new value. The audio is NOT updated yet.
+        if (isCurrentlyDragging)
         {
-            _playbackManager.Seek(newSliderValue);
+            _seekSliderValueDuringDrag = newSliderValue;
         }
+
+        // If we just released the slider, NOW we seek the audio.
+        if (_isSeekSliderDragging && !isCurrentlyDragging)
+        {
+            if (isAudioLoaded)
+            {
+                // Use the value from the final frame of dragging.
+                _playbackManager.Seek(_seekSliderValueDuringDrag);
+            }
+        }
+
+        // Update state for next frame.
+        _isSeekSliderDragging = isCurrentlyDragging;
     }
 
     private void DrawControlButtons(UIContext context)
@@ -98,13 +109,13 @@ public class PlaybackControlsView
         const int controlsLayer = 10;
 
         ButtonStylePack iconButtonTheme = new()
-        { 
-            FontSize = 16f 
+        {
+            FontSize = 16f
         };
 
         ButtonStylePack toggleButtonTheme = new()
         {
-            FontSize = 16f 
+            FontSize = 16f
         };
 
         toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
