@@ -42,6 +42,7 @@ public class AppEngine
     private readonly InputManager _inputManager;
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
+    private readonly UIPersistentState _persistentState;
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
@@ -53,6 +54,7 @@ public class AppEngine
         BackgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _inputManager = new InputManager();
+        _persistentState = new UIPersistentState();
 
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
@@ -103,6 +105,7 @@ public class AppEngine
             var inputState = _inputManager.GetCurrentState();
 
             var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime);
+            uiContext.State = _persistentState; // Assign instance-specific state to the context
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);
@@ -1891,7 +1894,7 @@ public static partial class UI
 {
     // --- Core Components ---
     public static UIContext Context { get; private set; } = null!;
-    public static UIPersistentState State { get; private set; } = null!;
+    public static UIPersistentState State => Context.State;
     public static bool IsRendering
     {
         get; private set;
@@ -1903,9 +1906,8 @@ public static partial class UI
         IsRendering = true;
 
         UI.Context = context;
-        UI.State ??= new UIPersistentState();
 
-        UI.State.ResetFrameState(context.InputState);
+        context.State.ResetFrameState(context.InputState);
 
         UI.Context.Layout.ClearStack();
         UI.Context.treeStateStack.Clear();
@@ -3483,6 +3485,7 @@ public class UIContext
     public InputState InputState { get; }
     public float DeltaTime { get; }
     public float TotalTime { get; }
+    public UIPersistentState State { get; internal set; } = null!;
 
     // Layout and state management
     public UILayoutManager Layout { get; }
@@ -8379,6 +8382,9 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     private int modalResultCode;
     private Action<int>? onModalClosedCallback;
     private bool _isModalClosing;
+    private readonly System.Diagnostics.Stopwatch _throttleTimer = new();
+    private long _lastModalRepaintTicks;
+    private static readonly long _modalRepaintIntervalTicks = System.Diagnostics.Stopwatch.Frequency / 10;
 
     public bool IsModalWindowOpen
     {
@@ -8392,6 +8398,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     public Win32WindowHost(string title = "DirectUI Win32 Host", int width = 800, int height = 600)
         : base(title, width, height)
     {
+        _throttleTimer.Start();
     }
 
     public InputManager Input => appServices?.AppEngine.Input ?? new();
@@ -8505,16 +8512,14 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public override void FrameUpdate()
     {
-        // If a modal window is open, this host window is disabled. Standard message-based
-        // invalidation (which relies on WM_PAINT) will not work reliably because
-        // disabled windows may not process paint messages. To prevent the window from
-        // appearing frozen or being wiped clean by the OS, we must call its paint logic
-        // directly on every frame update from the main application loop.
-        // The UI will appear static as no input is being received, which is the
-        // desired effect.
         if (IsModalWindowOpen)
         {
-            OnPaint();
+            long currentTicks = _throttleTimer.ElapsedTicks;
+            if (currentTicks - _lastModalRepaintTicks > _modalRepaintIntervalTicks)
+            {
+                OnPaint();
+                _lastModalRepaintTicks = currentTicks;
+            }
         }
         else
         {
@@ -8625,8 +8630,8 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
         if (activeModalWindow.CreateAsModal())
         {
-            // FIX: Explicitly assign to the instance field 'this.onModalClosedCallback'
-            // to avoid the local variable shadowing it.
+            OnPaint();
+            _lastModalRepaintTicks = _throttleTimer.ElapsedTicks;
             this.onModalClosedCallback = onClosedCallback;
             modalResultCode = -1;
             Console.WriteLine("Modal window opened successfully.");
@@ -9081,6 +9086,7 @@ public class SilkNetTextService : ITextService
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetWindowHost.cs">
 // Entire file content here
 using System;
+using System.Diagnostics;
 using System.Numerics;
 using System.Runtime.InteropServices;
 using DirectUI.Core;
@@ -9142,6 +9148,9 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     private GRBackendRenderTarget? _modalRenderTarget;
     private Action<int>? _onModalClosedCallback;
     private int _modalResultCode;
+    private readonly Stopwatch _throttleTimer = new();
+    private long _lastMainRepaintTicks;
+    private static readonly long _modalRepaintIntervalTicks = Stopwatch.Frequency / 10;
 
     // P/Invoke for Win32 to enable true modal behavior
     [DllImport("user32.dll", SetLastError = true)]
@@ -9168,6 +9177,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
         _width = width;
         _height = height;
         _backgroundColor = backgroundColor;
+        _throttleTimer.Start();
     }
 
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
@@ -9208,10 +9218,24 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             // Process windowing and input events for all windows
             _window.DoEvents();
 
-            // 1) Render the main window every frame
-            _window.GLContext?.MakeCurrent();
-            OnRender(0);               // your existing main-window draw logic
-            _window.SwapBuffers();
+            bool renderMainWindow = !IsModalWindowOpen;
+            if (IsModalWindowOpen)
+            {
+                long currentTicks = _throttleTimer.ElapsedTicks;
+                if (currentTicks - _lastMainRepaintTicks > _modalRepaintIntervalTicks)
+                {
+                    renderMainWindow = true;
+                    _lastMainRepaintTicks = currentTicks;
+                }
+            }
+
+            // 1) Render the main window (conditionally)
+            if (renderMainWindow)
+            {
+                _window.GLContext?.MakeCurrent();
+                OnRender(0);
+                _window.SwapBuffers();
+            }
 
             // 2) If a modal is open, render it on top
             if (IsModalWindowOpen
@@ -9451,29 +9475,26 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     {
         if (IsModalWindowOpen || _window is null) return;
 
+        // --- REORDERED LOGIC TO PREVENT FLASHING ---
+
+        // 1. Set callbacks and default result code.
         _onModalClosedCallback = onClosedCallback;
-        _modalResultCode = -1; // Default to canceled/closed
+        _modalResultCode = -1;
 
-        var parentHwnd = Handle;
-        if (parentHwnd != IntPtr.Zero)
-        {
-            EnableWindow(parentHwnd, false);
-        }
-
+        // 2. Create the modal window object, but keep it hidden.
         var options = WindowOptions.Default;
         options.Size = new Vector2D<int>(width, height);
         options.Title = title;
         options.API = new GraphicsAPI(ContextAPI.OpenGL, ContextProfile.Core, ContextFlags.Default, new APIVersion(3, 3));
         options.WindowBorder = WindowBorder.Fixed;
         options.ShouldSwapAutomatically = false;
-
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {
             options.TransparentFramebuffer = true;
         }
-
         _activeModalIWindow = Window.Create(options);
 
+        // 3. Hook up the Load event handler which contains all the heavy graphics initialization.
         _activeModalIWindow.Load += () =>
         {
             _modalGl = _activeModalIWindow.CreateOpenGL();
@@ -9483,24 +9504,18 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             if (useTransparentModalBg)
             {
                 if (TitleBarTheme == WindowTitleBarTheme.Light)
-                {
                     modalBgColor = new Color4(243 / 255f, 243 / 255f, 243 / 255f, 1 / 255f);
-                }
                 else
-                {
                     modalBgColor = new Color4(0, 0, 0, 1 / 255f);
-                }
 
                 _modalGl.ClearColor(modalBgColor.R, modalBgColor.G, modalBgColor.B, modalBgColor.A);
 
                 var modalHwnd = _activeModalIWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
                 if (modalHwnd != IntPtr.Zero)
                 {
-                    // Unify theming logic with ApplyWindowStyles
-                    int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1; // Default and Dark map to 1 (dark)
+                    int useDarkMode = (TitleBarTheme == WindowTitleBarTheme.Light) ? 0 : 1;
                     DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDarkMode, sizeof(int));
-
-                    int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW; // Acrylic for modals
+                    int backdropValue = (int)DwmApi.DWMSYSTEMBACKDROP_TYPE.DWMSBT_TRANSIENTWINDOW;
                     DwmApi.DwmSetWindowAttribute(modalHwnd, DwmApi.DWMWINDOWATTRIBUTE.DWMWA_SYSTEMBACKDROP_TYPE, ref backdropValue, sizeof(int));
                 }
             }
@@ -9536,7 +9551,24 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             }
         };
 
+        // 4. Run the initialization. This is the slow part. The main window is still enabled and interactive.
         _activeModalIWindow.Initialize();
+
+        // 5. Now that the modal is fully prepared, perform the quick final steps.
+        // 5a. Force one final, complete render of the main window so it's not blank.
+        _window.GLContext?.MakeCurrent();
+        OnRender(0);
+        _window.SwapBuffers();
+        _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
+
+        // 5b. Disable the main window.
+        var parentHwnd = Handle;
+        if (parentHwnd != IntPtr.Zero)
+        {
+            EnableWindow(parentHwnd, false);
+        }
+
+        // 5c. Finally, make the fully-prepared modal window visible.
         _activeModalIWindow.IsVisible = true;
     }
 
