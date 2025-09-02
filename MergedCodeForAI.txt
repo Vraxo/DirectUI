@@ -8477,18 +8477,20 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
             return;
         }
 
-        // The 3D rendering pass has been removed.
-        // We now proceed directly to 2D UI rendering.
         appServices.GraphicsDevice.BeginDraw();
         try
         {
-            // We now always clear the background for the 2D UI.
             if (appServices.AppEngine is not null && appServices.GraphicsDevice.RenderTarget is not null)
             {
                 appServices.GraphicsDevice.RenderTarget.Clear(appServices.AppEngine.BackgroundColor);
             }
 
-            appServices?.AppEngine?.UpdateAndRender(appServices.Renderer, appServices.TextService);
+            // If a modal is open, this host window is disabled and should not process UI logic.
+            // Just clearing the background is enough to keep it from looking "wiped" by the OS.
+            if (!IsModalWindowOpen)
+            {
+                appServices?.AppEngine?.UpdateAndRender(appServices.Renderer, appServices.TextService);
+            }
         }
         catch (Exception ex)
         {
@@ -9194,49 +9196,74 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
 
     public void RunLoop()
     {
-        if (_window == null) return;
+        if (_window == null)
+            return;
 
-        _window.Initialize(); // Fires the Load event
+        // Fire Load event, set up GL, Skia, input, etc.
+        _window.Initialize();
         _window.IsVisible = true;
 
         while (!_window.IsClosing)
         {
-            _window.DoEvents(); // Process events for ALL windows on the thread.
+            // Process windowing and input events for all windows
+            _window.DoEvents();
 
-            // --- Main Window Rendering ---
-            // Always render the main window. Input handlers prevent new interactions
-            // when a modal is open, so this just redraws the last state, preventing
-            // the window from appearing "wiped" or frozen.
+            // 1) Render the main window every frame
             _window.GLContext?.MakeCurrent();
-            OnRender(0); // Pass a dummy delta.
+            OnRender(0);               // your existing main-window draw logic
             _window.SwapBuffers();
 
-
-            // --- Modal Window Rendering & Logic ---
-            if (IsModalWindowOpen && _activeModalIWindow != null && !_activeModalIWindow.IsClosing)
+            // 2) If a modal is open, render it on top
+            if (IsModalWindowOpen
+                && _activeModalIWindow != null
+                && !_activeModalIWindow.IsClosing)
             {
-                // Modal is active. Make its context current before rendering.
                 _activeModalIWindow.GLContext?.MakeCurrent();
 
-                _modalGl?.Clear(ClearBufferMask.ColorBufferBit | ClearBufferMask.DepthBufferBit | ClearBufferMask.StencilBufferBit);
-                if (_modalSkSurface != null && _modalRenderer != null && _modalTextService != null && _modalAppEngine != null)
+                // Clear modal buffers
+                _modalGl?.Clear(
+                    ClearBufferMask.ColorBufferBit |
+                    ClearBufferMask.DepthBufferBit |
+                    ClearBufferMask.StencilBufferBit);
+
+                // Draw modal content
+                if (_modalSkSurface != null
+                    && _modalRenderer != null
+                    && _modalTextService != null
+                    && _modalAppEngine != null)
                 {
-                    var modalBg = _modalAppEngine.BackgroundColor;
-                    _modalSkSurface.Canvas.Clear(new SKColor((byte)(modalBg.R * 255), (byte)(modalBg.G * 255), (byte)(modalBg.B * 255), (byte)(modalBg.A * 255)));
-                    _modalRenderer.SetCanvas(_modalSkSurface.Canvas, new Vector2(_activeModalIWindow.Size.X, _activeModalIWindow.Size.Y));
-                    _modalAppEngine.UpdateAndRender(_modalRenderer, _modalTextService);
+                    var bg = _modalAppEngine.BackgroundColor;
+                    _modalSkSurface.Canvas.Clear(new SKColor(
+                        (byte)(bg.R * 255),
+                        (byte)(bg.G * 255),
+                        (byte)(bg.B * 255),
+                        (byte)(bg.A * 255)));
+
+                    _modalRenderer.SetCanvas(
+                        _modalSkSurface.Canvas,
+                        new Vector2(_activeModalIWindow.Size.X,
+                                    _activeModalIWindow.Size.Y));
+
+                    _modalAppEngine.UpdateAndRender(
+                        _modalRenderer,
+                        _modalTextService);
+
                     _modalSkSurface.Canvas.Flush();
                 }
+
                 _activeModalIWindow.SwapBuffers();
             }
 
-            // Check if a modal that was open is now closing.
-            if (IsModalWindowOpen && (_activeModalIWindow == null || _activeModalIWindow.IsClosing))
+            // 3) If the modal just closed, clean up
+            if (IsModalWindowOpen
+                && (_activeModalIWindow == null
+                    || _activeModalIWindow.IsClosing))
             {
                 HandleModalClose();
             }
         }
     }
+
 
     private void HandleModalClose()
     {

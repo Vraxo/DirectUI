@@ -8,7 +8,7 @@ public static partial class UI
 {
     // --- Core Components ---
     public static UIContext Context { get; private set; } = null!;
-    public static UIPersistentState State { get; private set; } = null!;
+    public static UIPersistentState State => Context.State;
     public static bool IsRendering
     {
         get; private set;
@@ -20,9 +20,8 @@ public static partial class UI
         IsRendering = true;
 
         UI.Context = context;
-        UI.State ??= new UIPersistentState();
 
-        UI.State.ResetFrameState(context.InputState);
+        context.State.ResetFrameState(context.InputState);
 
         UI.Context.Layout.ClearStack();
         UI.Context.treeStateStack.Clear();

@@ -24,6 +24,7 @@ public class AppEngine
     private readonly InputManager _inputManager;
     private readonly Stopwatch _frameTimer = new();
     private long _lastFrameTicks;
+    private readonly UIPersistentState _persistentState;
 
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
@@ -35,6 +36,7 @@ public class AppEngine
         BackgroundColor = backgroundColor;
         _fpsCounter = new FpsCounter();
         _inputManager = new InputManager();
+        _persistentState = new UIPersistentState();
 
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
@@ -85,6 +87,7 @@ public class AppEngine
             var inputState = _inputManager.GetCurrentState();
 
             var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime);
+            uiContext.State = _persistentState; // Assign instance-specific state to the context
             UI.BeginFrame(uiContext);
 
             _drawCallback(uiContext);

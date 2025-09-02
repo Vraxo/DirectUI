@@ -13,6 +13,7 @@ public class UIContext
     public InputState InputState { get; }
     public float DeltaTime { get; }
     public float TotalTime { get; }
+    public UIPersistentState State { get; internal set; } = null!;
 
     // Layout and state management
     public UILayoutManager Layout { get; }
