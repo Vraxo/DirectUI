@@ -21,13 +21,24 @@ namespace DirectUI.Backends.SkiaSharp
 
         private SilkNetSkiaWindow? _mainWindow;
         private SilkNetSkiaWindow? _activeModalWindow;
-
         private Action<int>? _onModalClosedCallback;
         private int _modalResultCode;
         private readonly Stopwatch _throttleTimer = new();
         private long _lastMainRepaintTicks;
         private static readonly long _modalRepaintIntervalTicks = Stopwatch.Frequency / 10;
         private bool _isDisposed;
+
+        // Win32 fallback for Windows
+#if WINDOWS
+        [DllImport("user32.dll", SetLastError = true)]
+        private static extern bool SetWindowPos(
+            IntPtr hWnd, IntPtr hWndInsertAfter,
+            int X, int Y, int cx, int cy, uint uFlags);
+
+        private const uint SWP_NOSIZE     = 0x0001;
+        private const uint SWP_NOZORDER   = 0x0004;
+        private const uint SWP_NOACTIVATE = 0x0010;
+#endif
 
         [DllImport("user32.dll", SetLastError = true)]
         [return: MarshalAs(UnmanagedType.Bool)]
@@ -38,17 +49,25 @@ namespace DirectUI.Backends.SkiaSharp
         private static extern bool SetForegroundWindow(IntPtr hWnd);
 
         [DllImport("user32.dll", SetLastError = true)]
-        private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+        private static extern IntPtr SetWindowLongPtr(
+            IntPtr hWnd, int nIndex, IntPtr dwNewLong);
         private const int GWL_HWNDPARENT = -8;
 
-        public IntPtr Handle => _mainWindow?.Handle ?? IntPtr.Zero;
-        public InputManager Input => _mainWindow?.Input ?? new InputManager();
-        public SizeI ClientSize => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
+        public IntPtr Handle
+            => _mainWindow?.Handle ?? IntPtr.Zero;
+
+        public InputManager Input
+            => _mainWindow?.Input ?? new InputManager();
+
+        public SizeI ClientSize
+            => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
+
         public bool ShowFpsCounter
         {
             get => _mainWindow?.ShowFpsCounter ?? false;
             set { if (_mainWindow != null) _mainWindow.ShowFpsCounter = value; }
         }
+
         public IModalWindowService ModalWindowService => this;
         public bool IsModalWindowOpen => _activeModalWindow != null;
 
@@ -66,7 +85,8 @@ namespace DirectUI.Backends.SkiaSharp
 
         public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
         {
-            _mainWindow = new SilkNetSkiaWindow(_title, _width, _height, this, isModal: false);
+            _mainWindow = new SilkNetSkiaWindow(
+                _title, _width, _height, this, isModal: false);
             return _mainWindow.Initialize(uiDrawCallback, backgroundColor);
         }
 
@@ -84,7 +104,7 @@ namespace DirectUI.Backends.SkiaSharp
                 bool renderMain = !IsModalWindowOpen;
                 if (IsModalWindowOpen)
                 {
-                    long now = _throttleTimer.ElapsedTicks;
+                    var now = _throttleTimer.ElapsedTicks;
                     if (now - _lastMainRepaintTicks > _modalRepaintIntervalTicks)
                     {
                         renderMain = true;
@@ -93,19 +113,13 @@ namespace DirectUI.Backends.SkiaSharp
                 }
 
                 if (renderMain)
-                {
                     _mainWindow.Render();
-                }
 
                 if (IsModalWindowOpen && !_activeModalWindow!.IWindow.IsClosing)
-                {
                     _activeModalWindow.Render();
-                }
 
                 if (IsModalWindowOpen && _activeModalWindow!.IWindow.IsClosing)
-                {
                     HandleModalClose();
-                }
             }
         }
 
@@ -116,54 +130,82 @@ namespace DirectUI.Backends.SkiaSharp
             Action<UIContext> drawCallback,
             Action<int>? onClosedCallback = null)
         {
-            if (IsModalWindowOpen || _mainWindow == null) return;
+            if (IsModalWindowOpen || _mainWindow == null)
+                return;
 
-            // 1. Compute centered position relative to parent
-            Vector2D<int>? centered = null;
-            if (_mainWindow.IWindow != null)
-            {
-                var p = _mainWindow.IWindow.Position;
-                var s = _mainWindow.IWindow.Size;
-                centered = new Vector2D<int>(
-                    p.X + (s.X - width) / 2,
-                    p.Y + (s.Y - height) / 2);
-            }
+            // 1) Compute true center
+            var parentPos = _mainWindow.IWindow.Position;
+            var parentSize = _mainWindow.IWindow.Size;
+            var center = new Vector2D<int>(
+                parentPos.X + (parentSize.X - width) / 2,
+                parentPos.Y + (parentSize.Y - height) / 2
+            );
 
             _onModalClosedCallback = onClosedCallback;
             _modalResultCode = -1;
 
-            // 2. Create positioned modal
+            // 2) Create off‐screen so you never see 0,0
+            var offscreen = new Vector2D<int>(-10000, -10000);
             _activeModalWindow = new SilkNetSkiaWindow(
-                title, width, height, this, isModal: true, initialPosition: centered);
+                title, width, height, this, isModal: true, initialPosition: offscreen);
 
-            if (!_activeModalWindow.Initialize(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f)))
+            if (!_activeModalWindow.Initialize(
+                    drawCallback,
+                    new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1f)))
             {
                 HandleModalClose();
                 return;
             }
 
-            // 3. Initialize (creates native window hidden)
+            // 3) Force native creation (still hidden offscreen)
             _activeModalWindow.IWindow.Initialize();
 
-            // 4. Set owner window so OS knows the relation
+            // 4) OS-level parenting
             var modalHwnd = _activeModalWindow.Handle;
             var parentHwnd = Handle;
             if (modalHwnd != IntPtr.Zero && parentHwnd != IntPtr.Zero)
-            {
                 SetWindowLongPtr(modalHwnd, GWL_HWNDPARENT, parentHwnd);
+
+            // 5) Pre-show reposition to center
+            if (modalHwnd != IntPtr.Zero)
+            {
+#if WINDOWS
+                SetWindowPos(
+                    modalHwnd,
+                    IntPtr.Zero,
+                    center.X, center.Y,
+                    0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+#else
+                _activeModalWindow.IWindow.Position = center;
+#endif
             }
 
-            // 5. Make modal visible
+            // 6) Show it
             _activeModalWindow.IWindow.IsVisible = true;
 
-            // 6. Disable parent and immediately repaint it
+            // 7) Immediately re-position again after show
+            if (modalHwnd != IntPtr.Zero)
+            {
+#if WINDOWS
+                SetWindowPos(
+                    modalHwnd,
+                    IntPtr.Zero,
+                    center.X, center.Y,
+                    0, 0,
+                    SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE);
+#else
+                _activeModalWindow.IWindow.Position = center;
+#endif
+            }
+
+            // 8) Disable & repaint parent to avoid blank‐frame
             if (parentHwnd != IntPtr.Zero)
             {
                 EnableWindow(parentHwnd, false);
                 _mainWindow.Render();
             }
 
-            // Reset throttle so we don't skip the very next parent repaint
             _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
         }
 
