@@ -21,6 +21,7 @@ public class PlaybackManager : IDisposable
     public bool IsPlaying => State == PlaybackState.Playing;
     public double CurrentPosition => _audioPlayer.GetPosition();
     public double TotalDuration => _audioPlayer.GetLength();
+    public bool HasTracks => _tracklist.Any();
 
     public PlaybackEndAction EndAction { get; set; } = PlaybackEndAction.NextInQueue;
     public PlaybackMode Mode { get; set; } = PlaybackMode.Sequential;
