@@ -3,6 +3,7 @@ using System.Text.Json;
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
+using ManagedBass;
 using Sonorize.Audio;
 
 namespace Sonorize;
@@ -22,6 +23,12 @@ public class SonorizeLogic : IAppLogic
     private int _previousSelectedTrackIndex = -1;
     private string? _currentlyPlayingFilePath;
     private readonly DataGridColumn[] _columns;
+
+    private enum PlaybackEndAction { NextInQueue, RepeatSong, DoNothing }
+    private PlaybackEndAction _playbackEndAction = PlaybackEndAction.NextInQueue;
+    private bool _isShuffleActive = false;
+    private readonly Random _random = new();
+    private PlaybackState _lastPlaybackState = PlaybackState.Stopped;
 
 
     public SonorizeLogic(IWindowHost host)
@@ -134,6 +141,8 @@ public class SonorizeLogic : IAppLogic
             );
         }
 
+        UpdatePlaybackState();
+
         // Check for selection change to play music
         if (_selectedTrackIndex != _previousSelectedTrackIndex)
         {
@@ -141,11 +150,12 @@ public class SonorizeLogic : IAppLogic
             {
                 var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
                 // Only play if the file path is different from the currently playing song.
-                // This prevents restarting the song when sorting the grid.
+                // This prevents restarting the song when sorting the grid or when auto-advancing.
                 if (trackToPlay.FilePath != _currentlyPlayingFilePath)
                 {
                     _audioPlayer.Play(trackToPlay.FilePath);
                     _currentlyPlayingFilePath = trackToPlay.FilePath;
+                    _lastPlaybackState = _audioPlayer.CurrentState;
                 }
             }
             else
@@ -153,6 +163,7 @@ public class SonorizeLogic : IAppLogic
                 // If selection is cleared (index is -1), stop playback.
                 _audioPlayer.Stop();
                 _currentlyPlayingFilePath = null;
+                _lastPlaybackState = PlaybackState.Stopped;
             }
             _previousSelectedTrackIndex = _selectedTrackIndex;
         }
@@ -160,6 +171,79 @@ public class SonorizeLogic : IAppLogic
 
         DrawPlaybackControls(context);
     }
+
+    private void UpdatePlaybackState()
+    {
+        var currentState = _audioPlayer.CurrentState;
+        // Check if the song just finished playing
+        if (_lastPlaybackState == PlaybackState.Playing && currentState == PlaybackState.Stopped)
+        {
+            HandleSongFinished();
+        }
+        _lastPlaybackState = currentState;
+    }
+
+    private void HandleSongFinished()
+    {
+        if (_musicLibrary.Files.Count == 0 || _selectedTrackIndex < 0)
+        {
+            _currentlyPlayingFilePath = null;
+            _lastPlaybackState = PlaybackState.Stopped;
+            return;
+        }
+
+        int nextIndex = -1;
+
+        switch (_playbackEndAction)
+        {
+            case PlaybackEndAction.DoNothing:
+                _currentlyPlayingFilePath = null;
+                _lastPlaybackState = PlaybackState.Stopped;
+                _selectedTrackIndex = -1; // Deselect track
+                _previousSelectedTrackIndex = -1;
+                return;
+
+            case PlaybackEndAction.RepeatSong:
+                nextIndex = _selectedTrackIndex;
+                break;
+
+            case PlaybackEndAction.NextInQueue:
+                if (_isShuffleActive)
+                {
+                    if (_musicLibrary.Files.Count <= 1)
+                    {
+                        nextIndex = 0;
+                    }
+                    else
+                    {
+                        do
+                        {
+                            nextIndex = _random.Next(_musicLibrary.Files.Count);
+                        } while (nextIndex == _selectedTrackIndex);
+                    }
+                }
+                else
+                {
+                    nextIndex = _selectedTrackIndex + 1;
+                    if (nextIndex >= _musicLibrary.Files.Count)
+                    {
+                        nextIndex = 0; // Wrap around
+                    }
+                }
+                break;
+        }
+
+        if (nextIndex != -1)
+        {
+            _selectedTrackIndex = nextIndex;
+            _previousSelectedTrackIndex = nextIndex; // Important to prevent re-triggering playback from main loop
+            var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
+            _audioPlayer.Play(trackToPlay.FilePath);
+            _currentlyPlayingFilePath = trackToPlay.FilePath;
+            _lastPlaybackState = _audioPlayer.CurrentState;
+        }
+    }
+
 
     private void DrawPlaybackControls(UIContext context)
     {
@@ -214,19 +298,26 @@ public class SonorizeLogic : IAppLogic
 
             // --- Buttons ---
             var buttonSize = new Vector2(35, 24); // Make buttons more compact for icons
-            var totalButtonsWidth = (buttonSize.X * 4) + (5 * 3); // 4 buttons, 3 gaps
+            var totalButtonsWidth = (buttonSize.X * 5) + (5 * 4); // 5 buttons, 4 gaps
             var buttonsStartX = (windowSize.X - totalButtonsWidth) / 2;
             var buttonsY = UI.Context.Layout.GetCurrentPosition().Y + 5; // Add some padding from slider
             const int controlsLayer = 10; // Use a higher layer for controls
 
-            // A theme for the icon buttons to make symbols a bit larger
-            var iconButtonTheme = new ButtonStylePack
-            {
-                FontSize = 16f
-            };
+            var iconButtonTheme = new ButtonStylePack { FontSize = 16f };
+            var toggleButtonTheme = new ButtonStylePack { FontSize = 16f };
+            toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
+            toggleButtonTheme.Active.BorderColor = DefaultTheme.AccentBorder;
+            toggleButtonTheme.ActiveHover.FillColor = DefaultTheme.Accent;
+            toggleButtonTheme.ActiveHover.BorderColor = DefaultTheme.AccentBorder;
+
 
             UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, buttonsY), 5);
             {
+                if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isTrackSelected, layer: controlsLayer, isActive: _isShuffleActive))
+                {
+                    _isShuffleActive = !_isShuffleActive;
+                }
+
                 if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
                 {
                     if (_musicLibrary.Files.Count > 0)
@@ -248,34 +339,53 @@ public class SonorizeLogic : IAppLogic
                     }
                     else
                     {
-                        if (isAudioLoaded)
+                        if (isAudioLoaded && _audioPlayer.CurrentState == PlaybackState.Paused)
                         {
                             _audioPlayer.Resume();
                         }
                         else if (isTrackSelected)
                         {
-                            var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
-                            _audioPlayer.Play(trackToPlay.FilePath);
+                            // This will trigger the selection changed logic to play the track
+                            _previousSelectedTrackIndex = -1;
                         }
                     }
-                }
-
-                if (UI.Button("stopTrack", "⏹", buttonSize, theme: iconButtonTheme, disabled: !isAudioLoaded, layer: controlsLayer))
-                {
-                    _audioPlayer.Stop();
-                    _currentlyPlayingFilePath = null;
                 }
 
                 if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
                 {
                     if (_musicLibrary.Files.Count > 0)
                     {
-                        _selectedTrackIndex++;
-                        if (_selectedTrackIndex >= _musicLibrary.Files.Count)
+                        if (_isShuffleActive)
                         {
-                            _selectedTrackIndex = 0;
+                            if (_musicLibrary.Files.Count > 1)
+                            {
+                                int current = _selectedTrackIndex;
+                                int next;
+                                do { next = _random.Next(_musicLibrary.Files.Count); } while (next == current);
+                                _selectedTrackIndex = next;
+                            }
+                            else
+                            {
+                                _selectedTrackIndex = 0;
+                            }
+                        }
+                        else
+                        {
+                            _selectedTrackIndex = (_selectedTrackIndex + 1) % _musicLibrary.Files.Count;
                         }
                     }
+                }
+
+                string repeatText = _playbackEndAction switch
+                {
+                    PlaybackEndAction.NextInQueue => "🔁",
+                    PlaybackEndAction.RepeatSong => "🔂",
+                    PlaybackEndAction.DoNothing => "➡",
+                    _ => "?"
+                };
+                if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
+                {
+                    _playbackEndAction = (PlaybackEndAction)(((int)_playbackEndAction + 1) % 3);
                 }
             }
             UI.EndHBoxContainer();

@@ -9,6 +9,7 @@ public class AudioPlayer : IDisposable
     private bool _isDisposed;
 
     public bool IsPlaying => Bass.ChannelIsActive(_stream) == PlaybackState.Playing;
+    public PlaybackState CurrentState => _stream != 0 ? Bass.ChannelIsActive(_stream) : PlaybackState.Stopped;
 
     public AudioPlayer()
     {
