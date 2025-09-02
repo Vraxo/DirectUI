@@ -20,7 +20,7 @@ public static partial class UI
     /// <param name="id">A unique identifier for the data grid.</param>
     /// <param name="items">The collection of data items to display.</param>
     /// <param name="columns">The column definitions for the grid.</param>
-    /// <param name="selectedIndex">A reference to the index of the currently selected item.</param>
+    /// <param name="selectedIndex">A reference to the index of the currently selected item in the original 'items' list.</param>
     /// <param name="size">The total size of the data grid control.</param>
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
     /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
@@ -50,6 +50,43 @@ public static partial class UI
         }
 
         InitializeDataGridState(state, intId, columns);
+
+        // Store the currently selected item before we sort, so we can find it again.
+        T? currentSelectedItem = default;
+        if (selectedIndex >= 0 && selectedIndex < items.Count)
+        {
+            currentSelectedItem = items[selectedIndex];
+        }
+
+        // Create a mutable, sorted copy of the items for display.
+        List<T> sortedItems = new List<T>(items);
+        if (state.SortColumnIndex >= 0 && state.SortColumnIndex < columns.Count)
+        {
+            var sortColumn = columns[state.SortColumnIndex];
+            try
+            {
+                sortedItems.Sort((a, b) =>
+                {
+                    var valA = GetPropertyValue(a, sortColumn.DataPropertyName);
+                    var valB = GetPropertyValue(b, sortColumn.DataPropertyName);
+
+                    int compareResult;
+                    if (valA is null && valB is null) compareResult = 0;
+                    else if (valA is null) compareResult = -1;
+                    else if (valB is null) compareResult = 1;
+                    else if (valA is IComparable comparableA) compareResult = comparableA.CompareTo(valB);
+                    else compareResult = string.Compare(valA.ToString(), valB.ToString(), StringComparison.Ordinal);
+
+                    return state.SortAscending ? compareResult : -compareResult;
+                });
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Error during DataGrid sort: {ex.Message}");
+                state.SortColumnIndex = -1; // Disable sorting if it fails
+            }
+        }
+
 
         // --- Style Definitions ---
         float headerHeight = 28f;
@@ -128,7 +165,39 @@ public static partial class UI
         scrollOffset.Y = Math.Clamp(scrollOffset.Y, 0, Math.Max(0, totalContentHeight - viewHeight));
         state.ScrollOffset = scrollOffset; // Assign back before drawing rows
 
-        DrawDataGridRows(intId, items, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref selectedIndex, rowStyle, trimCellText);
+        // Find the index of the selected item within the newly sorted list for display.
+        int displayIndex = (currentSelectedItem != null) ? sortedItems.IndexOf(currentSelectedItem) : -1;
+        int displayIndexBeforeDraw = displayIndex;
+
+        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText);
+
+        // After drawing, if the user clicked a different row, the displayIndex will have changed.
+        // We need to find the new item in the original list and update the caller's selectedIndex.
+        if (displayIndex != displayIndexBeforeDraw)
+        {
+            if (displayIndex >= 0 && displayIndex < sortedItems.Count)
+            {
+                T newSelectedItem = sortedItems[displayIndex];
+                // Find this item in the original list to update the external index.
+                // This is a linear scan, which is acceptable for moderately sized lists.
+                int newOriginalIndex = -1;
+                for (int i = 0; i < items.Count; i++)
+                {
+                    // Using object.Equals for robust comparison, especially with value types.
+                    if (object.Equals(items[i], newSelectedItem))
+                    {
+                        newOriginalIndex = i;
+                        break;
+                    }
+                }
+                selectedIndex = newOriginalIndex;
+            }
+            else
+            {
+                selectedIndex = -1; // Selection was cleared.
+            }
+        }
+
 
         // --- Draw Scrollbars ---
         // Re-read from state in case it was modified, then modify and write back.
@@ -181,8 +250,35 @@ public static partial class UI
         {
             float colWidth = state.ColumnWidths[i];
             var colHeaderBounds = new Rect(currentX, headerBounds.Y, colWidth, headerBounds.Height);
+
+            // Header click for sorting
+            int headerId = HashCode.Combine(id, "header", i);
+            bool isHeaderHovering = colHeaderBounds.Contains(input.MousePosition);
+            if (isHeaderHovering) State.SetPotentialInputTarget(headerId);
+
+            if (isHeaderHovering && input.WasLeftMousePressedThisFrame && State.PotentialInputTargetId == headerId)
+            {
+                if (state.SortColumnIndex == i)
+                {
+                    state.SortAscending = !state.SortAscending;
+                }
+                else
+                {
+                    state.SortColumnIndex = i;
+                    state.SortAscending = true;
+                }
+            }
+
+
             Context.Renderer.DrawBox(colHeaderBounds, style);
-            DrawTextPrimitive(colHeaderBounds, columns[i].HeaderText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
+
+            string headerText = columns[i].HeaderText;
+            if (state.SortColumnIndex == i)
+            {
+                headerText += state.SortAscending ? " ▲" : " ▼";
+            }
+
+            DrawTextPrimitive(colHeaderBounds, headerText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(5, 0));
 
             if (allowColumnResize)
             {

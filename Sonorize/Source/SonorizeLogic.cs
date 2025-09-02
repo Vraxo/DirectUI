@@ -20,6 +20,7 @@ public class SonorizeLogic : IAppLogic
 
     private int _selectedTrackIndex = -1;
     private int _previousSelectedTrackIndex = -1;
+    private string? _currentlyPlayingFilePath;
     private readonly DataGridColumn[] _columns;
 
 
@@ -139,10 +140,23 @@ public class SonorizeLogic : IAppLogic
             if (_selectedTrackIndex >= 0 && _selectedTrackIndex < _musicLibrary.Files.Count)
             {
                 var trackToPlay = _musicLibrary.Files[_selectedTrackIndex];
-                _audioPlayer.Play(trackToPlay.FilePath);
+                // Only play if the file path is different from the currently playing song.
+                // This prevents restarting the song when sorting the grid.
+                if (trackToPlay.FilePath != _currentlyPlayingFilePath)
+                {
+                    _audioPlayer.Play(trackToPlay.FilePath);
+                    _currentlyPlayingFilePath = trackToPlay.FilePath;
+                }
+            }
+            else
+            {
+                // If selection is cleared (index is -1), stop playback.
+                _audioPlayer.Stop();
+                _currentlyPlayingFilePath = null;
             }
             _previousSelectedTrackIndex = _selectedTrackIndex;
         }
+
 
         DrawPlaybackControls(context);
     }
@@ -249,6 +263,7 @@ public class SonorizeLogic : IAppLogic
                 if (UI.Button("stopTrack", "⏹", buttonSize, theme: iconButtonTheme, disabled: !isAudioLoaded, layer: controlsLayer))
                 {
                     _audioPlayer.Stop();
+                    _currentlyPlayingFilePath = null;
                 }
 
                 if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isTrackSelected, layer: controlsLayer))
