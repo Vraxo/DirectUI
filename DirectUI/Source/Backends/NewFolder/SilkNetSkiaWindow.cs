@@ -151,7 +151,7 @@ public class SilkNetSkiaWindow : IDisposable
     {
         if (!OperatingSystem.IsWindows() || Handle == IntPtr.Zero) return;
 
-        var backdropType = _isModal ? WindowBackdropType.Acrylic : _owner.BackdropType;
+        var backdropType = _owner.BackdropType;
         var titleBarTheme = _owner.TitleBarTheme;
         bool wantsModernBackdrop = backdropType != WindowBackdropType.Default && OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22621);
 
