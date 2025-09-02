@@ -102,7 +102,7 @@ public abstract class Win32Window : IDisposable
             _hInstance = Process.GetCurrentProcess().Handle;
         }
 
-        Application.RegisterWindow(this);
+        Win32WindowHost.RegisterWindow(this);
 
         lock (RegisteredClassNames)
         {
@@ -292,12 +292,12 @@ public abstract class Win32Window : IDisposable
     private IntPtr Handle_WmDestroy(IntPtr hWnd, IntPtr wParam, IntPtr lParam)
     {
         Console.WriteLine($"WM_DESTROY for {_hwnd}.");
-        Application.UnregisterWindow(this);
+        Win32WindowHost.UnregisterWindow(this);
         OnDestroy();
 
         if (OwnerHandle == IntPtr.Zero)
         {
-            Application.Exit();
+            Win32WindowHost.Exit();
         }
         return IntPtr.Zero;
     }

@@ -18,6 +18,10 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     private long _lastModalRepaintTicks;
     private static readonly long _modalRepaintIntervalTicks = System.Diagnostics.Stopwatch.Frequency / 10;
 
+    // --- Logic moved from Application.cs ---
+    private static readonly List<Win32Window> s_windows = [];
+    private static bool s_isRunning = false;
+
     public bool IsModalWindowOpen
     {
         get
@@ -60,6 +64,9 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     {
         Console.WriteLine("Win32WindowHost initializing...");
 
+        // Initialize shared resources required by the Win32 backend.
+        SharedGraphicsResources.Initialize();
+
         // Create the window before initializing services, as the window handle is required.
         if (!base.Create())
         {
@@ -97,6 +104,9 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         (appServices?.Renderer as Backends.Direct2DRenderer)?.Cleanup();
         appServices?.GraphicsDevice.Cleanup();
 
+        // Cleanup shared resources when the host is disposed.
+        SharedGraphicsResources.Cleanup();
+
         appServices = null;
         activeModalWindow = null;
 
@@ -105,8 +115,73 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public void RunLoop()
     {
-        Application.RunMessageLoop();
+        if (s_windows.Count == 0)
+        {
+            Console.WriteLine("Win32WindowHost.RunLoop() called with no windows registered.");
+            return;
+        }
+
+        s_isRunning = true;
+
+        while (s_isRunning)
+        {
+            ProcessMessages();
+
+            if (!s_isRunning)
+            {
+                continue;
+            }
+
+            foreach (Win32Window? window in s_windows.ToList())
+            {
+                window.FrameUpdate();
+            }
+        }
     }
+
+    private static void ProcessMessages()
+    {
+        while (NativeMethods.PeekMessage(out var msg, IntPtr.Zero, 0, 0, NativeMethods.PM_REMOVE))
+        {
+            if (msg.message == NativeMethods.WM_QUIT)
+            {
+                s_isRunning = false;
+                break;
+            }
+
+            NativeMethods.TranslateMessage(ref msg);
+            NativeMethods.DispatchMessage(ref msg);
+        }
+    }
+
+    internal static void RegisterWindow(Win32Window window)
+    {
+        if (!s_windows.Contains(window))
+        {
+            s_windows.Add(window);
+        }
+    }
+
+    internal static void UnregisterWindow(Win32Window window)
+    {
+        s_windows.Remove(window);
+
+        if (s_windows.Count == 0)
+        {
+            Exit();
+        }
+    }
+
+    internal static void Exit()
+    {
+        if (!s_isRunning)
+        {
+            return;
+        }
+        s_isRunning = false;
+        NativeMethods.PostQuitMessage(0);
+    }
+    // --- End of logic moved from Application.cs ---
 
     protected override void OnPaint()
     {

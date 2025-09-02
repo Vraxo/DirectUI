@@ -33,7 +33,7 @@ public class SilkNetSkiaWindow : IDisposable
     public SizeI ClientSize => new(IWindow.Size.X, IWindow.Size.Y);
     public bool ShowFpsCounter { get => _appEngine?.ShowFpsCounter ?? false; set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; } }
 
-    public SilkNetSkiaWindow(string title, int width, int height, SilkNetWindowHost owner, bool isModal, Vector2D<int>? position = null)
+    public SilkNetSkiaWindow(string title, int width, int height, SilkNetWindowHost owner, bool isModal)
     {
         _owner = owner;
         _isModal = isModal;
@@ -45,10 +45,9 @@ public class SilkNetSkiaWindow : IDisposable
         options.ShouldSwapAutomatically = false;
         options.WindowBorder = isModal ? WindowBorder.Fixed : WindowBorder.Resizable;
 
-        if (position.HasValue)
-        {
-            options.Position = position.Value;
-        }
+        // Set IsVisible to false to prevent the window from appearing before it's fully configured and positioned.
+        // This helps prevent a visual flicker where the window might appear at a default location for a frame.
+        options.IsVisible = false;
 
         if (OperatingSystem.IsWindowsVersionAtLeast(10, 0, 22000))
         {

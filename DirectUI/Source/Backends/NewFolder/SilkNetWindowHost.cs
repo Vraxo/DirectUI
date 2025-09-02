@@ -50,6 +50,11 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool SetForegroundWindow(IntPtr hWnd);
 
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern IntPtr SetWindowLongPtr(IntPtr hWnd, int nIndex, IntPtr dwNewLong);
+    private const int GWL_HWNDPARENT = -8;
+
+
     public IntPtr Handle => _mainWindow?.Handle ?? IntPtr.Zero;
     public InputManager Input => _mainWindow?.Input ?? new InputManager();
     public SizeI ClientSize => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
@@ -131,16 +136,36 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             centeredPosition = new Vector2D<int>(x, y);
         }
 
-        _activeModalWindow = new SilkNetSkiaWindow(title, width, height, this, isModal: true, centeredPosition);
+        _activeModalWindow = new SilkNetSkiaWindow(title, width, height, this, isModal: true);
         if (!_activeModalWindow.Initialize(drawCallback, new Color4(60 / 255f, 60 / 255f, 60 / 255f, 1.0f)))
         {
             HandleModalClose(); // Cleanup if init fails
             return;
         }
 
+        // --- Window Positioning and Parenting Logic ---
+        // This sequence is critical to prevent flickering.
+        // 1. Initialize to create the native handle (window is still invisible).
         _activeModalWindow.IWindow.Initialize();
 
-        _mainWindow.Render(); // Final render of main window before disabling
+        // 2. Get native handles.
+        var modalHwnd = _activeModalWindow.Handle;
+        var parentHwnd = this.Handle;
+
+        // 3. Set the owner. This tells the OS about the relationship before the window is shown.
+        if (modalHwnd != IntPtr.Zero && parentHwnd != IntPtr.Zero)
+        {
+            SetWindowLongPtr(modalHwnd, GWL_HWNDPARENT, parentHwnd);
+        }
+
+        // 4. Set the position.
+        if (centeredPosition.HasValue)
+        {
+            _activeModalWindow.IWindow.Position = centeredPosition.Value;
+        }
+
+        // 5. Render parent once more and disable it.
+        _mainWindow.Render();
         _lastMainRepaintTicks = _throttleTimer.ElapsedTicks;
 
         if (Handle != IntPtr.Zero)
@@ -148,6 +173,7 @@ public class SilkNetWindowHost : Core.IWindowHost, IModalWindowService
             EnableWindow(Handle, false);
         }
 
+        // 6. NOW, make the fully configured and positioned modal window visible.
         _activeModalWindow.IWindow.IsVisible = true;
     }
 
