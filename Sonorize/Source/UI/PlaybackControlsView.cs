@@ -224,7 +224,7 @@ public class PlaybackControlsView
         const int controlsLayer = 10;
         var smallButtonSize = new Vector2(32, 32);
         var playButtonSize = new Vector2(36, 36);
-        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 1f };
         var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
 
         DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
@@ -328,7 +328,7 @@ public class PlaybackControlsView
     private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
         string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
-        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, origin: new(0, 2)))
         {
             _playbackManager.TogglePlayPause();
         }
