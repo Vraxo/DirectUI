@@ -342,16 +342,26 @@ internal class InputText
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
         float caretAbsoluteX = hitTestMetrics.Point.X;
 
-        if (caretAbsoluteX - state.ScrollPixelOffset > availableWidth)
+        // Define the viewport in text-space coordinates
+        float viewStart = state.ScrollPixelOffset;
+        float viewEnd = state.ScrollPixelOffset + availableWidth;
+        const float caretWidth = 1.0f; // Caret is 1 pixel wide
+
+        // Check if caret is outside the visible area and scroll if necessary.
+        if (caretAbsoluteX + caretWidth > viewEnd)
         {
-            state.ScrollPixelOffset = caretAbsoluteX - availableWidth;
+            // Caret is past the right edge, scroll to bring it fully into view.
+            state.ScrollPixelOffset = (caretAbsoluteX + caretWidth) - availableWidth;
         }
-        else if (caretAbsoluteX - state.ScrollPixelOffset < 0)
+        else if (caretAbsoluteX < viewStart)
         {
+            // Caret is past the left edge, scroll to make it visible at the start.
             state.ScrollPixelOffset = caretAbsoluteX;
         }
 
-        float maxScroll = Math.Max(0, textLayout.Size.X - availableWidth);
+        // The max scroll position needs to be large enough to allow the caret to be visible
+        // after the last character. This was the bug.
+        float maxScroll = Math.Max(0, textLayout.Size.X + caretWidth - availableWidth);
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
 
