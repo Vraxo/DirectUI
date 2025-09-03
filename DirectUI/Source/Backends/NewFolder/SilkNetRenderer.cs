@@ -89,53 +89,65 @@ public class SilkNetRenderer : IRenderer
             IsAntialias = true
         };
 
-        var bounds = new SKRect();
-        paint.MeasureText(text, ref bounds);
-
+        var textBounds = new SKRect();
+        paint.MeasureText(text, ref textBounds);
         var textDrawPos = origin;
 
-        // Horizontal alignment
+        // --- Horizontal alignment (based on actual measured text width) ---
         if (maxSize.X > 0)
         {
             switch (alignment.Horizontal)
             {
                 case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - bounds.Width) / 2f - bounds.Left;
+                    textDrawPos.X += (maxSize.X - textBounds.Width) / 2f - textBounds.Left;
                     break;
                 case HAlignment.Right:
-                    textDrawPos.X += maxSize.X - bounds.Width - bounds.Left;
+                    textDrawPos.X += maxSize.X - textBounds.Width - textBounds.Left;
                     break;
                 default: // Left
-                    textDrawPos.X -= bounds.Left;
+                    textDrawPos.X -= textBounds.Left;
                     break;
             }
         }
         else
         {
-            textDrawPos.X -= bounds.Left;
+            textDrawPos.X -= textBounds.Left;
         }
 
 
-        // Vertical alignment
+        // --- Vertical alignment (based on stable font metrics to prevent jiggling) ---
+        var fontMetrics = paint.FontMetrics;
+        var baselineY = origin.Y;
+
         if (maxSize.Y > 0)
         {
             switch (alignment.Vertical)
             {
                 case VAlignment.Top:
-                    textDrawPos.Y -= bounds.Top; // Align top of text bounds to origin.Y
+                    // Align the top of the text (ascent) with the top of the layout box.
+                    // Since Ascent is negative, we subtract it.
+                    baselineY -= fontMetrics.Ascent;
                     break;
                 case VAlignment.Center:
-                    textDrawPos.Y += (maxSize.Y / 2f) - bounds.MidY;
+                    // Center the line of text within the layout box.
+                    float fontHeight = fontMetrics.Descent - fontMetrics.Ascent;
+                    baselineY += (maxSize.Y - fontHeight) / 2f - fontMetrics.Ascent;
                     break;
                 case VAlignment.Bottom:
-                    textDrawPos.Y += maxSize.Y - bounds.Bottom; // Align bottom of text bounds to bottom of layout rect
+                    // Align the bottom of the text (descent) with the bottom of the layout box.
+                    baselineY += maxSize.Y - fontMetrics.Descent;
                     break;
             }
         }
         else
         {
-            textDrawPos.Y -= bounds.Top;
+            // If no max size, just align to top as a default
+            baselineY -= fontMetrics.Ascent;
         }
+
+        // The Y position for DrawText is the baseline, not the top.
+        textDrawPos.Y = baselineY;
+
 
         _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
     }
