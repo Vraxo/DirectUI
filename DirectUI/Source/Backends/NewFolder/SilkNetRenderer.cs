@@ -43,7 +43,7 @@ public class SilkNetRenderer : IRenderer
 
     public void DrawBox(Rect rect, BoxStyle style)
     {
-        if (_canvas is null || style is null) return;
+        if (_canvas is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
 
         var skRect = new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom);
         float maxRadius = Math.Min(rect.Width, rect.Height) / 2f;
