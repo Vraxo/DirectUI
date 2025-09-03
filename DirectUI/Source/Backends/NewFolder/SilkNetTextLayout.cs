@@ -10,10 +10,14 @@ internal class SilkNetTextLayout : ITextLayout
 {
     public Vector2 Size { get; }
     public string Text { get; }
+    private readonly SKTypeface _typeface;
+    private readonly ButtonStyle _style;
 
     public SilkNetTextLayout(string text, SKTypeface typeface, ButtonStyle style)
     {
         Text = text;
+        _typeface = typeface;
+        _style = style;
         using var font = new SKFont(typeface, style.FontSize);
         using var paint = new SKPaint(font);
         var rect = new SKRect();
@@ -22,16 +26,33 @@ internal class SilkNetTextLayout : ITextLayout
     }
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
     {
-        if (string.IsNullOrEmpty(Text)) return new TextHitTestMetrics(Vector2.Zero, Vector2.Zero);
+        if (string.IsNullOrEmpty(Text) && textPosition == 0)
+        {
+            return new TextHitTestMetrics(Vector2.Zero, new Vector2(1, Size.Y)); // Default caret for empty string
+        }
+        textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
-        float approxCharWidth = Size.X / Math.Max(1, Text.Length);
-        float x = textPosition * approxCharWidth;
-        float width = approxCharWidth;
+        using var font = new SKFont(_typeface, _style.FontSize);
+        using var paint = new SKPaint(font);
 
-        if (isTrailingHit) x += approxCharWidth;
-        x = Math.Clamp(x, 0, Size.X);
+        // Measure the substring up to the caret position to get the X coordinate.
+        string sub = Text[..textPosition];
+        float x = paint.MeasureText(sub);
 
-        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(width, Size.Y));
+        // Measure the width of the character at the caret position to determine its size.
+        float charWidth;
+        if (textPosition < Text.Length)
+        {
+            charWidth = paint.MeasureText(Text[textPosition].ToString());
+        }
+        else // Caret is at the end of the string.
+        {
+            charWidth = Text.Length > 0 ? paint.MeasureText(Text[^1].ToString()) : 10f;
+        }
+
+        // isTrailingHit is a concept for converting a point to an index,
+        // but here we are converting an index to a point, so we just use the calculated x.
+        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(charWidth, Size.Y));
     }
 
     public TextHitTestResult HitTestPoint(Vector2 point)
@@ -41,30 +62,27 @@ internal class SilkNetTextLayout : ITextLayout
             return new TextHitTestResult(0, false, false, new TextHitTestMetrics(Vector2.Zero, Vector2.Zero));
         }
 
+        using var font = new SKFont(_typeface, _style.FontSize);
+        using var paint = new SKPaint(font);
+
         bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
 
-        float approxCharWidth = (Text.Length > 0) ? Size.X / Text.Length : 0;
-        int textPosition = 0;
-        bool isTrailingHit = false;
-
-        if (approxCharWidth > 0)
-        {
-            textPosition = (int)(point.X / approxCharWidth);
-            isTrailingHit = (point.X % approxCharWidth) > (approxCharWidth / 2f);
-        }
-
-        textPosition = Math.Clamp(textPosition, 0, Text.Length);
-        if (isTrailingHit && textPosition < Text.Length)
-        {
-            textPosition++;
-        }
+        // Use BreakText to find the character index that corresponds to the click's X coordinate.
+        int textPosition = (int)paint.BreakText(Text, point.X);
         textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
-        float hitMetricX = (textPosition == 0) ? 0 : (textPosition * approxCharWidth);
-        if (isTrailingHit && textPosition > 0) hitMetricX -= approxCharWidth;
+        // Determine if it's a "trailing hit" by checking which side of the character's midpoint the click landed on.
+        float charStartPos = paint.MeasureText(Text[..textPosition]);
+        float charEndPos = (textPosition < Text.Length)
+            ? charStartPos + paint.MeasureText(Text[textPosition].ToString())
+            : charStartPos;
 
-        return new TextHitTestResult(textPosition, isTrailingHit, isInside,
-            new TextHitTestMetrics(new Vector2(hitMetricX, 0), new Vector2(approxCharWidth, Size.Y)));
+        bool isTrailingHit = (point.X - charStartPos) > ((charEndPos - charStartPos) / 2f);
+
+        // Get metrics for the hit character.
+        var metrics = HitTestTextPosition(textPosition, false);
+
+        return new TextHitTestResult(textPosition, isTrailingHit, isInside, metrics);
     }
     public void Dispose()
     {
