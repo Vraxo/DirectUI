@@ -161,51 +161,50 @@ public class PlaybackControlsView
         var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
         var timeSize = context.TextService.MeasureText("00:00", timeStyle);
         float timeLabelWidth = timeSize.X + 5;
+        float gap = 5; // Define a gap for spacing
 
-        float sliderWidth = panelWidth - (timeLabelWidth * 2);
+        float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2); // Account for two gaps
         if (sliderWidth < 10) return; // Don't draw if there's no space
 
         // HBox to hold [Time, Slider, Time]
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0);
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap); // Use the gap
         {
             // Current Time
             UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
 
-            // --- Vertical container to center the thinner slider ---
-            UI.BeginVBoxContainer("sliderVBox", UI.Context.Layout.GetCurrentPosition(), 0);
+            // --- The Slider ---
+            int seekSliderId = "seekSlider".GetHashCode();
+            bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+            float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+            Vector2 sliderSize = new(sliderWidth, 8); // Thinner slider track
+            ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
+            SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
+
+            // To vertically center the 14px grabber in the 20px text row, we need to shift the slider's 8px track.
+            // Grabber top = slider_y + (track_height/2) - (grabber_height/2) = slider_y + 4 - 7 = slider_y - 3
+            // Desired grabber top = row_y + (row_height - grabber_height)/2 = row_y + (20 - 14)/2 = row_y + 3
+            // So, slider_y - 3 = row_y + 3  =>  slider_y = row_y + 6.
+            // We shift the slider down by 6px using the origin property.
+            float newSliderValue = UI.HSlider(
+                id: "seekSlider",
+                currentValue: sliderInputValue,
+                minValue: 0f,
+                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
+                size: sliderSize,
+                disabled: !isAudioLoaded,
+                grabberSize: new(14, 14),
+                grabberTheme: grabberTheme,
+                theme: theme,
+                origin: new Vector2(0, -6) // Shift down to visually center with text
+            );
+
+            if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
+            if (_isSeekSliderDragging && !isCurrentlyDragging && isAudioLoaded)
             {
-                // Spacer to push the slider down to vertically center it with the 20px high time labels. (20px - 8px) / 2 = 6px.
-                UI.Text("sliderSpacer", "", new Vector2(0, 6));
-
-                // --- The Slider ---
-                int seekSliderId = "seekSlider".GetHashCode();
-                bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
-                float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
-                Vector2 sliderSize = new(sliderWidth, 8); // Thinner slider track
-                ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
-                SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
-
-                float newSliderValue = UI.HSlider(
-                    id: "seekSlider",
-                    currentValue: sliderInputValue,
-                    minValue: 0f,
-                    maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
-                    size: sliderSize,
-                    disabled: !isAudioLoaded,
-                    grabberSize: new(14, 14), // Slightly smaller grabber that overhangs the thin track
-                    grabberTheme: grabberTheme,
-                    theme: theme
-                );
-
-                if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
-                if (_isSeekSliderDragging && !isCurrentlyDragging && isAudioLoaded)
-                {
-                    _playbackManager.Seek(_seekSliderValueDuringDrag);
-                }
-                _isSeekSliderDragging = isCurrentlyDragging;
-                // --- End Slider ---
+                _playbackManager.Seek(_seekSliderValueDuringDrag);
             }
-            UI.EndVBoxContainer();
+            _isSeekSliderDragging = isCurrentlyDragging;
+            // --- End Slider ---
 
 
             // Total Time
