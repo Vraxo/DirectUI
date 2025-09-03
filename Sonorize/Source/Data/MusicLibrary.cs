@@ -169,10 +169,10 @@ public class MusicLibrary
     }
 
     /// <summary>
-    /// Creates a tiny, low-resolution version of an image. When stretched, this will
-    /// produce a blurry, abstract representation of the original's colors.
+    /// Creates a 1-pixel-high, blurred strip of the album art's colors.
+    /// When stretched vertically, this produces a soft, abstract gradient background.
     /// </summary>
-    private static byte[]? CreateAbstractArt(byte[]? originalArtData, int size = 16)
+    private static byte[]? CreateAbstractArt(byte[]? originalArtData, int width = 128, float blurSigma = 10f)
     {
         if (originalArtData == null || originalArtData.Length == 0) return null;
 
@@ -181,16 +181,29 @@ public class MusicLibrary
             using var originalBitmap = SKBitmap.Decode(originalArtData);
             if (originalBitmap == null) return null;
 
-            var info = new SKImageInfo(size, size);
+            // 1. Create a bitmap that is `width` pixels wide and 1 pixel tall.
+            var info = new SKImageInfo(width, 1);
             using var resizedBitmap = new SKBitmap(info);
-            using var canvas = new SKCanvas(resizedBitmap);
 
-            // Use high-quality resizing to get a good color average
-            canvas.DrawBitmap(originalBitmap, new SKRect(0, 0, size, size), new SKPaint { FilterQuality = SKFilterQuality.High });
-            canvas.Flush();
+            // 2. Draw the original bitmap into this tiny strip to average the colors.
+            using (var canvas = new SKCanvas(resizedBitmap))
+            {
+                var paint = new SKPaint { FilterQuality = SKFilterQuality.High };
+                canvas.DrawBitmap(originalBitmap, new SKRect(0, 0, width, 1), paint);
+            }
 
-            // Encode the tiny bitmap back to a byte array (PNG is fine, it's small)
-            using var image = SKImage.FromBitmap(resizedBitmap);
+            // 3. Create a final bitmap and apply a strong horizontal blur to the color strip.
+            using var finalBitmap = new SKBitmap(info);
+            using (var canvas = new SKCanvas(finalBitmap))
+            using (var paint = new SKPaint())
+            {
+                // We only blur horizontally (sigmaX) to blend the colors in the strip.
+                paint.ImageFilter = SKImageFilter.CreateBlur(blurSigma, 0);
+                canvas.DrawBitmap(resizedBitmap, 0, 0, paint);
+            }
+
+            // 4. Encode the final tiny, blurry strip.
+            using var image = SKImage.FromBitmap(finalBitmap);
             using var data = image.Encode(SKEncodedImageFormat.Png, 100);
             return data.ToArray();
         }
