@@ -10,4 +10,5 @@ public class MusicFile
     public uint Year { get; set; }
     public TimeSpan Duration { get; set; }
     public string FilePath { get; set; } = string.Empty;
+    public byte[]? AlbumArt { get; set; }
 }

@@ -351,4 +351,9 @@ public unsafe class SDL3Renderer : IRenderer
         _textTextureCache.Clear();
         // The renderer and window are managed and destroyed by ApplicationRunner.
     }
+
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        throw new NotImplementedException();
+    }
 }

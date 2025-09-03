@@ -67,6 +67,12 @@ public class MusicLibrary
                         try
                         {
                             using var tagFile = TagLib.File.Create(filePath);
+
+                            // --- Album Art Extraction ---
+                            var picture = tagFile.Tag.Pictures.FirstOrDefault();
+                            byte[]? albumArtData = picture?.Data.Data;
+                            // --- End Album Art Extraction ---
+
                             var musicFile = new MusicFile
                             {
                                 Title = string.IsNullOrEmpty(tagFile.Tag.Title) ? Path.GetFileNameWithoutExtension(filePath) : tagFile.Tag.Title,
@@ -75,7 +81,8 @@ public class MusicLibrary
                                 Genre = tagFile.Tag.FirstGenre ?? string.Empty,
                                 Year = tagFile.Tag.Year,
                                 Duration = tagFile.Properties.Duration,
-                                FilePath = filePath
+                                FilePath = filePath,
+                                AlbumArt = albumArtData
                             };
                             foundFiles.Add(musicFile);
                         }

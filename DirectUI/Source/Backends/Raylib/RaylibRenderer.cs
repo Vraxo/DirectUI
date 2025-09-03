@@ -5,7 +5,8 @@ using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
-using Raylib_cs; // Raylib specific library
+using Raylib_cs;
+using Vortice.Mathematics; // Raylib specific library
 
 namespace DirectUI.Backends;
 
@@ -236,5 +237,10 @@ public class RaylibRenderer : IRenderer
         // No Raylib-specific font objects to dispose that are loaded here per layout.
         // If fonts were loaded with LoadFontEx, they would need UnloadFont.
         _clipRectStack.Clear();
+    }
+
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        throw new NotImplementedException();
     }
 }

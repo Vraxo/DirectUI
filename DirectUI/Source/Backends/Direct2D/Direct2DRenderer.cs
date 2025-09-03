@@ -537,4 +537,9 @@ float4 PS(PS_Input input) : SV_TARGET
         // Flush the 3D commands to ensure they are executed before D2D begins drawing.
         d3dContext.Flush();
     }
+
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        throw new NotImplementedException();
+    }
 }

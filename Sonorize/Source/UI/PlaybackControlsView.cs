@@ -72,10 +72,21 @@ public class PlaybackControlsView
         // The VBox is now a child of the main HBox, so its position is handled automatically.
         UI.BeginHBoxContainer("trackInfoHBox", UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding), padding);
         {
-            // Placeholder for Album Art
+            // Album Art
             var artPos = UI.Context.Layout.GetCurrentPosition();
             var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
-            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+
+            if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+            {
+                // Use file path as a unique key for caching the decoded image
+                context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+            }
+            else
+            {
+                // Placeholder for Album Art
+                context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+            }
+
             UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
 
 

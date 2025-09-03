@@ -33,6 +33,15 @@ public interface IRenderer
     void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color);
 
     /// <summary>
+    /// Draws an image from its raw byte data within a destination rectangle.
+    /// The renderer is responsible for caching the decoded image using the provided key.
+    /// </summary>
+    /// <param name="imageData">The raw byte data of the image (e.g., JPEG, PNG).</param>
+    /// <param name="imageKey">A unique key to identify and cache this image.</param>
+    /// <param name="destination">The rectangle where the image will be drawn.</param>
+    void DrawImage(byte[] imageData, string imageKey, Vortice.Mathematics.Rect destination);
+
+    /// <summary>
     /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
     /// </summary>
     void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);

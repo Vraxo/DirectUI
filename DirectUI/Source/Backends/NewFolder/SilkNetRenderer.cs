@@ -14,6 +14,7 @@ public class SilkNetRenderer : IRenderer
     private SKCanvas? _canvas;
     private Vector2 _renderTargetSize;
     private readonly SilkNetTextService _textService;
+    private readonly Dictionary<string, SKBitmap> _bitmapCache = new();
 
     public Vector2 RenderTargetSize => _renderTargetSize;
 
@@ -156,6 +157,35 @@ public class SilkNetRenderer : IRenderer
         _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
     }
 
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        if (_canvas is null || imageData is null || imageData.Length == 0) return;
+
+        if (!_bitmapCache.TryGetValue(imageKey, out var bitmap))
+        {
+            try
+            {
+                bitmap = SKBitmap.Decode(imageData);
+                if (bitmap != null)
+                {
+                    _bitmapCache[imageKey] = bitmap;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to decode image with key {imageKey}: {ex.Message}");
+                // Cache a null to prevent re-trying every frame
+                _bitmapCache[imageKey] = null!;
+                return;
+            }
+        }
+
+        if (bitmap is null) return; // Decoding failed previously or image is invalid
+
+        var destRect = new SKRect(destination.Left, destination.Top, destination.Right, destination.Bottom);
+        _canvas.DrawBitmap(bitmap, destRect);
+    }
+
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
     {
         _canvas?.Save();
@@ -176,5 +206,12 @@ public class SilkNetRenderer : IRenderer
     {
         // Canvas is managed by the host
         _canvas = null;
+
+        // Dispose cached bitmaps
+        foreach (var bitmap in _bitmapCache.Values)
+        {
+            bitmap?.Dispose();
+        }
+        _bitmapCache.Clear();
     }
 }
