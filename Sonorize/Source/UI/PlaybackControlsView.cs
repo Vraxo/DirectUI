@@ -1,6 +1,7 @@
 ﻿using System.Numerics;
 using DirectUI;
 using Sonorize.Audio;
+using System;
 
 namespace Sonorize;
 
@@ -18,28 +19,33 @@ public class PlaybackControlsView
     public void Draw(UIContext context)
     {
         float playbackControlsHeight = 70f;
-        float padding = 10f;
         Vector2 windowSize = context.Renderer.RenderTargetSize;
         float controlsY = windowSize.Y - playbackControlsHeight;
         Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playbackControlsHeight);
 
         DrawBackground(context, controlsRect);
 
-        UI.BeginVBoxContainer("playbackVBox", new Vector2(padding, controlsY + 5), 5);
+        var currentTrack = _playbackManager.CurrentTrack;
+
+        // Use HBox to lay out the main sections: Info | Controls | (empty)
+        UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), 10);
         {
-            float sliderWidth = windowSize.X - (padding * 2);
-            DrawSeekSlider(context, sliderWidth);
-            DrawControlButtons(context);
+            // --- Left Panel: Album Art & Track Info ---
+            DrawTrackInfoAndArt(context, currentTrack, 250);
+
+            // --- Center Panel: Buttons & Seek Slider ---
+            float centerWidth = windowSize.X - 250 - 50; // Total width minus side panels
+            DrawPlaybackControlsAndSlider(context, centerWidth);
         }
-        UI.EndVBoxContainer();
+        UI.EndHBoxContainer();
     }
 
     private static void DrawBackground(UIContext context, Vortice.Mathematics.Rect controlsRect)
     {
         context.Renderer.DrawBox(controlsRect, new()
         {
-            FillColor = new(0.1f, 0.1f, 0.1f, 1.0f),
-            BorderColor = new(0.05f, 0.05f, 0.05f, 1.0f),
+            FillColor = new(30 / 255f, 30 / 255f, 30 / 255f, 1.0f), // Darker background
+            BorderColor = new(45 / 255f, 45 / 255f, 45 / 255f, 1.0f),
             BorderLengthTop = 1f,
             BorderLengthBottom = 0,
             BorderLengthLeft = 0,
@@ -48,106 +54,149 @@ public class PlaybackControlsView
         });
     }
 
-    private void DrawSeekSlider(UIContext context, float sliderWidth)
+    private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack, float panelWidth)
+    {
+        float padding = 10f;
+        float artSize = 50f;
+        var startPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding);
+
+        // Placeholder for Album Art
+        var artRect = new Vortice.Mathematics.Rect(startPos.X, startPos.Y, artSize, artSize);
+        context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f) });
+
+        // Track Info
+        var textStartPos = new Vector2(startPos.X + artSize + padding, startPos.Y);
+        UI.BeginVBoxContainer("trackInfoVBox", textStartPos, 2);
+        {
+            var title = currentTrack?.Title ?? "No song selected";
+            var artist = currentTrack?.Artist ?? string.Empty;
+
+            // Song Title (larger font)
+            UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
+
+            // Artist Name (smaller, dimmer font)
+            if (!string.IsNullOrEmpty(artist))
+            {
+                var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+                UI.Text("artistName", artist, style: artistStyle);
+            }
+        }
+        UI.EndVBoxContainer();
+
+        // Advance the parent HBox layout by the width of this panel
+        UI.Context.Layout.AdvanceLayout(new Vector2(panelWidth, 0));
+    }
+
+
+    private void DrawPlaybackControlsAndSlider(UIContext context, float panelWidth)
+    {
+        var startPos = UI.Context.Layout.GetCurrentPosition();
+
+        UI.BeginVBoxContainer("centerControlsVBox", startPos, 2);
+        {
+            DrawControlButtons(context, panelWidth);
+            DrawSeekSliderWithTimestamps(context, panelWidth);
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawControlButtons(UIContext context, float panelWidth)
+    {
+        bool isAnyTrackAvailable = _playbackManager.HasTracks;
+        const int controlsLayer = 10;
+
+        // Button styles
+        var smallButtonSize = new Vector2(32, 32);
+        var playButtonSize = new Vector2(40, 40);
+
+        var iconButtonTheme = new ButtonStylePack
+        {
+            FontSize = 14f,
+            FontName = "Segoe UI Emoji",
+            Roundness = 0.3f
+        };
+        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
+        var toggleButtonTheme = new ButtonStylePack(iconButtonTheme);
+        toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
+
+        // HBox for centering
+        float buttonsWidth = smallButtonSize.X * 4 + playButtonSize.X + 4 * 5; // 4 small, 1 large, 4 gaps
+        float buttonsStartX = (panelWidth - buttonsWidth) / 2;
+        var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
+
+        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5);
+        {
+            DrawShuffleButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, toggleButtonTheme);
+            DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
+            DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            DrawRepeatModeButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+        }
+        UI.EndHBoxContainer();
+    }
+
+
+    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth)
     {
         double currentPosition = _playbackManager.CurrentPosition;
         double totalDuration = _playbackManager.TotalDuration;
         bool isAudioLoaded = totalDuration > 0;
 
-        int seekSliderId = "seekSlider".GetHashCode();
-        bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+        string currentTimeStr = FormatTime(currentPosition);
+        string totalTimeStr = FormatTime(totalDuration);
 
-        // The value passed TO the slider. If not dragging, it's the player's real time.
-        // If we are dragging, it's the value from the last frame's drag to provide continuity.
-        float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+        var timeSize = context.TextService.MeasureText("00:00", timeStyle);
+        float timeLabelWidth = timeSize.X + 5;
 
-        Vector2 sliderSize = new(sliderWidth, 10);
-        ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
-        SliderStyle theme = new() { Background = { Roundness = 1 } };
+        float sliderWidth = panelWidth - (timeLabelWidth * 2);
 
-        float newSliderValue = UI.HSlider(
-            id: "seekSlider",
-            currentValue: sliderInputValue,
-            minValue: 0f,
-            maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
-            size: sliderSize,
-            disabled: !isAudioLoaded,
-            grabberSize: new(16, 16),
-            grabberTheme: grabberTheme,
-            theme: theme
-        );
-
-        // If dragging, store the new value. The audio is NOT updated yet.
-        if (isCurrentlyDragging)
+        // HBox to hold [Time, Slider, Time]
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0);
         {
-            _seekSliderValueDuringDrag = newSliderValue;
-        }
+            // Current Time
+            UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
 
-        // If we just released the slider, NOW we seek the audio.
-        if (_isSeekSliderDragging && !isCurrentlyDragging)
-        {
-            if (isAudioLoaded)
+            // --- The Slider ---
+            int seekSliderId = "seekSlider".GetHashCode();
+            bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+            float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+            Vector2 sliderSize = new(sliderWidth, 20);
+            ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
+            SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
+
+            float newSliderValue = UI.HSlider(
+                id: "seekSlider",
+                currentValue: sliderInputValue,
+                minValue: 0f,
+                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
+                size: sliderSize,
+                disabled: !isAudioLoaded,
+                grabberSize: new(16, 16),
+                grabberTheme: grabberTheme,
+                theme: theme
+            );
+
+            if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
+            if (_isSeekSliderDragging && !isCurrentlyDragging && isAudioLoaded)
             {
-                // Use the value from the final frame of dragging.
                 _playbackManager.Seek(_seekSliderValueDuringDrag);
             }
-        }
+            _isSeekSliderDragging = isCurrentlyDragging;
+            // --- End Slider ---
 
-        // Update state for next frame.
-        _isSeekSliderDragging = isCurrentlyDragging;
-    }
-
-    private void DrawControlButtons(UIContext context)
-    {
-        bool isAnyTrackAvailable = _playbackManager.HasTracks;
-        var windowSize = context.Renderer.RenderTargetSize;
-
-        Vector2 buttonSize = new(35, 24);
-        float totalButtonsWidth = (buttonSize.X * 5) + (5 * 4); // 5 buttons, 4 gaps
-        float buttonsStartX = (windowSize.X - totalButtonsWidth) / 2;
-        float buttonsY = UI.Context.Layout.GetCurrentPosition().Y + 5;
-        const int controlsLayer = 10;
-
-        ButtonStylePack iconButtonTheme = new()
-        {
-            FontSize = 16f,
-            FontName = "Segoe UI Emoji"
-        };
-
-        ButtonStylePack toggleButtonTheme = new()
-        {
-            FontSize = 16f,
-            FontName = "Segoe UI Emoji"
-        };
-
-        toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
-        toggleButtonTheme.Active.BorderColor = DefaultTheme.AccentBorder;
-        toggleButtonTheme.ActiveHover.FillColor = DefaultTheme.Accent;
-        toggleButtonTheme.ActiveHover.BorderColor = DefaultTheme.AccentBorder;
-
-        UI.BeginHBoxContainer("playbackButtons", new(buttonsStartX, buttonsY), 5);
-        {
-            DrawShuffleButton(isAnyTrackAvailable, buttonSize, controlsLayer, toggleButtonTheme);
-            DrawPreviousTrackButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
-            DrawPlayPauseButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
-            DrawNextTrackButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
-            DrawRepeatModeButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
+            // Total Time
+            UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
         }
         UI.EndHBoxContainer();
     }
 
+
+    #region Button Drawing Helpers
     private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)
     {
         bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
-
-        if (UI.Button(
-            "shuffle",
-            "🔀",
-            buttonSize,
-            theme: toggleButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer,
-            isActive: isShuffleActive))
+        if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, isActive: isShuffleActive))
         {
             _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
         }
@@ -155,43 +204,26 @@ public class PlaybackControlsView
 
     private void DrawPreviousTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
-        if (UI.Button("prevTrack",
-            "⏮",
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
+        if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.Previous();
-        }
-    }
-
-    private void DrawNextTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
-    {
-        if (UI.Button("nextTrack",
-            "⏭",
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
-        {
-            _playbackManager.Next();
         }
     }
 
     private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
         string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
-
-        if (UI.Button(
-            "playPause",
-            playPauseText,
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
+        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.TogglePlayPause();
+        }
+    }
+
+    private void DrawNextTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
+    {
+        if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        {
+            _playbackManager.Next();
         }
     }
 
@@ -204,16 +236,20 @@ public class PlaybackControlsView
             PlaybackEndAction.DoNothing => "➡",
             _ => "?"
         };
-
-        if (UI.Button(
-            "repeatMode",
-            repeatText,
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
+        if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
         }
+    }
+    #endregion
+
+    private static string FormatTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
+        {
+            return "00:00";
+        }
+        var timeSpan = TimeSpan.FromSeconds(seconds);
+        return timeSpan.ToString(@"mm\:ss");
     }
 }

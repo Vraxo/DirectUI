@@ -47,6 +47,19 @@ public sealed class ButtonStylePack
         Current = Normal;
     }
 
+    public ButtonStylePack(ButtonStylePack other)
+    {
+        Normal = new ButtonStyle(other.Normal);
+        Hover = new ButtonStyle(other.Hover);
+        Pressed = new ButtonStyle(other.Pressed);
+        Disabled = new ButtonStyle(other.Disabled);
+        Focused = new ButtonStyle(other.Focused);
+        Active = new ButtonStyle(other.Active);
+        ActiveHover = new ButtonStyle(other.ActiveHover);
+        Current = Normal; // Reset current to normal
+    }
+
+
     public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused, bool isActive = false)
     {
         if (isDisabled)
