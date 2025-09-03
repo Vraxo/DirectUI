@@ -11,4 +11,5 @@ public class MusicFile
     public TimeSpan Duration { get; set; }
     public string FilePath { get; set; } = string.Empty;
     public byte[]? AlbumArt { get; set; }
+    public byte[]? AbstractAlbumArt { get; set; }
 }

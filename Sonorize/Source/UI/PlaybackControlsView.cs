@@ -2,6 +2,7 @@
 using DirectUI;
 using Sonorize.Audio;
 using System;
+using DirectUI.Drawing;
 
 namespace Sonorize;
 
@@ -23,25 +24,38 @@ public class PlaybackControlsView
         float controlsY = windowSize.Y - playbackControlsHeight;
         Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playbackControlsHeight);
 
+        var currentTrack = _playbackManager.CurrentTrack;
+
+        // 1. Draw the solid background, which acts as a fallback and provides the top border.
         DrawBackground(context, controlsRect);
 
-        var currentTrack = _playbackManager.CurrentTrack;
+        // 2. If available, draw the stretched abstract art on top of the solid background.
+        if (currentTrack?.AbstractAlbumArt != null && currentTrack.AbstractAlbumArt.Length > 0)
+        {
+            // The file path provides a unique key for the renderer's image cache.
+            string abstractArtKey = currentTrack.FilePath + "_abstract";
+            context.Renderer.DrawImage(currentTrack.AbstractAlbumArt, abstractArtKey, controlsRect);
+
+            // 3. Draw a semi-transparent overlay to dim the art and improve control visibility.
+            var overlayStyle = new BoxStyle
+            {
+                FillColor = new Color(0, 0, 0, (byte)(255 * 0.4f)),
+                Roundness = 0,
+                BorderLength = 0
+            };
+            context.Renderer.DrawBox(controlsRect, overlayStyle);
+        }
+
+        // 4. Draw all the interactive controls and text on top of the background layers.
         float gap = 10;
         float rightPanelPadding = 10;
 
-        // Use HBox to lay out the main sections: Info | Controls
         UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), gap);
         {
             var leftPanelStartPos = UI.Context.Layout.GetCurrentPosition();
-
-            // --- Left Panel: Album Art & Track Info ---
-            // This now allows its size to be determined by its content.
             DrawTrackInfoAndArt(context, currentTrack);
-
             var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
 
-            // --- Center Panel: Buttons & Seek Slider ---
-            // Dynamically calculate the remaining width for the center panel.
             float centerWidth = windowSize.X - leftPanelEndPos.X - rightPanelPadding;
             if (centerWidth > 0)
             {

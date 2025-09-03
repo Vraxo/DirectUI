@@ -183,7 +183,10 @@ public class SilkNetRenderer : IRenderer
         if (bitmap is null) return; // Decoding failed previously or image is invalid
 
         var destRect = new SKRect(destination.Left, destination.Top, destination.Right, destination.Bottom);
-        _canvas.DrawBitmap(bitmap, destRect);
+
+        // Use an SKPaint object with high-quality filtering to ensure the stretched image is blurry, not pixelated.
+        using var paint = new SKPaint { FilterQuality = SKFilterQuality.High };
+        _canvas.DrawBitmap(bitmap, destRect, paint);
     }
 
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
