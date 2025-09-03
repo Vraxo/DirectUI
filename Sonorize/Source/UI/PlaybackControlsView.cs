@@ -26,16 +26,27 @@ public class PlaybackControlsView
         DrawBackground(context, controlsRect);
 
         var currentTrack = _playbackManager.CurrentTrack;
+        float gap = 10;
+        float rightPanelPadding = 10;
 
-        // Use HBox to lay out the main sections: Info | Controls | (empty)
-        UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), 10);
+        // Use HBox to lay out the main sections: Info | Controls
+        UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), gap);
         {
+            var leftPanelStartPos = UI.Context.Layout.GetCurrentPosition();
+
             // --- Left Panel: Album Art & Track Info ---
-            DrawTrackInfoAndArt(context, currentTrack, 250);
+            // This now allows its size to be determined by its content.
+            DrawTrackInfoAndArt(context, currentTrack);
+
+            var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
 
             // --- Center Panel: Buttons & Seek Slider ---
-            float centerWidth = windowSize.X - 250 - 50; // Total width minus side panels
-            DrawPlaybackControlsAndSlider(context, centerWidth);
+            // Dynamically calculate the remaining width for the center panel.
+            float centerWidth = windowSize.X - leftPanelEndPos.X - rightPanelPadding;
+            if (centerWidth > 0)
+            {
+                DrawPlaybackControlsAndSlider(context, centerWidth);
+            }
         }
         UI.EndHBoxContainer();
     }
@@ -54,37 +65,39 @@ public class PlaybackControlsView
         });
     }
 
-    private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack, float panelWidth)
+    private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack)
     {
         float padding = 10f;
         float artSize = 50f;
-        var startPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding);
-
-        // Placeholder for Album Art
-        var artRect = new Vortice.Mathematics.Rect(startPos.X, startPos.Y, artSize, artSize);
-        context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f) });
-
-        // Track Info
-        var textStartPos = new Vector2(startPos.X + artSize + padding, startPos.Y);
-        UI.BeginVBoxContainer("trackInfoVBox", textStartPos, 2);
+        // The VBox is now a child of the main HBox, so its position is handled automatically.
+        UI.BeginHBoxContainer("trackInfoHBox", UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding), padding);
         {
-            var title = currentTrack?.Title ?? "No song selected";
-            var artist = currentTrack?.Artist ?? string.Empty;
+            // Placeholder for Album Art
+            var artPos = UI.Context.Layout.GetCurrentPosition();
+            var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+            UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
 
-            // Song Title (larger font)
-            UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
 
-            // Artist Name (smaller, dimmer font)
-            if (!string.IsNullOrEmpty(artist))
+            // Track Info VBox
+            UI.BeginVBoxContainer("trackInfoVBox", UI.Context.Layout.GetCurrentPosition(), 4);
             {
-                var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
-                UI.Text("artistName", artist, style: artistStyle);
-            }
-        }
-        UI.EndVBoxContainer();
+                var title = currentTrack?.Title ?? "No song selected";
+                var artist = currentTrack?.Artist ?? string.Empty;
 
-        // Advance the parent HBox layout by the width of this panel
-        UI.Context.Layout.AdvanceLayout(new Vector2(panelWidth, 0));
+                // Song Title (larger font)
+                UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
+
+                // Artist Name (smaller, dimmer font)
+                if (!string.IsNullOrEmpty(artist))
+                {
+                    var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+                    UI.Text("artistName", artist, style: artistStyle);
+                }
+            }
+            UI.EndVBoxContainer();
+        }
+        UI.EndHBoxContainer();
     }
 
 
@@ -107,7 +120,7 @@ public class PlaybackControlsView
 
         // Button styles
         var smallButtonSize = new Vector2(32, 32);
-        var playButtonSize = new Vector2(40, 40);
+        var playButtonSize = new Vector2(36, 36);
 
         var iconButtonTheme = new ButtonStylePack
         {
@@ -120,7 +133,7 @@ public class PlaybackControlsView
         toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
 
         // HBox for centering
-        float buttonsWidth = smallButtonSize.X * 4 + playButtonSize.X + 4 * 5; // 4 small, 1 large, 4 gaps
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5); // 4 small, 1 large, 4 gaps
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
         var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
 
@@ -150,6 +163,7 @@ public class PlaybackControlsView
         float timeLabelWidth = timeSize.X + 5;
 
         float sliderWidth = panelWidth - (timeLabelWidth * 2);
+        if (sliderWidth < 10) return; // Don't draw if there's no space
 
         // HBox to hold [Time, Slider, Time]
         UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0);
