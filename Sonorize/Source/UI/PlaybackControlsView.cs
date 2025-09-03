@@ -314,7 +314,8 @@ public class PlaybackControlsView
                 disabled: !isAudioLoaded,
                 grabberSize: new(14, 14),
                 grabberTheme: grabberTheme,
-                theme: theme
+                theme: theme,
+                position: new(0, 4)
             );
 
             if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;

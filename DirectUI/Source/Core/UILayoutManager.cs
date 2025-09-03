@@ -106,7 +106,8 @@ public class UILayoutManager
 
     public Vector2 ApplyLayout(Vector2 defaultPosition)
     {
-        return IsInLayoutContainer() ? GetCurrentPosition() : defaultPosition;
+        // If in a container, add the widget's desired position as a relative offset.
+        return IsInLayoutContainer() ? GetCurrentPosition() + defaultPosition : defaultPosition;
     }
 
     public void AdvanceLayout(Vector2 elementSize)
