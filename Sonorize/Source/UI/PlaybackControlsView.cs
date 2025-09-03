@@ -81,33 +81,49 @@ public class PlaybackControlsView
     {
         float padding = 10;
         float gap = 15;
-        float rightControlsWidth = 150; // Reserve space for future right-side controls
+        float rightControlsWidth = 150;
 
-        UI.BeginHBoxContainer("compactHBox", controlsRect.TopLeft + new Vector2(padding, 0), gap);
+        // --- Left: Album Art (Manually Placed & Centered) ---
+        float artSize = 50f;
+        var artPos = new Vector2(
+            controlsRect.Left + padding,
+            controlsRect.Top + (controlsRect.Height - artSize) / 2
+        );
+        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+        if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
         {
-            // Left section: Art only
-            DrawAlbumArtOnly(context, currentTrack);
+            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+        }
+        else
+        {
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+        }
 
-            // Middle section: A VBox for vertical centering
-            var middleSectionStartPos = UI.Context.Layout.GetCurrentPosition();
-            float availableMiddleWidth = controlsRect.Width - middleSectionStartPos.X - rightControlsWidth;
+        // --- Middle Section (Manually Placed & Centered) ---
+        float middleSectionStartX = artRect.Right + gap;
+        float availableMiddleWidth = controlsRect.Width - middleSectionStartX - rightControlsWidth;
 
-            UI.BeginVBoxContainer("compactMiddleVBox", middleSectionStartPos, 0);
-            {
-                // Spacer to push content down for vertical alignment.
-                // Total panel height is 70. Buttons are 36 high. (70-36)/2 = 17.
-                UI.Text("compactSpacerTop", "", new Vector2(0, 17));
+        // The content here is a row of buttons (36px high) and the slider group (title + slider).
+        // The tallest element is the 36px play button, so we center the entire row based on that height.
+        float middleContentHeight = 36f;
+        var middleSectionStartPos = new Vector2(
+            middleSectionStartX,
+            controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
+        );
 
-                // A nested HBox for the actual controls
-                UI.BeginHBoxContainer("compactControlsHBox", UI.Context.Layout.GetCurrentPosition(), 10);
-                {
-                    DrawCompactControlButtons(context);
-                    // Approx width of buttons (32+36+32) + gaps (10*2) = 120
-                    DrawCompactSeekSlider(context, availableMiddleWidth - 120);
-                }
-                UI.EndHBoxContainer();
-            }
-            UI.EndVBoxContainer();
+        // We use an HBox to lay out the items within this centered row.
+        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10);
+        {
+            // The buttons are 36px high, so they will define the height of this row.
+            DrawCompactControlButtons(context);
+
+            // The slider group (title + slider) is shorter than the buttons.
+            // We calculate a top spacer to vertically center it within the 36px row height.
+            float sliderGroupHeight = 16f + 2f + 8f; // title + gap + slider
+            float topSpacer = (middleContentHeight - sliderGroupHeight) / 2f;
+
+            // Approx width of buttons (32+36+32) + gaps (10*2) = 120
+            DrawCompactSeekSlider(context, availableMiddleWidth - 120, topSpacer);
         }
         UI.EndHBoxContainer();
     }
@@ -124,24 +140,6 @@ public class PlaybackControlsView
             BorderLengthRight = 0,
             Roundness = 0
         });
-    }
-
-    private static void DrawAlbumArtOnly(UIContext context, MusicFile? currentTrack)
-    {
-        float padding = 10f;
-        float artSize = 50f;
-        var artPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding);
-        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
-
-        if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
-        {
-            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
-        }
-        else
-        {
-            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
-        }
-        UI.Context.Layout.AdvanceLayout(new Vector2(artSize + padding, artSize + padding));
     }
 
     private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack)
@@ -233,7 +231,7 @@ public class PlaybackControlsView
         DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
     }
 
-    private void DrawCompactSeekSlider(UIContext context, float panelWidth)
+    private void DrawCompactSeekSlider(UIContext context, float panelWidth, float topSpacer = 0f)
     {
         if (panelWidth < 10) return;
 
@@ -244,6 +242,10 @@ public class PlaybackControlsView
 
         UI.BeginVBoxContainer("compactSliderVBox", UI.Context.Layout.GetCurrentPosition(), 2);
         {
+            if (topSpacer > 0)
+            {
+                UI.Text("compactSliderTopSpacer", "", new Vector2(0, topSpacer));
+            }
             UI.Text("compactTrackInfo", trackInfo, new Vector2(panelWidth, 16), new ButtonStyle { FontSize = 14 });
             DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
         }
