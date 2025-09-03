@@ -20,9 +20,13 @@ internal class SilkNetTextLayout : ITextLayout
         _style = style;
         using var font = new SKFont(typeface, style.FontSize);
         using var paint = new SKPaint(font) { IsAntialias = true };
+
+        // Use a robust measurement that includes trailing spaces
+        float width = MeasureTextWithTrailingWhitespace(paint, text);
         var rect = new SKRect();
-        paint.MeasureText(text, ref rect);
-        Size = new Vector2(rect.Width, rect.Height);
+        // Measure normally to get an accurate height
+        paint.MeasureText("Gg", ref rect); // Use characters with ascenders/descenders for stable height
+        Size = new Vector2(width, rect.Height);
     }
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
     {
@@ -37,21 +41,21 @@ internal class SilkNetTextLayout : ITextLayout
 
         // Measure the substring up to the caret position to get the X coordinate.
         string sub = Text[..textPosition];
-        float x = paint.MeasureText(sub);
+        float x = MeasureTextWithTrailingWhitespace(paint, sub);
 
         // Measure the width of the character at the caret position to determine its size.
         float charWidth;
         if (textPosition < Text.Length)
         {
-            charWidth = paint.MeasureText(Text[textPosition].ToString());
+            // Use the robust measurement here as well in case the character is a space
+            charWidth = MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString());
         }
         else // Caret is at the end of the string.
         {
-            charWidth = Text.Length > 0 ? paint.MeasureText(Text[^1].ToString()) : 10f;
+            // Use the width of a space as a sensible default for the caret after the last character.
+            charWidth = paint.MeasureText(" ");
         }
 
-        // isTrailingHit is a concept for converting a point to an index,
-        // but here we are converting an index to a point, so we just use the calculated x.
         return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(charWidth, Size.Y));
     }
 
@@ -68,13 +72,14 @@ internal class SilkNetTextLayout : ITextLayout
         bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
 
         // Use BreakText to find the character index that corresponds to the click's X coordinate.
+        // This is still a good starting point.
         int textPosition = (int)paint.BreakText(Text, point.X);
         textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
         // Determine if it's a "trailing hit" by checking which side of the character's midpoint the click landed on.
-        float charStartPos = paint.MeasureText(Text[..textPosition]);
+        float charStartPos = MeasureTextWithTrailingWhitespace(paint, Text[..textPosition]);
         float charEndPos = (textPosition < Text.Length)
-            ? charStartPos + paint.MeasureText(Text[textPosition].ToString())
+            ? charStartPos + MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString())
             : charStartPos;
 
         bool isTrailingHit = (point.X - charStartPos) > ((charEndPos - charStartPos) / 2f);
@@ -84,6 +89,28 @@ internal class SilkNetTextLayout : ITextLayout
 
         return new TextHitTestResult(textPosition, isTrailingHit, isInside, metrics);
     }
+
+    /// <summary>
+    /// Measures text width while reliably including trailing whitespace, which SKPaint.MeasureText often trims.
+    /// </summary>
+    private static float MeasureTextWithTrailingWhitespace(SKPaint paint, string text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+
+        string trimmedText = text.TrimEnd(' ');
+        float width = paint.MeasureText(trimmedText);
+
+        int trailingSpaceCount = text.Length - trimmedText.Length;
+        if (trailingSpaceCount > 0)
+        {
+            // Measure a single space to get its width accurately for the current font.
+            float spaceWidth = paint.MeasureText(" ");
+            width += trailingSpaceCount * spaceWidth;
+        }
+
+        return width;
+    }
+
     public void Dispose()
     {
         // This class doesn't own unmanaged resources directly
