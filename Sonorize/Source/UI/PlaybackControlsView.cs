@@ -241,10 +241,33 @@ public class PlaybackControlsView
         var artist = currentTrack?.Artist ?? string.Empty;
         var trackInfo = string.IsNullOrWhiteSpace(artist) ? title : $"{title} - {artist}";
 
-        UI.BeginVBoxContainer("compactSliderVBox", UI.Context.Layout.GetCurrentPosition(), 2);
+        // Prepare timestamp text for layout calculation
+        double currentPosition = _playbackManager.CurrentPosition;
+        double totalDuration = _playbackManager.TotalDuration;
+        string timeStr = $"{FormatTime(currentPosition)} / {FormatTime(totalDuration)}";
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+        var timeSize = context.TextService.MeasureText(timeStr, timeStyle);
+
+        // This VBox will contain two rows: the info row and the slider row.
+        // Apply the topSpacer to vertically center this group.
+        var startPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, topSpacer);
+        UI.BeginVBoxContainer("compactSliderVBox", startPos, 2);
         {
-            UI.Text("compactTrackInfo", trackInfo, new Vector2(panelWidth, 16), new ButtonStyle { FontSize = 14 });
-            DrawSeekSliderWithTimestamps(context, panelWidth);
+            // --- Row 1: HBox for Title/Artist and Timestamps ---
+            UI.BeginHBoxContainer("compactInfoRowHBox", UI.Context.Layout.GetCurrentPosition(), 5);
+            {
+                float titleWidth = panelWidth - timeSize.X - 5;
+                if (titleWidth > 0)
+                {
+                    UI.Text("compactTrackInfo", trackInfo, new Vector2(titleWidth, 16), new ButtonStyle { FontSize = 14 });
+                }
+
+                UI.Text("compactTimeInfo", timeStr, new Vector2(timeSize.X, 16), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            }
+            UI.EndHBoxContainer();
+
+            // --- Row 2: Slider without its own timestamps ---
+            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
         }
         UI.EndVBoxContainer();
     }
