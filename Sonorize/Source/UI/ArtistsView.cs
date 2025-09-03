@@ -1,5 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using DirectUI;
@@ -14,6 +13,7 @@ public class ArtistsView
     private int _selectedIndex = -1;
     private List<ArtistInfo> _artists = new(); // Cache
     private int _lastLibraryFileCount = -1;
+    private string? _currentSearchText;
     private readonly Action<string> _onArtistSelected;
 
     public ArtistsView(MusicLibrary musicLibrary, Action<string> onArtistSelected)
@@ -28,28 +28,35 @@ public class ArtistsView
         ];
     }
 
-    private void ProcessLibrary()
+    private void ProcessLibrary(string? searchText)
     {
         var currentFiles = _musicLibrary.Files;
-        if (currentFiles.Count == _lastLibraryFileCount) return;
+        if (currentFiles.Count == _lastLibraryFileCount && searchText == _currentSearchText) return;
 
-        _artists = currentFiles
+        var processedArtists = currentFiles
             .GroupBy(f => f.Artist)
             .Select(g => new ArtistInfo
             {
                 Name = g.Key,
                 AlbumCount = g.Select(f => f.Album).Distinct().Count(),
                 TrackCount = g.Count()
-            })
-            .OrderBy(a => a.Name)
-            .ToList();
+            });
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedArtists = processedArtists.Where(a =>
+                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _artists = processedArtists.OrderBy(a => a.Name).ToList();
 
         _lastLibraryFileCount = currentFiles.Count;
+        _currentSearchText = searchText;
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
     {
-        ProcessLibrary();
+        ProcessLibrary(searchText);
 
         bool rowDoubleClicked;
         if (size.X > 0 && size.Y > 0)

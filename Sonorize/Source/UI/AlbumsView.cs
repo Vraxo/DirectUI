@@ -14,6 +14,7 @@ public class AlbumsView
     private List<AlbumInfo> _albums = new(); // Cache the processed list
     private int _lastLibraryFileCount = -1; // To check if we need to re-process
     private string? _currentArtistFilter;
+    private string? _currentSearchText;
     private readonly Action<AlbumInfo> _onAlbumSelected;
 
     public AlbumsView(MusicLibrary musicLibrary, Action<AlbumInfo> onAlbumSelected)
@@ -29,11 +30,11 @@ public class AlbumsView
         ];
     }
 
-    private void ProcessLibrary(string? artistFilter)
+    private void ProcessLibrary(string? artistFilter, string? searchText)
     {
         var currentFiles = _musicLibrary.Files;
-        // Re-process if the file count or the filter has changed.
-        if (currentFiles.Count == _lastLibraryFileCount && artistFilter == _currentArtistFilter) return;
+        // Re-process if the file count, filter, or search text has changed.
+        if (currentFiles.Count == _lastLibraryFileCount && artistFilter == _currentArtistFilter && searchText == _currentSearchText) return;
 
         IEnumerable<MusicFile> filesToProcess = currentFiles;
         if (!string.IsNullOrEmpty(artistFilter))
@@ -41,7 +42,7 @@ public class AlbumsView
             filesToProcess = filesToProcess.Where(f => f.Artist == artistFilter);
         }
 
-        _albums = filesToProcess
+        var processedAlbums = filesToProcess
             .GroupBy(f => new { f.Album, f.Artist })
             .Select(g => new AlbumInfo
             {
@@ -49,18 +50,28 @@ public class AlbumsView
                 Artist = g.Key.Artist,
                 Year = g.FirstOrDefault()?.Year ?? 0,
                 TrackCount = g.Count()
-            })
+            });
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedAlbums = processedAlbums.Where(a =>
+                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                a.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _albums = processedAlbums
             .OrderBy(a => a.Artist)
             .ThenBy(a => a.Name)
             .ToList();
 
         _lastLibraryFileCount = currentFiles.Count;
         _currentArtistFilter = artistFilter;
+        _currentSearchText = searchText;
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size, string? artistFilter)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? artistFilter, string? searchText)
     {
-        ProcessLibrary(artistFilter);
+        ProcessLibrary(artistFilter, searchText);
 
         bool rowDoubleClicked;
         if (size.X > 0 && size.Y > 0)

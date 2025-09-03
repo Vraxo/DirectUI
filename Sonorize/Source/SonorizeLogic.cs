@@ -27,6 +27,7 @@ public class SonorizeLogic : IAppLogic
     private readonly string[] _tabLabels = { "Songs", "Albums", "Artists" };
     private string? _artistFilter;
     private AlbumInfo? _albumFilter;
+    private string _searchText = "";
 
 
     public SonorizeLogic(IWindowHost host)
@@ -115,11 +116,20 @@ public class SonorizeLogic : IAppLogic
         _playbackManager.Update();
 
         float menuBarHeight = 30f;
+        float searchBarHeight = 24f;
         float tabBarHeight = 30f;
         float playbackControlsHeight = 70f;
         float padding = 10f;
+        float verticalGap = 5f;
 
-        var tabBarPos = new Vector2(padding, menuBarHeight + padding);
+        // --- Search Bar ---
+        var searchBarPos = new Vector2(padding, menuBarHeight + verticalGap);
+        var searchBarSize = new Vector2(context.Renderer.RenderTargetSize.X - (padding * 2), searchBarHeight);
+        UI.InputText("searchBox", ref _searchText, searchBarSize, searchBarPos, placeholderText: "Search...");
+
+
+        // --- Tab Bar ---
+        var tabBarPos = new Vector2(padding, searchBarPos.Y + searchBarHeight + verticalGap);
 
         var tabTheme = new ButtonStylePack();
         tabTheme.Normal.FillColor = new DirectUI.Drawing.Color(45 / 255f, 45 / 255f, 48 / 255f, 1.0f);
@@ -128,7 +138,6 @@ public class SonorizeLogic : IAppLogic
 
         UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
         {
-            // Draw "Back" button if we are in a filtered view
             if (_albumFilter != null || _artistFilter != null)
             {
                 if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
@@ -137,10 +146,19 @@ public class SonorizeLogic : IAppLogic
                 }
             }
 
+            int previousTab = _activeTabIndex;
             UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
+            if (_activeTabIndex != previousTab)
+            {
+                // Clear filters when user manually changes tab for clarity
+                _artistFilter = null;
+                _albumFilter = null;
+            }
         }
         UI.EndHBoxContainer();
 
+
+        // --- Main Content Grid ---
         var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2);
         var gridSize = new Vector2(
             context.Renderer.RenderTargetSize.X - (padding * 2),
@@ -150,13 +168,13 @@ public class SonorizeLogic : IAppLogic
         switch (_activeTabIndex)
         {
             case 0: // Songs
-                _libraryView.Draw(context, gridPos, gridSize, _albumFilter);
+                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _searchText);
                 break;
             case 1: // Albums
-                _albumsView.Draw(context, gridPos, gridSize, _artistFilter);
+                _albumsView.Draw(context, gridPos, gridSize, _artistFilter, _searchText);
                 break;
             case 2: // Artists
-                _artistsView.Draw(context, gridPos, gridSize);
+                _artistsView.Draw(context, gridPos, gridSize, _searchText);
                 break;
         }
 
@@ -168,28 +186,30 @@ public class SonorizeLogic : IAppLogic
         _artistFilter = artistName;
         _albumFilter = null; // Clear album filter when selecting an artist
         _activeTabIndex = 1; // Switch to Albums tab
+        _searchText = "";    // Clear search on drill-down
     }
 
     private void OnAlbumSelected(AlbumInfo album)
     {
         _albumFilter = album;
-        // Artist filter can remain, as it's part of the hierarchy
+        // Artist filter is implicitly set by the album's artist
+        _artistFilter = album.Artist;
         _activeTabIndex = 0; // Switch to Songs tab
+        _searchText = "";    // Clear search on drill-down
     }
 
     private void OnBack()
     {
-        // If we are viewing an album's songs, go back to the album list.
+        _searchText = ""; // Clear search on navigating back
         if (_albumFilter != null)
         {
             _albumFilter = null;
-            _activeTabIndex = 1; // Go to albums tab
+            _activeTabIndex = 1;
         }
-        // If we are viewing an artist's albums, go back to the artist list.
         else if (_artistFilter != null)
         {
             _artistFilter = null;
-            _activeTabIndex = 2; // Go to artists tab
+            _activeTabIndex = 2;
         }
     }
 

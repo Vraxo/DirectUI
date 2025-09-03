@@ -32,19 +32,31 @@ public class LibraryView
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, string? searchText)
     {
-        // Filter the library based on the selection from another view
+        IEnumerable<MusicFile> filesToDisplay;
+
+        // Start with either the full library or an album-filtered list
         if (albumFilter != null)
         {
-            _currentViewFiles = _musicLibrary.Files
-                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name)
-                .ToList();
+            filesToDisplay = _musicLibrary.Files
+                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);
         }
         else
         {
-            _currentViewFiles = _musicLibrary.Files;
+            filesToDisplay = _musicLibrary.Files;
         }
+
+        // Apply search text filter on top
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            filesToDisplay = filesToDisplay.Where(f =>
+                f.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                f.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _currentViewFiles = filesToDisplay.ToList();
 
         // Keep the playback manager's tracklist in sync with the *currently viewed* list.
         _playbackManager.SetTracklist(_currentViewFiles);
