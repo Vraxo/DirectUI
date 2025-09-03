@@ -19,6 +19,11 @@ public class SonorizeLogic : IAppLogic
     private readonly PlaybackManager _playbackManager;
     private readonly PlaybackControlsView _playbackControlsView;
     private readonly LibraryView _libraryView;
+    private readonly AlbumsView _albumsView;
+    private readonly ArtistsView _artistsView;
+
+    private int _activeTabIndex = 0;
+    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists" };
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -32,6 +37,8 @@ public class SonorizeLogic : IAppLogic
         _playbackManager = new PlaybackManager(new AudioPlayer());
         _playbackControlsView = new PlaybackControlsView(_playbackManager);
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
+        _albumsView = new AlbumsView(_musicLibrary);
+        _artistsView = new ArtistsView(_musicLibrary);
 
         // Start scanning for music files
         _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -103,15 +110,44 @@ public class SonorizeLogic : IAppLogic
         _playbackManager.Update();
 
         float menuBarHeight = 30f;
+        float tabBarHeight = 30f;
         float playbackControlsHeight = 70f;
         float padding = 10f;
-        var gridPos = new Vector2(padding, menuBarHeight + padding);
+
+        var tabBarPos = new Vector2(padding, menuBarHeight + padding);
+
+        // Use a custom theme for the tabs to make them look distinct
+        var tabTheme = new ButtonStylePack();
+        // These styles will make the active tab look like it's part of the panel below it.
+        // The default ButtonStylePack already has good styles for Active/ActiveHover.
+        // We just adjust the inactive states.
+        tabTheme.Normal.FillColor = new DirectUI.Drawing.Color(45 / 255f, 45 / 255f, 48 / 255f, 1.0f);
+        tabTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
+        tabTheme.Hover.FillColor = new DirectUI.Drawing.Color(60 / 255f, 60 / 255f, 63 / 255f, 1.0f);
+
+        UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
+        UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
+        UI.EndHBoxContainer();
+
+        var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2); // A small gap between tabs and grid
         var gridSize = new Vector2(
             context.Renderer.RenderTargetSize.X - (padding * 2),
-            context.Renderer.RenderTargetSize.Y - menuBarHeight - playbackControlsHeight - (padding * 2)
+            context.Renderer.RenderTargetSize.Y - gridPos.Y - playbackControlsHeight - padding
         );
 
-        _libraryView.Draw(context, gridPos, gridSize);
+        // Draw the active view based on tab selection
+        switch (_activeTabIndex)
+        {
+            case 0: // Songs
+                _libraryView.Draw(context, gridPos, gridSize);
+                break;
+            case 1: // Albums
+                _albumsView.Draw(context, gridPos, gridSize);
+                break;
+            case 2: // Artists
+                _artistsView.Draw(context, gridPos, gridSize);
+                break;
+        }
 
         _playbackControlsView.Draw(context);
     }
