@@ -21,12 +21,14 @@ public class SonorizeLogic : IAppLogic
     private readonly LibraryView _libraryView;
     private readonly AlbumsView _albumsView;
     private readonly ArtistsView _artistsView;
+    private readonly PlaylistsView _playlistsView;
 
     // --- Navigation State ---
     private int _activeTabIndex = 0;
-    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists" };
+    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists", "Playlists" };
     private string? _artistFilter;
     private AlbumInfo? _albumFilter;
+    private Playlist? _playlistFilter;
     private string _searchText = "";
 
 
@@ -46,6 +48,7 @@ public class SonorizeLogic : IAppLogic
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
         _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
         _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
+        _playlistsView = new PlaylistsView(_musicLibrary, OnPlaylistSelected);
 
         // Start scanning for music files
         _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -138,7 +141,7 @@ public class SonorizeLogic : IAppLogic
 
         UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
         {
-            if (_albumFilter != null || _artistFilter != null)
+            if (_albumFilter != null || _artistFilter != null || _playlistFilter != null)
             {
                 if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
                 {
@@ -153,6 +156,7 @@ public class SonorizeLogic : IAppLogic
                 // Clear filters when user manually changes tab for clarity
                 _artistFilter = null;
                 _albumFilter = null;
+                _playlistFilter = null;
             }
         }
         UI.EndHBoxContainer();
@@ -168,13 +172,16 @@ public class SonorizeLogic : IAppLogic
         switch (_activeTabIndex)
         {
             case 0: // Songs
-                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _searchText);
+                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _playlistFilter, _searchText);
                 break;
             case 1: // Albums
                 _albumsView.Draw(context, gridPos, gridSize, _artistFilter, _searchText);
                 break;
             case 2: // Artists
                 _artistsView.Draw(context, gridPos, gridSize, _searchText);
+                break;
+            case 3: // Playlists
+                _playlistsView.Draw(context, gridPos, gridSize, _searchText);
                 break;
         }
 
@@ -184,7 +191,8 @@ public class SonorizeLogic : IAppLogic
     private void OnArtistSelected(string artistName)
     {
         _artistFilter = artistName;
-        _albumFilter = null; // Clear album filter when selecting an artist
+        _albumFilter = null;
+        _playlistFilter = null;
         _activeTabIndex = 1; // Switch to Albums tab
         _searchText = "";    // Clear search on drill-down
     }
@@ -194,14 +202,29 @@ public class SonorizeLogic : IAppLogic
         _albumFilter = album;
         // Artist filter is implicitly set by the album's artist
         _artistFilter = album.Artist;
+        _playlistFilter = null;
         _activeTabIndex = 0; // Switch to Songs tab
         _searchText = "";    // Clear search on drill-down
+    }
+
+    private void OnPlaylistSelected(Playlist playlist)
+    {
+        _playlistFilter = playlist;
+        _albumFilter = null;
+        _artistFilter = null;
+        _activeTabIndex = 0; // Switch to Songs tab to show playlist content
+        _searchText = "";
     }
 
     private void OnBack()
     {
         _searchText = ""; // Clear search on navigating back
-        if (_albumFilter != null)
+        if (_playlistFilter != null)
+        {
+            _playlistFilter = null;
+            _activeTabIndex = 3; // Go back to the playlists view
+        }
+        else if (_albumFilter != null)
         {
             _albumFilter = null;
             _activeTabIndex = 1;

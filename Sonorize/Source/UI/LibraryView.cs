@@ -32,12 +32,16 @@ public class LibraryView
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, string? searchText)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, Playlist? playlistFilter, string? searchText)
     {
         IEnumerable<MusicFile> filesToDisplay;
 
-        // Start with either the full library or an album-filtered list
-        if (albumFilter != null)
+        // Highest priority filter is the playlist
+        if (playlistFilter != null)
+        {
+            filesToDisplay = playlistFilter.Tracks;
+        }
+        else if (albumFilter != null)
         {
             filesToDisplay = _musicLibrary.Files
                 .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);

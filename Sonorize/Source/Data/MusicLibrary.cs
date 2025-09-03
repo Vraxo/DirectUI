@@ -11,6 +11,7 @@ namespace Sonorize;
 public class MusicLibrary
 {
     private List<MusicFile> _files = new();
+    private List<Playlist> _playlists = new();
     private readonly object _lock = new();
 
     public IReadOnlyList<MusicFile> Files
@@ -25,7 +26,20 @@ public class MusicLibrary
         }
     }
 
+    public IReadOnlyList<Playlist> Playlists
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return new List<Playlist>(_playlists);
+            }
+        }
+    }
+
+
     private static readonly string[] SupportedExtensions = { ".mp3", ".flac", ".m4a", ".ogg", ".wav", ".wma", ".aac" };
+    private static readonly string[] PlaylistExtensions = { ".m3u", ".m3u8" };
     private Task? _scanTask;
 
     public void ScanDirectoriesAsync(IEnumerable<string> directories)
@@ -82,11 +96,65 @@ public class MusicLibrary
                 .ThenBy(f => f.Title)
                 .ToList();
 
+            // Now scan for playlists
+            var foundPlaylists = new List<Playlist>();
+            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f);
+
+            foreach (var dir in dirsToScan)
+            {
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    var playlistFilesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => PlaylistExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+                    foreach (var playlistPath in playlistFilesInDir)
+                    {
+                        var playlist = new Playlist
+                        {
+                            Name = Path.GetFileNameWithoutExtension(playlistPath),
+                            FilePath = playlistPath
+                        };
+
+                        var playlistDirectory = Path.GetDirectoryName(playlistPath);
+                        if (playlistDirectory == null) continue;
+
+                        var lines = System.IO.File.ReadAllLines(playlistPath);
+                        foreach (var line in lines)
+                        {
+                            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#')) continue;
+
+                            string trackPath = line.Trim();
+                            if (!Path.IsPathRooted(trackPath))
+                            {
+                                trackPath = Path.GetFullPath(Path.Combine(playlistDirectory, trackPath));
+                            }
+
+                            if (musicFileLookup.TryGetValue(trackPath, out var musicFile))
+                            {
+                                playlist.Tracks.Add(musicFile);
+                            }
+                        }
+
+                        if (playlist.Tracks.Any())
+                        {
+                            foundPlaylists.Add(playlist);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error scanning for playlists in {dir}: {ex.Message}");
+                }
+            }
+
+
             lock (_lock)
             {
                 _files = sortedFiles;
+                _playlists = foundPlaylists.OrderBy(p => p.Name).ToList();
             }
-            Console.WriteLine($"Scan complete. Found {_files.Count} files.");
+            Console.WriteLine($"Scan complete. Found {_files.Count} files and {_playlists.Count} playlists.");
         });
     }
 }
