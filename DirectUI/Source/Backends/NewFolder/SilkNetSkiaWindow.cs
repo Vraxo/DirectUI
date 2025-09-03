@@ -186,6 +186,12 @@ public class SilkNetSkiaWindow : IDisposable
             GRSurfaceOrigin.BottomLeft,
             SKColorType.Rgba8888
         );
+
+        // This is the fix: Clear all cached text resources.
+        // The cached resources (like SKTypeface) can hold onto metrics related to the old
+        // window size/DPI. Clearing them ensures they are recreated with correct,
+        // up-to-date metrics on the next frame, fixing caret measurement issues.
+        _textService?.Cleanup();
     }
 
     private void OnClose() { }
@@ -277,111 +283,111 @@ public class SilkNetSkiaWindow : IDisposable
         GC.SuppressFinalize(this);
     }
 
-// inside SilkNetSkiaWindow class, below your OnMouseWheel handler:
+    // inside SilkNetSkiaWindow class, below your OnMouseWheel handler:
 
-/// <summary>
-/// Maps a Silk.NET key into your DirectUI.Input.Keys enum.
-/// </summary>
-private static Keys MapKey(Key key) => key switch
-{
-    Key.Space => Keys.Space,
-    Key.Number0 => Keys.D0,
-    Key.Number1 => Keys.D1,
-    Key.Number2 => Keys.D2,
-    Key.Number3 => Keys.D3,
-    Key.Number4 => Keys.D4,
-    Key.Number5 => Keys.D5,
-    Key.Number6 => Keys.D6,
-    Key.Number7 => Keys.D7,
-    Key.Number8 => Keys.D8,
-    Key.Number9 => Keys.D9,
-    Key.A => Keys.A,
-    Key.B => Keys.B,
-    Key.C => Keys.C,
-    Key.D => Keys.D,
-    Key.E => Keys.E,
-    Key.F => Keys.F,
-    Key.G => Keys.G,
-    Key.H => Keys.H,
-    Key.I => Keys.I,
-    Key.J => Keys.J,
-    Key.K => Keys.K,
-    Key.L => Keys.L,
-    Key.M => Keys.M,
-    Key.N => Keys.N,
-    Key.O => Keys.O,
-    Key.P => Keys.P,
-    Key.Q => Keys.Q,
-    Key.R => Keys.R,
-    Key.S => Keys.S,
-    Key.T => Keys.T,
-    Key.U => Keys.U,
-    Key.V => Keys.V,
-    Key.W => Keys.W,
-    Key.X => Keys.X,
-    Key.Y => Keys.Y,
-    Key.Z => Keys.Z,
-    Key.Escape => Keys.Escape,
-    Key.Enter => Keys.Enter,
-    Key.Tab => Keys.Tab,
-    Key.Backspace => Keys.Backspace,
-    Key.Insert => Keys.Insert,
-    Key.Delete => Keys.Delete,
-    Key.Right => Keys.RightArrow,
-    Key.Left => Keys.LeftArrow,
-    Key.Down => Keys.DownArrow,
-    Key.Up => Keys.UpArrow,
-    Key.PageUp => Keys.PageUp,
-    Key.PageDown => Keys.PageDown,
-    Key.Home => Keys.Home,
-    Key.End => Keys.End,
-    Key.CapsLock => Keys.CapsLock,
-    Key.Pause => Keys.Pause,
-    Key.F1 => Keys.F1,
-    Key.F2 => Keys.F2,
-    Key.F3 => Keys.F3,
-    Key.F4 => Keys.F4,
-    Key.F5 => Keys.F5,
-    Key.F6 => Keys.F6,
-    Key.F7 => Keys.F7,
-    Key.F8 => Keys.F8,
-    Key.F9 => Keys.F9,
-    Key.F10 => Keys.F10,
-    Key.F11 => Keys.F11,
-    Key.F12 => Keys.F12,
-    Key.Keypad0 => Keys.D0,
-    Key.Keypad1 => Keys.D1,
-    Key.Keypad2 => Keys.D2,
-    Key.Keypad3 => Keys.D3,
-    Key.Keypad4 => Keys.D4,
-    Key.Keypad5 => Keys.D5,
-    Key.Keypad6 => Keys.D6,
-    Key.Keypad7 => Keys.D7,
-    Key.Keypad8 => Keys.D8,
-    Key.Keypad9 => Keys.D9,
-    Key.ShiftLeft => Keys.Shift,
-    Key.ShiftRight => Keys.Shift,
-    Key.ControlLeft => Keys.Control,
-    Key.ControlRight => Keys.Control,
-    Key.AltLeft => Keys.Alt,
-    Key.AltRight => Keys.Alt,
-    Key.SuperLeft => Keys.LeftWindows,
-    Key.SuperRight => Keys.RightWindows,
-    Key.Menu => Keys.Menu,
-    _ => Keys.Unknown,
-};
+    /// <summary>
+    /// Maps a Silk.NET key into your DirectUI.Input.Keys enum.
+    /// </summary>
+    private static Keys MapKey(Key key) => key switch
+    {
+        Key.Space => Keys.Space,
+        Key.Number0 => Keys.D0,
+        Key.Number1 => Keys.D1,
+        Key.Number2 => Keys.D2,
+        Key.Number3 => Keys.D3,
+        Key.Number4 => Keys.D4,
+        Key.Number5 => Keys.D5,
+        Key.Number6 => Keys.D6,
+        Key.Number7 => Keys.D7,
+        Key.Number8 => Keys.D8,
+        Key.Number9 => Keys.D9,
+        Key.A => Keys.A,
+        Key.B => Keys.B,
+        Key.C => Keys.C,
+        Key.D => Keys.D,
+        Key.E => Keys.E,
+        Key.F => Keys.F,
+        Key.G => Keys.G,
+        Key.H => Keys.H,
+        Key.I => Keys.I,
+        Key.J => Keys.J,
+        Key.K => Keys.K,
+        Key.L => Keys.L,
+        Key.M => Keys.M,
+        Key.N => Keys.N,
+        Key.O => Keys.O,
+        Key.P => Keys.P,
+        Key.Q => Keys.Q,
+        Key.R => Keys.R,
+        Key.S => Keys.S,
+        Key.T => Keys.T,
+        Key.U => Keys.U,
+        Key.V => Keys.V,
+        Key.W => Keys.W,
+        Key.X => Keys.X,
+        Key.Y => Keys.Y,
+        Key.Z => Keys.Z,
+        Key.Escape => Keys.Escape,
+        Key.Enter => Keys.Enter,
+        Key.Tab => Keys.Tab,
+        Key.Backspace => Keys.Backspace,
+        Key.Insert => Keys.Insert,
+        Key.Delete => Keys.Delete,
+        Key.Right => Keys.RightArrow,
+        Key.Left => Keys.LeftArrow,
+        Key.Down => Keys.DownArrow,
+        Key.Up => Keys.UpArrow,
+        Key.PageUp => Keys.PageUp,
+        Key.PageDown => Keys.PageDown,
+        Key.Home => Keys.Home,
+        Key.End => Keys.End,
+        Key.CapsLock => Keys.CapsLock,
+        Key.Pause => Keys.Pause,
+        Key.F1 => Keys.F1,
+        Key.F2 => Keys.F2,
+        Key.F3 => Keys.F3,
+        Key.F4 => Keys.F4,
+        Key.F5 => Keys.F5,
+        Key.F6 => Keys.F6,
+        Key.F7 => Keys.F7,
+        Key.F8 => Keys.F8,
+        Key.F9 => Keys.F9,
+        Key.F10 => Keys.F10,
+        Key.F11 => Keys.F11,
+        Key.F12 => Keys.F12,
+        Key.Keypad0 => Keys.D0,
+        Key.Keypad1 => Keys.D1,
+        Key.Keypad2 => Keys.D2,
+        Key.Keypad3 => Keys.D3,
+        Key.Keypad4 => Keys.D4,
+        Key.Keypad5 => Keys.D5,
+        Key.Keypad6 => Keys.D6,
+        Key.Keypad7 => Keys.D7,
+        Key.Keypad8 => Keys.D8,
+        Key.Keypad9 => Keys.D9,
+        Key.ShiftLeft => Keys.Shift,
+        Key.ShiftRight => Keys.Shift,
+        Key.ControlLeft => Keys.Control,
+        Key.ControlRight => Keys.Control,
+        Key.AltLeft => Keys.Alt,
+        Key.AltRight => Keys.Alt,
+        Key.SuperLeft => Keys.LeftWindows,
+        Key.SuperRight => Keys.RightWindows,
+        Key.Menu => Keys.Menu,
+        _ => Keys.Unknown,
+    };
 
-/// <summary>
-/// Maps a Silk.NET mouse button into your DirectUI.MouseButton enum.
-/// </summary>
-private static DirectUI.MouseButton MapMouseButton(Silk.NET.Input.MouseButton button) => button switch
-{
-    Silk.NET.Input.MouseButton.Left => DirectUI.MouseButton.Left,
-    Silk.NET.Input.MouseButton.Right => DirectUI.MouseButton.Right,
-    Silk.NET.Input.MouseButton.Middle => DirectUI.MouseButton.Middle,
-    Silk.NET.Input.MouseButton.Button4 => DirectUI.MouseButton.XButton1,
-    Silk.NET.Input.MouseButton.Button5 => DirectUI.MouseButton.XButton2,
-    _ => DirectUI.MouseButton.Left,
-};
+    /// <summary>
+    /// Maps a Silk.NET mouse button into your DirectUI.MouseButton enum.
+    /// </summary>
+    private static DirectUI.MouseButton MapMouseButton(Silk.NET.Input.MouseButton button) => button switch
+    {
+        Silk.NET.Input.MouseButton.Left => DirectUI.MouseButton.Left,
+        Silk.NET.Input.MouseButton.Right => DirectUI.MouseButton.Right,
+        Silk.NET.Input.MouseButton.Middle => DirectUI.MouseButton.Middle,
+        Silk.NET.Input.MouseButton.Button4 => DirectUI.MouseButton.XButton1,
+        Silk.NET.Input.MouseButton.Button5 => DirectUI.MouseButton.XButton2,
+        _ => DirectUI.MouseButton.Left,
+    };
 
 }

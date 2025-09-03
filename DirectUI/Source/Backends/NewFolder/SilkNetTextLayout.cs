@@ -19,7 +19,7 @@ internal class SilkNetTextLayout : ITextLayout
         _typeface = typeface;
         _style = style;
         using var font = new SKFont(typeface, style.FontSize);
-        using var paint = new SKPaint(font);
+        using var paint = new SKPaint(font) { IsAntialias = true };
         var rect = new SKRect();
         paint.MeasureText(text, ref rect);
         Size = new Vector2(rect.Width, rect.Height);
@@ -33,7 +33,7 @@ internal class SilkNetTextLayout : ITextLayout
         textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
         using var font = new SKFont(_typeface, _style.FontSize);
-        using var paint = new SKPaint(font);
+        using var paint = new SKPaint(font) { IsAntialias = true };
 
         // Measure the substring up to the caret position to get the X coordinate.
         string sub = Text[..textPosition];
@@ -63,7 +63,7 @@ internal class SilkNetTextLayout : ITextLayout
         }
 
         using var font = new SKFont(_typeface, _style.FontSize);
-        using var paint = new SKPaint(font);
+        using var paint = new SKPaint(font) { IsAntialias = true };
 
         bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
 
