@@ -132,6 +132,10 @@ public class SilkNetRenderer : IRenderer
                     // Center the line of text within the layout box.
                     float fontHeight = fontMetrics.Descent - fontMetrics.Ascent;
                     baselineY += (maxSize.Y - fontHeight) / 2f - fontMetrics.Ascent;
+
+                    // Add a small correction for better visual centering, similar to the D2D backend.
+                    // The metric center is often lower than the perceived visual center, so we move it up slightly.
+                    baselineY -= 1.5f;
                     break;
                 case VAlignment.Bottom:
                     // Align the bottom of the text (descent) with the bottom of the layout box.
