@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 using DirectUI;
@@ -13,10 +14,12 @@ public class ArtistsView
     private int _selectedIndex = -1;
     private List<ArtistInfo> _artists = new(); // Cache
     private int _lastLibraryFileCount = -1;
+    private readonly Action<string> _onArtistSelected;
 
-    public ArtistsView(MusicLibrary musicLibrary)
+    public ArtistsView(MusicLibrary musicLibrary, Action<string> onArtistSelected)
     {
         _musicLibrary = musicLibrary;
+        _onArtistSelected = onArtistSelected;
         _columns =
         [
             new DataGridColumn("Artist", 400, nameof(ArtistInfo.Name)),
@@ -62,6 +65,11 @@ public class ArtistsView
                 autoSizeColumns: true,
                 trimCellText: true
             );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _artists.Count)
+            {
+                _onArtistSelected?.Invoke(_artists[_selectedIndex].Name);
+            }
         }
     }
 }

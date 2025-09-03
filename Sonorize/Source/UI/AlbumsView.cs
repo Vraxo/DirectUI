@@ -13,10 +13,13 @@ public class AlbumsView
     private int _selectedIndex = -1;
     private List<AlbumInfo> _albums = new(); // Cache the processed list
     private int _lastLibraryFileCount = -1; // To check if we need to re-process
+    private string? _currentArtistFilter;
+    private readonly Action<AlbumInfo> _onAlbumSelected;
 
-    public AlbumsView(MusicLibrary musicLibrary)
+    public AlbumsView(MusicLibrary musicLibrary, Action<AlbumInfo> onAlbumSelected)
     {
         _musicLibrary = musicLibrary;
+        _onAlbumSelected = onAlbumSelected;
         _columns =
         [
             new DataGridColumn("Album", 350, nameof(AlbumInfo.Name)),
@@ -26,13 +29,19 @@ public class AlbumsView
         ];
     }
 
-    private void ProcessLibrary()
+    private void ProcessLibrary(string? artistFilter)
     {
         var currentFiles = _musicLibrary.Files;
-        // Simple check to see if files have changed. Using count as a proxy.
-        if (currentFiles.Count == _lastLibraryFileCount) return;
+        // Re-process if the file count or the filter has changed.
+        if (currentFiles.Count == _lastLibraryFileCount && artistFilter == _currentArtistFilter) return;
 
-        _albums = currentFiles
+        IEnumerable<MusicFile> filesToProcess = currentFiles;
+        if (!string.IsNullOrEmpty(artistFilter))
+        {
+            filesToProcess = filesToProcess.Where(f => f.Artist == artistFilter);
+        }
+
+        _albums = filesToProcess
             .GroupBy(f => new { f.Album, f.Artist })
             .Select(g => new AlbumInfo
             {
@@ -46,11 +55,12 @@ public class AlbumsView
             .ToList();
 
         _lastLibraryFileCount = currentFiles.Count;
+        _currentArtistFilter = artistFilter;
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? artistFilter)
     {
-        ProcessLibrary();
+        ProcessLibrary(artistFilter);
 
         bool rowDoubleClicked;
         if (size.X > 0 && size.Y > 0)
@@ -66,6 +76,11 @@ public class AlbumsView
                 autoSizeColumns: true,
                 trimCellText: true
             );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _albums.Count)
+            {
+                _onAlbumSelected?.Invoke(_albums[_selectedIndex]);
+            }
         }
     }
 }

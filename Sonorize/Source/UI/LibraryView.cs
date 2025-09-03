@@ -13,6 +13,7 @@ public class LibraryView
 
     private int _selectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
+    private IReadOnlyList<MusicFile> _currentViewFiles = new List<MusicFile>();
 
     public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings)
     {
@@ -31,10 +32,22 @@ public class LibraryView
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter)
     {
-        // Keep the playback manager's tracklist in sync with the library.
-        _playbackManager.SetTracklist(_musicLibrary.Files);
+        // Filter the library based on the selection from another view
+        if (albumFilter != null)
+        {
+            _currentViewFiles = _musicLibrary.Files
+                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name)
+                .ToList();
+        }
+        else
+        {
+            _currentViewFiles = _musicLibrary.Files;
+        }
+
+        // Keep the playback manager's tracklist in sync with the *currently viewed* list.
+        _playbackManager.SetTracklist(_currentViewFiles);
 
         int previousSelectedTrackIndex = _selectedTrackIndex;
         bool rowDoubleClicked = false;
@@ -43,7 +56,7 @@ public class LibraryView
         {
             UI.DataGrid<MusicFile>(
                 "musicGrid",
-                _musicLibrary.Files,
+                _currentViewFiles,
                 _columns,
                 ref _selectedTrackIndex,
                 size,
@@ -72,9 +85,10 @@ public class LibraryView
             }
         }
 
+        // This ensures the grid selection updates if the song changes automatically (e.g., `Next()`).
+        // The index here is relative to the `_currentViewFiles` list.
         if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
         {
-            // Playback manager changed the track (e.g., next song): update grid selection.
             _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
         }
     }

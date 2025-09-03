@@ -22,8 +22,12 @@ public class SonorizeLogic : IAppLogic
     private readonly AlbumsView _albumsView;
     private readonly ArtistsView _artistsView;
 
+    // --- Navigation State ---
     private int _activeTabIndex = 0;
     private readonly string[] _tabLabels = { "Songs", "Albums", "Artists" };
+    private string? _artistFilter;
+    private AlbumInfo? _albumFilter;
+
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -36,9 +40,11 @@ public class SonorizeLogic : IAppLogic
         _settingsWindow = new(_settings, _host);
         _playbackManager = new PlaybackManager(new AudioPlayer());
         _playbackControlsView = new PlaybackControlsView(_playbackManager);
+
+        // Pass callbacks to the views for drill-down navigation
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
-        _albumsView = new AlbumsView(_musicLibrary);
-        _artistsView = new ArtistsView(_musicLibrary);
+        _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
+        _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
 
         // Start scanning for music files
         _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -106,7 +112,6 @@ public class SonorizeLogic : IAppLogic
     {
         _menuBar.Draw(context);
 
-        // Update playback manager every frame. This checks for song completion.
         _playbackManager.Update();
 
         float menuBarHeight = 30f;
@@ -116,33 +121,39 @@ public class SonorizeLogic : IAppLogic
 
         var tabBarPos = new Vector2(padding, menuBarHeight + padding);
 
-        // Use a custom theme for the tabs to make them look distinct
         var tabTheme = new ButtonStylePack();
-        // These styles will make the active tab look like it's part of the panel below it.
-        // The default ButtonStylePack already has good styles for Active/ActiveHover.
-        // We just adjust the inactive states.
         tabTheme.Normal.FillColor = new DirectUI.Drawing.Color(45 / 255f, 45 / 255f, 48 / 255f, 1.0f);
         tabTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
         tabTheme.Hover.FillColor = new DirectUI.Drawing.Color(60 / 255f, 60 / 255f, 63 / 255f, 1.0f);
 
         UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
-        UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
+        {
+            // Draw "Back" button if we are in a filtered view
+            if (_albumFilter != null || _artistFilter != null)
+            {
+                if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
+                {
+                    OnBack();
+                }
+            }
+
+            UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
+        }
         UI.EndHBoxContainer();
 
-        var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2); // A small gap between tabs and grid
+        var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2);
         var gridSize = new Vector2(
             context.Renderer.RenderTargetSize.X - (padding * 2),
             context.Renderer.RenderTargetSize.Y - gridPos.Y - playbackControlsHeight - padding
         );
 
-        // Draw the active view based on tab selection
         switch (_activeTabIndex)
         {
             case 0: // Songs
-                _libraryView.Draw(context, gridPos, gridSize);
+                _libraryView.Draw(context, gridPos, gridSize, _albumFilter);
                 break;
             case 1: // Albums
-                _albumsView.Draw(context, gridPos, gridSize);
+                _albumsView.Draw(context, gridPos, gridSize, _artistFilter);
                 break;
             case 2: // Artists
                 _artistsView.Draw(context, gridPos, gridSize);
@@ -152,11 +163,40 @@ public class SonorizeLogic : IAppLogic
         _playbackControlsView.Draw(context);
     }
 
+    private void OnArtistSelected(string artistName)
+    {
+        _artistFilter = artistName;
+        _albumFilter = null; // Clear album filter when selecting an artist
+        _activeTabIndex = 1; // Switch to Albums tab
+    }
+
+    private void OnAlbumSelected(AlbumInfo album)
+    {
+        _albumFilter = album;
+        // Artist filter can remain, as it's part of the hierarchy
+        _activeTabIndex = 0; // Switch to Songs tab
+    }
+
+    private void OnBack()
+    {
+        // If we are viewing an album's songs, go back to the album list.
+        if (_albumFilter != null)
+        {
+            _albumFilter = null;
+            _activeTabIndex = 1; // Go to albums tab
+        }
+        // If we are viewing an artist's albums, go back to the artist list.
+        else if (_artistFilter != null)
+        {
+            _artistFilter = null;
+            _activeTabIndex = 2; // Go to artists tab
+        }
+    }
+
     private void OpenSettingsModal()
     {
         _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
         {
-            // After settings window is closed, rescan library if OK was pressed.
             if (resultCode == 0)
             {
                 _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
