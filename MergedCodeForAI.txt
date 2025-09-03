@@ -5719,16 +5719,29 @@ internal class InputText
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
         float caretAbsoluteX = hitTestMetrics.Point.X;
 
-        if (caretAbsoluteX - state.ScrollPixelOffset > availableWidth)
+        // Define the viewport in text-space coordinates
+        float viewStart = state.ScrollPixelOffset;
+        float viewEnd = state.ScrollPixelOffset + availableWidth;
+        const float caretWidth = 1.0f;
+        // Add a small buffer to ensure the caret is comfortably visible, not just touching the edge.
+        const float caretVisibilityPadding = 1.0f;
+
+
+        // Check if caret is outside the visible area and scroll if necessary.
+        if (caretAbsoluteX + caretWidth > viewEnd)
         {
-            state.ScrollPixelOffset = caretAbsoluteX - availableWidth;
+            // Caret is past the right edge, scroll to bring it fully into view with padding.
+            state.ScrollPixelOffset = (caretAbsoluteX + caretWidth + caretVisibilityPadding) - availableWidth;
         }
-        else if (caretAbsoluteX - state.ScrollPixelOffset < 0)
+        else if (caretAbsoluteX < viewStart)
         {
+            // Caret is past the left edge, scroll to make it visible at the start.
             state.ScrollPixelOffset = caretAbsoluteX;
         }
 
-        float maxScroll = Math.Max(0, textLayout.Size.X - availableWidth);
+        // The max scroll position needs to be large enough to allow the caret to be visible
+        // after the last character, plus padding. This was the bug.
+        float maxScroll = Math.Max(0, textLayout.Size.X + caretWidth + caretVisibilityPadding - availableWidth);
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
 
@@ -8762,7 +8775,7 @@ public class SilkNetRenderer : IRenderer
 
     public void DrawBox(Rect rect, BoxStyle style)
     {
-        if (_canvas is null || style is null) return;
+        if (_canvas is null || style is null || rect.Width <= 0 || rect.Height <= 0) return;
 
         var skRect = new SKRect(rect.Left, rect.Top, rect.Right, rect.Bottom);
         float maxRadius = Math.Min(rect.Width, rect.Height) / 2f;
@@ -8808,53 +8821,69 @@ public class SilkNetRenderer : IRenderer
             IsAntialias = true
         };
 
-        var bounds = new SKRect();
-        paint.MeasureText(text, ref bounds);
-
+        var textBounds = new SKRect();
+        paint.MeasureText(text, ref textBounds);
         var textDrawPos = origin;
 
-        // Horizontal alignment
+        // --- Horizontal alignment (based on actual measured text width) ---
         if (maxSize.X > 0)
         {
             switch (alignment.Horizontal)
             {
                 case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - bounds.Width) / 2f - bounds.Left;
+                    textDrawPos.X += (maxSize.X - textBounds.Width) / 2f - textBounds.Left;
                     break;
                 case HAlignment.Right:
-                    textDrawPos.X += maxSize.X - bounds.Width - bounds.Left;
+                    textDrawPos.X += maxSize.X - textBounds.Width - textBounds.Left;
                     break;
                 default: // Left
-                    textDrawPos.X -= bounds.Left;
+                    textDrawPos.X -= textBounds.Left;
                     break;
             }
         }
         else
         {
-            textDrawPos.X -= bounds.Left;
+            textDrawPos.X -= textBounds.Left;
         }
 
 
-        // Vertical alignment
+        // --- Vertical alignment (based on stable font metrics to prevent jiggling) ---
+        var fontMetrics = paint.FontMetrics;
+        var baselineY = origin.Y;
+
         if (maxSize.Y > 0)
         {
             switch (alignment.Vertical)
             {
                 case VAlignment.Top:
-                    textDrawPos.Y -= bounds.Top; // Align top of text bounds to origin.Y
+                    // Align the top of the text (ascent) with the top of the layout box.
+                    // Since Ascent is negative, we subtract it.
+                    baselineY -= fontMetrics.Ascent;
                     break;
                 case VAlignment.Center:
-                    textDrawPos.Y += (maxSize.Y / 2f) - bounds.MidY;
+                    // Center the line of text within the layout box.
+                    float fontHeight = fontMetrics.Descent - fontMetrics.Ascent;
+                    baselineY += (maxSize.Y - fontHeight) / 2f - fontMetrics.Ascent;
+
+                    // Add a small correction for better visual centering, similar to the D2D backend.
+                    // The metric center is often lower than the perceived visual center, so we move it up slightly.
+                    baselineY -= 1.5f;
                     break;
                 case VAlignment.Bottom:
-                    textDrawPos.Y += maxSize.Y - bounds.Bottom; // Align bottom of text bounds to bottom of layout rect
+                    // Align the bottom of the text (descent) with the bottom of the layout box.
+                    baselineY += maxSize.Y - fontMetrics.Descent;
                     break;
             }
         }
         else
         {
-            textDrawPos.Y -= bounds.Top;
+            // If no max size, just align to top as a default
+            baselineY -= fontMetrics.Ascent;
         }
+
+        // The Y position for DrawText is the baseline, not the top.
+        textDrawPos.Y = baselineY;
+
 
         _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
     }
@@ -9072,6 +9101,12 @@ public class SilkNetSkiaWindow : IDisposable
             GRSurfaceOrigin.BottomLeft,
             SKColorType.Rgba8888
         );
+
+        // This is the fix: Clear all cached text resources.
+        // The cached resources (like SKTypeface) can hold onto metrics related to the old
+        // window size/DPI. Clearing them ensures they are recreated with correct,
+        // up-to-date metrics on the next frame, fixing caret measurement issues.
+        _textService?.Cleanup();
     }
 
     private void OnClose() { }
@@ -9163,112 +9198,112 @@ public class SilkNetSkiaWindow : IDisposable
         GC.SuppressFinalize(this);
     }
 
-// inside SilkNetSkiaWindow class, below your OnMouseWheel handler:
+    // inside SilkNetSkiaWindow class, below your OnMouseWheel handler:
 
-/// <summary>
-/// Maps a Silk.NET key into your DirectUI.Input.Keys enum.
-/// </summary>
-private static Keys MapKey(Key key) => key switch
-{
-    Key.Space => Keys.Space,
-    Key.Number0 => Keys.D0,
-    Key.Number1 => Keys.D1,
-    Key.Number2 => Keys.D2,
-    Key.Number3 => Keys.D3,
-    Key.Number4 => Keys.D4,
-    Key.Number5 => Keys.D5,
-    Key.Number6 => Keys.D6,
-    Key.Number7 => Keys.D7,
-    Key.Number8 => Keys.D8,
-    Key.Number9 => Keys.D9,
-    Key.A => Keys.A,
-    Key.B => Keys.B,
-    Key.C => Keys.C,
-    Key.D => Keys.D,
-    Key.E => Keys.E,
-    Key.F => Keys.F,
-    Key.G => Keys.G,
-    Key.H => Keys.H,
-    Key.I => Keys.I,
-    Key.J => Keys.J,
-    Key.K => Keys.K,
-    Key.L => Keys.L,
-    Key.M => Keys.M,
-    Key.N => Keys.N,
-    Key.O => Keys.O,
-    Key.P => Keys.P,
-    Key.Q => Keys.Q,
-    Key.R => Keys.R,
-    Key.S => Keys.S,
-    Key.T => Keys.T,
-    Key.U => Keys.U,
-    Key.V => Keys.V,
-    Key.W => Keys.W,
-    Key.X => Keys.X,
-    Key.Y => Keys.Y,
-    Key.Z => Keys.Z,
-    Key.Escape => Keys.Escape,
-    Key.Enter => Keys.Enter,
-    Key.Tab => Keys.Tab,
-    Key.Backspace => Keys.Backspace,
-    Key.Insert => Keys.Insert,
-    Key.Delete => Keys.Delete,
-    Key.Right => Keys.RightArrow,
-    Key.Left => Keys.LeftArrow,
-    Key.Down => Keys.DownArrow,
-    Key.Up => Keys.UpArrow,
-    Key.PageUp => Keys.PageUp,
-    Key.PageDown => Keys.PageDown,
-    Key.Home => Keys.Home,
-    Key.End => Keys.End,
-    Key.CapsLock => Keys.CapsLock,
-    Key.Pause => Keys.Pause,
-    Key.F1 => Keys.F1,
-    Key.F2 => Keys.F2,
-    Key.F3 => Keys.F3,
-    Key.F4 => Keys.F4,
-    Key.F5 => Keys.F5,
-    Key.F6 => Keys.F6,
-    Key.F7 => Keys.F7,
-    Key.F8 => Keys.F8,
-    Key.F9 => Keys.F9,
-    Key.F10 => Keys.F10,
-    Key.F11 => Keys.F11,
-    Key.F12 => Keys.F12,
-    Key.Keypad0 => Keys.D0,
-    Key.Keypad1 => Keys.D1,
-    Key.Keypad2 => Keys.D2,
-    Key.Keypad3 => Keys.D3,
-    Key.Keypad4 => Keys.D4,
-    Key.Keypad5 => Keys.D5,
-    Key.Keypad6 => Keys.D6,
-    Key.Keypad7 => Keys.D7,
-    Key.Keypad8 => Keys.D8,
-    Key.Keypad9 => Keys.D9,
-    Key.ShiftLeft => Keys.Shift,
-    Key.ShiftRight => Keys.Shift,
-    Key.ControlLeft => Keys.Control,
-    Key.ControlRight => Keys.Control,
-    Key.AltLeft => Keys.Alt,
-    Key.AltRight => Keys.Alt,
-    Key.SuperLeft => Keys.LeftWindows,
-    Key.SuperRight => Keys.RightWindows,
-    Key.Menu => Keys.Menu,
-    _ => Keys.Unknown,
-};
+    /// <summary>
+    /// Maps a Silk.NET key into your DirectUI.Input.Keys enum.
+    /// </summary>
+    private static Keys MapKey(Key key) => key switch
+    {
+        Key.Space => Keys.Space,
+        Key.Number0 => Keys.D0,
+        Key.Number1 => Keys.D1,
+        Key.Number2 => Keys.D2,
+        Key.Number3 => Keys.D3,
+        Key.Number4 => Keys.D4,
+        Key.Number5 => Keys.D5,
+        Key.Number6 => Keys.D6,
+        Key.Number7 => Keys.D7,
+        Key.Number8 => Keys.D8,
+        Key.Number9 => Keys.D9,
+        Key.A => Keys.A,
+        Key.B => Keys.B,
+        Key.C => Keys.C,
+        Key.D => Keys.D,
+        Key.E => Keys.E,
+        Key.F => Keys.F,
+        Key.G => Keys.G,
+        Key.H => Keys.H,
+        Key.I => Keys.I,
+        Key.J => Keys.J,
+        Key.K => Keys.K,
+        Key.L => Keys.L,
+        Key.M => Keys.M,
+        Key.N => Keys.N,
+        Key.O => Keys.O,
+        Key.P => Keys.P,
+        Key.Q => Keys.Q,
+        Key.R => Keys.R,
+        Key.S => Keys.S,
+        Key.T => Keys.T,
+        Key.U => Keys.U,
+        Key.V => Keys.V,
+        Key.W => Keys.W,
+        Key.X => Keys.X,
+        Key.Y => Keys.Y,
+        Key.Z => Keys.Z,
+        Key.Escape => Keys.Escape,
+        Key.Enter => Keys.Enter,
+        Key.Tab => Keys.Tab,
+        Key.Backspace => Keys.Backspace,
+        Key.Insert => Keys.Insert,
+        Key.Delete => Keys.Delete,
+        Key.Right => Keys.RightArrow,
+        Key.Left => Keys.LeftArrow,
+        Key.Down => Keys.DownArrow,
+        Key.Up => Keys.UpArrow,
+        Key.PageUp => Keys.PageUp,
+        Key.PageDown => Keys.PageDown,
+        Key.Home => Keys.Home,
+        Key.End => Keys.End,
+        Key.CapsLock => Keys.CapsLock,
+        Key.Pause => Keys.Pause,
+        Key.F1 => Keys.F1,
+        Key.F2 => Keys.F2,
+        Key.F3 => Keys.F3,
+        Key.F4 => Keys.F4,
+        Key.F5 => Keys.F5,
+        Key.F6 => Keys.F6,
+        Key.F7 => Keys.F7,
+        Key.F8 => Keys.F8,
+        Key.F9 => Keys.F9,
+        Key.F10 => Keys.F10,
+        Key.F11 => Keys.F11,
+        Key.F12 => Keys.F12,
+        Key.Keypad0 => Keys.D0,
+        Key.Keypad1 => Keys.D1,
+        Key.Keypad2 => Keys.D2,
+        Key.Keypad3 => Keys.D3,
+        Key.Keypad4 => Keys.D4,
+        Key.Keypad5 => Keys.D5,
+        Key.Keypad6 => Keys.D6,
+        Key.Keypad7 => Keys.D7,
+        Key.Keypad8 => Keys.D8,
+        Key.Keypad9 => Keys.D9,
+        Key.ShiftLeft => Keys.Shift,
+        Key.ShiftRight => Keys.Shift,
+        Key.ControlLeft => Keys.Control,
+        Key.ControlRight => Keys.Control,
+        Key.AltLeft => Keys.Alt,
+        Key.AltRight => Keys.Alt,
+        Key.SuperLeft => Keys.LeftWindows,
+        Key.SuperRight => Keys.RightWindows,
+        Key.Menu => Keys.Menu,
+        _ => Keys.Unknown,
+    };
 
-/// <summary>
-/// Maps a Silk.NET mouse button into your DirectUI.MouseButton enum.
-/// </summary>
-private static DirectUI.MouseButton MapMouseButton(Silk.NET.Input.MouseButton button) => button switch
-{
-    Silk.NET.Input.MouseButton.Left => DirectUI.MouseButton.Left,
-    Silk.NET.Input.MouseButton.Right => DirectUI.MouseButton.Right,
-    Silk.NET.Input.MouseButton.Middle => DirectUI.MouseButton.Middle,
-    Silk.NET.Input.MouseButton.Button4 => DirectUI.MouseButton.XButton1,
-    Silk.NET.Input.MouseButton.Button5 => DirectUI.MouseButton.XButton2,
-    _ => DirectUI.MouseButton.Left,
-};
+    /// <summary>
+    /// Maps a Silk.NET mouse button into your DirectUI.MouseButton enum.
+    /// </summary>
+    private static DirectUI.MouseButton MapMouseButton(Silk.NET.Input.MouseButton button) => button switch
+    {
+        Silk.NET.Input.MouseButton.Left => DirectUI.MouseButton.Left,
+        Silk.NET.Input.MouseButton.Right => DirectUI.MouseButton.Right,
+        Silk.NET.Input.MouseButton.Middle => DirectUI.MouseButton.Middle,
+        Silk.NET.Input.MouseButton.Button4 => DirectUI.MouseButton.XButton1,
+        Silk.NET.Input.MouseButton.Button5 => DirectUI.MouseButton.XButton2,
+        _ => DirectUI.MouseButton.Left,
+    };
 
 }
 </file>
@@ -9286,28 +9321,53 @@ internal class SilkNetTextLayout : ITextLayout
 {
     public Vector2 Size { get; }
     public string Text { get; }
+    private readonly SKTypeface _typeface;
+    private readonly ButtonStyle _style;
 
     public SilkNetTextLayout(string text, SKTypeface typeface, ButtonStyle style)
     {
         Text = text;
+        _typeface = typeface;
+        _style = style;
         using var font = new SKFont(typeface, style.FontSize);
-        using var paint = new SKPaint(font);
+        using var paint = new SKPaint(font) { IsAntialias = true };
+
+        // Use a robust measurement that includes trailing spaces
+        float width = MeasureTextWithTrailingWhitespace(paint, text);
         var rect = new SKRect();
-        paint.MeasureText(text, ref rect);
-        Size = new Vector2(rect.Width, rect.Height);
+        // Measure normally to get an accurate height
+        paint.MeasureText("Gg", ref rect); // Use characters with ascenders/descenders for stable height
+        Size = new Vector2(width, rect.Height);
     }
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
     {
-        if (string.IsNullOrEmpty(Text)) return new TextHitTestMetrics(Vector2.Zero, Vector2.Zero);
+        if (string.IsNullOrEmpty(Text) && textPosition == 0)
+        {
+            return new TextHitTestMetrics(Vector2.Zero, new Vector2(1, Size.Y)); // Default caret for empty string
+        }
+        textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
-        float approxCharWidth = Size.X / Math.Max(1, Text.Length);
-        float x = textPosition * approxCharWidth;
-        float width = approxCharWidth;
+        using var font = new SKFont(_typeface, _style.FontSize);
+        using var paint = new SKPaint(font) { IsAntialias = true };
 
-        if (isTrailingHit) x += approxCharWidth;
-        x = Math.Clamp(x, 0, Size.X);
+        // Measure the substring up to the caret position to get the X coordinate.
+        string sub = Text[..textPosition];
+        float x = MeasureTextWithTrailingWhitespace(paint, sub);
 
-        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(width, Size.Y));
+        // Measure the width of the character at the caret position to determine its size.
+        float charWidth;
+        if (textPosition < Text.Length)
+        {
+            // Use the robust measurement here as well in case the character is a space
+            charWidth = MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString());
+        }
+        else // Caret is at the end of the string.
+        {
+            // Use the width of a space as a sensible default for the caret after the last character.
+            charWidth = paint.MeasureText(" ");
+        }
+
+        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(charWidth, Size.Y));
     }
 
     public TextHitTestResult HitTestPoint(Vector2 point)
@@ -9317,31 +9377,51 @@ internal class SilkNetTextLayout : ITextLayout
             return new TextHitTestResult(0, false, false, new TextHitTestMetrics(Vector2.Zero, Vector2.Zero));
         }
 
+        using var font = new SKFont(_typeface, _style.FontSize);
+        using var paint = new SKPaint(font) { IsAntialias = true };
+
         bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
 
-        float approxCharWidth = (Text.Length > 0) ? Size.X / Text.Length : 0;
-        int textPosition = 0;
-        bool isTrailingHit = false;
-
-        if (approxCharWidth > 0)
-        {
-            textPosition = (int)(point.X / approxCharWidth);
-            isTrailingHit = (point.X % approxCharWidth) > (approxCharWidth / 2f);
-        }
-
-        textPosition = Math.Clamp(textPosition, 0, Text.Length);
-        if (isTrailingHit && textPosition < Text.Length)
-        {
-            textPosition++;
-        }
+        // Use BreakText to find the character index that corresponds to the click's X coordinate.
+        // This is still a good starting point.
+        int textPosition = (int)paint.BreakText(Text, point.X);
         textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
-        float hitMetricX = (textPosition == 0) ? 0 : (textPosition * approxCharWidth);
-        if (isTrailingHit && textPosition > 0) hitMetricX -= approxCharWidth;
+        // Determine if it's a "trailing hit" by checking which side of the character's midpoint the click landed on.
+        float charStartPos = MeasureTextWithTrailingWhitespace(paint, Text[..textPosition]);
+        float charEndPos = (textPosition < Text.Length)
+            ? charStartPos + MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString())
+            : charStartPos;
 
-        return new TextHitTestResult(textPosition, isTrailingHit, isInside,
-            new TextHitTestMetrics(new Vector2(hitMetricX, 0), new Vector2(approxCharWidth, Size.Y)));
+        bool isTrailingHit = (point.X - charStartPos) > ((charEndPos - charStartPos) / 2f);
+
+        // Get metrics for the hit character.
+        var metrics = HitTestTextPosition(textPosition, false);
+
+        return new TextHitTestResult(textPosition, isTrailingHit, isInside, metrics);
     }
+
+    /// <summary>
+    /// Measures text width while reliably including trailing whitespace, which SKPaint.MeasureText often trims.
+    /// </summary>
+    private static float MeasureTextWithTrailingWhitespace(SKPaint paint, string text)
+    {
+        if (string.IsNullOrEmpty(text)) return 0;
+
+        string trimmedText = text.TrimEnd(' ');
+        float width = paint.MeasureText(trimmedText);
+
+        int trailingSpaceCount = text.Length - trimmedText.Length;
+        if (trailingSpaceCount > 0)
+        {
+            // Measure a single space to get its width accurately for the current font.
+            float spaceWidth = paint.MeasureText(" ");
+            width += trailingSpaceCount * spaceWidth;
+        }
+
+        return width;
+    }
+
     public void Dispose()
     {
         // This class doesn't own unmanaged resources directly
@@ -11628,6 +11708,16 @@ public class SonorizeLogic : IAppLogic
     private readonly PlaybackManager _playbackManager;
     private readonly PlaybackControlsView _playbackControlsView;
     private readonly LibraryView _libraryView;
+    private readonly AlbumsView _albumsView;
+    private readonly ArtistsView _artistsView;
+
+    // --- Navigation State ---
+    private int _activeTabIndex = 0;
+    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists" };
+    private string? _artistFilter;
+    private AlbumInfo? _albumFilter;
+    private string _searchText = "";
+
 
     public SonorizeLogic(IWindowHost host)
     {
@@ -11640,7 +11730,11 @@ public class SonorizeLogic : IAppLogic
         _settingsWindow = new(_settings, _host);
         _playbackManager = new PlaybackManager(new AudioPlayer());
         _playbackControlsView = new PlaybackControlsView(_playbackManager);
+
+        // Pass callbacks to the views for drill-down navigation
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
+        _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
+        _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
 
         // Start scanning for music files
         _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -11708,28 +11802,110 @@ public class SonorizeLogic : IAppLogic
     {
         _menuBar.Draw(context);
 
-        // Update playback manager every frame. This checks for song completion.
         _playbackManager.Update();
 
         float menuBarHeight = 30f;
+        float searchBarHeight = 24f;
+        float tabBarHeight = 30f;
         float playbackControlsHeight = 70f;
         float padding = 10f;
-        var gridPos = new Vector2(padding, menuBarHeight + padding);
+        float verticalGap = 5f;
+
+        // --- Search Bar ---
+        var searchBarPos = new Vector2(padding, menuBarHeight + verticalGap);
+        var searchBarSize = new Vector2(context.Renderer.RenderTargetSize.X - (padding * 2), searchBarHeight);
+        UI.InputText("searchBox", ref _searchText, searchBarSize, searchBarPos, placeholderText: "Search...");
+
+
+        // --- Tab Bar ---
+        var tabBarPos = new Vector2(padding, searchBarPos.Y + searchBarHeight + verticalGap);
+
+        var tabTheme = new ButtonStylePack();
+        tabTheme.Normal.FillColor = new DirectUI.Drawing.Color(45 / 255f, 45 / 255f, 48 / 255f, 1.0f);
+        tabTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
+        tabTheme.Hover.FillColor = new DirectUI.Drawing.Color(60 / 255f, 60 / 255f, 63 / 255f, 1.0f);
+
+        UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
+        {
+            if (_albumFilter != null || _artistFilter != null)
+            {
+                if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
+                {
+                    OnBack();
+                }
+            }
+
+            int previousTab = _activeTabIndex;
+            UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
+            if (_activeTabIndex != previousTab)
+            {
+                // Clear filters when user manually changes tab for clarity
+                _artistFilter = null;
+                _albumFilter = null;
+            }
+        }
+        UI.EndHBoxContainer();
+
+
+        // --- Main Content Grid ---
+        var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2);
         var gridSize = new Vector2(
             context.Renderer.RenderTargetSize.X - (padding * 2),
-            context.Renderer.RenderTargetSize.Y - menuBarHeight - playbackControlsHeight - (padding * 2)
+            context.Renderer.RenderTargetSize.Y - gridPos.Y - playbackControlsHeight - padding
         );
 
-        _libraryView.Draw(context, gridPos, gridSize);
+        switch (_activeTabIndex)
+        {
+            case 0: // Songs
+                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _searchText);
+                break;
+            case 1: // Albums
+                _albumsView.Draw(context, gridPos, gridSize, _artistFilter, _searchText);
+                break;
+            case 2: // Artists
+                _artistsView.Draw(context, gridPos, gridSize, _searchText);
+                break;
+        }
 
         _playbackControlsView.Draw(context);
+    }
+
+    private void OnArtistSelected(string artistName)
+    {
+        _artistFilter = artistName;
+        _albumFilter = null; // Clear album filter when selecting an artist
+        _activeTabIndex = 1; // Switch to Albums tab
+        _searchText = "";    // Clear search on drill-down
+    }
+
+    private void OnAlbumSelected(AlbumInfo album)
+    {
+        _albumFilter = album;
+        // Artist filter is implicitly set by the album's artist
+        _artistFilter = album.Artist;
+        _activeTabIndex = 0; // Switch to Songs tab
+        _searchText = "";    // Clear search on drill-down
+    }
+
+    private void OnBack()
+    {
+        _searchText = ""; // Clear search on navigating back
+        if (_albumFilter != null)
+        {
+            _albumFilter = null;
+            _activeTabIndex = 1;
+        }
+        else if (_artistFilter != null)
+        {
+            _artistFilter = null;
+            _activeTabIndex = 2;
+        }
     }
 
     private void OpenSettingsModal()
     {
         _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
         {
-            // After settings window is closed, rescan library if OK was pressed.
             if (resultCode == 0)
             {
                 _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -12027,6 +12203,29 @@ public class PlaybackManager : IDisposable
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Data\AlbumInfo.cs">
+namespace Sonorize;
+
+public class AlbumInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public string Artist { get; set; } = string.Empty;
+    public uint Year { get; set; }
+    public int TrackCount { get; set; }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Data\ArtistInfo.cs">
+namespace Sonorize;
+
+public class ArtistInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public int AlbumCount { get; set; }
+    public int TrackCount { get; set; }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Data\MusicFile.cs">
 // Sonorize/Source/Data/MusicFile.cs
 namespace Sonorize;
@@ -12150,6 +12349,191 @@ public class Settings
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\UI\AlbumsView.cs">
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class AlbumsView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly DataGridColumn[] _columns;
+    private int _selectedIndex = -1;
+    private List<AlbumInfo> _albums = new(); // Cache the processed list
+    private int _lastLibraryFileCount = -1; // To check if we need to re-process
+    private string? _currentArtistFilter;
+    private string? _currentSearchText;
+    private readonly Action<AlbumInfo> _onAlbumSelected;
+
+    public AlbumsView(MusicLibrary musicLibrary, Action<AlbumInfo> onAlbumSelected)
+    {
+        _musicLibrary = musicLibrary;
+        _onAlbumSelected = onAlbumSelected;
+        _columns =
+        [
+            new DataGridColumn("Album", 350, nameof(AlbumInfo.Name)),
+            new DataGridColumn("Artist", 300, nameof(AlbumInfo.Artist)),
+            new DataGridColumn("Year", 100, nameof(AlbumInfo.Year)),
+            new DataGridColumn("Tracks", 100, nameof(AlbumInfo.TrackCount))
+        ];
+    }
+
+    private void ProcessLibrary(string? artistFilter, string? searchText)
+    {
+        var currentFiles = _musicLibrary.Files;
+        // Re-process if the file count, filter, or search text has changed.
+        if (currentFiles.Count == _lastLibraryFileCount && artistFilter == _currentArtistFilter && searchText == _currentSearchText) return;
+
+        IEnumerable<MusicFile> filesToProcess = currentFiles;
+        if (!string.IsNullOrEmpty(artistFilter))
+        {
+            filesToProcess = filesToProcess.Where(f => f.Artist == artistFilter);
+        }
+
+        var processedAlbums = filesToProcess
+            .GroupBy(f => new { f.Album, f.Artist })
+            .Select(g => new AlbumInfo
+            {
+                Name = g.Key.Album,
+                Artist = g.Key.Artist,
+                Year = g.FirstOrDefault()?.Year ?? 0,
+                TrackCount = g.Count()
+            });
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedAlbums = processedAlbums.Where(a =>
+                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                a.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _albums = processedAlbums
+            .OrderBy(a => a.Artist)
+            .ThenBy(a => a.Name)
+            .ToList();
+
+        _lastLibraryFileCount = currentFiles.Count;
+        _currentArtistFilter = artistFilter;
+        _currentSearchText = searchText;
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? artistFilter, string? searchText)
+    {
+        ProcessLibrary(artistFilter, searchText);
+
+        bool rowDoubleClicked;
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<AlbumInfo>(
+                "albumsGrid",
+                _albums,
+                _columns,
+                ref _selectedIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _albums.Count)
+            {
+                _onAlbumSelected?.Invoke(_albums[_selectedIndex]);
+            }
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\UI\ArtistsView.cs">
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class ArtistsView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly DataGridColumn[] _columns;
+    private int _selectedIndex = -1;
+    private List<ArtistInfo> _artists = new(); // Cache
+    private int _lastLibraryFileCount = -1;
+    private string? _currentSearchText;
+    private readonly Action<string> _onArtistSelected;
+
+    public ArtistsView(MusicLibrary musicLibrary, Action<string> onArtistSelected)
+    {
+        _musicLibrary = musicLibrary;
+        _onArtistSelected = onArtistSelected;
+        _columns =
+        [
+            new DataGridColumn("Artist", 400, nameof(ArtistInfo.Name)),
+            new DataGridColumn("Albums", 150, nameof(ArtistInfo.AlbumCount)),
+            new DataGridColumn("Tracks", 150, nameof(ArtistInfo.TrackCount))
+        ];
+    }
+
+    private void ProcessLibrary(string? searchText)
+    {
+        var currentFiles = _musicLibrary.Files;
+        if (currentFiles.Count == _lastLibraryFileCount && searchText == _currentSearchText) return;
+
+        var processedArtists = currentFiles
+            .GroupBy(f => f.Artist)
+            .Select(g => new ArtistInfo
+            {
+                Name = g.Key,
+                AlbumCount = g.Select(f => f.Album).Distinct().Count(),
+                TrackCount = g.Count()
+            });
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedArtists = processedArtists.Where(a =>
+                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _artists = processedArtists.OrderBy(a => a.Name).ToList();
+
+        _lastLibraryFileCount = currentFiles.Count;
+        _currentSearchText = searchText;
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
+    {
+        ProcessLibrary(searchText);
+
+        bool rowDoubleClicked;
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<ArtistInfo>(
+                "artistsGrid",
+                _artists,
+                _columns,
+                ref _selectedIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _artists.Count)
+            {
+                _onArtistSelected?.Invoke(_artists[_selectedIndex].Name);
+            }
+        }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\UI\LibraryView.cs">
 using System.Numerics;
 using DirectUI;
@@ -12166,6 +12550,7 @@ public class LibraryView
 
     private int _selectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
+    private IReadOnlyList<MusicFile> _currentViewFiles = new List<MusicFile>();
 
     public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings)
     {
@@ -12184,10 +12569,34 @@ public class LibraryView
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, string? searchText)
     {
-        // Keep the playback manager's tracklist in sync with the library.
-        _playbackManager.SetTracklist(_musicLibrary.Files);
+        IEnumerable<MusicFile> filesToDisplay;
+
+        // Start with either the full library or an album-filtered list
+        if (albumFilter != null)
+        {
+            filesToDisplay = _musicLibrary.Files
+                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);
+        }
+        else
+        {
+            filesToDisplay = _musicLibrary.Files;
+        }
+
+        // Apply search text filter on top
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            filesToDisplay = filesToDisplay.Where(f =>
+                f.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                f.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _currentViewFiles = filesToDisplay.ToList();
+
+        // Keep the playback manager's tracklist in sync with the *currently viewed* list.
+        _playbackManager.SetTracklist(_currentViewFiles);
 
         int previousSelectedTrackIndex = _selectedTrackIndex;
         bool rowDoubleClicked = false;
@@ -12196,7 +12605,7 @@ public class LibraryView
         {
             UI.DataGrid<MusicFile>(
                 "musicGrid",
-                _musicLibrary.Files,
+                _currentViewFiles,
                 _columns,
                 ref _selectedTrackIndex,
                 size,
@@ -12225,9 +12634,10 @@ public class LibraryView
             }
         }
 
+        // This ensures the grid selection updates if the song changes automatically (e.g., `Next()`).
+        // The index here is relative to the `_currentViewFiles` list.
         if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
         {
-            // Playback manager changed the track (e.g., next song): update grid selection.
             _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
         }
     }

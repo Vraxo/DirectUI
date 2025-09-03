@@ -110,12 +110,14 @@ public class PlaybackControlsView
 
         ButtonStylePack iconButtonTheme = new()
         {
-            FontSize = 16f
+            FontSize = 16f,
+            FontName = "Segoe UI Emoji"
         };
 
         ButtonStylePack toggleButtonTheme = new()
         {
-            FontSize = 16f
+            FontSize = 16f,
+            FontName = "Segoe UI Emoji"
         };
 
         toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
