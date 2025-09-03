@@ -42,7 +42,7 @@ public class SonorizeLogic : IAppLogic
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host);
         _playbackManager = new PlaybackManager(new AudioPlayer());
-        _playbackControlsView = new PlaybackControlsView(_playbackManager);
+        _playbackControlsView = new PlaybackControlsView(_playbackManager, _settings);
 
         // Pass callbacks to the views for drill-down navigation
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);

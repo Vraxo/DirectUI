@@ -6,4 +6,5 @@ public class Settings
 {
     public List<string> Directories { get; set; } = new();
     public bool PlayOnDoubleClick { get; set; } = true;
+    public bool UseCompactPlaybackControls { get; set; } = false;
 }

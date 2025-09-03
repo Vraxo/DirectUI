@@ -9,12 +9,14 @@ namespace Sonorize;
 public class PlaybackControlsView
 {
     private readonly PlaybackManager _playbackManager;
+    private readonly Settings _settings;
     private bool _isSeekSliderDragging;
     private float _seekSliderValueDuringDrag;
 
-    public PlaybackControlsView(PlaybackManager playbackManager)
+    public PlaybackControlsView(PlaybackManager playbackManager, Settings settings)
     {
         _playbackManager = playbackManager;
+        _settings = settings;
     }
 
     public void Draw(UIContext context)
@@ -46,21 +48,66 @@ public class PlaybackControlsView
             context.Renderer.DrawBox(controlsRect, overlayStyle);
         }
 
-        // 4. Draw all the interactive controls and text on top of the background layers.
+        // 4. Draw the controls layout on top.
+        if (_settings.UseCompactPlaybackControls)
+        {
+            DrawCompactLayout(context, currentTrack, controlsRect);
+        }
+        else
+        {
+            DrawStandardLayout(context, currentTrack, controlsRect);
+        }
+    }
+
+    private void DrawStandardLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    {
         float gap = 10;
         float rightPanelPadding = 10;
 
-        UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), gap);
+        UI.BeginHBoxContainer("playbackHBox", controlsRect.TopLeft, gap);
         {
-            var leftPanelStartPos = UI.Context.Layout.GetCurrentPosition();
             DrawTrackInfoAndArt(context, currentTrack);
             var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
-
-            float centerWidth = windowSize.X - leftPanelEndPos.X - rightPanelPadding;
+            float centerWidth = controlsRect.Width - leftPanelEndPos.X - rightPanelPadding;
             if (centerWidth > 0)
             {
-                DrawPlaybackControlsAndSlider(context, centerWidth);
+                DrawStandardControlsAndSlider(context, centerWidth);
             }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawCompactLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    {
+        float padding = 10;
+        float gap = 15;
+        float rightControlsWidth = 150; // Reserve space for future right-side controls
+
+        UI.BeginHBoxContainer("compactHBox", controlsRect.TopLeft + new Vector2(padding, 0), gap);
+        {
+            // Left section: Art & Info
+            DrawTrackInfoAndArt(context, currentTrack);
+
+            // Middle section: A VBox for vertical centering
+            var middleSectionStartPos = UI.Context.Layout.GetCurrentPosition();
+            float availableMiddleWidth = controlsRect.Width - middleSectionStartPos.X - rightControlsWidth;
+
+            UI.BeginVBoxContainer("compactMiddleVBox", middleSectionStartPos, 0);
+            {
+                // Spacer to push content down for vertical alignment.
+                // Total panel height is 70. Buttons are 36 high. (70-36)/2 = 17.
+                UI.Text("compactSpacerTop", "", new Vector2(0, 17));
+
+                // A nested HBox for the actual controls
+                UI.BeginHBoxContainer("compactControlsHBox", UI.Context.Layout.GetCurrentPosition(), 10);
+                {
+                    DrawCompactControlButtons(context);
+                    // Approx width of buttons (32+36+32) + gaps (10*2) = 120
+                    DrawCompactSeekSlider(context, availableMiddleWidth - 120);
+                }
+                UI.EndHBoxContainer();
+            }
+            UI.EndVBoxContainer();
         }
         UI.EndHBoxContainer();
     }
@@ -83,37 +130,27 @@ public class PlaybackControlsView
     {
         float padding = 10f;
         float artSize = 50f;
-        // The VBox is now a child of the main HBox, so its position is handled automatically.
         UI.BeginHBoxContainer("trackInfoHBox", UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding), padding);
         {
-            // Album Art
             var artPos = UI.Context.Layout.GetCurrentPosition();
             var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
 
             if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
             {
-                // Use file path as a unique key for caching the decoded image
                 context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
             }
             else
             {
-                // Placeholder for Album Art
                 context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
             }
 
             UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
 
-
-            // Track Info VBox
             UI.BeginVBoxContainer("trackInfoVBox", UI.Context.Layout.GetCurrentPosition(), 4);
             {
                 var title = currentTrack?.Title ?? "No song selected";
                 var artist = currentTrack?.Artist ?? string.Empty;
-
-                // Song Title (larger font)
                 UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
-
-                // Artist Name (smaller, dimmer font)
                 if (!string.IsNullOrEmpty(artist))
                 {
                     var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
@@ -125,11 +162,9 @@ public class PlaybackControlsView
         UI.EndHBoxContainer();
     }
 
-
-    private void DrawPlaybackControlsAndSlider(UIContext context, float panelWidth)
+    private void DrawStandardControlsAndSlider(UIContext context, float panelWidth)
     {
         var startPos = UI.Context.Layout.GetCurrentPosition();
-
         UI.BeginVBoxContainer("centerControlsVBox", startPos, 2);
         {
             DrawControlButtons(context, panelWidth);
@@ -143,22 +178,15 @@ public class PlaybackControlsView
         bool isAnyTrackAvailable = _playbackManager.HasTracks;
         const int controlsLayer = 10;
 
-        // Button styles
         var smallButtonSize = new Vector2(32, 32);
         var playButtonSize = new Vector2(36, 36);
 
-        var iconButtonTheme = new ButtonStylePack
-        {
-            FontSize = 14f,
-            FontName = "Segoe UI Emoji",
-            Roundness = 0.3f
-        };
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
         var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
         var toggleButtonTheme = new ButtonStylePack(iconButtonTheme);
         toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
 
-        // HBox for centering
-        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5); // 4 small, 1 large, 4 gaps
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5);
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
         var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
 
@@ -173,8 +201,38 @@ public class PlaybackControlsView
         UI.EndHBoxContainer();
     }
 
+    private void DrawCompactControlButtons(UIContext context)
+    {
+        bool isAnyTrackAvailable = _playbackManager.HasTracks;
+        const int controlsLayer = 10;
+        var smallButtonSize = new Vector2(32, 32);
+        var playButtonSize = new Vector2(36, 36);
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
+        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
 
-    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth)
+        DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+        DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
+        DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+    }
+
+    private void DrawCompactSeekSlider(UIContext context, float panelWidth)
+    {
+        if (panelWidth < 10) return;
+
+        var currentTrack = _playbackManager.CurrentTrack;
+        var title = currentTrack?.Title ?? "No song selected";
+        var artist = currentTrack?.Artist ?? string.Empty;
+        var trackInfo = string.IsNullOrWhiteSpace(artist) ? title : $"{title} - {artist}";
+
+        UI.BeginVBoxContainer("compactSliderVBox", UI.Context.Layout.GetCurrentPosition(), 2);
+        {
+            UI.Text("compactTrackInfo", trackInfo, new Vector2(panelWidth, 16), new ButtonStyle { FontSize = 14 });
+            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth, bool showTimestamps = true)
     {
         double currentPosition = _playbackManager.CurrentPosition;
         double totalDuration = _playbackManager.TotalDuration;
@@ -185,31 +243,26 @@ public class PlaybackControlsView
 
         var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
         var timeSize = context.TextService.MeasureText("00:00", timeStyle);
-        float timeLabelWidth = timeSize.X + 5;
-        float gap = 5; // Define a gap for spacing
+        float timeLabelWidth = showTimestamps ? timeSize.X + 5 : 0;
+        float gap = showTimestamps ? 5 : 0;
 
-        float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2); // Account for two gaps
-        if (sliderWidth < 10) return; // Don't draw if there's no space
+        float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2);
+        if (sliderWidth < 10) return;
 
-        // HBox to hold [Time, Slider, Time]
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap); // Use the gap
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap);
         {
-            // Current Time
-            UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            if (showTimestamps)
+            {
+                UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            }
 
-            // --- The Slider ---
             int seekSliderId = "seekSlider".GetHashCode();
             bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
             float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
-            Vector2 sliderSize = new(sliderWidth, 8); // Thinner slider track
+            Vector2 sliderSize = new(sliderWidth, 8);
             ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
             SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
 
-            // To vertically center the 14px grabber in the 20px text row, we need to shift the slider's 8px track.
-            // Grabber top = slider_y + (track_height/2) - (grabber_height/2) = slider_y + 4 - 7 = slider_y - 3
-            // Desired grabber top = row_y + (row_height - grabber_height)/2 = row_y + (20 - 14)/2 = row_y + 3
-            // So, slider_y - 3 = row_y + 3  =>  slider_y = row_y + 6.
-            // We shift the slider down by 6px using the origin property.
             float newSliderValue = UI.HSlider(
                 id: "seekSlider",
                 currentValue: sliderInputValue,
@@ -220,7 +273,7 @@ public class PlaybackControlsView
                 grabberSize: new(14, 14),
                 grabberTheme: grabberTheme,
                 theme: theme,
-                origin: new Vector2(0, -6) // Shift down to visually center with text
+                origin: new Vector2(0, showTimestamps ? -6 : 0)
             );
 
             if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
@@ -229,15 +282,14 @@ public class PlaybackControlsView
                 _playbackManager.Seek(_seekSliderValueDuringDrag);
             }
             _isSeekSliderDragging = isCurrentlyDragging;
-            // --- End Slider ---
 
-
-            // Total Time
-            UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            if (showTimestamps)
+            {
+                UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            }
         }
         UI.EndHBoxContainer();
     }
-
 
     #region Button Drawing Helpers
     private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)

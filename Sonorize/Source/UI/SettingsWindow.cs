@@ -28,6 +28,11 @@ public class SettingsWindow
         bool playOnDoubleClick = _settings.PlayOnDoubleClick;
         UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
         _settings.PlayOnDoubleClick = playOnDoubleClick;
+
+        bool useCompactControls = _settings.UseCompactPlaybackControls;
+        UI.Checkbox("compactControls", "Use compact playback controls", ref useCompactControls);
+        _settings.UseCompactPlaybackControls = useCompactControls;
+
         UI.Separator(480, verticalPadding: 2);
 
         UI.Text("dirsHeader", "Music Library Directories");
