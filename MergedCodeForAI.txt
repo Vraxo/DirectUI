@@ -4914,6 +4914,19 @@ public sealed class ButtonStylePack
         Current = Normal;
     }
 
+    public ButtonStylePack(ButtonStylePack other)
+    {
+        Normal = new ButtonStyle(other.Normal);
+        Hover = new ButtonStyle(other.Hover);
+        Pressed = new ButtonStyle(other.Pressed);
+        Disabled = new ButtonStyle(other.Disabled);
+        Focused = new ButtonStyle(other.Focused);
+        Active = new ButtonStyle(other.Active);
+        ActiveHover = new ButtonStyle(other.ActiveHover);
+        Current = Normal; // Reset current to normal
+    }
+
+
     public void UpdateCurrentStyle(bool isHovering, bool isPressed, bool isDisabled, bool isFocused, bool isActive = false)
     {
         if (isDisabled)
@@ -5442,73 +5455,64 @@ internal class InputText
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
         bool textChanged = false;
 
-        // --- Focus Management && Caret Placement on Click ---
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         if (isHovering)
         {
             uiState.SetPotentialInputTarget(intId);
         }
 
-        bool isActive = uiState.ActivelyPressedElementId == intId;
+        bool isPressed = uiState.ActivelyPressedElementId == intId;
+        bool isFocused = uiState.FocusedElementId == intId;
 
-        if (isActive && !input.IsLeftMouseDown)
+        finalTheme.UpdateCurrentStyle(isHovering, isPressed, disabled, isFocused);
+        var currentStyle = finalTheme.Current;
+
+        // --- Mouse Input for Selection and Caret ---
+        // Handle mouse dragging to select text
+        if (isPressed && input.IsLeftMouseDown && input.MousePosition != input.PreviousMousePosition)
         {
-            uiState.ClearActivePress(intId);
+            int newCaretPos = GetCaretPositionFromMouse(input.MousePosition, text, state, isPassword, passwordChar, currentStyle, bounds, textMargin, textService);
+            if (newCaretPos != state.CaretPosition)
+            {
+                state.CaretPosition = newCaretPos;
+                UpdateView(text, state, size, textMargin);
+            }
         }
-
-        if (input.WasLeftMousePressedThisFrame && isHovering && !disabled && uiState.PotentialInputTargetId == intId)
+        // Handle initial mouse press
+        else if (input.WasLeftMousePressedThisFrame && isHovering && !disabled && uiState.PotentialInputTargetId == intId)
         {
             if (uiState.TrySetActivePress(intId, 1))
             {
                 uiState.SetFocus(intId);
 
-                // --- BEGIN: Caret positioning logic on click ---
-                // We need to temporarily calculate drawing info here for hit-testing.
-                // This is the only place we need to do this, as keyboard input moves the caret programmatically.
-                finalTheme.UpdateCurrentStyle(isHovering, false, disabled, true); // We are now focused
-                var styleForHitTest = finalTheme.Current;
-                var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
-                var contentRectForHitTest = new Rect(
-                    bounds.X + textMargin.X,
-                    bounds.Y + textMargin.Y,
-                    Math.Max(0, bounds.Width - textMargin.X * 2),
-                    Math.Max(0, bounds.Height - textMargin.Y * 2)
-                );
+                int newCaretPos = GetCaretPositionFromMouse(input.MousePosition, text, state, isPassword, passwordChar, currentStyle, bounds, textMargin, textService);
 
-                // Use ITextService to get the text layout
-                var textLayout = textService.GetTextLayout(textForHitTest, styleForHitTest, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-                if (textLayout is not null)
+                bool isShiftHeld = input.HeldKeys.Contains(Keys.Shift);
+                if (!isShiftHeld)
                 {
-                    float relativeClickX = input.MousePosition.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
-                    float relativeClickY = input.MousePosition.Y - contentRectForHitTest.Top;
-
-                    var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
-
-                    int newCaretPos = hitTestResult.TextPosition;
-                    if (hitTestResult.IsTrailingHit)
-                    {
-                        newCaretPos++;
-                    }
-
-                    state.CaretPosition = Math.Clamp(newCaretPos, 0, text.Length);
-
-                    // Reset blink and update scroll to show caret.
-                    state.IsBlinkOn = true;
-                    state.BlinkTimer = 0;
-                    UpdateView(text, state, size, textMargin);
+                    state.SelectionAnchor = newCaretPos;
                 }
-                // --- END: Caret positioning logic on click ---
+                state.CaretPosition = newCaretPos;
+
+                state.IsBlinkOn = true;
+                state.BlinkTimer = 0;
+                UpdateView(text, state, size, textMargin);
             }
         }
 
-        // --- Input Processing ---
-        if (uiState.FocusedElementId == intId && !disabled)
+        if (isPressed && !input.IsLeftMouseDown)
+        {
+            uiState.ClearActivePress(intId);
+        }
+
+
+        // --- Keyboard Input Processing ---
+        if (isFocused && !disabled)
         {
             textChanged = ProcessInput(ref text, state, size, maxLength, textMargin, input);
         }
 
         // --- Drawing ---
-        finalTheme.UpdateCurrentStyle(isHovering, false, disabled, uiState.FocusedElementId == intId);
         renderer.DrawBox(bounds, finalTheme.Current);
 
         // Define content area and clip to it
@@ -5523,7 +5527,7 @@ internal class InputText
         string textToDraw;
         ButtonStyle styleToDraw;
 
-        if (string.IsNullOrEmpty(text) && !(uiState.FocusedElementId == intId))
+        if (string.IsNullOrEmpty(text) && !isFocused)
         {
             textToDraw = placeholderText;
             styleToDraw = new ButtonStyle(finalTheme.Disabled)
@@ -5537,9 +5541,10 @@ internal class InputText
             styleToDraw = finalTheme.Current;
         }
 
+        DrawSelectionHighlight(textToDraw, state, styleToDraw, contentRect);
         DrawVisibleText(textToDraw, state, size, styleToDraw, contentRect.TopLeft);
 
-        if (uiState.FocusedElementId == intId && state.IsBlinkOn)
+        if (isFocused && state.IsBlinkOn)
         {
             DrawCaret(textToDraw, state, size, finalTheme.Current, contentRect);
         }
@@ -5547,6 +5552,28 @@ internal class InputText
         renderer.PopClipRect();
 
         return textChanged;
+    }
+
+    private int GetCaretPositionFromMouse(Vector2 mousePos, string text, InputTextState state, bool isPassword, char passwordChar, ButtonStyle style, Rect widgetBounds, Vector2 textMargin, ITextService textService)
+    {
+        var textForHitTest = isPassword ? new string(passwordChar, text.Length) : text;
+        var contentRectForHitTest = new Rect(
+            widgetBounds.X + textMargin.X,
+            widgetBounds.Y + textMargin.Y,
+            Math.Max(0, widgetBounds.Width - textMargin.X * 2),
+            Math.Max(0, widgetBounds.Height - textMargin.Y * 2)
+        );
+
+        var textLayout = textService.GetTextLayout(textForHitTest, style, new(float.MaxValue, widgetBounds.Height), new Alignment(HAlignment.Left, VAlignment.Center));
+        if (textLayout is null) return state.CaretPosition;
+
+        float relativeClickX = mousePos.X - contentRectForHitTest.Left + state.ScrollPixelOffset;
+        float relativeClickY = mousePos.Y - contentRectForHitTest.Top;
+        var hitTestResult = textLayout.HitTestPoint(new Vector2(relativeClickX, relativeClickY));
+
+        int newCaretPos = hitTestResult.TextPosition;
+        if (hitTestResult.IsTrailingHit) newCaretPos++;
+        return Math.Clamp(newCaretPos, 0, text.Length);
     }
 
     private bool ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
@@ -5562,65 +5589,121 @@ internal class InputText
         }
 
         bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);
+        bool isShiftHeld = input.HeldKeys.Contains(Keys.Shift);
 
         if (input.TypedCharacters.Any())
         {
             PushUndoState(text, state);
 
+            if (state.HasSelection)
+            {
+                text = text.Remove(state.SelectionStart, state.SelectionEnd - state.SelectionStart);
+                state.CaretPosition = state.SelectionStart;
+                textChanged = true;
+            }
+
             foreach (char c in input.TypedCharacters)
             {
-                if (text.Length >= maxLength)
-                {
-                    continue;
-                }
-
+                if (text.Length >= maxLength) continue;
                 text = text.Insert(state.CaretPosition, c.ToString());
                 state.CaretPosition++;
                 textChanged = true;
+            }
+
+            if (textChanged)
+            {
+                state.SelectionAnchor = state.CaretPosition;
             }
         }
 
         foreach (var key in input.PressedKeys)
         {
-            bool hasChanged = true;
+            bool hasTextChangedThisKey = false;
             PushUndoState(text, state); // Push on first key press
             switch (key)
             {
+                case Keys.A when isCtrlHeld:
+                    state.SelectionAnchor = 0;
+                    state.CaretPosition = text.Length;
+                    break;
                 case Keys.Backspace:
-                    if (state.CaretPosition > 0)
+                    if (state.HasSelection)
+                    {
+                        text = text.Remove(state.SelectionStart, state.SelectionEnd - state.SelectionStart);
+                        state.CaretPosition = state.SelectionStart;
+                        state.SelectionAnchor = state.CaretPosition;
+                        hasTextChangedThisKey = true;
+                    }
+                    else if (state.CaretPosition > 0)
                     {
                         int removeCount = 1;
                         if (isCtrlHeld) removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
                         text = text.Remove(state.CaretPosition - removeCount, removeCount);
                         state.CaretPosition -= removeCount;
+                        state.SelectionAnchor = state.CaretPosition;
+                        hasTextChangedThisKey = true;
                     }
                     break;
                 case Keys.Delete:
-                    if (state.CaretPosition < text.Length)
+                    if (state.HasSelection)
+                    {
+                        text = text.Remove(state.SelectionStart, state.SelectionEnd - state.SelectionStart);
+                        state.CaretPosition = state.SelectionStart;
+                        state.SelectionAnchor = state.CaretPosition;
+                        hasTextChangedThisKey = true;
+                    }
+                    else if (state.CaretPosition < text.Length)
                     {
                         int removeCount = 1;
                         if (isCtrlHeld) removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
                         text = text.Remove(state.CaretPosition, removeCount);
+                        state.SelectionAnchor = state.CaretPosition;
+                        hasTextChangedThisKey = true;
                     }
                     break;
                 case Keys.LeftArrow:
-                    state.CaretPosition = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
+                    if (isShiftHeld)
+                    {
+                        var newPos = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
+                        state.CaretPosition = Math.Max(0, newPos);
+                    }
+                    else
+                    {
+                        var newPos = state.HasSelection ? state.SelectionStart : (isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1);
+                        state.CaretPosition = Math.Max(0, newPos);
+                        state.SelectionAnchor = state.CaretPosition;
+                    }
                     break;
                 case Keys.RightArrow:
-                    state.CaretPosition = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
+                    if (isShiftHeld)
+                    {
+                        var newPos = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
+                        state.CaretPosition = Math.Min(text.Length, newPos);
+                    }
+                    else
+                    {
+                        var newPos = state.HasSelection ? state.SelectionEnd : (isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1);
+                        state.CaretPosition = Math.Min(text.Length, newPos);
+                        state.SelectionAnchor = state.CaretPosition;
+                    }
                     break;
-                case Keys.Home: state.CaretPosition = 0; break;
-                case Keys.End: state.CaretPosition = text.Length; break;
-                case Keys.Z when isCtrlHeld: Undo(ref text, state); break;
-                case Keys.Y when isCtrlHeld: Redo(ref text, state); break;
-                default: hasChanged = false; break;
+                case Keys.Home:
+                    state.CaretPosition = 0;
+                    if (!isShiftHeld) state.SelectionAnchor = state.CaretPosition;
+                    break;
+                case Keys.End:
+                    state.CaretPosition = text.Length;
+                    if (!isShiftHeld) state.SelectionAnchor = state.CaretPosition;
+                    break;
+                case Keys.Z when isCtrlHeld: Undo(ref text, state); hasTextChangedThisKey = true; break;
+                case Keys.Y when isCtrlHeld: Redo(ref text, state); hasTextChangedThisKey = true; break;
             }
-            if (hasChanged) textChanged = true;
+            if (hasTextChangedThisKey) textChanged = true;
         }
 
         state.CaretPosition = Math.Clamp(state.CaretPosition, 0, text.Length);
 
-        if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End))
+        if (textChanged || input.PressedKeys.Any(k => k is Keys.LeftArrow or Keys.RightArrow or Keys.Home or Keys.End || (k == Keys.A && isCtrlHeld)))
         {
             UpdateView(text, state, size, textMargin);
             state.IsBlinkOn = true;
@@ -5632,11 +5715,7 @@ internal class InputText
 
     private static int FindPreviousWordStart(string text, int currentPos)
     {
-        if (currentPos == 0)
-        {
-            return 0;
-        }
-
+        if (currentPos == 0) return 0;
         int pos = currentPos - 1;
         while (pos > 0 && char.IsWhiteSpace(text[pos])) pos--;
         while (pos > 0 && !char.IsWhiteSpace(text[pos - 1])) pos--;
@@ -5645,41 +5724,55 @@ internal class InputText
 
     private static int FindNextWordEnd(string text, int currentPos)
     {
-        if (currentPos >= text.Length)
-        {
-            return text.Length;
-        }
-
+        if (currentPos >= text.Length) return text.Length;
         int pos = currentPos;
+        while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
         while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
         while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
         return pos;
     }
 
+    private void DrawSelectionHighlight(string text, InputTextState state, ButtonStyle style, Rect contentRect)
+    {
+        if (!state.HasSelection) return;
+
+        var textService = UI.Context.TextService;
+        var renderer = UI.Context.Renderer;
+
+        var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, contentRect.Height), new Alignment(HAlignment.Left, VAlignment.Center));
+        if (textLayout is null) return;
+
+        var selectionStartMetrics = textLayout.HitTestTextPosition(state.SelectionStart, false);
+        var selectionEndMetrics = textLayout.HitTestTextPosition(state.SelectionEnd, false);
+
+        float startX = contentRect.Left + selectionStartMetrics.Point.X - state.ScrollPixelOffset;
+        float endX = contentRect.Left + selectionEndMetrics.Point.X - state.ScrollPixelOffset;
+        float width = endX - startX;
+
+        if (width <= 0) return;
+
+        Rect highlightRect = new(startX, contentRect.Top, width, contentRect.Height);
+
+        var selectionColor = DefaultTheme.Accent;
+        selectionColor.A = 100; // ~40% opacity
+        var selectionStyle = new BoxStyle { FillColor = selectionColor, Roundness = 0f, BorderLength = 0f };
+
+        renderer.DrawBox(highlightRect, selectionStyle);
+    }
+
     private void DrawVisibleText(string fullText, InputTextState state, Vector2 size, ButtonStyle style, Vector2 contentTopLeft)
     {
-        if (string.IsNullOrEmpty(fullText))
-        {
-            return;
-        }
+        if (string.IsNullOrEmpty(fullText)) return;
 
         var context = UI.Context;
         var renderer = context.Renderer;
         var textService = context.TextService;
 
-        // The LineEdit widget uses ITextLayout for hit-testing and caret position calculations.
-        // Even though IRenderer now takes raw text for drawing, ITextLayout is still relevant for widget logic.
         var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
-
         if (textLayout is null) return;
 
-        // A small vertical adjustment to compensate for font metrics making text appear slightly too low when using ParagraphAlignment.Center.
         const float yOffsetCorrection = -1.5f;
-
-        // Calculate the drawing origin by applying scroll offset directly.
         Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
-
-        // Renderer's DrawText method now takes full text parameters.
         renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
     }
 
@@ -5688,24 +5781,13 @@ internal class InputText
         var textService = UI.Context.TextService;
         var renderer = UI.Context.Renderer;
 
-        // Use ITextService to get the text layout
         var textLayout = textService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout is null) return;
 
-        // HitTestTextPosition on the ITextLayout (DirectWriteTextLayout provides this)
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
-
         float caretX = contentRect.Left + hitTestMetrics.Point.X - state.ScrollPixelOffset;
-        Rect caretRect = new Rect(caretX, contentRect.Top, 1, contentRect.Height);
-
+        Rect caretRect = new(caretX, contentRect.Top, 1, contentRect.Height);
         renderer.DrawBox(caretRect, new BoxStyle { FillColor = style.FontColor, Roundness = 0f, BorderLength = 0f });
-    }
-
-    private ITextLayout? GetTextLayout(string text, Vector2 size, ButtonStyle style, float maxWidth)
-    {
-        // LineEdit needs to re-layout text based on user input, so it requests a fresh layout from the service.
-        // The ITextService handles the caching internally for performance.
-        return UI.Context.TextService.GetTextLayout(text, style, new(maxWidth, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
     }
 
     private void UpdateView(string text, InputTextState state, Vector2 size, Vector2 textMargin)
@@ -5719,28 +5801,20 @@ internal class InputText
         var hitTestMetrics = textLayout.HitTestTextPosition(state.CaretPosition, false);
         float caretAbsoluteX = hitTestMetrics.Point.X;
 
-        // Define the viewport in text-space coordinates
         float viewStart = state.ScrollPixelOffset;
         float viewEnd = state.ScrollPixelOffset + availableWidth;
         const float caretWidth = 1.0f;
-        // Add a small buffer to ensure the caret is comfortably visible, not just touching the edge.
         const float caretVisibilityPadding = 1.0f;
 
-
-        // Check if caret is outside the visible area and scroll if necessary.
         if (caretAbsoluteX + caretWidth > viewEnd)
         {
-            // Caret is past the right edge, scroll to bring it fully into view with padding.
             state.ScrollPixelOffset = (caretAbsoluteX + caretWidth + caretVisibilityPadding) - availableWidth;
         }
         else if (caretAbsoluteX < viewStart)
         {
-            // Caret is past the left edge, scroll to make it visible at the start.
             state.ScrollPixelOffset = caretAbsoluteX;
         }
 
-        // The max scroll position needs to be large enough to allow the caret to be visible
-        // after the last character, plus padding. This was the bug.
         float maxScroll = Math.Max(0, textLayout.Size.X + caretWidth + caretVisibilityPadding - availableWidth);
         state.ScrollPixelOffset = Math.Clamp(state.ScrollPixelOffset, 0, maxScroll);
     }
@@ -5748,50 +5822,64 @@ internal class InputText
     private static void PushUndoState(string text, InputTextState state)
     {
         var lastState = state.UndoStack.Count > 0 ? state.UndoStack.Peek() : default;
-        if (state.UndoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == state.CaretPosition) return;
+        if (state.UndoStack.Count > 0 && lastState.Text == text && lastState.CaretPosition == state.CaretPosition && lastState.SelectionAnchor == state.SelectionAnchor) return;
 
         if (state.UndoStack.Count >= InputTextState.HistoryLimit) state.UndoStack.Pop();
-        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.SelectionAnchor, state.ScrollPixelOffset));
         state.RedoStack.Clear();
     }
 
     private static void Undo(ref string text, InputTextState state)
     {
         if (state.UndoStack.Count == 0) return;
-        state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
+        state.RedoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.SelectionAnchor, state.ScrollPixelOffset));
         var lastState = state.UndoStack.Pop();
         text = lastState.Text;
         state.CaretPosition = lastState.CaretPosition;
+        state.SelectionAnchor = lastState.SelectionAnchor;
         state.ScrollPixelOffset = lastState.ScrollPixelOffset;
     }
 
     private static void Redo(ref string text, InputTextState state)
     {
         if (state.RedoStack.Count == 0) return;
-        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.ScrollPixelOffset));
+        state.UndoStack.Push(new LineEditUndoRecord(text, state.CaretPosition, state.SelectionAnchor, state.ScrollPixelOffset));
         var nextState = state.RedoStack.Pop();
         text = nextState.Text;
         state.CaretPosition = nextState.CaretPosition;
+        state.SelectionAnchor = nextState.SelectionAnchor;
         state.ScrollPixelOffset = nextState.ScrollPixelOffset;
     }
 }
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputTextState.cs">
+using System;
 using System.Collections.Generic;
 
 namespace DirectUI;
 
-internal record struct LineEditUndoRecord(string Text, int CaretPosition, float ScrollPixelOffset);
+internal record struct LineEditUndoRecord(string Text, int CaretPosition, int SelectionAnchor, float ScrollPixelOffset);
 
 internal class InputTextState
 {
-    internal int CaretPosition;
+    // Selection state
+    internal int CaretPosition;     // The "moving" end of the selection
+    internal int SelectionAnchor;   // The "fixed" end of the selection
+
+    // Helpers for selection
+    internal bool HasSelection => CaretPosition != SelectionAnchor;
+    internal int SelectionStart => Math.Min(CaretPosition, SelectionAnchor);
+    internal int SelectionEnd => Math.Max(CaretPosition, SelectionAnchor);
+
+    // View state
     internal float ScrollPixelOffset;
 
+    // Caret blink state
     internal float BlinkTimer;
     internal bool IsBlinkOn = true;
 
+    // Undo/Redo state
     internal readonly Stack<LineEditUndoRecord> UndoStack = new();
     internal readonly Stack<LineEditUndoRecord> RedoStack = new();
     internal const int HistoryLimit = 50;
@@ -11710,12 +11798,14 @@ public class SonorizeLogic : IAppLogic
     private readonly LibraryView _libraryView;
     private readonly AlbumsView _albumsView;
     private readonly ArtistsView _artistsView;
+    private readonly PlaylistsView _playlistsView;
 
     // --- Navigation State ---
     private int _activeTabIndex = 0;
-    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists" };
+    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists", "Playlists" };
     private string? _artistFilter;
     private AlbumInfo? _albumFilter;
+    private Playlist? _playlistFilter;
     private string _searchText = "";
 
 
@@ -11735,6 +11825,7 @@ public class SonorizeLogic : IAppLogic
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
         _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
         _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
+        _playlistsView = new PlaylistsView(_musicLibrary, OnPlaylistSelected);
 
         // Start scanning for music files
         _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
@@ -11827,7 +11918,7 @@ public class SonorizeLogic : IAppLogic
 
         UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
         {
-            if (_albumFilter != null || _artistFilter != null)
+            if (_albumFilter != null || _artistFilter != null || _playlistFilter != null)
             {
                 if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
                 {
@@ -11842,6 +11933,7 @@ public class SonorizeLogic : IAppLogic
                 // Clear filters when user manually changes tab for clarity
                 _artistFilter = null;
                 _albumFilter = null;
+                _playlistFilter = null;
             }
         }
         UI.EndHBoxContainer();
@@ -11857,13 +11949,16 @@ public class SonorizeLogic : IAppLogic
         switch (_activeTabIndex)
         {
             case 0: // Songs
-                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _searchText);
+                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _playlistFilter, _searchText);
                 break;
             case 1: // Albums
                 _albumsView.Draw(context, gridPos, gridSize, _artistFilter, _searchText);
                 break;
             case 2: // Artists
                 _artistsView.Draw(context, gridPos, gridSize, _searchText);
+                break;
+            case 3: // Playlists
+                _playlistsView.Draw(context, gridPos, gridSize, _searchText);
                 break;
         }
 
@@ -11873,7 +11968,8 @@ public class SonorizeLogic : IAppLogic
     private void OnArtistSelected(string artistName)
     {
         _artistFilter = artistName;
-        _albumFilter = null; // Clear album filter when selecting an artist
+        _albumFilter = null;
+        _playlistFilter = null;
         _activeTabIndex = 1; // Switch to Albums tab
         _searchText = "";    // Clear search on drill-down
     }
@@ -11883,14 +11979,29 @@ public class SonorizeLogic : IAppLogic
         _albumFilter = album;
         // Artist filter is implicitly set by the album's artist
         _artistFilter = album.Artist;
+        _playlistFilter = null;
         _activeTabIndex = 0; // Switch to Songs tab
         _searchText = "";    // Clear search on drill-down
+    }
+
+    private void OnPlaylistSelected(Playlist playlist)
+    {
+        _playlistFilter = playlist;
+        _albumFilter = null;
+        _artistFilter = null;
+        _activeTabIndex = 0; // Switch to Songs tab to show playlist content
+        _searchText = "";
     }
 
     private void OnBack()
     {
         _searchText = ""; // Clear search on navigating back
-        if (_albumFilter != null)
+        if (_playlistFilter != null)
+        {
+            _playlistFilter = null;
+            _activeTabIndex = 3; // Go back to the playlists view
+        }
+        else if (_albumFilter != null)
         {
             _albumFilter = null;
             _activeTabIndex = 1;
@@ -12256,6 +12367,7 @@ namespace Sonorize;
 public class MusicLibrary
 {
     private List<MusicFile> _files = new();
+    private List<Playlist> _playlists = new();
     private readonly object _lock = new();
 
     public IReadOnlyList<MusicFile> Files
@@ -12270,7 +12382,20 @@ public class MusicLibrary
         }
     }
 
+    public IReadOnlyList<Playlist> Playlists
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return new List<Playlist>(_playlists);
+            }
+        }
+    }
+
+
     private static readonly string[] SupportedExtensions = { ".mp3", ".flac", ".m4a", ".ogg", ".wav", ".wma", ".aac" };
+    private static readonly string[] PlaylistExtensions = { ".m3u", ".m3u8" };
     private Task? _scanTask;
 
     public void ScanDirectoriesAsync(IEnumerable<string> directories)
@@ -12327,13 +12452,82 @@ public class MusicLibrary
                 .ThenBy(f => f.Title)
                 .ToList();
 
+            // Now scan for playlists
+            var foundPlaylists = new List<Playlist>();
+            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f);
+
+            foreach (var dir in dirsToScan)
+            {
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    var playlistFilesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => PlaylistExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+                    foreach (var playlistPath in playlistFilesInDir)
+                    {
+                        var playlist = new Playlist
+                        {
+                            Name = Path.GetFileNameWithoutExtension(playlistPath),
+                            FilePath = playlistPath
+                        };
+
+                        var playlistDirectory = Path.GetDirectoryName(playlistPath);
+                        if (playlistDirectory == null) continue;
+
+                        var lines = System.IO.File.ReadAllLines(playlistPath);
+                        foreach (var line in lines)
+                        {
+                            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#')) continue;
+
+                            string trackPath = line.Trim();
+                            if (!Path.IsPathRooted(trackPath))
+                            {
+                                trackPath = Path.GetFullPath(Path.Combine(playlistDirectory, trackPath));
+                            }
+
+                            if (musicFileLookup.TryGetValue(trackPath, out var musicFile))
+                            {
+                                playlist.Tracks.Add(musicFile);
+                            }
+                        }
+
+                        if (playlist.Tracks.Any())
+                        {
+                            foundPlaylists.Add(playlist);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error scanning for playlists in {dir}: {ex.Message}");
+                }
+            }
+
+
             lock (_lock)
             {
                 _files = sortedFiles;
+                _playlists = foundPlaylists.OrderBy(p => p.Name).ToList();
             }
-            Console.WriteLine($"Scan complete. Found {_files.Count} files.");
+            Console.WriteLine($"Scan complete. Found {_files.Count} files and {_playlists.Count} playlists.");
         });
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\Data\Playlist.cs">
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Sonorize;
+
+public class Playlist
+{
+    public string Name { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public List<MusicFile> Tracks { get; } = new();
+    public int TrackCount => Tracks.Count;
 }
 </file>
 
@@ -12569,12 +12763,16 @@ public class LibraryView
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, string? searchText)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, Playlist? playlistFilter, string? searchText)
     {
         IEnumerable<MusicFile> filesToDisplay;
 
-        // Start with either the full library or an album-filtered list
-        if (albumFilter != null)
+        // Highest priority filter is the playlist
+        if (playlistFilter != null)
+        {
+            filesToDisplay = playlistFilter.Tracks;
+        }
+        else if (albumFilter != null)
         {
             filesToDisplay = _musicLibrary.Files
                 .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);
@@ -12738,6 +12936,7 @@ public class MenuBar
 using System.Numerics;
 using DirectUI;
 using Sonorize.Audio;
+using System;
 
 namespace Sonorize;
 
@@ -12755,28 +12954,44 @@ public class PlaybackControlsView
     public void Draw(UIContext context)
     {
         float playbackControlsHeight = 70f;
-        float padding = 10f;
         Vector2 windowSize = context.Renderer.RenderTargetSize;
         float controlsY = windowSize.Y - playbackControlsHeight;
         Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playbackControlsHeight);
 
         DrawBackground(context, controlsRect);
 
-        UI.BeginVBoxContainer("playbackVBox", new Vector2(padding, controlsY + 5), 5);
+        var currentTrack = _playbackManager.CurrentTrack;
+        float gap = 10;
+        float rightPanelPadding = 10;
+
+        // Use HBox to lay out the main sections: Info | Controls
+        UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), gap);
         {
-            float sliderWidth = windowSize.X - (padding * 2);
-            DrawSeekSlider(context, sliderWidth);
-            DrawControlButtons(context);
+            var leftPanelStartPos = UI.Context.Layout.GetCurrentPosition();
+
+            // --- Left Panel: Album Art & Track Info ---
+            // This now allows its size to be determined by its content.
+            DrawTrackInfoAndArt(context, currentTrack);
+
+            var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
+
+            // --- Center Panel: Buttons & Seek Slider ---
+            // Dynamically calculate the remaining width for the center panel.
+            float centerWidth = windowSize.X - leftPanelEndPos.X - rightPanelPadding;
+            if (centerWidth > 0)
+            {
+                DrawPlaybackControlsAndSlider(context, centerWidth);
+            }
         }
-        UI.EndVBoxContainer();
+        UI.EndHBoxContainer();
     }
 
     private static void DrawBackground(UIContext context, Vortice.Mathematics.Rect controlsRect)
     {
         context.Renderer.DrawBox(controlsRect, new()
         {
-            FillColor = new(0.1f, 0.1f, 0.1f, 1.0f),
-            BorderColor = new(0.05f, 0.05f, 0.05f, 1.0f),
+            FillColor = new(30 / 255f, 30 / 255f, 30 / 255f, 1.0f), // Darker background
+            BorderColor = new(45 / 255f, 45 / 255f, 45 / 255f, 1.0f),
             BorderLengthTop = 1f,
             BorderLengthBottom = 0,
             BorderLengthLeft = 0,
@@ -12785,104 +13000,152 @@ public class PlaybackControlsView
         });
     }
 
-    private void DrawSeekSlider(UIContext context, float sliderWidth)
+    private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack)
+    {
+        float padding = 10f;
+        float artSize = 50f;
+        // The VBox is now a child of the main HBox, so its position is handled automatically.
+        UI.BeginHBoxContainer("trackInfoHBox", UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding), padding);
+        {
+            // Placeholder for Album Art
+            var artPos = UI.Context.Layout.GetCurrentPosition();
+            var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+            UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
+
+
+            // Track Info VBox
+            UI.BeginVBoxContainer("trackInfoVBox", UI.Context.Layout.GetCurrentPosition(), 4);
+            {
+                var title = currentTrack?.Title ?? "No song selected";
+                var artist = currentTrack?.Artist ?? string.Empty;
+
+                // Song Title (larger font)
+                UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
+
+                // Artist Name (smaller, dimmer font)
+                if (!string.IsNullOrEmpty(artist))
+                {
+                    var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+                    UI.Text("artistName", artist, style: artistStyle);
+                }
+            }
+            UI.EndVBoxContainer();
+        }
+        UI.EndHBoxContainer();
+    }
+
+
+    private void DrawPlaybackControlsAndSlider(UIContext context, float panelWidth)
+    {
+        var startPos = UI.Context.Layout.GetCurrentPosition();
+
+        UI.BeginVBoxContainer("centerControlsVBox", startPos, 2);
+        {
+            DrawControlButtons(context, panelWidth);
+            DrawSeekSliderWithTimestamps(context, panelWidth);
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawControlButtons(UIContext context, float panelWidth)
+    {
+        bool isAnyTrackAvailable = _playbackManager.HasTracks;
+        const int controlsLayer = 10;
+
+        // Button styles
+        var smallButtonSize = new Vector2(32, 32);
+        var playButtonSize = new Vector2(36, 36);
+
+        var iconButtonTheme = new ButtonStylePack
+        {
+            FontSize = 14f,
+            FontName = "Segoe UI Emoji",
+            Roundness = 0.3f
+        };
+        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
+        var toggleButtonTheme = new ButtonStylePack(iconButtonTheme);
+        toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
+
+        // HBox for centering
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5); // 4 small, 1 large, 4 gaps
+        float buttonsStartX = (panelWidth - buttonsWidth) / 2;
+        var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
+
+        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5);
+        {
+            DrawShuffleButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, toggleButtonTheme);
+            DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
+            DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            DrawRepeatModeButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+        }
+        UI.EndHBoxContainer();
+    }
+
+
+    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth)
     {
         double currentPosition = _playbackManager.CurrentPosition;
         double totalDuration = _playbackManager.TotalDuration;
         bool isAudioLoaded = totalDuration > 0;
 
-        int seekSliderId = "seekSlider".GetHashCode();
-        bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+        string currentTimeStr = FormatTime(currentPosition);
+        string totalTimeStr = FormatTime(totalDuration);
 
-        // The value passed TO the slider. If not dragging, it's the player's real time.
-        // If we are dragging, it's the value from the last frame's drag to provide continuity.
-        float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+        var timeSize = context.TextService.MeasureText("00:00", timeStyle);
+        float timeLabelWidth = timeSize.X + 5;
 
-        Vector2 sliderSize = new(sliderWidth, 10);
-        ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
-        SliderStyle theme = new() { Background = { Roundness = 1 } };
+        float sliderWidth = panelWidth - (timeLabelWidth * 2);
+        if (sliderWidth < 10) return; // Don't draw if there's no space
 
-        float newSliderValue = UI.HSlider(
-            id: "seekSlider",
-            currentValue: sliderInputValue,
-            minValue: 0f,
-            maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
-            size: sliderSize,
-            disabled: !isAudioLoaded,
-            grabberSize: new(16, 16),
-            grabberTheme: grabberTheme,
-            theme: theme
-        );
-
-        // If dragging, store the new value. The audio is NOT updated yet.
-        if (isCurrentlyDragging)
+        // HBox to hold [Time, Slider, Time]
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0);
         {
-            _seekSliderValueDuringDrag = newSliderValue;
-        }
+            // Current Time
+            UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
 
-        // If we just released the slider, NOW we seek the audio.
-        if (_isSeekSliderDragging && !isCurrentlyDragging)
-        {
-            if (isAudioLoaded)
+            // --- The Slider ---
+            int seekSliderId = "seekSlider".GetHashCode();
+            bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+            float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+            Vector2 sliderSize = new(sliderWidth, 20);
+            ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
+            SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
+
+            float newSliderValue = UI.HSlider(
+                id: "seekSlider",
+                currentValue: sliderInputValue,
+                minValue: 0f,
+                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
+                size: sliderSize,
+                disabled: !isAudioLoaded,
+                grabberSize: new(16, 16),
+                grabberTheme: grabberTheme,
+                theme: theme
+            );
+
+            if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
+            if (_isSeekSliderDragging && !isCurrentlyDragging && isAudioLoaded)
             {
-                // Use the value from the final frame of dragging.
                 _playbackManager.Seek(_seekSliderValueDuringDrag);
             }
-        }
+            _isSeekSliderDragging = isCurrentlyDragging;
+            // --- End Slider ---
 
-        // Update state for next frame.
-        _isSeekSliderDragging = isCurrentlyDragging;
-    }
-
-    private void DrawControlButtons(UIContext context)
-    {
-        bool isAnyTrackAvailable = _playbackManager.HasTracks;
-        var windowSize = context.Renderer.RenderTargetSize;
-
-        Vector2 buttonSize = new(35, 24);
-        float totalButtonsWidth = (buttonSize.X * 5) + (5 * 4); // 5 buttons, 4 gaps
-        float buttonsStartX = (windowSize.X - totalButtonsWidth) / 2;
-        float buttonsY = UI.Context.Layout.GetCurrentPosition().Y + 5;
-        const int controlsLayer = 10;
-
-        ButtonStylePack iconButtonTheme = new()
-        {
-            FontSize = 16f
-        };
-
-        ButtonStylePack toggleButtonTheme = new()
-        {
-            FontSize = 16f
-        };
-
-        toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
-        toggleButtonTheme.Active.BorderColor = DefaultTheme.AccentBorder;
-        toggleButtonTheme.ActiveHover.FillColor = DefaultTheme.Accent;
-        toggleButtonTheme.ActiveHover.BorderColor = DefaultTheme.AccentBorder;
-
-        UI.BeginHBoxContainer("playbackButtons", new(buttonsStartX, buttonsY), 5);
-        {
-            DrawShuffleButton(isAnyTrackAvailable, buttonSize, controlsLayer, toggleButtonTheme);
-            DrawPreviousTrackButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
-            DrawPlayPauseButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
-            DrawNextTrackButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
-            DrawRepeatModeButton(isAnyTrackAvailable, buttonSize, controlsLayer, iconButtonTheme);
+            // Total Time
+            UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
         }
         UI.EndHBoxContainer();
     }
 
+
+    #region Button Drawing Helpers
     private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)
     {
         bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
-
-        if (UI.Button(
-            "shuffle",
-            "🔀",
-            buttonSize,
-            theme: toggleButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer,
-            isActive: isShuffleActive))
+        if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, isActive: isShuffleActive))
         {
             _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
         }
@@ -12890,43 +13153,26 @@ public class PlaybackControlsView
 
     private void DrawPreviousTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
-        if (UI.Button("prevTrack",
-            "⏮",
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
+        if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.Previous();
-        }
-    }
-
-    private void DrawNextTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
-    {
-        if (UI.Button("nextTrack",
-            "⏭",
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
-        {
-            _playbackManager.Next();
         }
     }
 
     private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
         string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
-
-        if (UI.Button(
-            "playPause",
-            playPauseText,
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
+        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.TogglePlayPause();
+        }
+    }
+
+    private void DrawNextTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
+    {
+        if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        {
+            _playbackManager.Next();
         }
     }
 
@@ -12939,16 +13185,98 @@ public class PlaybackControlsView
             PlaybackEndAction.DoNothing => "➡",
             _ => "?"
         };
-
-        if (UI.Button(
-            "repeatMode",
-            repeatText,
-            buttonSize,
-            theme: iconButtonTheme,
-            disabled: !isAnyTrackAvailable,
-            layer: controlsLayer))
+        if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
+        }
+    }
+    #endregion
+
+    private static string FormatTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
+        {
+            return "00:00";
+        }
+        var timeSpan = TimeSpan.FromSeconds(seconds);
+        return timeSpan.ToString(@"mm\:ss");
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Sonorize\Source\UI\PlaylistsView.cs">
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class PlaylistsView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly DataGridColumn[] _columns;
+    private int _selectedIndex = -1;
+    private List<Playlist> _playlists = new();
+    private int _lastPlaylistCount = -1;
+    private string? _currentSearchText;
+    private readonly Action<Playlist> _onPlaylistSelected;
+
+    public PlaylistsView(MusicLibrary musicLibrary, Action<Playlist> onPlaylistSelected)
+    {
+        _musicLibrary = musicLibrary;
+        _onPlaylistSelected = onPlaylistSelected;
+        _columns =
+        [
+            new DataGridColumn("Playlist", 600, nameof(Playlist.Name)),
+            new DataGridColumn("Tracks", 150, nameof(Playlist.TrackCount))
+        ];
+    }
+
+    private void ProcessLibrary(string? searchText)
+    {
+        IReadOnlyList<Playlist> currentPlaylists = _musicLibrary.Playlists;
+        if (currentPlaylists.Count == _lastPlaylistCount && searchText == _currentSearchText) return;
+
+        IEnumerable<Playlist> processedPlaylists = currentPlaylists;
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedPlaylists = processedPlaylists.Where(p =>
+                p.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _playlists = processedPlaylists.OrderBy(p => p.Name).ToList();
+
+        _lastPlaylistCount = currentPlaylists.Count;
+        _currentSearchText = searchText;
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
+    {
+        ProcessLibrary(searchText);
+
+        bool rowDoubleClicked;
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<Playlist>(
+                "playlistsGrid",
+                _playlists,
+                _columns,
+                ref _selectedIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _playlists.Count)
+            {
+                _onPlaylistSelected?.Invoke(_playlists[_selectedIndex]);
+            }
         }
     }
 }
