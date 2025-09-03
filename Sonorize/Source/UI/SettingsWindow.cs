@@ -24,7 +24,7 @@ public class SettingsWindow
         UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
         UI.Separator(480, verticalPadding: 2);
 
-        UI.Text("playbackHeader", "Playback");
+        UI.Text("playbackHeader", "Playback & Appearance");
         bool playOnDoubleClick = _settings.PlayOnDoubleClick;
         UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
         _settings.PlayOnDoubleClick = playOnDoubleClick;
@@ -32,6 +32,10 @@ public class SettingsWindow
         bool useCompactControls = _settings.UseCompactPlaybackControls;
         UI.Checkbox("compactControls", "Use compact playback controls", ref useCompactControls);
         _settings.UseCompactPlaybackControls = useCompactControls;
+
+        bool useLargeArt = _settings.UseLargeAlbumArt;
+        UI.Checkbox("largeArt", "Use large album art in playback controls", ref useLargeArt);
+        _settings.UseLargeAlbumArt = useLargeArt;
 
         UI.Separator(480, verticalPadding: 2);
 

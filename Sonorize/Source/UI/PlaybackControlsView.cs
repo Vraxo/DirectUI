@@ -21,6 +21,7 @@ public class PlaybackControlsView
 
     public void Draw(UIContext context)
     {
+        // The panel height is now always constant.
         float playbackControlsHeight = 70f;
         Vector2 windowSize = context.Renderer.RenderTargetSize;
         float controlsY = windowSize.Y - playbackControlsHeight;
@@ -62,12 +63,13 @@ public class PlaybackControlsView
     private void DrawStandardLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
     {
         float gap = 10;
-        float rightPanelPadding = 10;
 
         UI.BeginHBoxContainer("playbackHBox", controlsRect.TopLeft, gap);
         {
-            DrawTrackInfoAndArt(context, currentTrack);
+            DrawTrackInfoAndArt(context, currentTrack, controlsRect);
             var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
+            // Right panel padding is now dynamic based on art size to keep things aligned.
+            float rightPanelPadding = _settings.UseLargeAlbumArt ? 0 : 10;
             float centerWidth = controlsRect.Width - leftPanelEndPos.X - rightPanelPadding;
             if (centerWidth > 0)
             {
@@ -79,15 +81,16 @@ public class PlaybackControlsView
 
     private void DrawCompactLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
     {
-        float padding = 10;
         float gap = 15;
         float rightControlsWidth = 150;
+        float leftPadding = _settings.UseLargeAlbumArt ? 0 : 10;
 
-        // --- Left: Album Art (Manually Placed & Centered) ---
-        float artSize = 50f;
+        // --- Left: Album Art (Manually Placed) ---
+        float artPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+        float artSize = controlsRect.Height - (artPadding * 2);
         var artPos = new Vector2(
-            controlsRect.Left + padding,
-            controlsRect.Top + (controlsRect.Height - artSize) / 2
+            controlsRect.Left + artPadding,
+            controlsRect.Top + artPadding
         );
         var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
         if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
@@ -103,26 +106,19 @@ public class PlaybackControlsView
         float middleSectionStartX = artRect.Right + gap;
         float availableMiddleWidth = controlsRect.Width - middleSectionStartX - rightControlsWidth;
 
-        // The content here is a row of buttons (36px high) and the slider group (title + slider).
-        // The tallest element is the 36px play button, so we center the entire row based on that height.
         float middleContentHeight = 36f;
         var middleSectionStartPos = new Vector2(
             middleSectionStartX,
             controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
         );
 
-        // We use an HBox to lay out the items within this centered row.
         UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10);
         {
-            // The buttons are 36px high, so they will define the height of this row.
             DrawCompactControlButtons(context);
 
-            // The slider group (title + slider) is shorter than the buttons.
-            // We calculate a top spacer to vertically center it within the 36px row height.
             float sliderGroupHeight = 16f + 2f + 8f; // title + gap + slider
             float topSpacer = (middleContentHeight - sliderGroupHeight) / 2f;
 
-            // Approx width of buttons (32+36+32) + gaps (10*2) = 120
             DrawCompactSeekSlider(context, availableMiddleWidth - 120, topSpacer);
         }
         UI.EndHBoxContainer();
@@ -142,11 +138,12 @@ public class PlaybackControlsView
         });
     }
 
-    private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack)
+    private void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect panelRect)
     {
-        float padding = 10f;
-        float artSize = 50f;
-        UI.BeginHBoxContainer("trackInfoHBox", UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding), padding);
+        float padding = _settings.UseLargeAlbumArt ? 0 : 10;
+        float artSize = panelRect.Height - (padding * 2);
+
+        UI.BeginHBoxContainer("trackInfoHBox", panelRect.TopLeft + new Vector2(padding, padding), padding);
         {
             var artPos = UI.Context.Layout.GetCurrentPosition();
             var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
@@ -162,7 +159,11 @@ public class PlaybackControlsView
 
             UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
 
-            UI.BeginVBoxContainer("trackInfoVBox", UI.Context.Layout.GetCurrentPosition(), 4);
+            // Vertically center the text relative to the art
+            float textBlockHeight = 16f + 4f + 12f; // font sizes + gap
+            float textBlockY = UI.Context.Layout.GetCurrentPosition().Y + (artSize - textBlockHeight) / 2f;
+
+            UI.BeginVBoxContainer("trackInfoVBox", new Vector2(UI.Context.Layout.GetCurrentPosition().X, textBlockY), 4);
             {
                 var title = currentTrack?.Title ?? "No song selected";
                 var artist = currentTrack?.Artist ?? string.Empty;
