@@ -85,8 +85,8 @@ public class PlaybackControlsView
 
         UI.BeginHBoxContainer("compactHBox", controlsRect.TopLeft + new Vector2(padding, 0), gap);
         {
-            // Left section: Art & Info
-            DrawTrackInfoAndArt(context, currentTrack);
+            // Left section: Art only
+            DrawAlbumArtOnly(context, currentTrack);
 
             // Middle section: A VBox for vertical centering
             var middleSectionStartPos = UI.Context.Layout.GetCurrentPosition();
@@ -124,6 +124,24 @@ public class PlaybackControlsView
             BorderLengthRight = 0,
             Roundness = 0
         });
+    }
+
+    private static void DrawAlbumArtOnly(UIContext context, MusicFile? currentTrack)
+    {
+        float padding = 10f;
+        float artSize = 50f;
+        var artPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding);
+        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+
+        if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+        {
+            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+        }
+        else
+        {
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+        }
+        UI.Context.Layout.AdvanceLayout(new Vector2(artSize + padding, artSize + padding));
     }
 
     private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack)
