@@ -7307,6 +7307,11 @@ float4 PS(PS_Input input) : SV_TARGET
         // Flush the 3D commands to ensure they are executed before D2D begins drawing.
         d3dContext.Flush();
     }
+
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        throw new NotImplementedException();
+    }
 }
 </file>
 
@@ -8834,6 +8839,7 @@ public class SilkNetRenderer : IRenderer
     private SKCanvas? _canvas;
     private Vector2 _renderTargetSize;
     private readonly SilkNetTextService _textService;
+    private readonly Dictionary<string, SKBitmap> _bitmapCache = new();
 
     public Vector2 RenderTargetSize => _renderTargetSize;
 
@@ -8976,6 +8982,38 @@ public class SilkNetRenderer : IRenderer
         _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
     }
 
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        if (_canvas is null || imageData is null || imageData.Length == 0) return;
+
+        if (!_bitmapCache.TryGetValue(imageKey, out var bitmap))
+        {
+            try
+            {
+                bitmap = SKBitmap.Decode(imageData);
+                if (bitmap != null)
+                {
+                    _bitmapCache[imageKey] = bitmap;
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Failed to decode image with key {imageKey}: {ex.Message}");
+                // Cache a null to prevent re-trying every frame
+                _bitmapCache[imageKey] = null!;
+                return;
+            }
+        }
+
+        if (bitmap is null) return; // Decoding failed previously or image is invalid
+
+        var destRect = new SKRect(destination.Left, destination.Top, destination.Right, destination.Bottom);
+
+        // Use an SKPaint object with high-quality filtering to ensure the stretched image is blurry, not pixelated.
+        using var paint = new SKPaint { FilterQuality = SKFilterQuality.High };
+        _canvas.DrawBitmap(bitmap, destRect, paint);
+    }
+
     public void PushClipRect(Rect rect, AntialiasMode antialiasMode)
     {
         _canvas?.Save();
@@ -8996,6 +9034,13 @@ public class SilkNetRenderer : IRenderer
     {
         // Canvas is managed by the host
         _canvas = null;
+
+        // Dispose cached bitmaps
+        foreach (var bitmap in _bitmapCache.Values)
+        {
+            bitmap?.Dispose();
+        }
+        _bitmapCache.Clear();
     }
 }
 </file>
@@ -9883,7 +9928,8 @@ using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
-using Raylib_cs; // Raylib specific library
+using Raylib_cs;
+using Vortice.Mathematics; // Raylib specific library
 
 namespace DirectUI.Backends;
 
@@ -10114,6 +10160,11 @@ public class RaylibRenderer : IRenderer
         // No Raylib-specific font objects to dispose that are loaded here per layout.
         // If fonts were loaded with LoadFontEx, they would need UnloadFont.
         _clipRectStack.Clear();
+    }
+
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        throw new NotImplementedException();
     }
 }
 </file>
@@ -10822,6 +10873,11 @@ public unsafe class SDL3Renderer : IRenderer
 
         _textTextureCache.Clear();
         // The renderer and window are managed and destroyed by ApplicationRunner.
+    }
+
+    public void DrawImage(byte[] imageData, string imageKey, Rect destination)
+    {
+        throw new NotImplementedException();
     }
 }
 </file>
@@ -11612,6 +11668,15 @@ public interface IRenderer
     void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color);
 
     /// <summary>
+    /// Draws an image from its raw byte data within a destination rectangle.
+    /// The renderer is responsible for caching the decoded image using the provided key.
+    /// </summary>
+    /// <param name="imageData">The raw byte data of the image (e.g., JPEG, PNG).</param>
+    /// <param name="imageKey">A unique key to identify and cache this image.</param>
+    /// <param name="destination">The rectangle where the image will be drawn.</param>
+    void DrawImage(byte[] imageData, string imageKey, Vortice.Mathematics.Rect destination);
+
+    /// <summary>
     /// Pushes a clipping rectangle onto the stack. All subsequent drawing will be clipped to this rectangle.
     /// </summary>
     void PushClipRect(Vortice.Mathematics.Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive);
@@ -11819,7 +11884,7 @@ public class SonorizeLogic : IAppLogic
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host);
         _playbackManager = new PlaybackManager(new AudioPlayer());
-        _playbackControlsView = new PlaybackControlsView(_playbackManager);
+        _playbackControlsView = new PlaybackControlsView(_playbackManager, _settings);
 
         // Pass callbacks to the views for drill-down navigation
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
@@ -12350,6 +12415,8 @@ public class MusicFile
     public uint Year { get; set; }
     public TimeSpan Duration { get; set; }
     public string FilePath { get; set; } = string.Empty;
+    public byte[]? AlbumArt { get; set; }
+    public byte[]? AbstractAlbumArt { get; set; }
 }
 </file>
 
@@ -12360,6 +12427,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
+using SkiaSharp;
 using TagLib;
 
 namespace Sonorize;
@@ -12423,6 +12491,13 @@ public class MusicLibrary
                         try
                         {
                             using var tagFile = TagLib.File.Create(filePath);
+
+                            // --- Album Art Extraction ---
+                            var picture = tagFile.Tag.Pictures.FirstOrDefault();
+                            byte[]? albumArtData = picture?.Data.Data;
+                            byte[]? abstractArtData = CreateAbstractArt(albumArtData);
+                            // --- End Album Art Extraction ---
+
                             var musicFile = new MusicFile
                             {
                                 Title = string.IsNullOrEmpty(tagFile.Tag.Title) ? Path.GetFileNameWithoutExtension(filePath) : tagFile.Tag.Title,
@@ -12431,7 +12506,9 @@ public class MusicLibrary
                                 Genre = tagFile.Tag.FirstGenre ?? string.Empty,
                                 Year = tagFile.Tag.Year,
                                 Duration = tagFile.Properties.Duration,
-                                FilePath = filePath
+                                FilePath = filePath,
+                                AlbumArt = albumArtData,
+                                AbstractAlbumArt = abstractArtData
                             };
                             foundFiles.Add(musicFile);
                         }
@@ -12513,6 +12590,52 @@ public class MusicLibrary
             Console.WriteLine($"Scan complete. Found {_files.Count} files and {_playlists.Count} playlists.");
         });
     }
+
+    /// <summary>
+    /// Creates a 1-pixel-high, blurred strip of the album art's colors.
+    /// When stretched vertically, this produces a soft, abstract gradient background.
+    /// </summary>
+    private static byte[]? CreateAbstractArt(byte[]? originalArtData, int width = 128, float blurSigma = 10f)
+    {
+        if (originalArtData == null || originalArtData.Length == 0) return null;
+
+        try
+        {
+            using var originalBitmap = SKBitmap.Decode(originalArtData);
+            if (originalBitmap == null) return null;
+
+            // 1. Create a bitmap that is `width` pixels wide and 1 pixel tall.
+            var info = new SKImageInfo(width, 1);
+            using var resizedBitmap = new SKBitmap(info);
+
+            // 2. Draw the original bitmap into this tiny strip to average the colors.
+            using (var canvas = new SKCanvas(resizedBitmap))
+            {
+                var paint = new SKPaint { FilterQuality = SKFilterQuality.High };
+                canvas.DrawBitmap(originalBitmap, new SKRect(0, 0, width, 1), paint);
+            }
+
+            // 3. Create a final bitmap and apply a strong horizontal blur to the color strip.
+            using var finalBitmap = new SKBitmap(info);
+            using (var canvas = new SKCanvas(finalBitmap))
+            using (var paint = new SKPaint())
+            {
+                // We only blur horizontally (sigmaX) to blend the colors in the strip.
+                paint.ImageFilter = SKImageFilter.CreateBlur(blurSigma, 0);
+                canvas.DrawBitmap(resizedBitmap, 0, 0, paint);
+            }
+
+            // 4. Encode the final tiny, blurry strip.
+            using var image = SKImage.FromBitmap(finalBitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            return data.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not create abstract art: {ex.Message}");
+            return null;
+        }
+    }
 }
 </file>
 
@@ -12540,6 +12663,8 @@ public class Settings
 {
     public List<string> Directories { get; set; } = new();
     public bool PlayOnDoubleClick { get; set; } = true;
+    public bool UseCompactPlaybackControls { get; set; } = false;
+    public bool UseLargeAlbumArt { get; set; } = false;
 }
 </file>
 
@@ -12937,51 +13062,124 @@ using System.Numerics;
 using DirectUI;
 using Sonorize.Audio;
 using System;
+using DirectUI.Drawing;
 
 namespace Sonorize;
 
 public class PlaybackControlsView
 {
     private readonly PlaybackManager _playbackManager;
+    private readonly Settings _settings;
     private bool _isSeekSliderDragging;
     private float _seekSliderValueDuringDrag;
 
-    public PlaybackControlsView(PlaybackManager playbackManager)
+    public PlaybackControlsView(PlaybackManager playbackManager, Settings settings)
     {
         _playbackManager = playbackManager;
+        _settings = settings;
     }
 
     public void Draw(UIContext context)
     {
+        // The panel height is now always constant.
         float playbackControlsHeight = 70f;
         Vector2 windowSize = context.Renderer.RenderTargetSize;
         float controlsY = windowSize.Y - playbackControlsHeight;
         Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playbackControlsHeight);
 
+        var currentTrack = _playbackManager.CurrentTrack;
+
+        // 1. Draw the solid background, which acts as a fallback and provides the top border.
         DrawBackground(context, controlsRect);
 
-        var currentTrack = _playbackManager.CurrentTrack;
-        float gap = 10;
-        float rightPanelPadding = 10;
-
-        // Use HBox to lay out the main sections: Info | Controls
-        UI.BeginHBoxContainer("playbackHBox", new Vector2(0, controlsY), gap);
+        // 2. If available, draw the stretched abstract art on top of the solid background.
+        if (currentTrack?.AbstractAlbumArt != null && currentTrack.AbstractAlbumArt.Length > 0)
         {
-            var leftPanelStartPos = UI.Context.Layout.GetCurrentPosition();
+            // The file path provides a unique key for the renderer's image cache.
+            string abstractArtKey = currentTrack.FilePath + "_abstract";
+            context.Renderer.DrawImage(currentTrack.AbstractAlbumArt, abstractArtKey, controlsRect);
 
-            // --- Left Panel: Album Art & Track Info ---
-            // This now allows its size to be determined by its content.
-            DrawTrackInfoAndArt(context, currentTrack);
+            // 3. Draw a semi-transparent overlay to dim the art and improve control visibility.
+            var overlayStyle = new BoxStyle
+            {
+                FillColor = new Color(0, 0, 0, (byte)(255 * 0.4f)),
+                Roundness = 0,
+                BorderLength = 0
+            };
+            context.Renderer.DrawBox(controlsRect, overlayStyle);
+        }
 
+        // 4. Draw the controls layout on top.
+        if (_settings.UseCompactPlaybackControls)
+        {
+            DrawCompactLayout(context, currentTrack, controlsRect);
+        }
+        else
+        {
+            DrawStandardLayout(context, currentTrack, controlsRect);
+        }
+    }
+
+    private void DrawStandardLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    {
+        float gap = 10;
+
+        UI.BeginHBoxContainer("playbackHBox", controlsRect.TopLeft, gap);
+        {
+            DrawTrackInfoAndArt(context, currentTrack, controlsRect);
             var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
-
-            // --- Center Panel: Buttons & Seek Slider ---
-            // Dynamically calculate the remaining width for the center panel.
-            float centerWidth = windowSize.X - leftPanelEndPos.X - rightPanelPadding;
+            // Right panel padding is now dynamic based on art size to keep things aligned.
+            float rightPanelPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+            float centerWidth = controlsRect.Width - leftPanelEndPos.X - rightPanelPadding;
             if (centerWidth > 0)
             {
-                DrawPlaybackControlsAndSlider(context, centerWidth);
+                DrawStandardControlsAndSlider(context, centerWidth);
             }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawCompactLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    {
+        float gap = 15;
+        float rightControlsWidth = 150;
+        float leftPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+
+        // --- Left: Album Art (Manually Placed) ---
+        float artPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+        float artSize = controlsRect.Height - (artPadding * 2);
+        var artPos = new Vector2(
+            controlsRect.Left + artPadding,
+            controlsRect.Top + artPadding
+        );
+        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+        if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+        {
+            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+        }
+        else
+        {
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+        }
+
+        // --- Middle Section (Manually Placed & Centered) ---
+        float middleSectionStartX = artRect.Right + gap;
+        float availableMiddleWidth = controlsRect.Width - middleSectionStartX - rightControlsWidth;
+
+        float middleContentHeight = 36f;
+        var middleSectionStartPos = new Vector2(
+            middleSectionStartX,
+            controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
+        );
+
+        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10);
+        {
+            DrawCompactControlButtons(context);
+
+            float sliderGroupHeight = 16f + 2f + 8f; // title + gap + slider
+            float topSpacer = (middleContentHeight - sliderGroupHeight) / 2f;
+
+            DrawCompactSeekSlider(context, availableMiddleWidth - 120, topSpacer);
         }
         UI.EndHBoxContainer();
     }
@@ -13000,30 +13198,36 @@ public class PlaybackControlsView
         });
     }
 
-    private static void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack)
+    private void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect panelRect)
     {
-        float padding = 10f;
-        float artSize = 50f;
-        // The VBox is now a child of the main HBox, so its position is handled automatically.
-        UI.BeginHBoxContainer("trackInfoHBox", UI.Context.Layout.GetCurrentPosition() + new Vector2(padding, padding), padding);
+        float padding = _settings.UseLargeAlbumArt ? 0 : 10;
+        float artSize = panelRect.Height - (padding * 2);
+
+        UI.BeginHBoxContainer("trackInfoHBox", panelRect.TopLeft + new Vector2(padding, padding), padding);
         {
-            // Placeholder for Album Art
             var artPos = UI.Context.Layout.GetCurrentPosition();
             var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
-            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+
+            if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+            {
+                context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+            }
+            else
+            {
+                context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+            }
+
             UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
 
+            // Vertically center the text relative to the art
+            float textBlockHeight = 16f + 4f + 12f; // font sizes + gap
+            float textBlockY = UI.Context.Layout.GetCurrentPosition().Y + (artSize - textBlockHeight) / 2f;
 
-            // Track Info VBox
-            UI.BeginVBoxContainer("trackInfoVBox", UI.Context.Layout.GetCurrentPosition(), 4);
+            UI.BeginVBoxContainer("trackInfoVBox", new Vector2(UI.Context.Layout.GetCurrentPosition().X, textBlockY), 4);
             {
                 var title = currentTrack?.Title ?? "No song selected";
                 var artist = currentTrack?.Artist ?? string.Empty;
-
-                // Song Title (larger font)
                 UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
-
-                // Artist Name (smaller, dimmer font)
                 if (!string.IsNullOrEmpty(artist))
                 {
                     var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
@@ -13035,11 +13239,9 @@ public class PlaybackControlsView
         UI.EndHBoxContainer();
     }
 
-
-    private void DrawPlaybackControlsAndSlider(UIContext context, float panelWidth)
+    private void DrawStandardControlsAndSlider(UIContext context, float panelWidth)
     {
         var startPos = UI.Context.Layout.GetCurrentPosition();
-
         UI.BeginVBoxContainer("centerControlsVBox", startPos, 2);
         {
             DrawControlButtons(context, panelWidth);
@@ -13053,22 +13255,15 @@ public class PlaybackControlsView
         bool isAnyTrackAvailable = _playbackManager.HasTracks;
         const int controlsLayer = 10;
 
-        // Button styles
         var smallButtonSize = new Vector2(32, 32);
         var playButtonSize = new Vector2(36, 36);
 
-        var iconButtonTheme = new ButtonStylePack
-        {
-            FontSize = 14f,
-            FontName = "Segoe UI Emoji",
-            Roundness = 0.3f
-        };
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
         var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
         var toggleButtonTheme = new ButtonStylePack(iconButtonTheme);
         toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
 
-        // HBox for centering
-        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5); // 4 small, 1 large, 4 gaps
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5);
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
         var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
 
@@ -13083,8 +13278,38 @@ public class PlaybackControlsView
         UI.EndHBoxContainer();
     }
 
+    private void DrawCompactControlButtons(UIContext context)
+    {
+        bool isAnyTrackAvailable = _playbackManager.HasTracks;
+        const int controlsLayer = 10;
+        var smallButtonSize = new Vector2(32, 32);
+        var playButtonSize = new Vector2(36, 36);
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
+        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
 
-    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth)
+        DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+        DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
+        DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+    }
+
+    private void DrawCompactSeekSlider(UIContext context, float panelWidth, float topSpacer = 0f)
+    {
+        if (panelWidth < 10) return;
+
+        var currentTrack = _playbackManager.CurrentTrack;
+        var title = currentTrack?.Title ?? "No song selected";
+        var artist = currentTrack?.Artist ?? string.Empty;
+        var trackInfo = string.IsNullOrWhiteSpace(artist) ? title : $"{title} - {artist}";
+
+        UI.BeginVBoxContainer("compactSliderVBox", UI.Context.Layout.GetCurrentPosition(), 2);
+        {
+            UI.Text("compactTrackInfo", trackInfo, new Vector2(panelWidth, 16), new ButtonStyle { FontSize = 14 });
+            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth, bool showTimestamps = true)
     {
         double currentPosition = _playbackManager.CurrentPosition;
         double totalDuration = _playbackManager.TotalDuration;
@@ -13095,22 +13320,23 @@ public class PlaybackControlsView
 
         var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
         var timeSize = context.TextService.MeasureText("00:00", timeStyle);
-        float timeLabelWidth = timeSize.X + 5;
+        float timeLabelWidth = showTimestamps ? timeSize.X + 5 : 0;
+        float gap = showTimestamps ? 5 : 0;
 
-        float sliderWidth = panelWidth - (timeLabelWidth * 2);
-        if (sliderWidth < 10) return; // Don't draw if there's no space
+        float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2);
+        if (sliderWidth < 10) return;
 
-        // HBox to hold [Time, Slider, Time]
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0);
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap);
         {
-            // Current Time
-            UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            if (showTimestamps)
+            {
+                UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            }
 
-            // --- The Slider ---
             int seekSliderId = "seekSlider".GetHashCode();
             bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
             float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
-            Vector2 sliderSize = new(sliderWidth, 20);
+            Vector2 sliderSize = new(sliderWidth, 8);
             ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
             SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
 
@@ -13121,9 +13347,10 @@ public class PlaybackControlsView
                 maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
                 size: sliderSize,
                 disabled: !isAudioLoaded,
-                grabberSize: new(16, 16),
+                grabberSize: new(14, 14),
                 grabberTheme: grabberTheme,
-                theme: theme
+                theme: theme,
+                origin: new Vector2(0, showTimestamps ? -6 : 0),
             );
 
             if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
@@ -13132,16 +13359,15 @@ public class PlaybackControlsView
                 _playbackManager.Seek(_seekSliderValueDuringDrag);
             }
             _isSeekSliderDragging = isCurrentlyDragging;
-            // --- End Slider ---
 
-            // Total Time
-            UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            if (showTimestamps)
+            {
+                UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            }
         }
         UI.EndHBoxContainer();
     }
 
-
-    #region Button Drawing Helpers
     private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)
     {
         bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
@@ -13190,7 +13416,6 @@ public class PlaybackControlsView
             _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
         }
     }
-    #endregion
 
     private static string FormatTime(double seconds)
     {
@@ -13309,10 +13534,19 @@ public class SettingsWindow
         UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
         UI.Separator(480, verticalPadding: 2);
 
-        UI.Text("playbackHeader", "Playback");
+        UI.Text("playbackHeader", "Playback & Appearance");
         bool playOnDoubleClick = _settings.PlayOnDoubleClick;
         UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
         _settings.PlayOnDoubleClick = playOnDoubleClick;
+
+        bool useCompactControls = _settings.UseCompactPlaybackControls;
+        UI.Checkbox("compactControls", "Use compact playback controls", ref useCompactControls);
+        _settings.UseCompactPlaybackControls = useCompactControls;
+
+        bool useLargeArt = _settings.UseLargeAlbumArt;
+        UI.Checkbox("largeArt", "Use large album art in playback controls", ref useLargeArt);
+        _settings.UseLargeAlbumArt = useLargeArt;
+
         UI.Separator(480, verticalPadding: 2);
 
         UI.Text("dirsHeader", "Music Library Directories");

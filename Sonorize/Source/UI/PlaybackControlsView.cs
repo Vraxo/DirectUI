@@ -243,12 +243,8 @@ public class PlaybackControlsView
 
         UI.BeginVBoxContainer("compactSliderVBox", UI.Context.Layout.GetCurrentPosition(), 2);
         {
-            if (topSpacer > 0)
-            {
-                UI.Text("compactSliderTopSpacer", "", new Vector2(0, topSpacer));
-            }
             UI.Text("compactTrackInfo", trackInfo, new Vector2(panelWidth, 16), new ButtonStyle { FontSize = 14 });
-            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
+            DrawSeekSliderWithTimestamps(context, panelWidth);
         }
         UI.EndVBoxContainer();
     }
@@ -312,7 +308,6 @@ public class PlaybackControlsView
         UI.EndHBoxContainer();
     }
 
-    #region Button Drawing Helpers
     private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)
     {
         bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
@@ -361,7 +356,6 @@ public class PlaybackControlsView
             _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
         }
     }
-    #endregion
 
     private static string FormatTime(double seconds)
     {
