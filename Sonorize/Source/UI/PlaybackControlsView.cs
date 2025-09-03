@@ -112,7 +112,7 @@ public class PlaybackControlsView
             controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
         );
 
-        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10);
+        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10, VAlignment.Center, fixedRowHeight: middleContentHeight);
         {
             DrawCompactControlButtons(context);
 
@@ -207,10 +207,12 @@ public class PlaybackControlsView
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
         var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
 
-        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5);
+        // Use the new VAlignment feature and provide the height of the tallest element.
+        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
         {
             DrawShuffleButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, toggleButtonTheme);
             DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            // The origin parameter is no longer needed, as the container handles alignment.
             DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
             DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
             DrawRepeatModeButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
@@ -289,7 +291,7 @@ public class PlaybackControlsView
         float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2);
         if (sliderWidth < 10) return;
 
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap);
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap, VAlignment.Center, fixedRowHeight: 20f);
         {
             if (showTimestamps)
             {
@@ -312,8 +314,7 @@ public class PlaybackControlsView
                 disabled: !isAudioLoaded,
                 grabberSize: new(14, 14),
                 grabberTheme: grabberTheme,
-                theme: theme,
-                origin: new Vector2(0, showTimestamps ? -6 : 0)
+                theme: theme
             );
 
             if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
@@ -351,7 +352,7 @@ public class PlaybackControlsView
     private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
         string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
-        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, origin: new(0, 2)))
+        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.TogglePlayPause();
         }

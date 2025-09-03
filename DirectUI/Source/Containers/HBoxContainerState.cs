@@ -11,6 +11,8 @@ public class HBoxContainerState : ILayoutContainer
     internal float MaxElementHeight { get; set; } = 0f;
     internal float AccumulatedWidth { get; set; } = 0f;
     internal int ElementCount { get; set; } = 0;
+    internal VAlignment VerticalAlignment { get; set; } = VAlignment.Top;
+    internal float? FixedRowHeight { get; set; }
 
     internal HBoxContainerState(int id)
     {

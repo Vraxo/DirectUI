@@ -8,8 +8,11 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f, VAlignment verticalAlignment = VAlignment.Top, float? fixedRowHeight = null)
     {
+        var hboxState = Context.Layout.GetOrCreateHBoxState(id.GetHashCode());
+        hboxState.VerticalAlignment = verticalAlignment;
+        hboxState.FixedRowHeight = fixedRowHeight;
         Context.Layout.BeginHBox(id.GetHashCode(), position, gap);
     }
 
@@ -170,6 +173,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return;
         var intId = id.GetHashCode();
+        var state = State; // Define local state variable
 
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
@@ -187,16 +191,16 @@ public static partial class UI
             Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) State.SetPotentialInputTarget(intId);
+            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
 
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
             {
-                State.TrySetActivePress(intId, 10);
+                state.TrySetActivePress(intId, 10);
             }
 
-            if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
 
-            if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
                 else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, minWidth, maxWidth);
@@ -263,6 +267,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return;
         var intId = id.GetHashCode();
+        var state = State; // Define local state variable
 
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
@@ -283,16 +288,16 @@ public static partial class UI
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) State.SetPotentialInputTarget(intId);
+            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
 
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
             {
-                State.TrySetActivePress(intId, 10);
+                state.TrySetActivePress(intId, 10);
             }
 
-            if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
 
-            if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
                 currentHeight = Math.Clamp(windowHeight - clampedMouseY, minHeight, clampMax);

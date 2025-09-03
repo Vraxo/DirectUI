@@ -31,9 +31,29 @@ public static partial class UI
 
         int intId = id.GetHashCode();
         var knobInstance = State.GetOrCreateElement<InternalKnobLogic>(intId);
-        
+
         Vector2 size = new(radius * 2, radius * 2);
         Vector2 drawPos = Context.Layout.GetCurrentPosition();
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - size.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - size.Y;
+                        break;
+                }
+                drawPos.Y += yOffset;
+            }
+        }
+
         Rect widgetBounds = new(drawPos.X, drawPos.Y, size.X, size.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))

@@ -33,6 +33,25 @@ public static partial class UI
 
         var drawPos = Context.Layout.GetCurrentPosition();
 
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - totalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - totalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset;
+            }
+        }
+
         var widgetBounds = new Rect(drawPos.X, drawPos.Y, totalSize.X, totalSize.Y);
 
         // --- Culling ---
