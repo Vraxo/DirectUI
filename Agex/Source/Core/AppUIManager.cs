@@ -38,7 +38,7 @@ public class AppUIManager
         float bottomPanelHeight = _state.BottomPanelHeight;
         UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: windowSize.Y - 250, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
         _state.BottomPanelHeight = bottomPanelHeight;
-        _state.ExecutionLogText = DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight);
+        DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight);
         UI.EndResizableHPanel();
 
         float splitterHeight = 5f;
@@ -144,19 +144,18 @@ public class AppUIManager
         UI.EndHBoxContainer();
     }
 
-    private string DrawPanel(string id, string title, string text, float availableHeight)
+    private void DrawPanel(string id, string title, string text, float availableHeight)
     {
         var headerPos = UI.Context.Layout.GetCurrentPosition();
         DrawPanelHeader(title, headerPos);
         var contentWidth = UI.Context.Renderer.RenderTargetSize.X - 22;
         var textInputHeight = availableHeight - 1 - 30 - 5 - 1;
 
-        string newText = text;
+        string textCopy = text;
         if (textInputHeight > 0)
         {
-            UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight));
+            UI.InputText($"{id}_input", ref textCopy, new Vector2(contentWidth, textInputHeight), disabled: true);
         }
-        return newText;
     }
 
     private void DrawPanelHeader(string title, Vector2 pos)

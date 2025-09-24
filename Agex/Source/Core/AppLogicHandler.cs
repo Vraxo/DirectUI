@@ -99,11 +99,24 @@ public class AppLogicHandler
 
     public async void HandleExecute()
     {
-        await _toolExecutor.ExecuteFromResponse();
-        // Refresh file tree after execution
-        if (_appState.CurrentProject != null)
+        try
         {
-            SwitchProject(_appState.CurrentProject);
+            Console.WriteLine("[AgexApp] HandleExecute triggered.");
+            await _toolExecutor.ExecuteFromResponse();
+            // Refresh file tree after execution
+            if (_appState.CurrentProject != null)
+            {
+                Console.WriteLine("[AgexApp] Refreshing file tree after execution.");
+                SwitchProject(_appState.CurrentProject);
+            }
+        }
+        catch (Exception ex)
+        {
+            // This is a top-level catch for the async void method.
+            // It will catch any unhandled exceptions from the execution flow.
+            var errorMessage = $"An unexpected error occurred during execution: {ex.Message}\n{ex.StackTrace}";
+            Console.WriteLine(errorMessage);
+            LogMessage("fatal", "ExecutionEngine", errorMessage);
         }
     }
 
@@ -147,14 +160,21 @@ public class AppLogicHandler
 
     private void LogMessage(string type, string tool, string message)
     {
-        _appState.ExecutionLogText = $"<TOOL_RESULT>\n    <status>{type}</status>\n    <tool_name>{tool}</tool_name>\n    <message><![CDATA[{message}]]></message>\n</TOOL_RESULT>";
+        var logContent = $"<TOOL_RESULT>\n    <status>{type}</status>\n    <tool_name>{tool}</tool_name>\n    <message><![CDATA[{message}]]></message>\n</TOOL_RESULT>";
+
+        // This console log is critical for debugging.
+        Console.WriteLine($"[AgexApp] LOGGING MESSAGE:\n{logContent}");
+
+        _appState.ExecutionLogText = logContent;
+
         try
         {
             TextCopy.ClipboardService.SetText(_appState.ExecutionLogText);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Clipboard error: {ex.Message}");
+            // This is a non-critical error, but good to know about.
+            Console.WriteLine($"[AgexApp] Clipboard error: {ex.Message}");
         }
     }
 }
