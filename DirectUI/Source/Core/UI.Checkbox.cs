@@ -81,10 +81,8 @@ public static partial class UI
         // --- Drawing ---
         var renderer = Context.Renderer;
         // This calculation centers the box inside the widget's total height.
-        // A small vertical adjustment is added to compensate for font metrics in DrawTextPrimitive,
-        // ensuring the checkbox and text align perfectly.
-        const float yOffsetCorrection = -1.5f;
-        float boxY = drawPos.Y + (totalSize.Y - boxSize.Y) / 2 + yOffsetCorrection;
+        // The small vertical adjustment has been removed to allow for proper alignment within parent containers.
+        float boxY = drawPos.Y + (totalSize.Y - boxSize.Y) / 2;
         var boxRect = new Rect(drawPos.X, boxY, boxSize.X, boxSize.Y);
 
         // Draw the box frame
