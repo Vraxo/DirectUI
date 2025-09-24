@@ -38,7 +38,7 @@ public class AppUIManager
         float bottomPanelHeight = _state.BottomPanelHeight;
         UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: windowSize.Y - 250, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
         _state.BottomPanelHeight = bottomPanelHeight;
-        DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight);
+        _state.ExecutionLogText = DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight, isReadOnly: true);
         UI.EndResizableHPanel();
 
         float splitterHeight = 5f;
@@ -144,17 +144,31 @@ public class AppUIManager
         UI.EndHBoxContainer();
     }
 
-    private void DrawPanel(string id, string title, string text, float availableHeight)
+    private string DrawPanel(string id, string title, string text, float availableHeight, bool isReadOnly = false)
     {
         var headerPos = UI.Context.Layout.GetCurrentPosition();
         DrawPanelHeader(title, headerPos);
         var contentWidth = UI.Context.Renderer.RenderTargetSize.X - 22;
         var textInputHeight = availableHeight - 1 - 30 - 5 - 1;
 
-        string textCopy = text;
-        if (textInputHeight > 0)
+        if (isReadOnly)
         {
-            UI.InputText($"{id}_input", ref textCopy, new Vector2(contentWidth, textInputHeight), disabled: true);
+            if (textInputHeight > 0)
+            {
+                UI.BeginScrollableRegion($"{id}_scroll", new Vector2(contentWidth, textInputHeight), out float innerWidth);
+                UI.WrappedText($"{id}_text", text, size: new Vector2(innerWidth, 0));
+                UI.EndScrollableRegion();
+            }
+            return text;
+        }
+        else
+        {
+            string newText = text;
+            if (textInputHeight > 0)
+            {
+                UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight));
+            }
+            return newText;
         }
     }
 

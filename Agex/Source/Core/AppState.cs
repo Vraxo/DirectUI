@@ -15,6 +15,7 @@ public class AppState
     public string AiResponseText { get; set; } = "Paste AI response with <TOOL_CALL> blocks here...";
     public string ExecutionLogText { get; set; } = "";
     public float BottomPanelHeight { get; set; } = 250f;
+    public bool IsExecuting { get; set; } = false;
 
     // File Tree
     public string FileTreeText { get; set; } = "";

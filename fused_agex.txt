@@ -2639,8 +2639,12 @@ public static partial class UI
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Label.cs">
+using System.Net.NetworkInformation;
+using System;
 using System.Numerics;
+using SkiaSharp;
 using Vortice.Mathematics;
+using Vulkan.Xlib;
 
 namespace DirectUI;
 
@@ -2695,6 +2699,66 @@ public static partial class UI
             }
         }
 
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
+
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(finalSize);
+            return;
+        }
+
+        DrawTextPrimitive(
+            widgetBounds,
+            text,
+            finalStyle,
+            finalAlignment,
+            Vector2.Zero);
+
+        Context.Layout.AdvanceLayout(finalSize);
+    }
+
+    /// <summary>
+    /// Displays text that wraps automatically based on the specified width.
+    /// The layout height is determined by the content.
+    /// </summary>
+    public static void WrappedText(string id, string text, Vector2 size, ButtonStyle? style = null, Alignment? textAlignment = null)
+    {
+        if (!IsContextValid())
+        {
+            // Still advance layout if a fixed height was given
+            if (size.Y > 0) Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(text))
+        {
+            Context.Layout.AdvanceLayout(new Vector2(size.X, 0));
+            return;
+        }
+
+        ButtonStyle finalStyle = style ?? new ButtonStyle();
+        finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
+
+        // Wrapped text should default to top alignment for natural reading flow
+        Alignment finalAlignment = textAlignment ?? new(HAlignment.Left, VAlignment.Top);
+
+        // Get a text layout that is constrained by the available width.
+        // The height constraint is set to max to allow it to grow and wrap naturally.
+        var textLayout = Context.TextService.GetTextLayout(text, finalStyle, new Vector2(size.X, float.MaxValue), finalAlignment);
+
+        if (textLayout == null)
+        {
+            if (size.Y > 0) Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        // The actual content size is determined by the layout's metrics.
+        Vector2 actualContentSize = textLayout.Size;
+
+        // The final size for layout advancement is the constrained width and the actual measured height.
+        Vector2 finalSize = new Vector2(size.X, actualContentSize.Y);
+
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
         Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
@@ -11970,7 +12034,13 @@ public static class Program
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\AppLogicHandler.cs">
+using DirectUI;
+using System.Diagnostics;
+using System;
 using DirectUI.Core;
+using static ICSharpCode.SharpZipLib.Zip.ExtendedUnixData;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using TagLib.Matroska;
 
 namespace Agex;
 
@@ -12002,7 +12072,7 @@ public class AppLogicHandler
 
         try
         {
-            _appState.InstructionsText = File.ReadAllText("instructions.md");
+            _appState.InstructionsText = System.IO.File.ReadAllText("instructions.md");
         }
         catch
         {
@@ -12069,13 +12139,26 @@ public class AppLogicHandler
         _appState.ProjectListForCombo = _appState.RecentProjects.Select(p => $"{p.Name} ({p.Path})").ToArray();
     }
 
-    public async void HandleExecute()
+    public async Task HandleExecute()
     {
-        await _toolExecutor.ExecuteFromResponse();
-        // Refresh file tree after execution
-        if (_appState.CurrentProject != null)
+        try
         {
-            SwitchProject(_appState.CurrentProject);
+            Console.WriteLine("[AgexApp] HandleExecute triggered.");
+            await _toolExecutor.ExecuteFromResponse();
+            // Refresh file tree after execution
+            if (_appState.CurrentProject != null)
+            {
+                Console.WriteLine("[AgexApp] Refreshing file tree after execution.");
+                SwitchProject(_appState.CurrentProject);
+            }
+        }
+        catch (Exception ex)
+        {
+            // This is a top-level catch for the async void method.
+            // It will catch any unhandled exceptions from the execution flow.
+            var errorMessage = $"An unexpected error occurred during execution: {ex.Message}\n{ex.StackTrace}";
+            Console.WriteLine(errorMessage);
+            LogMessage("fatal", "ExecutionEngine", errorMessage);
         }
     }
 
@@ -12095,7 +12178,7 @@ public class AppLogicHandler
 
         _appState.IsProcessingAutomation = true;
         _appState.AiResponseText = currentClipboard;
-        HandleExecute();
+        await HandleExecute(); // Await the task here
 
         await Task.Delay(200); // Give a moment for log message to be set and copied
 
@@ -12119,14 +12202,21 @@ public class AppLogicHandler
 
     private void LogMessage(string type, string tool, string message)
     {
-        _appState.ExecutionLogText = $"<TOOL_RESULT>\n    <status>{type}</status>\n    <tool_name>{tool}</tool_name>\n    <message><![CDATA[{message}]]></message>\n</TOOL_RESULT>";
+        var logContent = $"<TOOL_RESULT>\n    <status>{type}</status>\n    <tool_name>{tool}</tool_name>\n    <message><![CDATA[{message}]]></message>\n</TOOL_RESULT>";
+
+        // This console log is critical for debugging.
+        Console.WriteLine($"[AgexApp] LOGGING MESSAGE:\n{logContent}");
+
+        _appState.ExecutionLogText = logContent;
+
         try
         {
             TextCopy.ClipboardService.SetText(_appState.ExecutionLogText);
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"Clipboard error: {ex.Message}");
+            // This is a non-critical error, but good to know about.
+            Console.WriteLine($"[AgexApp] Clipboard error: {ex.Message}");
         }
     }
 }
@@ -12150,6 +12240,7 @@ public class AppState
     public string AiResponseText { get; set; } = "Paste AI response with <TOOL_CALL> blocks here...";
     public string ExecutionLogText { get; set; } = "";
     public float BottomPanelHeight { get; set; } = 250f;
+    public bool IsExecuting { get; set; } = false;
 
     // File Tree
     public string FileTreeText { get; set; } = "";
@@ -12276,7 +12367,7 @@ public class AppUIManager
         float bottomPanelHeight = _state.BottomPanelHeight;
         UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: windowSize.Y - 250, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
         _state.BottomPanelHeight = bottomPanelHeight;
-        _state.ExecutionLogText = DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight);
+        _state.ExecutionLogText = DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight, isReadOnly: true);
         UI.EndResizableHPanel();
 
         float splitterHeight = 5f;
@@ -12382,19 +12473,32 @@ public class AppUIManager
         UI.EndHBoxContainer();
     }
 
-    private string DrawPanel(string id, string title, string text, float availableHeight)
+    private string DrawPanel(string id, string title, string text, float availableHeight, bool isReadOnly = false)
     {
         var headerPos = UI.Context.Layout.GetCurrentPosition();
         DrawPanelHeader(title, headerPos);
         var contentWidth = UI.Context.Renderer.RenderTargetSize.X - 22;
         var textInputHeight = availableHeight - 1 - 30 - 5 - 1;
 
-        string newText = text;
-        if (textInputHeight > 0)
+        if (isReadOnly)
         {
-            UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight));
+            if (textInputHeight > 0)
+            {
+                UI.BeginScrollableRegion($"{id}_scroll", new Vector2(contentWidth, textInputHeight), out float innerWidth);
+                UI.WrappedText($"{id}_text", text, size: new Vector2(innerWidth, 0));
+                UI.EndScrollableRegion();
+            }
+            return text;
         }
-        return newText;
+        else
+        {
+            string newText = text;
+            if (textInputHeight > 0)
+            {
+                UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight));
+            }
+            return newText;
+        }
     }
 
     private void DrawPanelHeader(string title, Vector2 pos)

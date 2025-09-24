@@ -1,4 +1,10 @@
-﻿using DirectUI.Core;
+﻿using DirectUI;
+using System.Diagnostics;
+using System;
+using DirectUI.Core;
+using static ICSharpCode.SharpZipLib.Zip.ExtendedUnixData;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using TagLib.Matroska;
 
 namespace Agex;
 
@@ -30,7 +36,7 @@ public class AppLogicHandler
 
         try
         {
-            _appState.InstructionsText = File.ReadAllText("instructions.md");
+            _appState.InstructionsText = System.IO.File.ReadAllText("instructions.md");
         }
         catch
         {
@@ -97,7 +103,7 @@ public class AppLogicHandler
         _appState.ProjectListForCombo = _appState.RecentProjects.Select(p => $"{p.Name} ({p.Path})").ToArray();
     }
 
-    public async void HandleExecute()
+    public async Task HandleExecute()
     {
         try
         {
@@ -136,7 +142,7 @@ public class AppLogicHandler
 
         _appState.IsProcessingAutomation = true;
         _appState.AiResponseText = currentClipboard;
-        HandleExecute();
+        await HandleExecute(); // Await the task here
 
         await Task.Delay(200); // Give a moment for log message to be set and copied
 
