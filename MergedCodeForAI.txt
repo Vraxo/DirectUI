@@ -904,6 +904,8 @@ public class HBoxContainerState : ILayoutContainer
     internal float MaxElementHeight { get; set; } = 0f;
     internal float AccumulatedWidth { get; set; } = 0f;
     internal int ElementCount { get; set; } = 0;
+    internal VAlignment VerticalAlignment { get; set; } = VAlignment.Top;
+    internal float? FixedRowHeight { get; set; }
 
     internal HBoxContainerState(int id)
     {
@@ -1218,6 +1220,26 @@ public static partial class UI
         }
 
         Vector2 drawPos = Context.Layout.GetCurrentPosition();
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - finalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - finalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset;
+            }
+        }
+
         Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
@@ -1284,7 +1306,7 @@ public static partial class UI
         var boxSize = new Vector2(16, 16);
         var spacing = 5f;
         // Checkmark is now pure white.
-        var checkmarkColor = Colors.White;
+        var checkmarkColor = DirectUI.Drawing.Colors.White;
         // Background is a specific dark grey.
         var normalFillColor = new Color4(43 / 255f, 45 / 255f, 47 / 255f, 1.0f); // #2B2D2F
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
@@ -1300,6 +1322,25 @@ public static partial class UI
         var totalSize = new Vector2(finalWidgetWidth, finalWidgetHeight);
 
         var drawPos = Context.Layout.GetCurrentPosition();
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - totalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - totalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset;
+            }
+        }
 
         var widgetBounds = new Rect(drawPos.X, drawPos.Y, totalSize.X, totalSize.Y);
 
@@ -1448,8 +1489,11 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f, VAlignment verticalAlignment = VAlignment.Top, float? fixedRowHeight = null)
     {
+        var hboxState = Context.Layout.GetOrCreateHBoxState(id.GetHashCode());
+        hboxState.VerticalAlignment = verticalAlignment;
+        hboxState.FixedRowHeight = fixedRowHeight;
         Context.Layout.BeginHBox(id.GetHashCode(), position, gap);
     }
 
@@ -1610,6 +1654,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return;
         var intId = id.GetHashCode();
+        var state = State; // Define local state variable
 
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
@@ -1627,16 +1672,16 @@ public static partial class UI
             Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) State.SetPotentialInputTarget(intId);
+            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
 
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
             {
-                State.TrySetActivePress(intId, 10);
+                state.TrySetActivePress(intId, 10);
             }
 
-            if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
 
-            if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
                 else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, minWidth, maxWidth);
@@ -1703,6 +1748,7 @@ public static partial class UI
     {
         if (!IsContextValid()) return;
         var intId = id.GetHashCode();
+        var state = State; // Define local state variable
 
         Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
 
@@ -1723,16 +1769,16 @@ public static partial class UI
             Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
 
             bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) State.SetPotentialInputTarget(intId);
+            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
 
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && State.PotentialInputTargetId == intId && !State.DragInProgressFromPreviousFrame)
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
             {
-                State.TrySetActivePress(intId, 10);
+                state.TrySetActivePress(intId, 10);
             }
 
-            if (State.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) State.ClearActivePress(intId);
+            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
 
-            if (State.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
             {
                 float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
                 currentHeight = Math.Clamp(windowHeight - clampedMouseY, minHeight, clampMax);
@@ -2084,7 +2130,7 @@ public static partial class UI
         const float scrollbarThickness = 12f;
 
         var gridStyle = new BoxStyle { FillColor = new(0.1f, 0.1f, 0.1f, 1.0f), BorderLength = 0f, Roundness = 0f };
-        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = Colors.Transparent, FontColor = DefaultTheme.Text };
+        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = DirectUI.Drawing.Colors.Transparent, FontColor = DefaultTheme.Text };
         var rowStyle = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
         rowStyle.Normal.FillColor = DefaultTheme.Transparent;
         rowStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 1.0f);
@@ -2546,9 +2592,29 @@ public static partial class UI
 
         int intId = id.GetHashCode();
         var knobInstance = State.GetOrCreateElement<InternalKnobLogic>(intId);
-        
+
         Vector2 size = new(radius * 2, radius * 2);
         Vector2 drawPos = Context.Layout.GetCurrentPosition();
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - size.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - size.Y;
+                        break;
+                }
+                drawPos.Y += yOffset;
+            }
+        }
+
         Rect widgetBounds = new(drawPos.X, drawPos.Y, size.X, size.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
@@ -3518,7 +3584,8 @@ public class UILayoutManager
 
     public Vector2 ApplyLayout(Vector2 defaultPosition)
     {
-        return IsInLayoutContainer() ? GetCurrentPosition() : defaultPosition;
+        // If in a container, add the widget's desired position as a relative offset.
+        return IsInLayoutContainer() ? GetCurrentPosition() + defaultPosition : defaultPosition;
     }
 
     public void AdvanceLayout(Vector2 elementSize)
@@ -3948,6 +4015,21 @@ public struct Color
     {
         return new Color((byte)(color.R * 255), (byte)(color.G * 255), (byte)(color.B * 255), (byte)(color.A * 255));
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\Colors.cs">
+namespace DirectUI.Drawing;
+
+public static class Colors
+{
+    public static readonly Color Transparent = new(0, 0, 0, 0);
+    public static readonly Color Black = new(0, 0, 0, 255);
+    public static readonly Color White = new(255, 255, 255, 255);
+    public static readonly Color WhiteSmoke = new(245, 245, 245, 255);
+    public static readonly Color Red = new(255, 0, 0, 255);
+    public static readonly Color Green = new(0, 255, 0, 255);
+    public static readonly Color Blue = new(0, 0, 255, 255);
 }
 </file>
 
@@ -5078,7 +5160,7 @@ public static class DefaultTheme
         public static readonly Color DisabledFill = new Color(51, 51, 51, (byte)(255 * 0.8f));
         public static readonly Color DisabledBorder = new Color(77, 77, 77, (byte)(255 * 0.8f));
         public static readonly Color DisabledText = new Color(128, 128, 128, 255);
-        public static readonly Color Text = new Color(245, 245, 245, 255); // WhiteSmoke
+        public static readonly Color Text = Colors.WhiteSmoke;
     }
 
     private static class UnityEditorThemeColors
@@ -5101,9 +5183,9 @@ public static class DefaultTheme
     // Change the assignments here to swap themes.
 
     // Basic Palette
-    public static readonly Color White = new Color(255, 255, 255, 255);
-    public static readonly Color Black = new Color(0, 0, 0, 255);
-    public static readonly Color Transparent = new Color(0, 0, 0, 0);
+    public static readonly Color White = Colors.White;
+    public static readonly Color Black = Colors.Black;
+    public static readonly Color Transparent = Colors.Transparent;
 
     /*
     // --- ACTIVE THEME: DAW ---
@@ -5437,11 +5519,11 @@ internal class InputText
 
             // Normal state (inset look)
             finalTheme.Normal.FillColor = DefaultTheme.NormalBorder; // Very dark, same as window border
-            finalTheme.Normal.BorderColor = Colors.Black;
+            finalTheme.Normal.BorderColor = DirectUI.Drawing.Colors.Black;
 
             // Hover state (subtle brightening)
             finalTheme.Hover.FillColor = new Color4(35 / 255f, 35 / 255f, 35 / 255f, 1.0f);
-            finalTheme.Hover.BorderColor = Colors.Black;
+            finalTheme.Hover.BorderColor = DirectUI.Drawing.Colors.Black;
 
             // Focused state (bright border)
             finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;
@@ -5981,7 +6063,7 @@ internal class InternalComboboxLogic
                     {
                         var itemBounds = new Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
                         var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-                        itemTheme.Normal.FillColor = Colors.Transparent;
+                        itemTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
                         itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
                         itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
@@ -13172,7 +13254,7 @@ public class PlaybackControlsView
             controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
         );
 
-        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10);
+        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10, VAlignment.Center, fixedRowHeight: middleContentHeight);
         {
             DrawCompactControlButtons(context);
 
@@ -13267,10 +13349,12 @@ public class PlaybackControlsView
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
         var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
 
-        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5);
+        // Use the new VAlignment feature and provide the height of the tallest element.
+        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
         {
             DrawShuffleButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, toggleButtonTheme);
             DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            // The origin parameter is no longer needed, as the container handles alignment.
             DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
             DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
             DrawRepeatModeButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
@@ -13301,10 +13385,33 @@ public class PlaybackControlsView
         var artist = currentTrack?.Artist ?? string.Empty;
         var trackInfo = string.IsNullOrWhiteSpace(artist) ? title : $"{title} - {artist}";
 
-        UI.BeginVBoxContainer("compactSliderVBox", UI.Context.Layout.GetCurrentPosition(), 2);
+        // Prepare timestamp text for layout calculation
+        double currentPosition = _playbackManager.CurrentPosition;
+        double totalDuration = _playbackManager.TotalDuration;
+        string timeStr = $"{FormatTime(currentPosition)} / {FormatTime(totalDuration)}";
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+        var timeSize = context.TextService.MeasureText(timeStr, timeStyle);
+
+        // This VBox will contain two rows: the info row and the slider row.
+        // Apply the topSpacer to vertically center this group.
+        var startPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, topSpacer);
+        UI.BeginVBoxContainer("compactSliderVBox", startPos, 2);
         {
-            UI.Text("compactTrackInfo", trackInfo, new Vector2(panelWidth, 16), new ButtonStyle { FontSize = 14 });
-            DrawSeekSliderWithTimestamps(context, panelWidth);
+            // --- Row 1: HBox for Title/Artist and Timestamps ---
+            UI.BeginHBoxContainer("compactInfoRowHBox", UI.Context.Layout.GetCurrentPosition(), 5);
+            {
+                float titleWidth = panelWidth - timeSize.X - 5;
+                if (titleWidth > 0)
+                {
+                    UI.Text("compactTrackInfo", trackInfo, new Vector2(titleWidth, 16), new ButtonStyle { FontSize = 14 });
+                }
+
+                UI.Text("compactTimeInfo", timeStr, new Vector2(timeSize.X, 16), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            }
+            UI.EndHBoxContainer();
+
+            // --- Row 2: Slider without its own timestamps ---
+            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
         }
         UI.EndVBoxContainer();
     }
@@ -13326,7 +13433,7 @@ public class PlaybackControlsView
         float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2);
         if (sliderWidth < 10) return;
 
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap);
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap, VAlignment.Center, fixedRowHeight: 20f);
         {
             if (showTimestamps)
             {
@@ -13350,7 +13457,7 @@ public class PlaybackControlsView
                 grabberSize: new(14, 14),
                 grabberTheme: grabberTheme,
                 theme: theme,
-                origin: new Vector2(0, showTimestamps ? -6 : 0)
+                position: new(0, 4)
             );
 
             if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
@@ -13388,7 +13495,7 @@ public class PlaybackControlsView
     private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
     {
         string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
-        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, origin: new(0, 2)))
+        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
         {
             _playbackManager.TogglePlayPause();
         }
