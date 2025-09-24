@@ -1,4 +1,4 @@
-﻿namespace Agex.Core;
+﻿namespace Agex;
 
 public record Project
 {

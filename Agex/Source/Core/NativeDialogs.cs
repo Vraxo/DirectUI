@@ -1,6 +1,6 @@
 ﻿using System.Runtime.InteropServices;
 
-namespace Agex.Core;
+namespace Agex;
 
 public static class NativeDialogs
 {

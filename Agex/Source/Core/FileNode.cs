@@ -1,14 +1,8 @@
-﻿namespace Agex.Core;
+﻿namespace Agex;
 
 public class FileNode
 {
-    public string Name { get; set; }
-    public string Kind { get; set; } // "file" or "directory"
-    public List<FileNode> Children { get; set; } = new();
-
-    public FileNode(string name, string kind)
-    {
-        Name = name;
-        Kind = kind;
-    }
+    public required string Name { get; set; }
+    public required string Kind { get; set; }
+    public List<FileNode> Children { get; set; } = [];
 }

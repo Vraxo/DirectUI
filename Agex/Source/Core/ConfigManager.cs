@@ -1,6 +1,6 @@
 ﻿using System.Text.Json;
 
-namespace Agex.Core;
+namespace Agex;
 
 public static class ConfigManager
 {

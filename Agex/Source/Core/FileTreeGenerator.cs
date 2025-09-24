@@ -1,6 +1,6 @@
 ﻿using System.Text;
 
-namespace Agex.Core;
+namespace Agex;
 
 public static class FileTreeGenerator
 {
@@ -20,8 +20,8 @@ public static class FileTreeGenerator
 
     public static async Task<FileNode> GetDirectoryStructureAsync(string dirPath)
     {
-        var rootInfo = new DirectoryInfo(dirPath);
-        var rootNode = new FileNode(rootInfo.Name, "directory");
+        DirectoryInfo rootInfo = new(dirPath);
+        FileNode rootNode = new() { Name = rootInfo.Name, Kind = "directory" };
 
         try
         {
@@ -41,7 +41,7 @@ public static class FileTreeGenerator
                 {
                     if (!ExcludedExtensions.Contains(file.Extension))
                     {
-                        tasks.Add(Task.FromResult<FileNode?>(new FileNode(file.Name, "file")));
+                        tasks.Add(Task.FromResult<FileNode?>(new() { Name = file.Name, Kind = "file"}));
                     }
                 }
             }
