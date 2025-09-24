@@ -1306,7 +1306,7 @@ public static partial class UI
         var boxSize = new Vector2(16, 16);
         var spacing = 5f;
         // Checkmark is now pure white.
-        var checkmarkColor = Colors.White;
+        var checkmarkColor = DirectUI.Drawing.Colors.White;
         // Background is a specific dark grey.
         var normalFillColor = new Color4(43 / 255f, 45 / 255f, 47 / 255f, 1.0f); // #2B2D2F
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
@@ -2130,7 +2130,7 @@ public static partial class UI
         const float scrollbarThickness = 12f;
 
         var gridStyle = new BoxStyle { FillColor = new(0.1f, 0.1f, 0.1f, 1.0f), BorderLength = 0f, Roundness = 0f };
-        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = Colors.Transparent, FontColor = DefaultTheme.Text };
+        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = DirectUI.Drawing.Colors.Transparent, FontColor = DefaultTheme.Text };
         var rowStyle = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
         rowStyle.Normal.FillColor = DefaultTheme.Transparent;
         rowStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 1.0f);
@@ -4018,6 +4018,21 @@ public struct Color
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\Colors.cs">
+namespace DirectUI.Drawing;
+
+public static class Colors
+{
+    public static readonly Color Transparent = new(0, 0, 0, 0);
+    public static readonly Color Black = new(0, 0, 0, 255);
+    public static readonly Color White = new(255, 255, 255, 255);
+    public static readonly Color WhiteSmoke = new(245, 245, 245, 255);
+    public static readonly Color Red = new(255, 0, 0, 255);
+    public static readonly Color Green = new(0, 255, 0, 255);
+    public static readonly Color Blue = new(0, 0, 255, 255);
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\FontManager.cs">
 // DirectUI/Drawing/FontManager.cs
 using Raylib_cs;
@@ -5145,7 +5160,7 @@ public static class DefaultTheme
         public static readonly Color DisabledFill = new Color(51, 51, 51, (byte)(255 * 0.8f));
         public static readonly Color DisabledBorder = new Color(77, 77, 77, (byte)(255 * 0.8f));
         public static readonly Color DisabledText = new Color(128, 128, 128, 255);
-        public static readonly Color Text = new Color(245, 245, 245, 255); // WhiteSmoke
+        public static readonly Color Text = Colors.WhiteSmoke;
     }
 
     private static class UnityEditorThemeColors
@@ -5168,9 +5183,9 @@ public static class DefaultTheme
     // Change the assignments here to swap themes.
 
     // Basic Palette
-    public static readonly Color White = new Color(255, 255, 255, 255);
-    public static readonly Color Black = new Color(0, 0, 0, 255);
-    public static readonly Color Transparent = new Color(0, 0, 0, 0);
+    public static readonly Color White = Colors.White;
+    public static readonly Color Black = Colors.Black;
+    public static readonly Color Transparent = Colors.Transparent;
 
     /*
     // --- ACTIVE THEME: DAW ---
@@ -5504,11 +5519,11 @@ internal class InputText
 
             // Normal state (inset look)
             finalTheme.Normal.FillColor = DefaultTheme.NormalBorder; // Very dark, same as window border
-            finalTheme.Normal.BorderColor = Colors.Black;
+            finalTheme.Normal.BorderColor = DirectUI.Drawing.Colors.Black;
 
             // Hover state (subtle brightening)
             finalTheme.Hover.FillColor = new Color4(35 / 255f, 35 / 255f, 35 / 255f, 1.0f);
-            finalTheme.Hover.BorderColor = Colors.Black;
+            finalTheme.Hover.BorderColor = DirectUI.Drawing.Colors.Black;
 
             // Focused state (bright border)
             finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;
@@ -6048,7 +6063,7 @@ internal class InternalComboboxLogic
                     {
                         var itemBounds = new Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
                         var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-                        itemTheme.Normal.FillColor = Colors.Transparent;
+                        itemTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
                         itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
                         itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
@@ -11890,8 +11905,995 @@ public interface IWindowHost : IDisposable
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\AgexApp.cs">
+using DirectUI;
+using DirectUI.Core;
+
+namespace Agex;
+
+public class AgexApp : IAppLogic
+{
+    private readonly AppState _appState;
+    private readonly AppLogicHandler _logicHandler;
+    private readonly AppUIManager _uiManager;
+
+    public AgexApp(IWindowHost host)
+    {
+        _appState = new AppState();
+        var appStyles = new AppStyles();
+        _logicHandler = new AppLogicHandler(host, _appState);
+        _uiManager = new AppUIManager(_appState, appStyles, _logicHandler);
+
+        _logicHandler.Initialize();
+    }
+
+    public void DrawUI(UIContext context)
+    {
+        _uiManager.DrawUI();
+    }
+
+    public void SaveState() { }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Program.cs">
-// See https://aka.ms/new-console-template for more information
-Console.WriteLine("Hello, World!");
+using DirectUI;
+
+namespace Agex;
+
+public static class Program
+{
+    [STAThread]
+    public static void Main(string[] args)
+    {
+        ApplicationRunner.Run(GraphicsBackend.Direct2D, (host) => new AgexApp(host));
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\AppLogicHandler.cs">
+using DirectUI.Core;
+
+namespace Agex;
+
+public class AppLogicHandler
+{
+    private readonly IWindowHost _host;
+    private readonly AppState _appState;
+    private readonly ToolExecutor _toolExecutor;
+
+    public AppLogicHandler(IWindowHost host, AppState appState)
+    {
+        _host = host;
+        _appState = appState;
+        _toolExecutor = new ToolExecutor(_appState, LogMessage);
+    }
+
+    public void Initialize()
+    {
+        ConfigManager.Initialize();
+        _appState.RecentProjects = ConfigManager.GetRecentProjects();
+        var settings = ConfigManager.GetAppSettings();
+        _appState.AutomaticMode = settings.AutomaticModeEnabled;
+
+        UpdateProjectComboBox();
+        if (_appState.RecentProjects.Any())
+        {
+            SwitchProject(_appState.RecentProjects.First());
+        }
+
+        try
+        {
+            _appState.InstructionsText = File.ReadAllText("instructions.md");
+        }
+        catch
+        {
+            _appState.InstructionsText = "Could not load instructions.md";
+        }
+
+        _appState.ClipboardTimer.Start();
+    }
+
+    public void HandleLoadProject()
+    {
+        var path = NativeDialogs.SelectDirectory(_host.Handle);
+        if (string.IsNullOrEmpty(path)) return;
+
+        var name = Path.GetFileName(path);
+        var newProject = new Project { Name = name, Path = path };
+
+        _appState.RecentProjects.RemoveAll(p => p.Path == path);
+        _appState.RecentProjects.Insert(0, newProject);
+        if (_appState.RecentProjects.Count > 5) _appState.RecentProjects.RemoveAt(5);
+
+        ConfigManager.SetRecentProjects(_appState.RecentProjects);
+        UpdateProjectComboBox();
+        _appState.SelectedProjectIndex = 0;
+        SwitchProject(newProject);
+    }
+
+    public void HandleRemoveProject()
+    {
+        if (_appState.SelectedProjectIndex < 0 || _appState.SelectedProjectIndex >= _appState.RecentProjects.Count) return;
+
+        _appState.RecentProjects.RemoveAt(_appState.SelectedProjectIndex);
+        ConfigManager.SetRecentProjects(_appState.RecentProjects);
+        UpdateProjectComboBox();
+
+        if (_appState.RecentProjects.Any())
+        {
+            _appState.SelectedProjectIndex = 0;
+            SwitchProject(_appState.RecentProjects[0]);
+        }
+        else
+        {
+            _appState.SelectedProjectIndex = -1;
+            _appState.CurrentProject = null;
+            _appState.FileTreeText = "";
+        }
+    }
+
+    public void SwitchProject(Project project)
+    {
+        _appState.CurrentProject = project;
+        _appState.FileTreeText = "Loading tree...";
+        _appState.IsTreeLoading = true;
+        Task.Run(async () =>
+        {
+            var structure = await FileTreeGenerator.GetDirectoryStructureAsync(project.Path);
+            _appState.FileTreeText = FileTreeGenerator.CreateTreeText(structure);
+            _appState.IsTreeLoading = false;
+        });
+    }
+
+    public void UpdateProjectComboBox()
+    {
+        _appState.ProjectListForCombo = _appState.RecentProjects.Select(p => $"{p.Name} ({p.Path})").ToArray();
+    }
+
+    public async void HandleExecute()
+    {
+        await _toolExecutor.ExecuteFromResponse();
+        // Refresh file tree after execution
+        if (_appState.CurrentProject != null)
+        {
+            SwitchProject(_appState.CurrentProject);
+        }
+    }
+
+    public async void HandleAutomation()
+    {
+        if (!_appState.AutomaticMode || _appState.IsProcessingAutomation || _appState.ClipboardTimer.ElapsedMilliseconds < 500)
+        {
+            return;
+        }
+        _appState.ClipboardTimer.Restart();
+
+        var currentClipboard = TextCopy.ClipboardService.GetText();
+        if (string.IsNullOrEmpty(currentClipboard) || currentClipboard == _appState.LastClipboardContent) return;
+
+        _appState.LastClipboardContent = currentClipboard;
+        if (currentClipboard.Contains("<TOOL_RESULT>")) return;
+
+        _appState.IsProcessingAutomation = true;
+        _appState.AiResponseText = currentClipboard;
+        HandleExecute();
+
+        await Task.Delay(200); // Give a moment for log message to be set and copied
+
+        try
+        {
+            Automation.Click(350, 1000);
+            await Task.Delay(100);
+            Automation.Paste();
+            await Task.Delay(100);
+            Automation.Click(900, 1000);
+        }
+        catch (Exception ex)
+        {
+            LogMessage("error", "Automation", ex.Message);
+        }
+        finally
+        {
+            _appState.IsProcessingAutomation = false;
+        }
+    }
+
+    private void LogMessage(string type, string tool, string message)
+    {
+        _appState.ExecutionLogText = $"<TOOL_RESULT>\n    <status>{type}</status>\n    <tool_name>{tool}</tool_name>\n    <message><![CDATA[{message}]]></message>\n</TOOL_RESULT>";
+        try
+        {
+            TextCopy.ClipboardService.SetText(_appState.ExecutionLogText);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Clipboard error: {ex.Message}");
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\AppState.cs">
+using System.Diagnostics;
+
+namespace Agex;
+
+public class AppState
+{
+    // Project Management
+    public List<Project> RecentProjects { get; set; } = new();
+    public Project? CurrentProject { get; set; }
+    public int SelectedProjectIndex { get; set; } = -1;
+    public string[] ProjectListForCombo { get; set; } = System.Array.Empty<string>();
+
+    // UI State
+    public bool AutomaticMode { get; set; } = false;
+    public string AiResponseText { get; set; } = "Paste AI response with <TOOL_CALL> blocks here...";
+    public string ExecutionLogText { get; set; } = "";
+    public float BottomPanelHeight { get; set; } = 250f;
+
+    // File Tree
+    public string FileTreeText { get; set; } = "";
+    public bool IsTreeLoading { get; set; } = false;
+    public string InstructionsText { get; set; } = "";
+
+    // Automation
+    public Stopwatch ClipboardTimer { get; } = new();
+    public string LastClipboardContent { get; set; } = "";
+    public bool IsProcessingAutomation { get; set; } = false;
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\AppStyles.cs">
+using DirectUI;
+using DirectUI.Drawing;
+using Vortice.DirectWrite;
+
+namespace Agex;
+
+public class AppStyles
+{
+    public ButtonStylePack MenuButtonStyle { get; private set; } = new();
+    public ButtonStylePack RemoveButtonStyle { get; private set; } = new();
+    public ButtonStylePack LoadButtonStyle { get; private set; } = new();
+    public ButtonStylePack ExecuteButtonStyle { get; private set; } = new();
+    public BoxStyle PanelStyle { get; private set; } = new();
+    public BoxStyle PanelHeaderStyle { get; private set; } = new();
+    public ButtonStyle PanelHeaderTextStyle { get; private set; } = new();
+    public ButtonStyle TitleTextStyle { get; private set; } = new();
+
+    public AppStyles()
+    {
+        InitializeStyles();
+    }
+
+    private void InitializeStyles()
+    {
+        MenuButtonStyle = new ButtonStylePack { Roundness = 0, BorderLength = 0, Normal = { FillColor = Colors.Transparent }, Hover = { FillColor = DefaultTheme.HoverFill }, Pressed = { FillColor = DefaultTheme.Accent } };
+        RemoveButtonStyle = new ButtonStylePack { Normal = { FillColor = new Color(204, 63, 63, 255), BorderColor = new Color(139, 43, 43, 255) }, Hover = { FillColor = new Color(217, 76, 76, 255) }, Pressed = { FillColor = new Color(178, 55, 55, 255) }, BorderLength = 1, Roundness = 0.1f };
+        LoadButtonStyle = new ButtonStylePack(new ButtonStylePack()); // Copy default
+        ExecuteButtonStyle = new ButtonStylePack { Normal = { FillColor = DefaultTheme.Accent, BorderColor = DefaultTheme.AccentBorder, FontColor = Colors.WhiteSmoke }, Hover = { FillColor = new Color(77, 128, 230, 255) }, Pressed = { FillColor = new Color(40, 80, 180, 255) }, BorderLength = 1, Roundness = 0.1f };
+        PanelStyle = new BoxStyle { FillColor = new Color(55, 55, 55, 255), BorderLength = 1, BorderColor = new Color(30, 30, 30, 255), Roundness = 0 };
+        PanelHeaderStyle = new BoxStyle { FillColor = new Color(65, 65, 65, 255), BorderLength = 0, Roundness = 0 };
+        PanelHeaderTextStyle = new ButtonStyle { FontColor = new Color(220, 220, 220, 255) };
+        TitleTextStyle = new ButtonStyle { FontSize = 36, FontWeight = FontWeight.Light };
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\AppUIManager.cs">
+using System.Numerics;
+using DirectUI;
+
+namespace Agex;
+
+public class AppUIManager
+{
+    private readonly AppState _state;
+    private readonly AppStyles _styles;
+    private readonly AppLogicHandler _logic;
+
+    public AppUIManager(AppState state, AppStyles styles, AppLogicHandler logic)
+    {
+        _state = state;
+        _styles = styles;
+        _logic = logic;
+    }
+
+    public void DrawUI()
+    {
+        var windowSize = UI.Context.Renderer.RenderTargetSize;
+        float currentY = 0;
+
+        _logic.HandleAutomation();
+
+        DrawMenuBar(windowSize, ref currentY);
+        currentY += 20;
+
+        var titleSize = UI.Context.TextService.MeasureText("Agex", _styles.TitleTextStyle);
+        UI.BeginVBoxContainer("title_container", new Vector2(0, currentY), 0);
+        UI.Text("title", "Agex", new Vector2(windowSize.X, titleSize.Y), _styles.TitleTextStyle, new Alignment(HAlignment.Center, VAlignment.Top));
+        UI.EndVBoxContainer();
+        currentY += titleSize.Y + 20;
+
+        DrawControlsRow(windowSize, currentY);
+        currentY += 28 + 20;
+
+        float bottomPanelHeight = _state.BottomPanelHeight;
+        UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: windowSize.Y - 250, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
+        _state.BottomPanelHeight = bottomPanelHeight;
+        _state.ExecutionLogText = DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight);
+        UI.EndResizableHPanel();
+
+        float splitterHeight = 5f;
+        float topPanelY = currentY;
+        float topPanelHeight = windowSize.Y - _state.BottomPanelHeight - splitterHeight - topPanelY;
+
+        if (topPanelHeight > 60)
+        {
+            DrawTopPanel(topPanelY, topPanelHeight, windowSize);
+        }
+    }
+
+    private void DrawTopPanel(float topPanelY, float topPanelHeight, Vector2 windowSize)
+    {
+        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, topPanelY, windowSize.X, topPanelHeight), _styles.PanelStyle);
+        UI.BeginVBoxContainer("ai_panel_vbox", new Vector2(10, topPanelY + 10), gap: 10);
+
+        DrawPanelHeader("1. AI Response", new Vector2(1, topPanelY + 1));
+
+        float vboxAvailableHeight = topPanelHeight - 20;
+        float textInputAvailableHeight = vboxAvailableHeight - 30 - 40 - 10;
+
+        if (textInputAvailableHeight > 0)
+        {
+            string aiResponseText = _state.AiResponseText;
+            if (UI.InputText("ai_response_input", ref aiResponseText, new Vector2(windowSize.X - 20, textInputAvailableHeight)))
+            {
+                _state.AiResponseText = aiResponseText;
+            }
+        }
+
+        if (UI.Button("execute_tool_calls_btn", "Execute Tool Calls", new Vector2(windowSize.X - 20, 40), theme: _styles.ExecuteButtonStyle, disabled: _state.CurrentProject == null || string.IsNullOrWhiteSpace(_state.AiResponseText)))
+        {
+            _logic.HandleExecute();
+        }
+
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawMenuBar(Vector2 windowSize, ref float currentY)
+    {
+        var menuBarHeight = 24f;
+        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, windowSize.X, menuBarHeight), new BoxStyle { FillColor = new(50, 50, 50, 255), BorderLength = 0, Roundness = 0 });
+        UI.BeginHBoxContainer("menu_bar", Vector2.Zero, gap: 0, verticalAlignment: VAlignment.Center, fixedRowHeight: menuBarHeight);
+        UI.Button("menu_file", "File", new Vector2(40, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_edit", "Edit", new Vector2(40, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_view", "View", new Vector2(40, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_window", "Window", new Vector2(60, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_help", "Help", new Vector2(45, menuBarHeight), _styles.MenuButtonStyle);
+        UI.EndHBoxContainer();
+        currentY += menuBarHeight;
+    }
+
+    private void DrawControlsRow(Vector2 windowSize, float y)
+    {
+        UI.BeginHBoxContainer("project_controls", new Vector2(20, y), gap: 10, verticalAlignment: VAlignment.Center, fixedRowHeight: 28);
+        UI.Text("current_project_label", "Current Project:");
+
+        int newIndex = _state.SelectedProjectIndex;
+        if (UI.Combobox("project_combo", ref newIndex, _state.ProjectListForCombo, new Vector2(250, 28)))
+        {
+            if (newIndex != _state.SelectedProjectIndex)
+            {
+                _state.SelectedProjectIndex = newIndex;
+                _logic.SwitchProject(_state.RecentProjects[_state.SelectedProjectIndex]);
+            }
+        }
+        if (UI.Button("remove_project_btn", "Remove", theme: _styles.RemoveButtonStyle, size: new Vector2(70, 28), disabled: _state.CurrentProject == null))
+        {
+            _logic.HandleRemoveProject();
+        }
+        if (UI.Button("load_project_btn", "Load New Project...", size: new Vector2(140, 28), theme: _styles.LoadButtonStyle))
+        {
+            _logic.HandleLoadProject();
+        }
+        UI.EndHBoxContainer();
+
+        UI.BeginHBoxContainer("auto_mode_controls", new Vector2(windowSize.X - 250, y + 2), gap: 8, verticalAlignment: VAlignment.Center, fixedRowHeight: 24);
+        UI.Text("auto_mode_label", "Automatic Mode:");
+
+        bool automaticMode = _state.AutomaticMode;
+        if (UI.Checkbox("auto_mode_check", "", ref automaticMode))
+        {
+            _state.AutomaticMode = automaticMode;
+            ConfigManager.SetAppSettings(new AppSettings { AutomaticModeEnabled = _state.AutomaticMode });
+        }
+        UI.Text("auto_mode_status", _state.AutomaticMode ? "on" : "off");
+        UI.EndHBoxContainer();
+    }
+
+    private string DrawPanel(string id, string title, string text, float availableHeight)
+    {
+        var headerPos = UI.Context.Layout.GetCurrentPosition();
+        DrawPanelHeader(title, headerPos);
+        var contentWidth = UI.Context.Renderer.RenderTargetSize.X - 22;
+        var textInputHeight = availableHeight - 1 - 30 - 5 - 1;
+
+        string newText = text;
+        if (textInputHeight > 0)
+        {
+            UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight));
+        }
+        return newText;
+    }
+
+    private void DrawPanelHeader(string title, Vector2 pos)
+    {
+        var panelContentWidth = UI.Context.Renderer.RenderTargetSize.X - 2;
+        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(pos.X, pos.Y, panelContentWidth, 30), _styles.PanelHeaderStyle);
+        UI.BeginHBoxContainer($"{title}_header_hbox", Vector2.Zero, 0, VAlignment.Center, 30);
+        UI.Context.Layout.AdvanceContainerLayout(new Vector2(10, 0));
+        UI.Text($"{title}_header", title, style: _styles.PanelHeaderTextStyle);
+        UI.EndHBoxContainer();
+        UI.Context.Layout.AdvanceContainerLayout(new Vector2(panelContentWidth, 30));
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\Automation.cs">
+using System.Runtime.InteropServices;
+
+namespace Agex;
+
+public static class Automation
+{
+    [DllImport("user32.dll", SetLastError = true)]
+    private static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+
+    [DllImport("user32.dll")]
+    private static extern bool SetCursorPos(int x, int y);
+
+    [DllImport("user32.dll")]
+    private static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, UIntPtr dwExtraInfo);
+
+    private const uint MOUSEEVENTF_LEFTDOWN = 0x02;
+    private const uint MOUSEEVENTF_LEFTUP = 0x04;
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct INPUT
+    {
+        public uint type;
+        public InputUnion u;
+    }
+
+    [StructLayout(LayoutKind.Explicit)]
+    private struct InputUnion
+    {
+        [FieldOffset(0)]
+        public MOUSEINPUT mi;
+        [FieldOffset(0)]
+        public KEYBDINPUT ki;
+        [FieldOffset(0)]
+        public HARDWAREINPUT hi;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct KEYBDINPUT
+    {
+        public ushort wVk;
+        public ushort wScan;
+        public uint dwFlags;
+        public uint time;
+        public IntPtr dwExtraInfo;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct MOUSEINPUT { public int dx, dy; public uint mouseData, dwFlags, time; public IntPtr dwExtraInfo; }
+    [StructLayout(LayoutKind.Sequential)]
+    private struct HARDWAREINPUT { public uint uMsg; public ushort wParamL, wParamH; }
+
+    private const int INPUT_KEYBOARD = 1;
+    private const ushort VK_CONTROL = 0x11;
+    private const ushort VK_V = 0x56;
+    private const uint KEYEVENTF_KEYUP = 0x0002;
+
+    public static void Click(int x, int y)
+    {
+        SetCursorPos(x, y);
+        mouse_event(MOUSEEVENTF_LEFTDOWN | MOUSEEVENTF_LEFTUP, (uint)x, (uint)y, 0, UIntPtr.Zero);
+    }
+
+    public static void Paste()
+    {
+        INPUT[] inputs = new INPUT[]
+        {
+            // Press Ctrl
+            new INPUT { type = INPUT_KEYBOARD, u = new InputUnion { ki = new KEYBDINPUT { wVk = VK_CONTROL } } },
+            // Press V
+            new INPUT { type = INPUT_KEYBOARD, u = new InputUnion { ki = new KEYBDINPUT { wVk = VK_V } } },
+            // Release V
+            new INPUT { type = INPUT_KEYBOARD, u = new InputUnion { ki = new KEYBDINPUT { wVk = VK_V, dwFlags = KEYEVENTF_KEYUP } } },
+            // Release Ctrl
+            new INPUT { type = INPUT_KEYBOARD, u = new InputUnion { ki = new KEYBDINPUT { wVk = VK_CONTROL, dwFlags = KEYEVENTF_KEYUP } } }
+        };
+
+        SendInput((uint)inputs.Length, inputs, Marshal.SizeOf(typeof(INPUT)));
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\ConfigManager.cs">
+using System.Text.Json;
+
+namespace Agex;
+
+public static class ConfigManager
+{
+    private static readonly string UserDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+    private static readonly string ConfigDir = Path.Combine(UserDataPath, "Agex", ".config");
+    private static readonly string ProjectsFilePath = Path.Combine(ConfigDir, "recent-projects.json");
+    private static readonly string SettingsFilePath = Path.Combine(ConfigDir, "app-settings.json");
+
+    private static readonly JsonSerializerOptions JsonOptions = new() { WriteIndented = true };
+
+    public static void Initialize()
+    {
+        Directory.CreateDirectory(ConfigDir);
+
+        if (!File.Exists(ProjectsFilePath))
+        {
+            SetRecentProjects(new List<Project>());
+        }
+
+        if (!File.Exists(SettingsFilePath))
+        {
+            SetAppSettings(new AppSettings());
+        }
+    }
+
+    public static List<Project> GetRecentProjects()
+    {
+        try
+        {
+            var json = File.ReadAllText(ProjectsFilePath);
+            return JsonSerializer.Deserialize<List<Project>>(json) ?? new List<Project>();
+        }
+        catch { return new List<Project>(); }
+    }
+
+    public static void SetRecentProjects(List<Project> projects)
+    {
+        var json = JsonSerializer.Serialize(projects, JsonOptions);
+        File.WriteAllText(ProjectsFilePath, json);
+    }
+
+    public static AppSettings GetAppSettings()
+    {
+        try
+        {
+            var json = File.ReadAllText(SettingsFilePath);
+            return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+        }
+        catch { return new AppSettings(); }
+    }
+
+    public static void SetAppSettings(AppSettings settings)
+    {
+        var json = JsonSerializer.Serialize(settings, JsonOptions);
+        File.WriteAllText(SettingsFilePath, json);
+    }
+}
+
+public class AppSettings
+{
+    public bool AutomaticModeEnabled { get; set; } = false;
+    // For now, we only have one provider, but this matches the TS app structure.
+    public string SelectedAIProvider { get; set; } = "ai-studio";
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\FileNode.cs">
+namespace Agex;
+
+public class FileNode
+{
+    public required string Name { get; set; }
+    public required string Kind { get; set; }
+    public List<FileNode> Children { get; set; } = [];
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\FileTreeGenerator.cs">
+using System.Text;
+
+namespace Agex;
+
+public static class FileTreeGenerator
+{
+    private static readonly HashSet<string> ExcludedDirs = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "node_modules", "dist", "build", "out", "release", "target", ".git",
+        ".svn", ".hg", ".vscode", ".idea", "coverage", "__pycache__",
+        ".pytest_cache", "vendor", "bower_components", ".next", ".nuxt", "tmp", "temp",
+        "bin", "obj" // Added .NET build folders
+    };
+
+    private static readonly HashSet<string> ExcludedExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".cfg", ".md5", ".ctex", ".ds_store", ".localized", "thumbs.db", "desktop.ini",
+        ".o", ".obj", ".pyc", ".class", ".dll", ".exe", ".so", ".a", ".lib"
+    };
+
+    public static async Task<FileNode> GetDirectoryStructureAsync(string dirPath)
+    {
+        DirectoryInfo rootInfo = new(dirPath);
+        FileNode rootNode = new() { Name = rootInfo.Name, Kind = "directory" };
+
+        try
+        {
+            var entries = rootInfo.GetFileSystemInfos();
+            var tasks = new List<Task<FileNode?>>();
+
+            foreach (var entry in entries)
+            {
+                if (entry is DirectoryInfo dir)
+                {
+                    if (!dir.Name.StartsWith(".") && !ExcludedDirs.Contains(dir.Name))
+                    {
+                        tasks.Add(GetDirectoryStructureAsync(dir.FullName).ContinueWith(t => (FileNode?)t.Result));
+                    }
+                }
+                else if (entry is FileInfo file)
+                {
+                    if (!ExcludedExtensions.Contains(file.Extension))
+                    {
+                        tasks.Add(Task.FromResult<FileNode?>(new() { Name = file.Name, Kind = "file"}));
+                    }
+                }
+            }
+
+            var children = await Task.WhenAll(tasks);
+            rootNode.Children.AddRange(children.Where(c => c != null).Select(c => c!));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not read directory: {dirPath}, {ex.Message}");
+        }
+
+        return rootNode;
+    }
+
+    public static string CreateTreeText(FileNode structure)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine($"{structure.Name}/");
+        GenerateTreeText(structure, sb, "", true);
+        return sb.ToString();
+    }
+
+    private static void GenerateTreeText(FileNode node, StringBuilder sb, string prefix, bool isRoot)
+    {
+        var children = node.Children
+            .OrderBy(c => c.Kind == "directory" ? 0 : 1)
+            .ThenBy(c => c.Name)
+            .ToList();
+
+        for (int i = 0; i < children.Count; i++)
+        {
+            var child = children[i];
+            var isLast = i == children.Count - 1;
+            var connector = isLast ? "└── " : "├── ";
+
+            sb.Append(prefix).Append(connector).Append(child.Name);
+            if (child.Kind == "directory") sb.Append("/");
+            sb.AppendLine();
+
+            if (child.Kind == "directory" && child.Children.Any())
+            {
+                var newPrefix = prefix + (isLast ? "    " : "│   ");
+                GenerateTreeText(child, sb, newPrefix, false);
+            }
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\NativeDialogs.cs">
+using System.Runtime.InteropServices;
+
+namespace Agex;
+
+public static class NativeDialogs
+{
+    public static string? SelectDirectory(IntPtr owner)
+    {
+        var dialog = (IFileOpenDialog)new FileOpenDialog();
+        dialog.SetOptions(FOS.FOS_PICKFOLDERS | FOS.FOS_FORCEFILESYSTEM);
+
+        if (dialog.Show(owner) == 0) // S_OK
+        {
+            dialog.GetResult(out var item);
+            item.GetDisplayName(SIGDN.SIGDN_FILESYSPATH, out var path);
+            return path;
+        }
+        return null;
+    }
+
+    #region COM Definitions
+    [ComImport, Guid("DC1C5A9C-E88A-4dde-A5A1-60F82A20AEF7")]
+    private class FileOpenDialog { }
+
+    [ComImport, Guid("42f85136-db7e-439c-85f1-e4075d135fc8"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IFileOpenDialog
+    {
+        [PreserveSig] int Show(IntPtr parent);
+        void SetFileTypes();
+        void SetFileTypeIndex([In] uint iFileType);
+        void GetFileTypeIndex(out uint piFileType);
+        void Advise();
+        void Unadvise();
+        void SetOptions([In] FOS fos);
+        void GetOptions(out FOS pfos);
+        void SetDefaultFolder(IShellItem psi);
+        void SetFolder(IShellItem psi);
+        void GetFolder(out IShellItem ppsi);
+        void GetCurrentSelection(out IShellItem ppsi);
+        void SetFileName([In, MarshalAs(UnmanagedType.LPWStr)] string pszName);
+        void GetFileName([MarshalAs(UnmanagedType.LPWStr)] out string pszName);
+        void SetTitle([In, MarshalAs(UnmanagedType.LPWStr)] string pszTitle);
+        void SetOkButtonLabel([In, MarshalAs(UnmanagedType.LPWStr)] string pszText);
+        void SetFileNameLabel([In, MarshalAs(UnmanagedType.LPWStr)] string pszLabel);
+        void GetResult(out IShellItem ppsi);
+    }
+
+    [ComImport, Guid("43826d1e-e718-42ee-bc55-a1e261c37bfe"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+    private interface IShellItem
+    {
+        void BindToHandler();
+        void GetParent();
+        void GetDisplayName([In] SIGDN sigdnName, [MarshalAs(UnmanagedType.LPWStr)] out string ppszName);
+    }
+
+    private enum SIGDN : uint { SIGDN_FILESYSPATH = 0x80058000 }
+    [Flags] private enum FOS : uint { FOS_PICKFOLDERS = 0x00000020, FOS_FORCEFILESYSTEM = 0x00000040 }
+    #endregion
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\Project.cs">
+namespace Agex;
+
+public record Project
+{
+    public string Name { get; set; } = string.Empty;
+    public string Path { get; set; } = string.Empty;
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\ToolExecutor.cs">
+using System.Xml.Linq;
+
+namespace Agex;
+
+public class ToolExecutor
+{
+    private readonly AppState _appState;
+    private readonly Action<string, string, string> _logMessageCallback;
+
+    public ToolExecutor(AppState appState, Action<string, string, string> logMessageCallback)
+    {
+        _appState = appState;
+        _logMessageCallback = logMessageCallback;
+    }
+
+    public async Task ExecuteFromResponse()
+    {
+        if (_appState.CurrentProject == null) return;
+
+        var toolCalls = ParseToolCalls(_appState.AiResponseText);
+        if (!toolCalls.Any())
+        {
+            _logMessageCallback("info", "No Tools Found", "No valid <tool_call> blocks were found in the input.");
+            return;
+        }
+
+        foreach (var call in toolCalls)
+        {
+            await ExecuteTool(call.ToolName, call.Args);
+        }
+    }
+
+    private List<(string ToolName, Dictionary<string, string> Args)> ParseToolCalls(string text)
+    {
+        var calls = new List<(string, Dictionary<string, string>)>();
+        try
+        {
+            var xmlDoc = XDocument.Parse($"<root>{text}</root>", LoadOptions.None);
+            foreach (var toolCall in xmlDoc.Root!.Elements("tool_call"))
+            {
+                var toolName = toolCall.Element("tool_name")?.Value ?? toolCall.Attribute("name")?.Value;
+                if (string.IsNullOrEmpty(toolName)) continue;
+
+                var args = toolCall.Element("args")?
+                    .Elements()
+                    .ToDictionary(e => e.Name.LocalName, e => e.Value)
+                    ?? new Dictionary<string, string>();
+
+                calls.Add((toolName, args));
+            }
+        }
+        catch (Exception ex)
+        {
+            _logMessageCallback("error", "Tool Call Parse Error", ex.Message);
+        }
+        return calls;
+    }
+
+    private async Task ExecuteTool(string toolName, Dictionary<string, string> args)
+    {
+        if (_appState.CurrentProject == null) return;
+        try
+        {
+            string resultMessage = toolName switch
+            {
+                "create_file" => await Tools.CreateFile(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!, args.GetValueOrDefault("content")),
+                "delete_file" => await Tools.DeleteFile(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!),
+                "make_dir" => await Tools.MakeDir(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!),
+                "read_file" => await Tools.ReadFile(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!),
+                "edit_file" => await Tools.EditFile(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!, args.GetValueOrDefault("find")!, args.GetValueOrDefault("replace")!),
+                "move_file" => await Tools.MoveFile(_appState.CurrentProject.Path, args.GetValueOrDefault("src")!, args.GetValueOrDefault("dest")!),
+                "rename_file" => await Tools.RenameFile(_appState.CurrentProject.Path, args.GetValueOrDefault("src")!, args.GetValueOrDefault("new_name")!),
+                "search_files" => await Tools.Search(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!, args.GetValueOrDefault("pattern")!, false),
+                "search_text" => await Tools.Search(_appState.CurrentProject.Path, args.GetValueOrDefault("path")!, args.GetValueOrDefault("pattern")!, true),
+                _ => throw new ArgumentException($"Unknown tool: {toolName}")
+            };
+            _logMessageCallback("success", toolName, resultMessage);
+        }
+        catch (Exception ex)
+        {
+            _logMessageCallback("error", toolName, ex.Message);
+        }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Agex\Source\Core\Tools.cs">
+using System.Text.RegularExpressions;
+
+namespace Agex;
+
+public static class Tools
+{
+    private static string ResolveAndValidatePath(string basePath, string userPath)
+    {
+        if (string.IsNullOrWhiteSpace(userPath))
+        {
+            throw new ArgumentException("Path must be a non-empty string.", nameof(userPath));
+        }
+
+        // Normalize slashes for consistency
+        string normalizedUserPath = userPath.Replace('\\', Path.DirectorySeparatorChar).Replace('/', Path.DirectorySeparatorChar);
+
+        string resolvedPath = Path.GetFullPath(Path.Combine(basePath, normalizedUserPath));
+        string normalizedBasePath = Path.GetFullPath(basePath);
+
+        if (!resolvedPath.StartsWith(normalizedBasePath, StringComparison.OrdinalIgnoreCase))
+        {
+            throw new UnauthorizedAccessException($"Path traversal detected. Operation on '{userPath}' is not allowed outside the project directory.");
+        }
+        return resolvedPath;
+    }
+
+    public static async Task<string> CreateFile(string projectPath, string relativePath, string content = "")
+    {
+        var fullPath = ResolveAndValidatePath(projectPath, relativePath);
+        Directory.CreateDirectory(Path.GetDirectoryName(fullPath)!);
+        await File.WriteAllTextAsync(fullPath, content);
+        return $"Created file: {relativePath}";
+    }
+
+    public static Task<string> DeleteFile(string projectPath, string relativePath)
+    {
+        var fullPath = ResolveAndValidatePath(projectPath, relativePath);
+        File.Delete(fullPath);
+        return Task.FromResult($"Deleted file: {relativePath}");
+    }
+
+    public static Task<string> MakeDir(string projectPath, string relativePath)
+    {
+        var fullPath = ResolveAndValidatePath(projectPath, relativePath);
+        Directory.CreateDirectory(fullPath);
+        return Task.FromResult($"Created directory: {relativePath}");
+    }
+
+    public static async Task<string> ReadFile(string projectPath, string relativePath)
+    {
+        var fullPath = ResolveAndValidatePath(projectPath, relativePath);
+        var content = await File.ReadAllTextAsync(fullPath);
+        return $"Content of {relativePath}:\n---\n{content}";
+    }
+
+    public static async Task<string> EditFile(string projectPath, string relativePath, string find, string replace)
+    {
+        var fullPath = ResolveAndValidatePath(projectPath, relativePath);
+        var originalContent = await File.ReadAllTextAsync(fullPath);
+
+        // This regex logic is a direct port from the TS version to maintain behavior.
+        var escapedFind = Regex.Escape(find);
+        var findRegexPattern = string.Join("\\s+", escapedFind.Trim().Split(new[] { ' ', '\t', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries));
+        var findRegex = new Regex(findRegexPattern, RegexOptions.Multiline);
+        var match = findRegex.Match(originalContent);
+
+        if (!match.Success)
+        {
+            throw new InvalidOperationException("The 'find' string was not found in the file. Please ensure the 'find' block's content is correct.");
+        }
+
+        var lineStartIndex = originalContent.LastIndexOf('\n', Math.Max(0, match.Index - 1)) + 1;
+        var leadingWhitespace = originalContent.Substring(lineStartIndex, match.Index - lineStartIndex);
+
+        // Construct the replacement string with original indentation
+        var indentedReplace = string.Join("\n", replace.Split('\n').Select(line => leadingWhitespace + line));
+
+        var newContent = originalContent.Remove(match.Index, match.Length).Insert(match.Index, indentedReplace);
+
+        await File.WriteAllTextAsync(fullPath, newContent);
+        return $"Replaced content in {relativePath}";
+    }
+
+    public static Task<string> MoveFile(string projectPath, string srcRelative, string destRelative)
+    {
+        var srcPath = ResolveAndValidatePath(projectPath, srcRelative);
+        var destPath = ResolveAndValidatePath(projectPath, destRelative);
+        Directory.CreateDirectory(Path.GetDirectoryName(destPath)!);
+        Directory.Move(srcPath, destPath);
+        return Task.FromResult($"Moved {srcRelative} to {destRelative}");
+    }
+
+    public static Task<string> RenameFile(string projectPath, string srcRelative, string newName)
+    {
+        var srcPath = ResolveAndValidatePath(projectPath, srcRelative);
+        var destPath = Path.Combine(Path.GetDirectoryName(srcPath)!, newName);
+
+        ResolveAndValidatePath(projectPath, Path.GetRelativePath(projectPath, destPath));
+
+        Directory.Move(srcPath, destPath);
+        var destRelative = Path.GetRelativePath(projectPath, destPath).Replace('\\', '/');
+        return Task.FromResult($"Renamed {srcRelative} to {destRelative}");
+    }
+
+    public static async Task<string> Search(string projectPath, string startRelativePath, string pattern, bool searchContent)
+    {
+        var regex = new Regex(pattern);
+        var results = new List<string>();
+        var startPath = string.IsNullOrEmpty(startRelativePath) || startRelativePath == "."
+            ? projectPath
+            : ResolveAndValidatePath(projectPath, startRelativePath);
+
+        var allFiles = Directory.EnumerateFiles(startPath, "*", SearchOption.AllDirectories);
+
+        foreach (var file in allFiles)
+        {
+            var relativePath = Path.GetRelativePath(projectPath, file).Replace('\\', '/');
+            if (searchContent)
+            {
+                try
+                {
+                    var content = await File.ReadAllTextAsync(file);
+                    if (regex.IsMatch(content)) results.Add(relativePath);
+                }
+                catch { /* Ignore unreadable files */ }
+            }
+            else
+            {
+                if (regex.IsMatch(Path.GetFileName(file))) results.Add(relativePath);
+            }
+        }
+
+        return results.Count > 0 ? $"Found matches:\n{string.Join("\n", results)}" : $"No matches found for pattern \"{pattern}\" in {startRelativePath ?? "root"}.";
+    }
+}
 </file>
 

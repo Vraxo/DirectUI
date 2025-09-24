@@ -35,42 +35,53 @@ public class AppUIManager
         DrawControlsRow(windowSize, currentY);
         currentY += 28 + 20;
 
+        // --- Main Content Layout ---
         float bottomPanelHeight = _state.BottomPanelHeight;
-        UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: windowSize.Y - 250, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
-        _state.BottomPanelHeight = bottomPanelHeight;
-        _state.ExecutionLogText = DrawPanel("Execution Log", "2. Execution Log", _state.ExecutionLogText, _state.BottomPanelHeight);
-        UI.EndResizableHPanel();
-
         float splitterHeight = 5f;
         float topPanelY = currentY;
-        float topPanelHeight = windowSize.Y - _state.BottomPanelHeight - splitterHeight - topPanelY;
+        float topPanelHeight = windowSize.Y - bottomPanelHeight - splitterHeight - topPanelY;
 
         if (topPanelHeight > 60)
         {
             DrawTopPanel(topPanelY, topPanelHeight, windowSize);
         }
+
+        float bottomPanelMaxHeight = windowSize.Y - currentY - 100; // Leave 100px min for top panel
+        UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: bottomPanelMaxHeight, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
+        _state.BottomPanelHeight = bottomPanelHeight;
+        string executionLogText = _state.ExecutionLogText;
+        DrawPanel("Execution Log", "2. Execution Log", ref executionLogText, _state.BottomPanelHeight);
+        _state.ExecutionLogText = executionLogText;
+        UI.EndResizableHPanel();
     }
 
     private void DrawTopPanel(float topPanelY, float topPanelHeight, Vector2 windowSize)
     {
         UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, topPanelY, windowSize.X, topPanelHeight), _styles.PanelStyle);
+
         UI.BeginVBoxContainer("ai_panel_vbox", new Vector2(10, topPanelY + 10), gap: 10);
 
-        DrawPanelHeader("1. AI Response", new Vector2(1, topPanelY + 1));
+        float vboxAvailableHeight = topPanelHeight - 20; // 10px top/bottom padding
+        float contentWidth = windowSize.X - 20;
 
-        float vboxAvailableHeight = topPanelHeight - 20;
-        float textInputAvailableHeight = vboxAvailableHeight - 30 - 40 - 10;
+        DrawPanelHeader("1. AI Response", contentWidth);
 
-        if (textInputAvailableHeight > 0)
+        float headerHeight = 30f;
+        float buttonHeight = 40f;
+        float gapsTotalHeight = 20f; // Two gaps of 10px in the VBox (header-input, input-button)
+
+        float textInputHeight = vboxAvailableHeight - headerHeight - buttonHeight - gapsTotalHeight;
+
+        if (textInputHeight > 20)
         {
             string aiResponseText = _state.AiResponseText;
-            if (UI.InputText("ai_response_input", ref aiResponseText, new Vector2(windowSize.X - 20, textInputAvailableHeight)))
+            if (UI.InputText("ai_response_input", ref aiResponseText, new Vector2(contentWidth, textInputHeight)))
             {
                 _state.AiResponseText = aiResponseText;
             }
         }
 
-        if (UI.Button("execute_tool_calls_btn", "Execute Tool Calls", new Vector2(windowSize.X - 20, 40), theme: _styles.ExecuteButtonStyle, disabled: _state.CurrentProject == null || string.IsNullOrWhiteSpace(_state.AiResponseText)))
+        if (UI.Button("execute_tool_calls_btn", "Execute Tool Calls", new Vector2(contentWidth, buttonHeight), theme: _styles.ExecuteButtonStyle, disabled: _state.CurrentProject == null || string.IsNullOrWhiteSpace(_state.AiResponseText)))
         {
             _logic.HandleExecute();
         }
@@ -129,29 +140,46 @@ public class AppUIManager
         UI.EndHBoxContainer();
     }
 
-    private string DrawPanel(string id, string title, string text, float availableHeight)
+    private void DrawPanel(string id, string title, ref string text, float panelHeight)
     {
-        var headerPos = UI.Context.Layout.GetCurrentPosition();
-        DrawPanelHeader(title, headerPos);
-        var contentWidth = UI.Context.Renderer.RenderTargetSize.X - 22;
-        var textInputHeight = availableHeight - 1 - 30 - 5 - 1;
+        // This is called inside BeginResizableHPanel, which provides a VBox container.
+        var padding = new Vector2(1, 1); // As per BeginResizableHPanel call
+        var gap = 5f; // As per BeginResizableHPanel call
+        float contentWidth = UI.Context.Renderer.RenderTargetSize.X - (padding.X * 2);
 
-        string newText = text;
-        if (textInputHeight > 0)
+        DrawPanelHeader(title, contentWidth);
+
+        float headerHeight = 30f;
+        // Total height for content is panel height minus padding
+        float contentAreaHeight = panelHeight - (padding.Y * 2);
+        // Height for input is content area height minus header and one gap
+        var textInputHeight = contentAreaHeight - headerHeight - gap;
+
+        if (textInputHeight > 20)
         {
-            UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight));
+            string newText = text;
+            if (UI.InputText($"{id}_input", ref newText, new Vector2(contentWidth, textInputHeight)))
+            {
+                text = newText;
+            }
         }
-        return newText;
     }
 
-    private void DrawPanelHeader(string title, Vector2 pos)
+    private void DrawPanelHeader(string title, float width)
     {
-        var panelContentWidth = UI.Context.Renderer.RenderTargetSize.X - 2;
-        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(pos.X, pos.Y, panelContentWidth, 30), _styles.PanelHeaderStyle);
-        UI.BeginHBoxContainer($"{title}_header_hbox", Vector2.Zero, 0, VAlignment.Center, 30);
-        UI.Context.Layout.AdvanceContainerLayout(new Vector2(10, 0));
+        var pos = UI.Context.Layout.GetCurrentPosition();
+        var headerSize = new Vector2(width, 30);
+
+        // Background
+        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(pos.X, pos.Y, headerSize.X, headerSize.Y), _styles.PanelHeaderStyle);
+
+        // HBox for text with padding and alignment
+        UI.BeginHBoxContainer($"{title}_header_hbox", pos, 0, VAlignment.Center, 30);
+        UI.Context.Layout.AdvanceLayout(new Vector2(10, 0)); // 10px left padding
         UI.Text($"{title}_header", title, style: _styles.PanelHeaderTextStyle);
         UI.EndHBoxContainer();
-        UI.Context.Layout.AdvanceContainerLayout(new Vector2(panelContentWidth, 30));
+
+        // Advance the parent container's layout
+        UI.Context.Layout.AdvanceLayout(headerSize);
     }
 }
