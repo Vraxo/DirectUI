@@ -58,7 +58,7 @@ public static class DefaultTheme
         public static readonly Color DisabledFill = new Color(51, 51, 51, (byte)(255 * 0.8f));
         public static readonly Color DisabledBorder = new Color(77, 77, 77, (byte)(255 * 0.8f));
         public static readonly Color DisabledText = new Color(128, 128, 128, 255);
-        public static readonly Color Text = new Color(245, 245, 245, 255); // WhiteSmoke
+        public static readonly Color Text = Colors.WhiteSmoke;
     }
 
     private static class UnityEditorThemeColors
@@ -81,9 +81,9 @@ public static class DefaultTheme
     // Change the assignments here to swap themes.
 
     // Basic Palette
-    public static readonly Color White = new Color(255, 255, 255, 255);
-    public static readonly Color Black = new Color(0, 0, 0, 255);
-    public static readonly Color Transparent = new Color(0, 0, 0, 0);
+    public static readonly Color White = Colors.White;
+    public static readonly Color Black = Colors.Black;
+    public static readonly Color Transparent = Colors.Transparent;
 
     /*
     // --- ACTIVE THEME: DAW ---

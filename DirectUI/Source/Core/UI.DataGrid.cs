@@ -101,7 +101,7 @@ public static partial class UI
         const float scrollbarThickness = 12f;
 
         var gridStyle = new BoxStyle { FillColor = new(0.1f, 0.1f, 0.1f, 1.0f), BorderLength = 0f, Roundness = 0f };
-        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = Colors.Transparent, FontColor = DefaultTheme.Text };
+        var headerStyle = new ButtonStyle { FillColor = new(0.2f, 0.2f, 0.2f, 1.0f), Roundness = 0, BorderLength = 0, BorderColor = DirectUI.Drawing.Colors.Transparent, FontColor = DefaultTheme.Text };
         var rowStyle = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
         rowStyle.Normal.FillColor = DefaultTheme.Transparent;
         rowStyle.Hover.FillColor = new Color4(0.25f, 0.25f, 0.25f, 1.0f);

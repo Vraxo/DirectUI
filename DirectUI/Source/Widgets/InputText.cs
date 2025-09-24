@@ -47,11 +47,11 @@ internal class InputText
 
             // Normal state (inset look)
             finalTheme.Normal.FillColor = DefaultTheme.NormalBorder; // Very dark, same as window border
-            finalTheme.Normal.BorderColor = Colors.Black;
+            finalTheme.Normal.BorderColor = DirectUI.Drawing.Colors.Black;
 
             // Hover state (subtle brightening)
             finalTheme.Hover.FillColor = new Color4(35 / 255f, 35 / 255f, 35 / 255f, 1.0f);
-            finalTheme.Hover.BorderColor = Colors.Black;
+            finalTheme.Hover.BorderColor = DirectUI.Drawing.Colors.Black;
 
             // Focused state (bright border)
             finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;

@@ -92,7 +92,7 @@ internal class InternalComboboxLogic
                     {
                         var itemBounds = new Rect(popupBounds.X, popupBounds.Y + i * itemHeight, popupBounds.Width, itemHeight);
                         var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-                        itemTheme.Normal.FillColor = Colors.Transparent;
+                        itemTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
                         itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
                         itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 

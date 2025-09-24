@@ -16,7 +16,7 @@ public static partial class UI
         var boxSize = new Vector2(16, 16);
         var spacing = 5f;
         // Checkmark is now pure white.
-        var checkmarkColor = Colors.White;
+        var checkmarkColor = DirectUI.Drawing.Colors.White;
         // Background is a specific dark grey.
         var normalFillColor = new Color4(43 / 255f, 45 / 255f, 47 / 255f, 1.0f); // #2B2D2F
         var textColor = disabled ? DefaultTheme.DisabledText : DefaultTheme.Text;
