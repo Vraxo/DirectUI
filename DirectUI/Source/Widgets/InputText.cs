@@ -42,16 +42,16 @@ internal class InputText
         if (theme is null)
         {
             // This setup runs once per widget instance and is then cached.
-            finalTheme.Roundness = 0f;
+            finalTheme.Roundness = 0.2f; // Softer corners
             finalTheme.BorderLength = 1f;
 
-            // Normal state (inset look)
-            finalTheme.Normal.FillColor = DefaultTheme.NormalBorder; // Very dark, same as window border
-            finalTheme.Normal.BorderColor = DirectUI.Drawing.Colors.Black;
+            // Normal state (dark, inset look)
+            finalTheme.Normal.FillColor = new Color4(30 / 255f, 30 / 255f, 30 / 255f, 1.0f); // Even darker than controls
+            finalTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
 
-            // Hover state (subtle brightening)
-            finalTheme.Hover.FillColor = new Color4(35 / 255f, 35 / 255f, 35 / 255f, 1.0f);
-            finalTheme.Hover.BorderColor = DirectUI.Drawing.Colors.Black;
+            // Hover state (subtle border highlight)
+            finalTheme.Hover.FillColor = finalTheme.Normal.FillColor;
+            finalTheme.Hover.BorderColor = DefaultTheme.HoverBorder;
 
             // Focused state (bright border)
             finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;
@@ -59,7 +59,7 @@ internal class InputText
 
             // Disabled state
             finalTheme.Disabled.FillColor = finalTheme.Normal.FillColor;
-            finalTheme.Disabled.BorderColor = new Color4(48 / 255f, 48 / 255f, 48 / 255f, 1.0f);
+            finalTheme.Disabled.BorderColor = DefaultTheme.DisabledBorder;
         }
 
         Rect bounds = new(position.X, position.Y, size.X, size.Y);

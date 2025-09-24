@@ -30,10 +30,10 @@ public class AppUIManager
         UI.BeginVBoxContainer("title_container", new Vector2(0, currentY), 0);
         UI.Text("title", "Agex", new Vector2(windowSize.X, titleSize.Y), _styles.TitleTextStyle, new Alignment(HAlignment.Center, VAlignment.Top));
         UI.EndVBoxContainer();
-        currentY += titleSize.Y + 20;
+        currentY += titleSize.Y + 30;
 
         DrawControlsRow(windowSize, currentY);
-        currentY += 28 + 20;
+        currentY += 32 + 20;
 
         float bottomPanelHeight = _state.BottomPanelHeight;
         UI.BeginResizableHPanel("execution_log_panel", ref bottomPanelHeight, 0, 0, minHeight: 100, maxHeight: windowSize.Y - 250, panelStyle: _styles.PanelStyle, padding: new Vector2(1, 1), gap: 5);
@@ -73,7 +73,7 @@ public class AppUIManager
         // Available height inside the padded content area
         float availableContentHeight = contentHeight - 20; // 10px top/bottom padding
 
-        float buttonAreaHeight = 40 + 10; // button height + gap before it
+        float buttonAreaHeight = 44 + 10; // button height + gap before it
         float textInputAvailableHeight = availableContentHeight - buttonAreaHeight;
 
         if (textInputAvailableHeight > 0)
@@ -85,7 +85,7 @@ public class AppUIManager
             }
         }
 
-        if (UI.Button("execute_tool_calls_btn", "Execute Tool Calls", new Vector2(windowSize.X - 20, 40), theme: _styles.ExecuteButtonStyle, disabled: _state.CurrentProject == null || string.IsNullOrWhiteSpace(_state.AiResponseText)))
+        if (UI.Button("execute_tool_calls_btn", "Execute Tool Calls", new Vector2(windowSize.X - 20, 44), theme: _styles.ExecuteButtonStyle, disabled: _state.CurrentProject == null || string.IsNullOrWhiteSpace(_state.AiResponseText)))
         {
             _logic.HandleExecute();
         }
@@ -95,25 +95,25 @@ public class AppUIManager
 
     private void DrawMenuBar(Vector2 windowSize, ref float currentY)
     {
-        var menuBarHeight = 24f;
+        var menuBarHeight = 30f;
         UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, windowSize.X, menuBarHeight), new BoxStyle { FillColor = new(50, 50, 50, 255), BorderLength = 0, Roundness = 0 });
         UI.BeginHBoxContainer("menu_bar", Vector2.Zero, gap: 0, verticalAlignment: VAlignment.Center, fixedRowHeight: menuBarHeight);
-        UI.Button("menu_file", "File", new Vector2(40, menuBarHeight), _styles.MenuButtonStyle);
-        UI.Button("menu_edit", "Edit", new Vector2(40, menuBarHeight), _styles.MenuButtonStyle);
-        UI.Button("menu_view", "View", new Vector2(40, menuBarHeight), _styles.MenuButtonStyle);
-        UI.Button("menu_window", "Window", new Vector2(60, menuBarHeight), _styles.MenuButtonStyle);
-        UI.Button("menu_help", "Help", new Vector2(45, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_file", "File", new Vector2(50, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_edit", "Edit", new Vector2(50, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_view", "View", new Vector2(50, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_window", "Window", new Vector2(70, menuBarHeight), _styles.MenuButtonStyle);
+        UI.Button("menu_help", "Help", new Vector2(55, menuBarHeight), _styles.MenuButtonStyle);
         UI.EndHBoxContainer();
         currentY += menuBarHeight;
     }
 
     private void DrawControlsRow(Vector2 windowSize, float y)
     {
-        UI.BeginHBoxContainer("project_controls", new Vector2(20, y), gap: 10, verticalAlignment: VAlignment.Center, fixedRowHeight: 28);
+        UI.BeginHBoxContainer("project_controls", new Vector2(20, y), gap: 10, verticalAlignment: VAlignment.Center, fixedRowHeight: 32);
         UI.Text("current_project_label", "Current Project:");
 
         int newIndex = _state.SelectedProjectIndex;
-        if (UI.Combobox("project_combo", ref newIndex, _state.ProjectListForCombo, new Vector2(250, 28)))
+        if (UI.Combobox("project_combo", ref newIndex, _state.ProjectListForCombo, new Vector2(300, 32)))
         {
             if (newIndex != _state.SelectedProjectIndex)
             {
@@ -121,17 +121,17 @@ public class AppUIManager
                 _logic.SwitchProject(_state.RecentProjects[_state.SelectedProjectIndex]);
             }
         }
-        if (UI.Button("remove_project_btn", "Remove", theme: _styles.RemoveButtonStyle, size: new Vector2(70, 28), disabled: _state.CurrentProject == null))
+        if (UI.Button("remove_project_btn", "Remove", theme: _styles.RemoveButtonStyle, size: new Vector2(80, 32), disabled: _state.CurrentProject == null))
         {
             _logic.HandleRemoveProject();
         }
-        if (UI.Button("load_project_btn", "Load New Project...", size: new Vector2(140, 28), theme: _styles.LoadButtonStyle))
+        if (UI.Button("load_project_btn", "Load New Project...", size: new Vector2(160, 32), theme: _styles.LoadButtonStyle))
         {
             _logic.HandleLoadProject();
         }
         UI.EndHBoxContainer();
 
-        UI.BeginHBoxContainer("auto_mode_controls", new Vector2(windowSize.X - 250, y + 2), gap: 8, verticalAlignment: VAlignment.Center, fixedRowHeight: 24);
+        UI.BeginHBoxContainer("auto_mode_controls", new Vector2(windowSize.X - 250, y + 4), gap: 8, verticalAlignment: VAlignment.Center, fixedRowHeight: 24);
         UI.Text("auto_mode_label", "Automatic Mode:");
 
         bool automaticMode = _state.AutomaticMode;
