@@ -196,6 +196,11 @@ public class SilkNetSkiaWindow : IDisposable
         // window size/DPI. Clearing them ensures they are recreated with correct,
         // up-to-date metrics on the next frame, fixing caret measurement issues.
         _textService?.Cleanup();
+
+        // --- THE FIX ---
+        // By calling Render() here, we force a redraw and buffer swap
+        // within the OS's modal resize loop, creating the live effect.
+        Render();
     }
 
     private void OnClose() { }
