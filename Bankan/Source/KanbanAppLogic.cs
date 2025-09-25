@@ -68,8 +68,6 @@ public class KanbanAppLogic : IAppLogic
     {
         var windowSize = UI.Context.Renderer.RenderTargetSize;
 
-        HandleDragAndDrop();
-
         var settingsButtonSize = new Vector2(40, 40);
         var settingsButtonPos = new Vector2(windowSize.X - settingsButtonSize.X - 20, 20);
         var settingsTheme = new ButtonStylePack { Normal = { FontName = "Segoe UI Symbol", FontSize = 20, FillColor = Colors.Transparent, BorderLength = 0 }, Hover = { FillColor = new Color(50, 50, 50, 255) }, Roundness = 0.5f };
@@ -82,15 +80,24 @@ public class KanbanAppLogic : IAppLogic
         var boardPosition = new Vector2(boardPadding.X, 80);
         var boardSize = new Vector2(windowSize.X - boardPadding.X * 2, windowSize.Y - boardPosition.Y - boardPadding.Y);
         var columnGap = 25f;
+        float draggedTaskWidth = 0;
 
         UI.BeginGridContainer("board_grid", boardPosition, boardSize, _board.Columns.Count, new Vector2(columnGap, 0));
+
+        // This logic MUST run while the grid container is on the stack
+        HandleDragAndDrop();
+        var gridState = (GridContainerState)UI.Context.Layout.PeekContainer();
+        draggedTaskWidth = gridState.CellWidth;
+
         foreach (var column in _board.Columns)
         {
             DrawColumn(column);
         }
+
         UI.EndGridContainer();
 
-        DrawDraggedTask();
+        // This must be drawn outside the container's clip rect and layout flow
+        DrawDraggedTask(draggedTaskWidth);
     }
 
     private void DrawColumn(KanbanColumn column)
@@ -321,12 +328,11 @@ public class KanbanAppLogic : IAppLogic
         UI.Context.Renderer.DrawBox(indicatorRect, style);
     }
 
-    private void DrawDraggedTask()
+    private void DrawDraggedTask(float width)
     {
-        if (_draggedTask == null) return;
+        if (_draggedTask == null || width <= 0) return;
         var mousePos = UI.Context.InputState.MousePosition;
-        var gridState = (GridContainerState)UI.Context.Layout.PeekContainer();
-        var width = gridState.CellWidth;
+
         var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
         var wrappedLayout = UI.Context.TextService.GetTextLayout(_draggedTask.Text, textStyle, new Vector2(width - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
         float height = wrappedLayout.Size.Y + 30;
