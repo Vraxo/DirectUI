@@ -21,20 +21,12 @@ public class KanbanBoardRenderer
         _dragDropHandler = dragDropHandler;
     }
 
-    public void DrawBoard(Vector2 boardStartPosition, float uniformColumnHeight, float columnWidth, float columnGap)
+    public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)
     {
-        // First pass: Draw all column backgrounds to ensure they have the same uniform height
-        for (int i = 0; i < _board.Columns.Count; i++)
-        {
-            var columnPosition = new Vector2(boardStartPosition.X + i * (columnWidth + columnGap), boardStartPosition.Y);
-            DrawColumnBackground(columnPosition, new Vector2(columnWidth, uniformColumnHeight));
-        }
-
-        // Second pass: Draw the content of each column on top of the backgrounds
         UI.BeginHBoxContainer("board_content_hbox", boardStartPosition, gap: columnGap);
         foreach (var column in _board.Columns)
         {
-            DrawColumnContent(column, new Vector2(columnWidth, uniformColumnHeight));
+            DrawColumnContent(column, columnWidth);
         }
         UI.EndHBoxContainer();
     }
@@ -46,19 +38,24 @@ public class KanbanBoardRenderer
         UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(position.X, position.Y, size.X, size.Y), columnStyle);
     }
 
-    private void DrawColumnContent(KanbanColumn column, Vector2 columnSize)
+    private void DrawColumnContent(KanbanColumn column, float columnWidth)
     {
-        var contentPadding = 15f;
-        var contentWidth = columnSize.X - contentPadding * 2;
-        // The VBox starts relative to the HBox's cursor, so we just need padding.
-        var contentStartPosition = UI.Context.Layout.GetCurrentPosition() + new Vector2(contentPadding, contentPadding);
+        // 1. Calculate this column's total height, which includes its outer padding.
+        float myTotalHeight = CalculateColumnContentHeight(column);
+        var myPosition = UI.Context.Layout.GetCurrentPosition();
 
+        // 2. Draw the background for the entire column area.
+        DrawColumnBackground(myPosition, new Vector2(columnWidth, myTotalHeight));
+
+        // 3. Begin a VBox for the column's inner content, inset by the padding.
+        var contentPadding = 15f;
+        var contentStartPosition = myPosition + new Vector2(contentPadding, contentPadding);
         UI.BeginVBoxContainer(column.Id, contentStartPosition, gap: 10f);
 
+        // 4. Draw the actual widgets inside the column.
+        var contentWidth = columnWidth - contentPadding * 2;
         var titleStyle = new ButtonStyle { FontColor = new Color(224, 224, 224, 255), FontSize = 18, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold };
         UI.Text(column.Id + "_title", column.Title, new Vector2(contentWidth, 30), titleStyle, new Alignment(HAlignment.Center, VAlignment.Center));
-
-        // Separator has height and vertical padding, so we account for that
         UI.Separator(contentWidth, 2, 5, new Color(51, 51, 51, 255));
 
         int currentTaskIndex = 0;
@@ -75,7 +72,6 @@ public class KanbanBoardRenderer
             }
             currentTaskIndex++;
         }
-        // Draw a final drop indicator at the end of the list
         DrawDropIndicator(column, currentTaskIndex, contentWidth);
 
         if (column.Id == "todo")
@@ -92,7 +88,57 @@ public class KanbanBoardRenderer
             }
         }
 
+        // 5. Add a spacer to make the VBox's layout height match our calculated total height.
+        // This ensures the parent HBox correctly considers this column's full height.
+        var vboxState = UI.Context.Layout.PeekContainer() as VBoxContainerState;
+        if (vboxState != null)
+        {
+            float actualContentHeight = vboxState.GetAccumulatedSize().Y;
+            float desiredContentHeight = myTotalHeight - (contentPadding * 2);
+
+            if (desiredContentHeight > actualContentHeight)
+            {
+                float paddingAmount = desiredContentHeight - actualContentHeight;
+                UI.Context.Layout.AdvanceLayout(new Vector2(0, paddingAmount));
+            }
+        }
+
         UI.EndVBoxContainer();
+    }
+
+    private float CalculateColumnContentHeight(KanbanColumn column)
+    {
+        // This calculation must precisely mirror the layout of the widgets drawn in DrawColumnContent.
+        float columnWidth = 350f; // This is a fixed value used for calculation
+        float contentPadding = 15f;
+        float gap = 10f;
+        float tasksInnerWidth = columnWidth - (contentPadding * 2);
+
+        float height = 0;
+        height += contentPadding; // Top padding
+        height += 30f + gap;      // Title + gap
+        height += 12f + gap;      // Separator (2 thickness + 5*2 padding) + gap
+
+        if (column.Tasks.Any())
+        {
+            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
+            foreach (var task in column.Tasks)
+            {
+                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(tasksInnerWidth - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+                height += wrappedLayout.Size.Y + 30; // Task widget height
+                height += gap;
+            }
+            height -= gap; // Remove final gap after last task
+        }
+
+        if (column.Id == "todo")
+        {
+            height += gap;
+            height += 40f; // Add task button
+        }
+
+        height += contentPadding; // Bottom padding
+        return height;
     }
 
     private void DrawTaskWidget(KanbanColumn column, KanbanTask task, float width)

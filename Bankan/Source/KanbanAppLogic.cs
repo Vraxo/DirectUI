@@ -165,7 +165,7 @@ public class KanbanAppLogic : IAppLogic
         UI.Context.Renderer.PushClipRect(contentClipRect);
         UI.Context.Layout.PushClipRect(contentClipRect);
 
-        _boardRenderer.DrawBoard(boardStartPosition, maxColumnHeight, columnWidth, columnGap);
+        _boardRenderer.DrawBoard(boardStartPosition, columnWidth, columnGap);
 
         UI.Context.Layout.PopClipRect();
         UI.Context.Renderer.PopClipRect();
@@ -188,7 +188,7 @@ public class KanbanAppLogic : IAppLogic
         float height = 0;
         height += contentPadding; // Top padding
         height += 30f + gap;      // Title + gap
-        height += 14f + gap;      // Separator (height+padding) + gap
+        height += 12f + gap;      // Separator (2 thickness + 5*2 padding) + gap
 
         if (column.Tasks.Any())
         {
