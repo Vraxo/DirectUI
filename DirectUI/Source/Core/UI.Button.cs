@@ -24,22 +24,24 @@ public static partial class UI
         int layer = 1)
     {
         if (!IsContextValid()) return false;
+        var scale = Context.UIScale;
 
         int intId = id.GetHashCode();
         var finalTheme = theme ?? State.GetOrCreateElement<ButtonStylePack>(HashCode.Combine(intId, "theme"));
         State.SetUserData(intId, userData);
 
-        Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
+        Vector2 logicalSize = size == default ? new Vector2(84, 28) : size;
 
         // Auto-width calculation must happen before culling.
         if (autoWidth)
         {
-            var styleForMeasuring = finalTheme.Normal; // Measure against the normal style
-            Vector2 measuredSize = Context.TextService.MeasureText(text, styleForMeasuring);
+            var styleForMeasuring = new ButtonStyle(finalTheme.Normal) { FontSize = finalTheme.Normal.FontSize * scale };
+            Vector2 measuredSize = Context.TextService.MeasureText(text, styleForMeasuring) / scale; // Unscale to logical
             Vector2 margin = textMargin ?? new Vector2(10, 5);
-            finalSize.X = measuredSize.X + margin.X * 2;
+            logicalSize.X = measuredSize.X + margin.X * 2;
         }
 
+        Vector2 finalSize = logicalSize * scale;
         Vector2 drawPos = Context.Layout.ApplyLayout(origin ?? Vector2.Zero);
 
 
@@ -52,13 +54,13 @@ public static partial class UI
                 switch (hbox.VerticalAlignment)
                 {
                     case VAlignment.Center:
-                        yOffset = (hbox.FixedRowHeight.Value - finalSize.Y) / 2f;
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
                         break;
                     case VAlignment.Bottom:
-                        yOffset = hbox.FixedRowHeight.Value - finalSize.Y;
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
                         break;
                 }
-                drawPos.Y += yOffset;
+                drawPos.Y += yOffset * scale;
             }
         }
 
@@ -66,7 +68,7 @@ public static partial class UI
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(finalSize);
+            Context.Layout.AdvanceLayout(logicalSize);
             return false;
         }
 
@@ -93,7 +95,7 @@ public static partial class UI
             textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
             clickMode,
             clickBehavior,
-            textOffset ?? Vector2.Zero,
+            (textOffset ?? Vector2.Zero) * scale,
             isActive: isActive,
             layer: layer
         );
@@ -103,7 +105,7 @@ public static partial class UI
             Context.Renderer.PopClipRect();
         }
 
-        Context.Layout.AdvanceLayout(finalSize);
+        Context.Layout.AdvanceLayout(logicalSize);
         return clickResult != ClickResult.None;
     }
 }
