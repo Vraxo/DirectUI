@@ -206,8 +206,11 @@ public class KanbanBoardRenderer
             return;
         }
 
-        bool isHovering = taskBounds.Contains(context.InputState.MousePosition);
-        if (isHovering && !_modalManager.IsModalOpen)
+        // If a popup or native modal is open, this task is not interactive.
+        bool isInteractive = !UI.State.IsPopupOpen && !_modalManager.IsModalOpen;
+        bool isHovering = isInteractive && taskBounds.Contains(context.InputState.MousePosition);
+
+        if (isHovering)
         {
             UI.State.SetPotentialInputTarget(task.Id.GetHashCode());
         }
@@ -216,13 +219,13 @@ public class KanbanBoardRenderer
             _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, physicalPos);
         }
 
-        // Trigger setting the active context menu on right-click
-        if (UI.BeginContextMenu(task.Id))
+        // Trigger setting the active context menu on right-click, only if interactive.
+        if (isInteractive && UI.BeginContextMenu(task.Id))
         {
             _activeContextMenuTaskId = task.Id;
         }
 
-        // If this task's context menu should be open, draw it and check for results
+        // If this task's context menu should be open, draw it and check for results.
         if (_activeContextMenuTaskId == task.Id)
         {
             var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
@@ -230,9 +233,9 @@ public class KanbanBoardRenderer
             {
                 if (choice == 0) _modalManager.OpenEditTaskModal(task);
                 else if (choice == 1) _modalManager.RequestTaskDeletion(task);
-                _activeContextMenuTaskId = null; // Consume the result and close
+                _activeContextMenuTaskId = null; // Consume the result and close.
             }
-            // If the popup was closed by other means (e.g. clicking outside), sync our state
+            // If the popup was closed by other means (e.g., clicking outside), sync our state.
             else if (!UI.State.IsPopupOpen)
             {
                 _activeContextMenuTaskId = null;
