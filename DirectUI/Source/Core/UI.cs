@@ -137,6 +137,15 @@ public static partial class UI
             return state.PopupResult;
         }
 
+        // FIX: A context menu should only open on a frame where a right-click occurred.
+        // If we are being asked to create a new popup (!state.IsPopupOpen) but there was no
+        // right click, it means the app's state is stale from a previous menu that was
+        // closed by clicking away. We should ignore the request to prevent re-opening.
+        if (!state.IsPopupOpen && !context.InputState.WasRightMousePressedThisFrame)
+        {
+            return -1;
+        }
+
         // Only set up the popup on the first frame it's requested.
         // After that, the EndFrame logic will handle drawing it using the stored state.
         if (!state.IsPopupOpen || state.ActivePopupId != intId)
