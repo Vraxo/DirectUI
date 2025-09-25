@@ -77,13 +77,14 @@ public class KanbanAppLogic : IAppLogic
     public void DrawUI(UIContext context)
     {
         var windowSize = UI.Context.Renderer.RenderTargetSize;
+        var scale = context.UIScale;
 
         // --- Define board and column dimensions ---
-        float columnWidth = 350f;
-        float columnGap = 40f;
-        float scrollbarSize = 12f;
-        var boardPadding = new Vector2(20, 20);
-        var topMargin = 80f;
+        float columnWidth = 350f * scale;
+        float columnGap = 40f * scale;
+        float scrollbarSize = 12f * scale;
+        var boardPadding = new Vector2(20, 20) * scale;
+        var topMargin = 80f * scale;
 
         var viewState = UI.State.GetOrCreateElement<BoardViewState>("board_view_state".GetHashCode());
 
@@ -92,7 +93,7 @@ public class KanbanAppLogic : IAppLogic
         float maxColumnHeight = 0f;
         if (_board.Columns.Any())
         {
-            maxColumnHeight = _board.Columns.Max(CalculateColumnContentHeight);
+            maxColumnHeight = _board.Columns.Max(c => CalculateColumnContentHeight(c, scale));
         }
         var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
 
@@ -105,7 +106,7 @@ public class KanbanAppLogic : IAppLogic
         _modalManager.ProcessPendingActions();
 
         // --- Draw UI ---
-        DrawSettingsButton(windowSize);
+        DrawSettingsButton(windowSize, scale);
 
         // 2. Define the visible area (viewport) for the board
         var viewRect = new Vortice.Mathematics.Rect(
@@ -125,7 +126,8 @@ public class KanbanAppLogic : IAppLogic
         // 5. Handle input and draw scrollbars based on CURRENT frame's content size
         if (viewRect.Contains(UI.Context.InputState.MousePosition) && !_dragDropHandler.IsDragging())
         {
-            viewState.ScrollOffset.Y -= UI.Context.InputState.ScrollDelta * 40;
+            // Scroll speed is scaled for a more natural feel when zoomed in/out
+            viewState.ScrollOffset.Y -= UI.Context.InputState.ScrollDelta * 40 * scale;
         }
 
         if (currentContentSize.Y > availableHeight)
@@ -168,32 +170,32 @@ public class KanbanAppLogic : IAppLogic
         UI.Context.Renderer.PopClipRect();
 
         // 9. Draw overlays (e.g., the task being dragged) on top of everything else
-        _dragDropHandler.DrawDraggedTaskOverlay(columnWidth - 30f); // Column width minus content padding
+        _dragDropHandler.DrawDraggedTaskOverlay((350f * scale) - (30f * scale)); // Logical size scaled
 
         // 10. Store this frame's content size for the next frame's prediction
         viewState.ContentSize = currentContentSize;
     }
 
-    private float CalculateColumnContentHeight(KanbanColumn column)
+    private float CalculateColumnContentHeight(KanbanColumn column, float scale)
     {
         // This calculation is an estimate and must match the layout logic in the renderer.
-        float columnWidth = 350f;
-        float contentPadding = 15f;
-        float gap = 10f;
+        float columnWidth = 350f * scale;
+        float contentPadding = 15f * scale;
+        float gap = 10f * scale;
         float tasksInnerWidth = columnWidth - (contentPadding * 2);
 
         float height = 0;
         height += contentPadding; // Top padding
-        height += 30f + gap;      // Title + gap
-        height += 12f + gap;      // Separator (2 thickness + 5*2 padding) + gap
+        height += 30f * scale + gap;      // Title + gap
+        height += 12f * scale + gap;      // Separator (2 thickness + 5*2 padding) + gap
 
         if (column.Tasks.Any())
         {
-            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
+            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
             foreach (var task in column.Tasks)
             {
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(tasksInnerWidth - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-                height += wrappedLayout.Size.Y + 30; // Task widget height
+                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(tasksInnerWidth - (30 * scale), float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+                height += wrappedLayout.Size.Y + (30 * scale); // Task widget height
                 height += gap;
             }
             height -= gap; // Remove final gap after last task
@@ -202,29 +204,31 @@ public class KanbanAppLogic : IAppLogic
         if (column.Id == "todo")
         {
             height += gap;
-            height += 40f; // Add task button
+            height += 40f * scale; // Add task button
         }
 
         height += contentPadding; // Bottom padding
         return height;
     }
 
-    private void DrawSettingsButton(Vector2 windowSize)
+    private void DrawSettingsButton(Vector2 windowSize, float scale)
     {
-        var settingsButtonSize = new Vector2(40, 40);
-        var settingsButtonPos = new Vector2(windowSize.X - settingsButtonSize.X - 20, 20);
+        var settingsButtonSize = new Vector2(40, 40) * scale;
+        var settingsButtonPos = new Vector2(windowSize.X - settingsButtonSize.X - (20 * scale), 20 * scale);
 
         var settingsTheme = new ButtonStylePack
         {
             Roundness = 0.5f
         };
         settingsTheme.Normal.FontName = "Segoe UI Symbol";
-        settingsTheme.Normal.FontSize = 20;
+        settingsTheme.Normal.FontSize = 20 * scale;
         settingsTheme.Normal.FillColor = Colors.Transparent;
         settingsTheme.Normal.BorderLength = 0;
         settingsTheme.Hover.FillColor = new Color(50, 50, 50, 255);
 
-        if (UI.Button("settings_btn", "⚙️", size: settingsButtonSize, origin: settingsButtonPos, theme: settingsTheme))
+        // Note: The UI.Button method internally handles scaling its logical size parameter.
+        // We pass the unscaled size.
+        if (UI.Button("settings_btn", "⚙️", size: new Vector2(40, 40), origin: new Vector2(windowSize.X / scale - 40 - 20, 20), theme: settingsTheme))
         {
             _modalManager.OpenSettingsModal(_settings);
         }

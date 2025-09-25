@@ -129,24 +129,25 @@ public class KanbanDragDropHandler
         }
     }
 
-    public void DrawDraggedTaskOverlay(float width)
+    public void DrawDraggedTaskOverlay(float physicalWidth)
     {
-        if (DraggedTask == null || width <= 0) return;
+        if (DraggedTask == null || physicalWidth <= 0) return;
+        var scale = UI.Context.UIScale;
         var mousePos = UI.Context.InputState.MousePosition;
 
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
-        var wrappedLayout = UI.Context.TextService.GetTextLayout(DraggedTask.Text, textStyle, new Vector2(width - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-        float height = wrappedLayout.Size.Y + 30;
+        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+        var wrappedLayout = UI.Context.TextService.GetTextLayout(DraggedTask.Text, textStyle, new Vector2(physicalWidth - (30 * scale), float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        float physicalHeight = wrappedLayout.Size.Y + (30 * scale);
         var pos = mousePos - _dragOffset;
 
-        var bounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, width, height);
+        var bounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, physicalWidth, physicalHeight);
         var semiTransparent = DraggedTask.Color;
-        semiTransparent.A = 220; // Make it more opaque while dragging
-        var style = new BoxStyle { FillColor = semiTransparent, BorderColor = Colors.White, BorderLength = 1, Roundness = 0.1f };
+        semiTransparent.A = 220;
+        var style = new BoxStyle { FillColor = semiTransparent, BorderColor = Colors.White, BorderLength = 1 * scale, Roundness = 0.1f };
         UI.Context.Renderer.DrawBox(bounds, style);
 
-        var textBounds = new Vortice.Mathematics.Rect(bounds.X + 15, bounds.Y, bounds.Width - 30, bounds.Height);
-        var textAlign = new Alignment(HAlignment.Left, VAlignment.Center);
-        UI.DrawTextPrimitive(textBounds, DraggedTask.Text, new ButtonStyle(textStyle) { FontColor = new Color(18, 18, 18, 255) }, textAlign, Vector2.Zero);
+        var textBounds = new Vortice.Mathematics.Rect(bounds.X + (15 * scale), bounds.Y, bounds.Width - (30 * scale), bounds.Height);
+        var renderTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14, FontColor = new Color(18, 18, 18, 255) };
+        UI.DrawTextPrimitive(textBounds, DraggedTask.Text, renderTextStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
     }
 }

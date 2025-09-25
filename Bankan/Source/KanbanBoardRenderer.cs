@@ -23,13 +23,18 @@ public class KanbanBoardRenderer
 
     public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)
     {
-        // Reset the state that will be calculated this frame for use in the next frame.
+        var scale = UI.Context.UIScale;
+        // Reset the drop target state at the beginning of the render pass.
+        // This ensures targets are freshly calculated based on this frame's layout.
         _dragDropHandler.PrepareNextFrameTarget();
 
-        UI.BeginHBoxContainer("board_content_hbox", boardStartPosition, gap: columnGap);
+        // The container system operates in logical (unscaled) space.
+        // We pass the unscaled start position and gap.
+        UI.BeginHBoxContainer("board_content_hbox", boardStartPosition / scale, gap: columnGap / scale);
         foreach (var column in _board.Columns)
         {
-            DrawColumnContent(column, columnWidth);
+            // The column width passed here is LOGICAL width.
+            DrawColumnContent(column, columnWidth / scale);
         }
         UI.EndHBoxContainer();
     }
@@ -41,25 +46,29 @@ public class KanbanBoardRenderer
         UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(position.X, position.Y, size.X, size.Y), columnStyle);
     }
 
-    private void DrawColumnContent(KanbanColumn column, float columnWidth)
+    private void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
+        var scale = UI.Context.UIScale;
+
         // 1. Calculate this column's total height, which includes its outer padding.
-        float myTotalHeight = CalculateColumnContentHeight(column);
-        var myPosition = UI.Context.Layout.GetCurrentPosition();
-        var columnBounds = new Vortice.Mathematics.Rect(myPosition.X, myPosition.Y, columnWidth, myTotalHeight);
+        float myTotalLogicalHeight = CalculateColumnContentHeight(column) / scale;
+        var myLogicalPosition = UI.Context.Layout.GetCurrentPosition();
+        var myPhysicalPosition = myLogicalPosition * scale;
 
-        // 2. Draw the background for the entire column area.
-        DrawColumnBackground(myPosition, new Vector2(columnWidth, myTotalHeight));
+        // 2. Draw the background for the entire column area using PHYSICAL dimensions.
+        DrawColumnBackground(myPhysicalPosition, new Vector2(logicalColumnWidth * scale, myTotalLogicalHeight * scale));
 
-        // 3. Begin a VBox for the column's inner content, inset by the padding.
+        // 3. Begin a VBox for the column's inner content. It operates in LOGICAL space.
         var contentPadding = 15f;
-        var contentStartPosition = myPosition + new Vector2(contentPadding, contentPadding);
+        var contentStartPosition = myLogicalPosition + new Vector2(contentPadding, contentPadding);
         UI.BeginVBoxContainer(column.Id, contentStartPosition, gap: 10f);
 
-        // 4. Draw the actual widgets inside the column.
-        var contentWidth = columnWidth - contentPadding * 2;
+        // 4. Draw the actual widgets inside the column using LOGICAL dimensions.
+        var contentWidth = logicalColumnWidth - contentPadding * 2;
         var titleStyle = new ButtonStyle { FontColor = new Color(224, 224, 224, 255), FontSize = 18, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold };
         UI.Text(column.Id + "_title", column.Title, new Vector2(contentWidth, 30), titleStyle, new Alignment(HAlignment.Center, VAlignment.Center));
+
+        // Separator vertical padding is 5, thickness 2. Total logical height = 12.
         UI.Separator(contentWidth, 2, 5, new Color(51, 51, 51, 255));
 
         int currentTaskIndex = 0;
@@ -79,8 +88,8 @@ public class KanbanBoardRenderer
         // Draw a final drop indicator at the end of the list
         DrawDropIndicator(column, currentTaskIndex, contentWidth);
         // After iterating through tasks, check for a drop in an empty or final position
+        var columnBounds = new Vortice.Mathematics.Rect(myPhysicalPosition.X, myPhysicalPosition.Y, logicalColumnWidth * scale, myTotalLogicalHeight * scale);
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBounds, currentTaskIndex);
-
 
         if (column.Id == "todo")
         {
@@ -96,17 +105,15 @@ public class KanbanBoardRenderer
             }
         }
 
-        // 5. Add a spacer to make the VBox's layout height match our calculated total height.
-        // This ensures the parent HBox correctly considers this column's full height.
         var vboxState = UI.Context.Layout.PeekContainer() as VBoxContainerState;
         if (vboxState != null)
         {
-            float actualContentHeight = vboxState.GetAccumulatedSize().Y;
-            float desiredContentHeight = myTotalHeight - (contentPadding * 2);
+            float actualContentLogicalHeight = vboxState.GetAccumulatedSize().Y;
+            float desiredContentLogicalHeight = myTotalLogicalHeight - (contentPadding * 2);
 
-            if (desiredContentHeight > actualContentHeight)
+            if (desiredContentLogicalHeight > actualContentLogicalHeight)
             {
-                float paddingAmount = desiredContentHeight - actualContentHeight;
+                float paddingAmount = desiredContentLogicalHeight - actualContentLogicalHeight;
                 UI.Context.Layout.AdvanceLayout(new Vector2(0, paddingAmount));
             }
         }
@@ -116,8 +123,8 @@ public class KanbanBoardRenderer
 
     private float CalculateColumnContentHeight(KanbanColumn column)
     {
-        // This calculation must precisely mirror the layout of the widgets drawn in DrawColumnContent.
-        float columnWidth = 350f; // This is a fixed value used for calculation
+        var scale = UI.Context.UIScale;
+        float columnWidth = 350f; // Use logical width for calculation
         float contentPadding = 15f;
         float gap = 10f;
         float tasksInnerWidth = columnWidth - (contentPadding * 2);
@@ -129,11 +136,11 @@ public class KanbanBoardRenderer
 
         if (column.Tasks.Any())
         {
-            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
+            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale }; // Use scaled font size for measurement
             foreach (var task in column.Tasks)
             {
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(tasksInnerWidth - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-                height += wrappedLayout.Size.Y + 30; // Task widget height
+                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((tasksInnerWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+                height += (wrappedLayout.Size.Y / scale) + 30; // Unscale measured height to get logical height, add logical padding
                 height += gap;
             }
             height -= gap; // Remove final gap after last task
@@ -146,21 +153,22 @@ public class KanbanBoardRenderer
         }
 
         height += contentPadding; // Bottom padding
-        return height;
+        return height * scale; // Return final physical height
     }
 
-    private void DrawTaskWidget(KanbanColumn column, KanbanTask task, int taskIndex, float width)
+    private void DrawTaskWidget(KanbanColumn column, KanbanTask task, int taskIndex, float logicalWidth)
     {
         var context = UI.Context;
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
-        var wrappedLayout = context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(width - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-        float height = wrappedLayout.Size.Y + 30;
+        var scale = context.UIScale;
+        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+        var wrappedLayout = context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
 
         var taskTheme = new ButtonStylePack { Roundness = 0.1f };
         var cardBackground = new Color(42, 42, 42, 255);
         var hoverBackground = new Color(60, 60, 60, 255);
 
-        var finalTextStyle = new ButtonStyle(textStyle);
+        var finalTextStyle = new ButtonStyle(textStyle) { FontSize = 14 }; // For rendering, use logical font size
 
         if (_settings.ColorStyle == TaskColorStyle.Background)
         {
@@ -182,88 +190,67 @@ public class KanbanBoardRenderer
         taskTheme.Hover.FillColor = hoverBackground; // Hover is always the same
         var textAlign = _settings.TextAlign == TaskTextAlign.Left ? new Alignment(HAlignment.Left, VAlignment.Center) : new Alignment(HAlignment.Center, VAlignment.Center);
 
-        var pos = context.Layout.GetCurrentPosition();
-        var taskBounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, width, height);
+        var logicalPos = context.Layout.GetCurrentPosition();
+        var physicalPos = logicalPos * scale;
+        var physicalSize = new Vector2(logicalWidth * scale, logicalHeight * scale);
+        var taskBounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
 
-        // --- New Drag and Drop Logic ---
-        // During the render pass, we tell the drag handler about this valid drop target.
         _dragDropHandler.UpdateDropTarget(column, taskIndex, taskBounds);
 
         if (!context.Layout.IsRectVisible(taskBounds))
         {
-            context.Layout.AdvanceLayout(new Vector2(width, height));
+            context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
             return;
         }
 
-        // --- Interaction ---
         bool isHovering = taskBounds.Contains(context.InputState.MousePosition);
         if (isHovering && !_modalManager.IsModalOpen)
         {
             UI.State.SetPotentialInputTarget(task.Id.GetHashCode());
         }
-
         if (context.InputState.WasLeftMousePressedThisFrame && isHovering && UI.State.TrySetActivePress(task.Id.GetHashCode(), 1))
         {
-            _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, pos);
+            _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, physicalPos);
         }
 
-        if (context.InputState.WasRightMousePressedThisFrame && isHovering && UI.State.PotentialInputTargetId == task.Id.GetHashCode())
+        if (UI.BeginContextMenu($"context_widget_{task.Id}"))
         {
-            _modalManager.SetActiveContextMenuOwner(task.Id);
+            _modalManager.OpenContextMenuForTask(task);
         }
 
-        // --- Context Menu ---
-        if (_modalManager.ActiveContextMenuOwnerId == task.Id)
-        {
-            int contextMenuId = $"context_{task.Id}".GetHashCode();
-            if (UI.BeginContextMenu($"context_widget_{task.Id}"))
-            {
-                UI.State.SetActivePopup(contextMenuId, (ctx) =>
-                {
-                    var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
-                    if (choice != -1)
-                    {
-                        if (choice == 0) _modalManager.OpenEditTaskModal(task);
-                        else if (choice == 1) _modalManager.RequestTaskDeletion(task);
-                        _modalManager.ClearActiveContextMenuOwner();
-                        UI.State.ClearActivePopup();
-                    }
-                }, new Vortice.Mathematics.Rect()); // Bounds are calculated internally now
-            }
-            if (!UI.State.IsPopupOpen && !UI.State.PopupWasOpenedThisFrame)
-            {
-                _modalManager.ClearActiveContextMenuOwner();
-            }
-        }
-
-        // --- Drawing ---
         var finalStyle = isHovering ? taskTheme.Hover : taskTheme.Normal;
+        finalStyle.BorderLengthLeft *= scale;
+
         context.Renderer.DrawBox(taskBounds, finalStyle);
-        var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + 15, taskBounds.Y, taskBounds.Width - 30, taskBounds.Height);
+        var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
         UI.DrawTextPrimitive(textBounds, task.Text, finalTextStyle, textAlign, Vector2.Zero);
 
-        context.Layout.AdvanceLayout(new Vector2(width, height));
+        context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
     }
 
 
-    private void DrawDragPlaceholder(KanbanTask task, float width)
+    private void DrawDragPlaceholder(KanbanTask task, float logicalWidth)
     {
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
-        var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(width - 30, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-        float height = wrappedLayout.Size.Y + 30;
+        var scale = UI.Context.UIScale;
+        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+        var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
 
-        var pos = UI.Context.Layout.GetCurrentPosition();
-        var bounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, width, height);
-        var style = new BoxStyle { FillColor = new Color(0, 0, 0, 100), BorderColor = DefaultTheme.Accent, BorderLength = 1, Roundness = 0.1f };
+        var logicalSize = new Vector2(logicalWidth, logicalHeight);
+        var physicalSize = logicalSize * scale;
+        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
+        var bounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
+        var style = new BoxStyle { FillColor = new Color(0, 0, 0, 100), BorderColor = DefaultTheme.Accent, BorderLength = 1 * scale, Roundness = 0.1f };
         UI.Context.Renderer.DrawBox(bounds, style);
-        UI.Context.Layout.AdvanceLayout(new Vector2(width, height));
+        UI.Context.Layout.AdvanceLayout(logicalSize);
     }
 
-    private void DrawDropIndicator(KanbanColumn column, int index, float width)
+    private void DrawDropIndicator(KanbanColumn column, int index, float logicalWidth)
     {
+        var scale = UI.Context.UIScale;
         if (!_dragDropHandler.IsDragging() || _dragDropHandler.DropTargetColumn != column || _dragDropHandler.DropIndex != index) return;
-        var pos = UI.Context.Layout.GetCurrentPosition();
-        var indicatorRect = new Vortice.Mathematics.Rect(pos.X, pos.Y - 5, width, 4); // Positioned between items
+        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
+        var indicatorRect = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y - (5 * scale), logicalWidth * scale, 4 * scale);
         var style = new BoxStyle { FillColor = DefaultTheme.Accent, BorderLength = 0, Roundness = 0.5f };
         UI.Context.Renderer.DrawBox(indicatorRect, style);
     }
