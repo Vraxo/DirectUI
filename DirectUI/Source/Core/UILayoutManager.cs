@@ -104,10 +104,10 @@ public class UILayoutManager
         PushContainer(vboxState);
     }
 
-    public Vector2 ApplyLayout(Vector2 defaultPosition)
+    public Vector2 ApplyLayout(Vector2 positionOffset)
     {
         // If in a container, add the widget's desired position as a relative offset.
-        return IsInLayoutContainer() ? GetCurrentPosition() + defaultPosition : defaultPosition;
+        return IsInLayoutContainer() ? GetCurrentPosition() + positionOffset : positionOffset;
     }
 
     public void AdvanceLayout(Vector2 elementSize)

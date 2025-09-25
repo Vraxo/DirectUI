@@ -2639,8 +2639,12 @@ public static partial class UI
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Label.cs">
+using System.Net.NetworkInformation;
+using System;
 using System.Numerics;
+using SkiaSharp;
 using Vortice.Mathematics;
+using Vulkan.Xlib;
 
 namespace DirectUI;
 
@@ -2695,6 +2699,66 @@ public static partial class UI
             }
         }
 
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
+
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(finalSize);
+            return;
+        }
+
+        DrawTextPrimitive(
+            widgetBounds,
+            text,
+            finalStyle,
+            finalAlignment,
+            Vector2.Zero);
+
+        Context.Layout.AdvanceLayout(finalSize);
+    }
+
+    /// <summary>
+    /// Displays text that wraps automatically based on the specified width.
+    /// The layout height is determined by the content.
+    /// </summary>
+    public static void WrappedText(string id, string text, Vector2 size, ButtonStyle? style = null, Alignment? textAlignment = null)
+    {
+        if (!IsContextValid())
+        {
+            // Still advance layout if a fixed height was given
+            if (size.Y > 0) Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        if (string.IsNullOrEmpty(text))
+        {
+            Context.Layout.AdvanceLayout(new Vector2(size.X, 0));
+            return;
+        }
+
+        ButtonStyle finalStyle = style ?? new ButtonStyle();
+        finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
+
+        // Wrapped text should default to top alignment for natural reading flow
+        Alignment finalAlignment = textAlignment ?? new(HAlignment.Left, VAlignment.Top);
+
+        // Get a text layout that is constrained by the available width.
+        // The height constraint is set to max to allow it to grow and wrap naturally.
+        var textLayout = Context.TextService.GetTextLayout(text, finalStyle, new Vector2(size.X, float.MaxValue), finalAlignment);
+
+        if (textLayout == null)
+        {
+            if (size.Y > 0) Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        // The actual content size is determined by the layout's metrics.
+        Vector2 actualContentSize = textLayout.Size;
+
+        // The final size for layout advancement is the constrained width and the actual measured height.
+        Vector2 finalSize = new Vector2(size.X, actualContentSize.Y);
+
+        Vector2 drawPos = Context.Layout.GetCurrentPosition();
         Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))

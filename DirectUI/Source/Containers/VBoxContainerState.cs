@@ -35,4 +35,6 @@ public class VBoxContainerState : ILayoutContainer
         CurrentPosition = new Vector2(CurrentPosition.X, CurrentPosition.Y + advanceY);
         ElementCount++;
     }
+
+    public Vector2 GetAccumulatedSize() => new(MaxElementWidth, AccumulatedHeight);
 }

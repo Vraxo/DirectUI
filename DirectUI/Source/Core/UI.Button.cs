@@ -18,7 +18,7 @@ public static partial class UI
         Button.ClickBehavior clickBehavior = DirectUI.Button.ClickBehavior.Left,
         Alignment? textAlignment = null,
         Vector2? textOffset = null,
-        Vector2? origin = null,
+        Vector2? origin = null, // This parameter is now unused but kept for compatibility to avoid breaking changes elsewhere. It will be removed in the future.
         object? userData = null,
         bool isActive = false,
         int layer = 1)
@@ -30,7 +30,6 @@ public static partial class UI
         State.SetUserData(intId, userData);
 
         Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
-        Vector2 finalOrigin = origin ?? Vector2.Zero;
 
         // Auto-width calculation must happen before culling.
         if (autoWidth)
@@ -41,7 +40,8 @@ public static partial class UI
             finalSize.X = measuredSize.X + margin.X * 2;
         }
 
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Vector2 drawPos = Context.Layout.ApplyLayout(origin ?? Vector2.Zero);
+
 
         // New: Automatically adjust vertical position for HBox alignment
         if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
@@ -62,7 +62,7 @@ public static partial class UI
             }
         }
 
-        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {

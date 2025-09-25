@@ -186,7 +186,7 @@ public static partial class UI
     /// <summary>
     /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
-    internal static void DrawTextPrimitive(
+    public static void DrawTextPrimitive(
         Vortice.Mathematics.Rect bounds,
         string text,
         ButtonStyle style,

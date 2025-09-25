@@ -2,16 +2,16 @@
 
 namespace DirectUI;
 
-internal class GridContainerState : ILayoutContainer
+public class GridContainerState : ILayoutContainer
 {
     internal int Id { get; }
     internal Vector2 StartPosition { get; } // Top-left corner of the grid area
     internal int NumColumns { get; }
     internal Vector2 Gap { get; } // Gap between cells (X and Y)
-    internal Vector2 AvailableSize { get; } // Total area the grid can occupy
+    public Vector2 AvailableSize { get; } // Total area the grid can occupy
 
     // Calculated layout values
-    internal float CellWidth { get; }
+    public float CellWidth { get; }
     internal List<float> RowHeights { get; } = new(); // Store height of each completed row
     internal float CurrentRowMaxHeight { get; set; } = 0f; // Track max height of elements in the current row being built
     internal int CurrentCellIndex { get; set; } = 0; // 0-based index of the next cell to place an element in
@@ -22,7 +22,7 @@ internal class GridContainerState : ILayoutContainer
     internal float AccumulatedHeight { get; set; } = 0f;
 
 
-    internal GridContainerState(int id, Vector2 startPosition, Vector2 availableSize, int numColumns, Vector2 gap)
+    public GridContainerState(int id, Vector2 startPosition, Vector2 availableSize, int numColumns, Vector2 gap)
     {
         Id = id;
         StartPosition = startPosition;
