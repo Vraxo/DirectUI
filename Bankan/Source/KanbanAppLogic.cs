@@ -17,6 +17,23 @@ public class KanbanAppLogic : IAppLogic
     // State for our custom scrollable board view
     private class BoardViewState { public Vector2 ScrollOffset; public Vector2 ContentSize; }
 
+    // State for the "Add Task" modal
+    private class AddTaskModalState
+    {
+        public string TaskText = "";
+        public Color SelectedColor;
+    }
+
+    private readonly List<Color> _availableTaskColors = new()
+    {
+        new(187, 134, 252, 255), // #bb86fc
+        new(255, 117, 151, 255), // #ff7597
+        new(117, 255, 255, 255), // #75ffff
+        new(117, 255, 159, 255), // #75ff9f
+        new(255, 223, 117, 255)  // #ffdf75
+    };
+
+
     public KanbanAppLogic(IWindowHost windowHost)
     {
         _windowHost = windowHost;
@@ -225,6 +242,60 @@ public class KanbanAppLogic : IAppLogic
         UI.EndVBoxContainer();
     }
 
+    private void DrawAddTaskModal(UIContext context)
+    {
+        var modalState = UI.State.GetOrCreateElement<AddTaskModalState>("add_task_modal_state".GetHashCode());
+        var modalContentWidth = 460f;
+
+        UI.BeginVBoxContainer("add_task_vbox", new Vector2(20, 20), 20f);
+
+        var titleStyle = new ButtonStyle { FontSize = 20, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold };
+        UI.Text("add_task_title", "Create New Task", style: titleStyle);
+
+        UI.InputText("add_task_input", ref modalState.TaskText, new Vector2(modalContentWidth, 35), placeholderText: "Enter task description...");
+
+        // Color Selector
+        UI.BeginHBoxContainer("color_selector_hbox", UI.Context.Layout.GetCurrentPosition(), 10f, VAlignment.Center);
+        foreach (var color in _availableTaskColors)
+        {
+            var swatchTheme = new ButtonStylePack { Roundness = 1.0f };
+            swatchTheme.Normal.FillColor = color;
+            swatchTheme.Normal.BorderLength = 3;
+            // If this color is selected, make the border white. Otherwise, transparent.
+            swatchTheme.Normal.BorderColor = (color.R == modalState.SelectedColor.R && color.G == modalState.SelectedColor.G && color.B == modalState.SelectedColor.B)
+                ? Colors.WhiteSmoke
+                : Colors.Transparent;
+            swatchTheme.Hover.FillColor = color;
+            swatchTheme.Hover.BorderColor = swatchTheme.Normal.BorderColor;
+
+            if (UI.Button($"swatch_{color.R}{color.G}{color.B}", "", new Vector2(30, 30), swatchTheme))
+            {
+                modalState.SelectedColor = color;
+            }
+        }
+        UI.EndHBoxContainer();
+
+        // Save Button
+        if (UI.Button("save_task_button", "Save Task", new Vector2(modalContentWidth, 40)))
+        {
+            if (!string.IsNullOrWhiteSpace(modalState.TaskText))
+            {
+                var newTask = new KanbanTask
+                {
+                    Text = modalState.TaskText,
+                    Color = modalState.SelectedColor
+                };
+
+                var todoColumn = _board.Columns.FirstOrDefault(c => c.Id == "todo");
+                todoColumn?.Tasks.Add(newTask);
+
+                _windowHost.ModalWindowService.CloseModalWindow(0);
+            }
+        }
+
+        UI.EndVBoxContainer();
+    }
+
 
     private float CalculateColumnContentHeight(KanbanColumn column)
     {
@@ -287,10 +358,15 @@ public class KanbanAppLogic : IAppLogic
 
         if (column.Id == "todo")
         {
-            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40)))
+            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40)) && !_windowHost.ModalWindowService.IsModalWindowOpen)
             {
-                // TODO: Open add task modal
-                Console.WriteLine($"Add Task button clicked for column '{column.Title}'!");
+                // Reset state before opening
+                var modalState = UI.State.GetOrCreateElement<AddTaskModalState>("add_task_modal_state".GetHashCode());
+                modalState.TaskText = "";
+                modalState.SelectedColor = _availableTaskColors[0];
+
+                _windowHost.ModalWindowService.OpenModalWindow(
+                    "Create New Task", 500, 280, DrawAddTaskModal, _ => { /* No action needed on close */ });
             }
         }
 
