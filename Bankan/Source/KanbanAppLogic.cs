@@ -147,16 +147,13 @@ public class KanbanAppLogic : IAppLogic
 
         // 7. Calculate final content start position (for centering or scrolling)
         float startX = viewRect.X;
-        if (currentContentSize.X < availableWidth)
+        if (currentContentSize.X < availableWidth) // Center horizontally if content is smaller than view
             startX += (availableWidth - currentContentSize.X) / 2f;
         else
             startX -= viewState.ScrollOffset.X;
 
-        float startY = viewRect.Y;
-        if (currentContentSize.Y < availableHeight)
-            startY += (availableHeight - currentContentSize.Y) / 2f;
-        else
-            startY -= viewState.ScrollOffset.Y;
+        // Always align to the top of the view area, adjusted by the scroll offset.
+        float startY = viewRect.Y - viewState.ScrollOffset.Y;
 
         var boardStartPosition = new Vector2(startX, startY);
 
