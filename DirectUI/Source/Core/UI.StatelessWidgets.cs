@@ -28,6 +28,7 @@ public static partial class UI
         int layer = 1)
     {
         var context = UI.Context;
+        var scale = context.UIScale;
         var state = UI.State;
         var renderer = context.Renderer;
         var textService = context.TextService;
@@ -103,16 +104,26 @@ public static partial class UI
         // --- Style Resolution ---
         // Re-check `isPressed` for correct visual state, as it might have changed above.
         isPressed = state.ActivelyPressedElementId == id;
-        ButtonStyle currentStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle logicalStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+
+        // Create a physical style for rendering with scaled properties.
+        var renderStyle = new ButtonStyle(logicalStyle)
+        {
+            FontSize = logicalStyle.FontSize * scale,
+            BorderLengthTop = logicalStyle.BorderLengthTop * scale,
+            BorderLengthRight = logicalStyle.BorderLengthRight * scale,
+            BorderLengthBottom = logicalStyle.BorderLengthBottom * scale,
+            BorderLengthLeft = logicalStyle.BorderLengthLeft * scale
+        };
 
         // --- Drawing ---
         if (bounds.Width > 0 && bounds.Height > 0)
         {
-            // Draw Background
-            renderer.DrawBox(bounds, currentStyle);
+            // Draw Background using the style with scaled border lengths
+            renderer.DrawBox(bounds, renderStyle);
 
-            // Draw Text
-            DrawTextPrimitive(bounds, text, currentStyle, textAlignment, textOffset);
+            // Draw Text using the style with scaled font size
+            DrawTextPrimitive(bounds, text, renderStyle, textAlignment, textOffset);
         }
 
         return clickResult;

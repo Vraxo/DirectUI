@@ -160,21 +160,23 @@ public class KanbanBoardRenderer
     {
         var context = UI.Context;
         var scale = context.UIScale;
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
-        var wrappedLayout = context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        var logicalFontSize = 14f;
+
+        var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
+        var wrappedLayout = context.TextService.GetTextLayout(task.Text, measurementStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
         float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
 
         var taskTheme = new ButtonStylePack { Roundness = 0.1f };
         var cardBackground = new Color(42, 42, 42, 255);
         var hoverBackground = new Color(60, 60, 60, 255);
 
-        var finalTextStyle = new ButtonStyle(textStyle) { FontSize = 14 }; // For rendering, use logical font size
+        var renderTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
 
         if (_settings.ColorStyle == TaskColorStyle.Background)
         {
             taskTheme.Normal.FillColor = task.Color;
             taskTheme.Normal.BorderColor = Colors.Transparent;
-            finalTextStyle.FontColor = new Color(18, 18, 18, 255);
+            renderTextStyle.FontColor = new Color(18, 18, 18, 255);
         }
         else
         {
@@ -184,7 +186,7 @@ public class KanbanBoardRenderer
             taskTheme.Normal.BorderLengthTop = 0;
             taskTheme.Normal.BorderLengthRight = 0;
             taskTheme.Normal.BorderLengthBottom = 0;
-            finalTextStyle.FontColor = DefaultTheme.Text;
+            renderTextStyle.FontColor = DefaultTheme.Text;
         }
 
         taskTheme.Hover.FillColor = hoverBackground; // Hover is always the same
@@ -223,7 +225,7 @@ public class KanbanBoardRenderer
 
         context.Renderer.DrawBox(taskBounds, finalStyle);
         var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
-        UI.DrawTextPrimitive(textBounds, task.Text, finalTextStyle, textAlign, Vector2.Zero);
+        UI.DrawTextPrimitive(textBounds, task.Text, renderTextStyle, textAlign, Vector2.Zero);
 
         context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
     }
@@ -232,7 +234,8 @@ public class KanbanBoardRenderer
     private void DrawDragPlaceholder(KanbanTask task, float logicalWidth)
     {
         var scale = UI.Context.UIScale;
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+        var logicalFontSize = 14f;
+        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
         var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
         float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
 
