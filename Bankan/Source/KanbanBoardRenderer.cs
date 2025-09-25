@@ -147,8 +147,7 @@ public class KanbanBoardRenderer
                 if (choice == 0) _modalManager.OpenEditTaskModal(task);
                 else if (choice == 1)
                 {
-                    column.Tasks.Remove(task);
-                    _modalManager.RequestSave();
+                    _modalManager.RequestTaskDeletion(task);
                 }
                 _modalManager.ClearActiveContextMenuOwner();
             }

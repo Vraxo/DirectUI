@@ -79,6 +79,8 @@ public class KanbanAppLogic : IAppLogic
 
         UI.EndGridContainer();
 
+        _modalManager.ProcessPendingActions();
+
         _dragDropHandler.DrawDraggedTaskOverlay(draggedTaskWidth);
     }
 }

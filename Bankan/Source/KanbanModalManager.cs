@@ -22,6 +22,8 @@ public class KanbanModalManager
     private string? _activeContextMenuOwnerId;
     public string? ActiveContextMenuOwnerId => _activeContextMenuOwnerId;
 
+    private KanbanTask? _taskToDelete;
+
     private readonly List<string> _availableTaskColors = new() { "#bb86fc", "#ff7597", "#75ffff", "#75ff9f", "#ffdf75" };
 
     public bool IsModalOpen => _windowHost.ModalWindowService.IsModalWindowOpen;
@@ -42,6 +44,22 @@ public class KanbanModalManager
     }
 
     public void ClearActiveContextMenuOwner() => _activeContextMenuOwnerId = null;
+
+    public void RequestTaskDeletion(KanbanTask task) => _taskToDelete = task;
+
+    public void ProcessPendingActions()
+    {
+        if (_taskToDelete != null)
+        {
+            var column = _board.Columns.FirstOrDefault(c => c.Tasks.Contains(_taskToDelete));
+            if (column != null)
+            {
+                column.Tasks.Remove(_taskToDelete);
+                RequestSave();
+            }
+            _taskToDelete = null;
+        }
+    }
 
     public void OpenSettingsModal(KanbanSettings settings)
     {
@@ -127,9 +145,7 @@ public class KanbanModalManager
             }
             else if (resultCode == 2 && _taskToEdit != null)
             {
-                var column = _board.Columns.FirstOrDefault(c => c.Tasks.Contains(_taskToEdit));
-                column?.Tasks.Remove(_taskToEdit);
-                RequestSave();
+                RequestTaskDeletion(_taskToEdit);
             }
             _taskToEdit = null;
         });
