@@ -223,12 +223,25 @@ namespace DirectUI.Backends.SkiaSharp
         {
             var parentHwnd = Handle;
 
-            _activeModalWindow?.Dispose();
-            _activeModalWindow = null;
-
+            // First, re-enable the parent window. The OS expects this during a modal teardown.
             if (parentHwnd != IntPtr.Zero)
             {
                 EnableWindow(parentHwnd, true);
+            }
+
+            if (_activeModalWindow != null)
+            {
+                // Now, before the OS can repaint, instantly move the modal far off-screen
+                // and hide it. This is the crucial step to prevent the visual glitch.
+                _activeModalWindow.IWindow.Position = new Vector2D<int>(-30000, -30000);
+                _activeModalWindow.IWindow.IsVisible = false;
+                _activeModalWindow.Dispose();
+            }
+            _activeModalWindow = null;
+
+            // After the modal is gone, bring the parent window to the foreground.
+            if (parentHwnd != IntPtr.Zero)
+            {
                 SetForegroundWindow(parentHwnd);
                 _mainWindow?.IWindow.Focus();
             }
