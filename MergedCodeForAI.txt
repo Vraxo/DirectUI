@@ -796,16 +796,16 @@ using System.Numerics;
 
 namespace DirectUI;
 
-internal class GridContainerState : ILayoutContainer
+public class GridContainerState : ILayoutContainer
 {
     internal int Id { get; }
-    internal Vector2 StartPosition { get; } // Top-left corner of the grid area
+    public Vector2 StartPosition { get; } // Top-left corner of the grid area
     internal int NumColumns { get; }
-    internal Vector2 Gap { get; } // Gap between cells (X and Y)
-    internal Vector2 AvailableSize { get; } // Total area the grid can occupy
+    public Vector2 Gap { get; } // Gap between cells (X and Y)
+    public Vector2 AvailableSize { get; } // Total area the grid can occupy
 
     // Calculated layout values
-    internal float CellWidth { get; }
+    public float CellWidth { get; }
     internal List<float> RowHeights { get; } = new(); // Store height of each completed row
     internal float CurrentRowMaxHeight { get; set; } = 0f; // Track max height of elements in the current row being built
     internal int CurrentCellIndex { get; set; } = 0; // 0-based index of the next cell to place an element in
@@ -816,7 +816,7 @@ internal class GridContainerState : ILayoutContainer
     internal float AccumulatedHeight { get; set; } = 0f;
 
 
-    internal GridContainerState(int id, Vector2 startPosition, Vector2 availableSize, int numColumns, Vector2 gap)
+    public GridContainerState(int id, Vector2 startPosition, Vector2 availableSize, int numColumns, Vector2 gap)
     {
         Id = id;
         StartPosition = startPosition;
@@ -1063,6 +1063,8 @@ public class VBoxContainerState : ILayoutContainer
         CurrentPosition = new Vector2(CurrentPosition.X, CurrentPosition.Y + advanceY);
         ElementCount++;
     }
+
+    public Vector2 GetAccumulatedSize() => new(MaxElementWidth, AccumulatedHeight);
 }
 </file>
 
@@ -1196,7 +1198,7 @@ public static partial class UI
         Button.ClickBehavior clickBehavior = DirectUI.Button.ClickBehavior.Left,
         Alignment? textAlignment = null,
         Vector2? textOffset = null,
-        Vector2? origin = null,
+        Vector2? origin = null, // This parameter is now unused but kept for compatibility to avoid breaking changes elsewhere. It will be removed in the future.
         object? userData = null,
         bool isActive = false,
         int layer = 1)
@@ -1208,7 +1210,6 @@ public static partial class UI
         State.SetUserData(intId, userData);
 
         Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
-        Vector2 finalOrigin = origin ?? Vector2.Zero;
 
         // Auto-width calculation must happen before culling.
         if (autoWidth)
@@ -1219,7 +1220,8 @@ public static partial class UI
             finalSize.X = measuredSize.X + margin.X * 2;
         }
 
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Vector2 drawPos = Context.Layout.ApplyLayout(origin ?? Vector2.Zero);
+
 
         // New: Automatically adjust vertical position for HBox alignment
         if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
@@ -1240,7 +1242,7 @@ public static partial class UI
             }
         }
 
-        Rect widgetBounds = new Rect(drawPos.X - finalOrigin.X, drawPos.Y - finalOrigin.Y, finalSize.X, finalSize.Y);
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
@@ -3220,7 +3222,7 @@ public static partial class UI
     /// <summary>
     /// The single, unified primitive for drawing cached text within a bounding box.
     /// </summary>
-    internal static void DrawTextPrimitive(
+    public static void DrawTextPrimitive(
         Vortice.Mathematics.Rect bounds,
         string text,
         ButtonStyle style,
@@ -3664,10 +3666,10 @@ public class UILayoutManager
         PushContainer(vboxState);
     }
 
-    public Vector2 ApplyLayout(Vector2 defaultPosition)
+    public Vector2 ApplyLayout(Vector2 positionOffset)
     {
         // If in a container, add the widget's desired position as a relative offset.
-        return IsInLayoutContainer() ? GetCurrentPosition() + defaultPosition : defaultPosition;
+        return IsInLayoutContainer() ? GetCurrentPosition() + positionOffset : positionOffset;
     }
 
     public void AdvanceLayout(Vector2 elementSize)
