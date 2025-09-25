@@ -1,5 +1,7 @@
 ﻿// Entire file content here
+using System;
 using System.Numerics;
+using DirectUI.Animation;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
@@ -25,7 +27,8 @@ public static partial class UI
         DirectUI.Button.ClickBehavior clickBehavior,
         Vector2 textOffset,
         bool isActive = false,
-        int layer = 1)
+        int layer = 1,
+        AnimationInfo? animation = null)
     {
         var context = UI.Context;
         var scale = context.UIScale;
@@ -104,16 +107,39 @@ public static partial class UI
         // --- Style Resolution ---
         // Re-check `isPressed` for correct visual state, as it might have changed above.
         isPressed = state.ActivelyPressedElementId == id;
-        ButtonStyle logicalStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle targetStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle animatedStyle;
+
+        if (animation != null && !disabled)
+        {
+            var animManager = state.AnimationManager;
+            var currentTime = context.TotalTime;
+
+            var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, animation.Duration, animation.Easing);
+            var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, animation.Duration, animation.Easing);
+            var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, animation.Duration, animation.Easing);
+
+            animatedStyle = new ButtonStyle(targetStyle)
+            {
+                FillColor = fillColor,
+                BorderColor = borderColor,
+                BorderLength = borderLength
+            };
+        }
+        else
+        {
+            animatedStyle = targetStyle;
+        }
+
 
         // Create a physical style for rendering with scaled properties.
-        var renderStyle = new ButtonStyle(logicalStyle)
+        var renderStyle = new ButtonStyle(animatedStyle)
         {
-            FontSize = logicalStyle.FontSize * scale,
-            BorderLengthTop = logicalStyle.BorderLengthTop * scale,
-            BorderLengthRight = logicalStyle.BorderLengthRight * scale,
-            BorderLengthBottom = logicalStyle.BorderLengthBottom * scale,
-            BorderLengthLeft = logicalStyle.BorderLengthLeft * scale
+            FontSize = animatedStyle.FontSize * scale,
+            BorderLengthTop = animatedStyle.BorderLengthTop * scale,
+            BorderLengthRight = animatedStyle.BorderLengthRight * scale,
+            BorderLengthBottom = animatedStyle.BorderLengthBottom * scale,
+            BorderLengthLeft = animatedStyle.BorderLengthLeft * scale
         };
 
         // --- Drawing ---

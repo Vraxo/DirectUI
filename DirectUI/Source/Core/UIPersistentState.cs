@@ -1,6 +1,7 @@
 ﻿// Entire file content here
 using System;
 using System.Collections.Generic;
+using DirectUI.Animation;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -81,6 +82,9 @@ public class UIPersistentState
     // The winner of a 'Press' action, resolved at the end of the previous frame.
     public int PressActionWinnerId { get; private set; }
     private int _nextFramePressWinnerId;
+
+    // --- Animation State ---
+    public AnimationManager AnimationManager { get; } = new();
 
 
     /// <summary>

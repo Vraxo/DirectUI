@@ -1,6 +1,7 @@
 ﻿using System.Linq;
 using System.Numerics;
 using DirectUI;
+using DirectUI.Animation;
 using DirectUI.Core;
 using DirectUI.Drawing;
 
@@ -100,7 +101,7 @@ public class KanbanBoardRenderer
             addTaskTheme.Hover.FillColor = DefaultTheme.Accent;
             addTaskTheme.Hover.BorderColor = DefaultTheme.Accent;
 
-            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40), theme: addTaskTheme))
+            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40), theme: addTaskTheme, animation: new AnimationInfo()))
             {
                 _modalManager.OpenAddTaskModal(column);
             }

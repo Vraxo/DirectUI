@@ -47,6 +47,7 @@ public class AppEngine
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
     public Color4 BackgroundColor { get; }
+    public float UIScale { get; set; } = 1.0f;
 
     public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
@@ -101,10 +102,11 @@ public class AppEngine
 
         try
         {
-            // Get the immutable input state for this frame from the InputManager
+            // Get the immutable, physical input state for this frame from the InputManager.
+            // Mouse coordinates are in physical pixels. Hit-testing will be done in physical space.
             var inputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime);
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime, UIScale);
             uiContext.State = _persistentState; // Assign instance-specific state to the context
             UI.BeginFrame(uiContext);
 
@@ -148,6 +150,9 @@ public static class ApplicationRunner
         IWindowHost? host = null;
         IAppLogic? appLogic = null;
 
+        // Load settings at the very beginning of the application run.
+        var settings = SettingsManager.LoadSettings();
+
         // Define a guarded save action to prevent saving more than once on exit.
         Action? saveAction = null;
 
@@ -166,24 +171,34 @@ public static class ApplicationRunner
 
             appLogic = appLogicFactory(host);
 
-            saveAction = () =>
+            // Pass the loaded scale to the host during initialization.
+            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f), settings.UIScale)) // #2D2D2D
             {
-                if (_isSavedOnExit || appLogic == null) return;
+                // --- FIX: Define the save action AFTER the host and its AppEngine are initialized. ---
+                saveAction = () =>
+                {
+                    if (_isSavedOnExit || appLogic == null) return;
 
-                Console.WriteLine("Exit detected. Saving application state...");
-                appLogic.SaveState();
-                _isSavedOnExit = true;
-            };
+                    Console.WriteLine("Exit detected. Saving application state...");
+                    appLogic.SaveState();
 
-            // Hook into the AppDomain.ProcessExit event. This is a more reliable way
-            // to catch process termination, including closing the console window.
-            AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
-            {
-                saveAction?.Invoke();
-            };
+                    // Save DirectUI settings on exit.
+                    if (host?.AppEngine is not null)
+                    {
+                        settings.UIScale = host.AppEngine.UIScale;
+                        SettingsManager.SaveSettings(settings);
+                        Console.WriteLine($"Saved UI Scale: {settings.UIScale}");
+                    }
 
-            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
-            {
+                    _isSavedOnExit = true;
+                };
+
+                // Hook into the AppDomain.ProcessExit event AFTER initialization.
+                AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+                {
+                    saveAction?.Invoke();
+                };
+
                 host.RunLoop();
             }
             else
@@ -230,6 +245,21 @@ public sealed class AppServices
         Renderer = renderer;
         TextService = textService;
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\DirectUISettings.cs">
+namespace DirectUI;
+
+/// <summary>
+/// A model for storing global DirectUI settings that are persisted to a file.
+/// </summary>
+public class DirectUISettings
+{
+    /// <summary>
+    /// The global zoom level for the entire user interface.
+    /// </summary>
+    public float UIScale { get; set; } = 1.0f;
 }
 </file>
 
@@ -688,6 +718,69 @@ public static class NativeMethods
     // --- Helpers ---
     public static short LoWord(IntPtr val) => unchecked((short)(long)val);
     public static short HiWord(IntPtr val) => unchecked((short)((long)val >> 16));
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\SettingsManager.cs">
+using System;
+using System.IO;
+using System.Text.Json;
+
+namespace DirectUI;
+
+/// <summary>
+/// Manages loading and saving of global DirectUI settings.
+/// </summary>
+internal static class SettingsManager
+{
+    private static readonly string SettingsDirectory = Path.Combine(AppContext.BaseDirectory, "Data");
+    private static readonly string SettingsFilePath = Path.Combine(SettingsDirectory, "settings.json");
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true
+    };
+
+    /// <summary>
+    /// Saves the provided settings object to the default settings file.
+    /// </summary>
+    public static void SaveSettings(DirectUISettings settings)
+    {
+        try
+        {
+            Directory.CreateDirectory(SettingsDirectory);
+            string json = JsonSerializer.Serialize(settings, SerializerOptions);
+            File.WriteAllText(SettingsFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DirectUI] Error saving settings to {SettingsFilePath}: {ex.Message}");
+        }
+    }
+
+    /// <summary>
+    /// Loads the settings object from the default settings file.
+    /// If the file doesn't exist or fails to load, returns a new instance with default values.
+    /// </summary>
+    public static DirectUISettings LoadSettings()
+    {
+        if (!File.Exists(SettingsFilePath))
+        {
+            return new DirectUISettings(); // Return default settings
+        }
+
+        try
+        {
+            string json = File.ReadAllText(SettingsFilePath);
+            return JsonSerializer.Deserialize<DirectUISettings>(json, SerializerOptions) ?? new DirectUISettings();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DirectUI] Error loading settings from {SettingsFilePath}. Using defaults. Error: {ex.Message}");
+            return new DirectUISettings(); // Return default settings on error
+        }
+    }
 }
 </file>
 
@@ -1204,22 +1297,24 @@ public static partial class UI
         int layer = 1)
     {
         if (!IsContextValid()) return false;
+        var scale = Context.UIScale;
 
         int intId = id.GetHashCode();
         var finalTheme = theme ?? State.GetOrCreateElement<ButtonStylePack>(HashCode.Combine(intId, "theme"));
         State.SetUserData(intId, userData);
 
-        Vector2 finalSize = size == default ? new Vector2(84, 28) : size;
+        Vector2 logicalSize = size == default ? new Vector2(84, 28) : size;
 
         // Auto-width calculation must happen before culling.
         if (autoWidth)
         {
-            var styleForMeasuring = finalTheme.Normal; // Measure against the normal style
-            Vector2 measuredSize = Context.TextService.MeasureText(text, styleForMeasuring);
+            var styleForMeasuring = new ButtonStyle(finalTheme.Normal) { FontSize = finalTheme.Normal.FontSize * scale };
+            Vector2 measuredSize = Context.TextService.MeasureText(text, styleForMeasuring) / scale; // Unscale to logical
             Vector2 margin = textMargin ?? new Vector2(10, 5);
-            finalSize.X = measuredSize.X + margin.X * 2;
+            logicalSize.X = measuredSize.X + margin.X * 2;
         }
 
+        Vector2 finalSize = logicalSize * scale;
         Vector2 drawPos = Context.Layout.ApplyLayout(origin ?? Vector2.Zero);
 
 
@@ -1232,13 +1327,13 @@ public static partial class UI
                 switch (hbox.VerticalAlignment)
                 {
                     case VAlignment.Center:
-                        yOffset = (hbox.FixedRowHeight.Value - finalSize.Y) / 2f;
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
                         break;
                     case VAlignment.Bottom:
-                        yOffset = hbox.FixedRowHeight.Value - finalSize.Y;
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
                         break;
                 }
-                drawPos.Y += yOffset;
+                drawPos.Y += yOffset * scale;
             }
         }
 
@@ -1246,7 +1341,7 @@ public static partial class UI
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(finalSize);
+            Context.Layout.AdvanceLayout(logicalSize);
             return false;
         }
 
@@ -1273,7 +1368,7 @@ public static partial class UI
             textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
             clickMode,
             clickBehavior,
-            textOffset ?? Vector2.Zero,
+            (textOffset ?? Vector2.Zero) * scale,
             isActive: isActive,
             layer: layer
         );
@@ -1283,7 +1378,7 @@ public static partial class UI
             Context.Renderer.PopClipRect();
         }
 
-        Context.Layout.AdvanceLayout(finalSize);
+        Context.Layout.AdvanceLayout(logicalSize);
         return clickResult != ClickResult.None;
     }
 }
@@ -1971,6 +2066,15 @@ public static partial class UI
             return state.PopupResult;
         }
 
+        // FIX: A context menu should only open on a frame where a right-click occurred.
+        // If we are being asked to create a new popup (!state.IsPopupOpen) but there was no
+        // right click, it means the app's state is stale from a previous menu that was
+        // closed by clicking away. We should ignore the request to prevent re-opening.
+        if (!state.IsPopupOpen && !context.InputState.WasRightMousePressedThisFrame)
+        {
+            return -1;
+        }
+
         // Only set up the popup on the first frame it's requested.
         // After that, the EndFrame logic will handle drawing it using the stored state.
         if (!state.IsPopupOpen || state.ActivePopupId != intId)
@@ -1998,7 +2102,7 @@ public static partial class UI
 
                     int itemId = HashCode.Combine(intId, "item", i);
 
-                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0)) != ClickResult.None)
+                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0), isActive: false, layer: 100) != ClickResult.None)
                     {
                         state.SetPopupResult(intId, i);
                         state.ClearActivePopup();
@@ -2658,6 +2762,8 @@ public static partial class UI
         {
             return;
         }
+        var scale = Context.UIScale;
+        var logicalSize = size ?? Vector2.Zero;
 
         ButtonStyle finalStyle = style ?? new();
         finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
@@ -2665,22 +2771,24 @@ public static partial class UI
         Alignment finalAlignment = textAlignment
             ?? new(HAlignment.Left, VAlignment.Center);
 
-        Vector2 measuredSize = Context.TextService.MeasureText(text, finalStyle);
+        var measurementStyle = new ButtonStyle(finalStyle) { FontSize = finalStyle.FontSize * scale };
+        Vector2 measuredSize = Context.TextService.MeasureText(text, measurementStyle) / scale; // unscale to get logical size
 
-        Vector2 finalSize;
+        Vector2 finalLogicalSize;
         if (size.HasValue)
         {
-            finalSize = new Vector2(
-                size.Value.X > 0 ? size.Value.X : measuredSize.X,
-                size.Value.Y > 0 ? size.Value.Y : measuredSize.Y
+            finalLogicalSize = new Vector2(
+                logicalSize.X > 0 ? logicalSize.X : measuredSize.X,
+                logicalSize.Y > 0 ? logicalSize.Y : measuredSize.Y
             );
         }
         else
         {
-            finalSize = measuredSize;
+            finalLogicalSize = measuredSize;
         }
 
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
+        Vector2 finalPhysicalSize = finalLogicalSize * scale;
+        Vector2 drawPos = Context.Layout.ApplyLayout(Vector2.Zero);
 
         // New: Automatically adjust vertical position for HBox alignment
         if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
@@ -2691,32 +2799,34 @@ public static partial class UI
                 switch (hbox.VerticalAlignment)
                 {
                     case VAlignment.Center:
-                        yOffset = (hbox.FixedRowHeight.Value - finalSize.Y) / 2f;
+                        yOffset = (hbox.FixedRowHeight.Value - finalLogicalSize.Y) / 2f;
                         break;
                     case VAlignment.Bottom:
-                        yOffset = hbox.FixedRowHeight.Value - finalSize.Y;
+                        yOffset = hbox.FixedRowHeight.Value - finalLogicalSize.Y;
                         break;
                 }
-                drawPos.Y += yOffset;
+                drawPos.Y += yOffset * scale;
             }
         }
 
-        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalPhysicalSize.X, finalPhysicalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(finalSize);
+            Context.Layout.AdvanceLayout(finalLogicalSize);
             return;
         }
+
+        var renderStyle = new ButtonStyle(finalStyle) { FontSize = finalStyle.FontSize * scale };
 
         DrawTextPrimitive(
             widgetBounds,
             text,
-            finalStyle,
+            renderStyle,
             finalAlignment,
             Vector2.Zero);
 
-        Context.Layout.AdvanceLayout(finalSize);
+        Context.Layout.AdvanceLayout(finalLogicalSize);
     }
 
     /// <summary>
@@ -2738,45 +2848,52 @@ public static partial class UI
             return;
         }
 
+        var scale = Context.UIScale;
+        var logicalSize = size;
+
         ButtonStyle finalStyle = style ?? new ButtonStyle();
         finalStyle.FontColor = GetStyleColor(StyleColor.Text, finalStyle.FontColor);
 
         // Wrapped text should default to top alignment for natural reading flow
         Alignment finalAlignment = textAlignment ?? new(HAlignment.Left, VAlignment.Top);
 
+        var renderStyle = new ButtonStyle(finalStyle) { FontSize = finalStyle.FontSize * scale };
+
         // Get a text layout that is constrained by the available width.
         // The height constraint is set to max to allow it to grow and wrap naturally.
-        var textLayout = Context.TextService.GetTextLayout(text, finalStyle, new Vector2(size.X, float.MaxValue), finalAlignment);
+        var textLayout = Context.TextService.GetTextLayout(text, renderStyle, new Vector2(logicalSize.X * scale, float.MaxValue), finalAlignment);
 
         if (textLayout == null)
         {
-            if (size.Y > 0) Context.Layout.AdvanceLayout(size);
+            if (logicalSize.Y > 0) Context.Layout.AdvanceLayout(logicalSize);
             return;
         }
 
         // The actual content size is determined by the layout's metrics.
-        Vector2 actualContentSize = textLayout.Size;
+        Vector2 actualPhysicalContentSize = textLayout.Size;
+        Vector2 actualLogicalContentSize = actualPhysicalContentSize / scale;
 
         // The final size for layout advancement is the constrained width and the actual measured height.
-        Vector2 finalSize = new Vector2(size.X, actualContentSize.Y);
+        Vector2 finalLogicalSize = new Vector2(logicalSize.X, actualLogicalContentSize.Y);
+        Vector2 finalPhysicalSize = finalLogicalSize * scale;
 
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalSize.X, finalSize.Y);
+        Vector2 drawPos = Context.Layout.ApplyLayout(Vector2.Zero);
+        Rect widgetBounds = new(drawPos.X, drawPos.Y, finalPhysicalSize.X, finalPhysicalSize.Y);
 
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(finalSize);
+            Context.Layout.AdvanceLayout(finalLogicalSize);
             return;
         }
 
         DrawTextPrimitive(
             widgetBounds,
             text,
-            finalStyle,
+            renderStyle,
             finalAlignment,
             Vector2.Zero);
 
-        Context.Layout.AdvanceLayout(finalSize);
+        Context.Layout.AdvanceLayout(finalLogicalSize);
     }
 }
 </file>
@@ -2897,27 +3014,42 @@ public static partial class UI
             return;
         }
 
+        var scale = Context.UIScale;
+
+        // All input parameters are logical
+        float logicalWidth = width;
+        float logicalThickness = thickness;
+        float logicalPadding = verticalPadding;
+
         Color4 finalColor = color ?? DefaultTheme.NormalBorder;
-        float totalHeight = thickness + (verticalPadding * 2);
-        Vector2 size = new(width, totalHeight);
+        float logicalTotalHeight = logicalThickness + (logicalPadding * 2);
+        Vector2 logicalSize = new(logicalWidth, logicalTotalHeight);
 
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new(drawPos.X, drawPos.Y, size.X, size.Y);
+        // Get the physical top-left position for drawing
+        Vector2 physicalDrawPos = Context.Layout.ApplyLayout(Vector2.Zero);
+        Vector2 physicalSize = logicalSize * scale;
 
-        if (!Context.Layout.IsRectVisible(widgetBounds))
+        Rect physicalWidgetBounds = new(physicalDrawPos.X, physicalDrawPos.Y, physicalSize.X, physicalSize.Y);
+
+        if (!Context.Layout.IsRectVisible(physicalWidgetBounds))
         {
-            Context.Layout.AdvanceLayout(size);
+            Context.Layout.AdvanceLayout(logicalSize);
             return;
         }
 
-        float lineY = drawPos.Y + verticalPadding + (thickness * 0.5f);
-        Vector2 lineStart = new(drawPos.X, lineY);
-        Vector2 lineEnd = new(drawPos.X + width, lineY);
+        // Calculate physical line properties for rendering
+        float physicalThickness = logicalThickness * scale;
+        float physicalPadding = logicalPadding * scale;
 
-        // Use the renderer to draw the line
-        Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
+        float lineY = physicalDrawPos.Y + physicalPadding + (physicalThickness * 0.5f);
+        Vector2 lineStart = new(physicalDrawPos.X, lineY);
+        Vector2 lineEnd = new(physicalDrawPos.X + physicalSize.X, lineY);
 
-        Context.Layout.AdvanceLayout(size);
+        // Use the renderer to draw the line with physical values
+        Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, physicalThickness);
+
+        // Advance the layout using the logical size
+        Context.Layout.AdvanceLayout(logicalSize);
     }
 }
 </file>
@@ -3064,6 +3196,7 @@ public static partial class UI
         int layer = 1)
     {
         var context = UI.Context;
+        var scale = context.UIScale;
         var state = UI.State;
         var renderer = context.Renderer;
         var textService = context.TextService;
@@ -3139,16 +3272,26 @@ public static partial class UI
         // --- Style Resolution ---
         // Re-check `isPressed` for correct visual state, as it might have changed above.
         isPressed = state.ActivelyPressedElementId == id;
-        ButtonStyle currentStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle logicalStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+
+        // Create a physical style for rendering with scaled properties.
+        var renderStyle = new ButtonStyle(logicalStyle)
+        {
+            FontSize = logicalStyle.FontSize * scale,
+            BorderLengthTop = logicalStyle.BorderLengthTop * scale,
+            BorderLengthRight = logicalStyle.BorderLengthRight * scale,
+            BorderLengthBottom = logicalStyle.BorderLengthBottom * scale,
+            BorderLengthLeft = logicalStyle.BorderLengthLeft * scale
+        };
 
         // --- Drawing ---
         if (bounds.Width > 0 && bounds.Height > 0)
         {
-            // Draw Background
-            renderer.DrawBox(bounds, currentStyle);
+            // Draw Background using the style with scaled border lengths
+            renderer.DrawBox(bounds, renderStyle);
 
-            // Draw Text
-            DrawTextPrimitive(bounds, text, currentStyle, textAlignment, textOffset);
+            // Draw Text using the style with scaled font size
+            DrawTextPrimitive(bounds, text, renderStyle, textAlignment, textOffset);
         }
 
         return clickResult;
@@ -3539,6 +3682,7 @@ public class UIContext
     public InputState InputState { get; }
     public float DeltaTime { get; }
     public float TotalTime { get; }
+    public float UIScale { get; }
     public UIPersistentState State { get; internal set; } = null!;
 
     // Layout and state management
@@ -3547,14 +3691,15 @@ public class UIContext
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
 
-    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime)
+    public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime, float uiScale)
     {
         Renderer = renderer;
         TextService = textService;
         InputState = inputState;
         DeltaTime = deltaTime;
         TotalTime = totalTime;
-        Layout = new UILayoutManager();
+        UIScale = uiScale;
+        Layout = new UILayoutManager(uiScale);
     }
 }
 </file>
@@ -3571,9 +3716,15 @@ public class UILayoutManager
     private readonly Stack<ILayoutContainer> _containerStack = new();
     private readonly Dictionary<int, object> _containerStateCache = new();
     private readonly Stack<Rect> _clipRectStack = new();
+    private readonly float _uiScale;
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
+
+    public UILayoutManager(float uiScale)
+    {
+        _uiScale = uiScale;
+    }
 
     public void PushContainer(ILayoutContainer containerState) => _containerStack.Push(containerState);
     public ILayoutContainer PopContainer() => _containerStack.Pop();
@@ -3668,12 +3819,15 @@ public class UILayoutManager
 
     public Vector2 ApplyLayout(Vector2 positionOffset)
     {
-        // If in a container, add the widget's desired position as a relative offset.
-        return IsInLayoutContainer() ? GetCurrentPosition() + positionOffset : positionOffset;
+        // Calculate the final logical position.
+        var logicalPosition = IsInLayoutContainer() ? GetCurrentPosition() + positionOffset : positionOffset;
+        // Return the physical, scaled position for rendering.
+        return logicalPosition * _uiScale;
     }
 
     public void AdvanceLayout(Vector2 elementSize)
     {
+        // This method receives a logical size and advances the internal logical layout.
         if (IsInLayoutContainer())
         {
             AdvanceContainerLayout(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y)));
@@ -3686,7 +3840,7 @@ public class UILayoutManager
         {
             return Vector2.Zero;
         }
-        // Polymorphic call to the container at the top of the stack.
+        // Polymorphic call to the container at the top of the stack. Returns a logical position.
         return _containerStack.Peek().GetCurrentPosition();
     }
 
@@ -3694,7 +3848,7 @@ public class UILayoutManager
     {
         if (_containerStack.Count == 0) return;
 
-        // Polymorphic call to the container at the top of the stack.
+        // Polymorphic call to the container at the top of the stack with a logical size.
         _containerStack.Peek().Advance(elementSize);
     }
 }
@@ -8561,6 +8715,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     private readonly System.Diagnostics.Stopwatch _throttleTimer = new();
     private long _lastModalRepaintTicks;
     private static readonly long _modalRepaintIntervalTicks = System.Diagnostics.Stopwatch.Frequency / 10;
+    private bool _isCtrlDown; // For zoom
 
     // --- Logic moved from Application.cs ---
     private static readonly List<Win32Window> s_windows = [];
@@ -8581,6 +8736,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         _throttleTimer.Start();
     }
 
+    public AppEngine AppEngine => appServices?.AppEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
     public InputManager Input => appServices?.AppEngine.Input ?? new();
     public SizeI ClientSize => GetClientRectSize();
 
@@ -8604,7 +8760,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public IModalWindowService ModalWindowService => this;
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         Console.WriteLine("Win32WindowHost initializing...");
 
@@ -8621,6 +8777,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         try
         {
             appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
+            appServices.AppEngine.UIScale = initialScale;
             return true;
         }
         catch (Exception ex)
@@ -8806,12 +8963,24 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnMouseWheel(float delta)
     {
-        appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
+        if (appServices is null) return;
+
+        if (_isCtrlDown)
+        {
+            float scaleDelta = delta * 0.1f;
+            appServices.AppEngine.UIScale = Math.Clamp(appServices.AppEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+        }
+        else
+        {
+            appServices.AppEngine.Input.AddMouseWheelDelta(delta);
+        }
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
+        if (key == Keys.Control) _isCtrlDown = true;
+
         appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
@@ -8829,6 +8998,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnKeyUp(Keys key)
     {
+        if (key == Keys.Control) _isCtrlDown = false;
         appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }
@@ -8944,6 +9114,11 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         onModalClosedCallback = null;
         modalResultCode = 0;
         _isModalClosing = false;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        throw new NotImplementedException();
     }
 }
 </file>
@@ -9234,7 +9409,7 @@ public class SilkNetSkiaWindow : IDisposable
     private readonly Vector2D<int>? _initialPosition;
 
     internal IWindow IWindow { get; }
-    private AppEngine? _appEngine;
+    internal AppEngine AppEngine { get; private set; }
     private SilkNetRenderer? _renderer;
     private SilkNetTextService? _textService;
     private GL? _gl;
@@ -9243,14 +9418,16 @@ public class SilkNetSkiaWindow : IDisposable
     private GRBackendRenderTarget? _renderTarget;
     private IInputContext? _inputContext;
     private bool _isDisposed;
+    private bool _isCtrlDown; // For zoom
+    private float _initialScale = 1.0f;
 
     public IntPtr Handle => IWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
-    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public InputManager Input => AppEngine?.Input ?? new InputManager();
     public SizeI ClientSize => new(IWindow.Size.X, IWindow.Size.Y);
     public bool ShowFpsCounter
     {
-        get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+        get => AppEngine?.ShowFpsCounter ?? false;
+        set { if (AppEngine != null) AppEngine.ShowFpsCounter = value; }
     }
 
     public SilkNetSkiaWindow(
@@ -9293,10 +9470,11 @@ public class SilkNetSkiaWindow : IDisposable
         IWindow = Window.Create(options);
     }
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         if (IWindow == null) return false;
 
+        _initialScale = initialScale; // Store the scale for the OnLoad event.
         IWindow.Load += () => OnLoad(uiDrawCallback, backgroundColor);
         IWindow.Closing += OnClose;
         IWindow.Resize += OnResize;
@@ -9330,10 +9508,11 @@ public class SilkNetSkiaWindow : IDisposable
         // build the initial Skia surface
         OnResize(IWindow.Size);
 
-        _appEngine = new AppEngine(uiDrawCallback, finalBg);
+        AppEngine = new AppEngine(uiDrawCallback, finalBg);
+        AppEngine.UIScale = _initialScale; // Apply the stored scale here.
         _textService = new SilkNetTextService();
         _renderer = new SilkNetRenderer(_textService);
-        _appEngine.Initialize(_textService, _renderer);
+        AppEngine.Initialize(_textService, _renderer);
 
         _inputContext = IWindow.CreateInput();
         foreach (var kb in _inputContext.Keyboards)
@@ -9357,7 +9536,7 @@ public class SilkNetSkiaWindow : IDisposable
             || _skSurface is null
             || _renderer is null
             || _textService is null
-            || _appEngine is null
+            || AppEngine is null
             || _gl is null)
             return;
 
@@ -9368,7 +9547,7 @@ public class SilkNetSkiaWindow : IDisposable
           | ClearBufferMask.StencilBufferBit
         );
 
-        var bg = _appEngine.BackgroundColor;
+        var bg = AppEngine.BackgroundColor;
         _skSurface.Canvas.Clear(new SKColor(
             (byte)(bg.R * 255),
             (byte)(bg.G * 255),
@@ -9377,7 +9556,7 @@ public class SilkNetSkiaWindow : IDisposable
         ));
 
         _renderer.SetCanvas(_skSurface.Canvas, new Vector2(IWindow.Size.X, IWindow.Size.Y));
-        _appEngine.UpdateAndRender(_renderer, _textService);
+        AppEngine.UpdateAndRender(_renderer, _textService);
         _skSurface.Canvas.Flush();
         IWindow.SwapBuffers();
     }
@@ -9406,6 +9585,11 @@ public class SilkNetSkiaWindow : IDisposable
         // window size/DPI. Clearing them ensures they are recreated with correct,
         // up-to-date metrics on the next frame, fixing caret measurement issues.
         _textService?.Cleanup();
+
+        // --- THE FIX ---
+        // By calling Render() here, we force a redraw and buffer swap
+        // within the OS's modal resize loop, creating the live effect.
+        Render();
     }
 
     private void OnClose() { }
@@ -9462,8 +9646,16 @@ public class SilkNetSkiaWindow : IDisposable
 
     #region Input Callbacks & Mapping
 
-    private void OnKeyDown(IKeyboard kb, Key k, int s) => Input.AddKeyPressed(MapKey(k));
-    private void OnKeyUp(IKeyboard kb, Key k, int s) => Input.AddKeyReleased(MapKey(k));
+    private void OnKeyDown(IKeyboard kb, Key k, int s)
+    {
+        if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = true;
+        Input.AddKeyPressed(MapKey(k));
+    }
+    private void OnKeyUp(IKeyboard kb, Key k, int s)
+    {
+        if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = false;
+        Input.AddKeyReleased(MapKey(k));
+    }
     private void OnKeyChar(IKeyboard kb, char c) => Input.AddCharacterInput(c);
 
     private void OnMouseDown(IMouse m, Silk.NET.Input.MouseButton b)
@@ -9473,7 +9665,18 @@ public class SilkNetSkiaWindow : IDisposable
     private void OnMouseMove(IMouse m, Vector2 pos)
         => Input.SetMousePosition((int)pos.X, (int)pos.Y);
     private void OnMouseWheel(IMouse m, ScrollWheel s)
-        => Input.AddMouseWheelDelta(s.Y);
+    {
+        if (AppEngine is null) return;
+        if (_isCtrlDown)
+        {
+            float scaleDelta = s.Y * 0.1f;
+            AppEngine.UIScale = Math.Clamp(AppEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+        }
+        else
+        {
+            Input.AddMouseWheelDelta(s.Y);
+        }
+    }
 
     // full MapKey/MapMouseButton omitted for brevity—you keep yours here unchanged
 
@@ -9483,7 +9686,7 @@ public class SilkNetSkiaWindow : IDisposable
     {
         if (_isDisposed) return;
 
-        _appEngine?.Cleanup();
+        AppEngine?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
         _skSurface?.Dispose();
@@ -9894,6 +10097,7 @@ namespace DirectUI.Backends.SkiaSharp
             IntPtr dwNewLong);
         private const int GWL_HWNDPARENT = -8;
 
+        public AppEngine AppEngine => _mainWindow?.AppEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
         public IntPtr Handle => _mainWindow?.Handle ?? IntPtr.Zero;
         public InputManager Input => _mainWindow?.Input ?? new InputManager();
         public SizeI ClientSize => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
@@ -9919,11 +10123,13 @@ namespace DirectUI.Backends.SkiaSharp
             _throttleTimer.Start();
         }
 
-        public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+        public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
         {
             _mainWindow = new SilkNetSkiaWindow(
                 _title, _width, _height, this, isModal: false);
-            return _mainWindow.Initialize(uiDrawCallback, backgroundColor);
+
+            // Pass the initial scale down to the window, which will apply it when its AppEngine is created.
+            return _mainWindow.Initialize(uiDrawCallback, backgroundColor, initialScale);
         }
 
         public void RunLoop()
@@ -10054,12 +10260,25 @@ namespace DirectUI.Backends.SkiaSharp
         {
             var parentHwnd = Handle;
 
-            _activeModalWindow?.Dispose();
-            _activeModalWindow = null;
-
+            // First, re-enable the parent window. The OS expects this during a modal teardown.
             if (parentHwnd != IntPtr.Zero)
             {
                 EnableWindow(parentHwnd, true);
+            }
+
+            if (_activeModalWindow != null)
+            {
+                // Now, before the OS can repaint, instantly move the modal far off-screen
+                // and hide it. This is the crucial step to prevent the visual glitch.
+                _activeModalWindow.IWindow.Position = new Vector2D<int>(-30000, -30000);
+                _activeModalWindow.IWindow.IsVisible = false;
+                _activeModalWindow.Dispose();
+            }
+            _activeModalWindow = null;
+
+            // After the modal is gone, bring the parent window to the foreground.
+            if (parentHwnd != IntPtr.Zero)
+            {
                 SetForegroundWindow(parentHwnd);
                 _mainWindow?.IWindow.Focus();
             }
@@ -10564,7 +10783,7 @@ public class RaylibWindowHost : IWindowHost
     private ITextService? _textService;
     private bool _isDisposed = false;
 
-    // Raylib doesn't have a native window handle like Win32 or SDL, so this will be IntPtr.Zero.
+    public AppEngine AppEngine => _appEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
     public IntPtr Handle => IntPtr.Zero;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
     public SizeI ClientSize => new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
@@ -10585,7 +10804,7 @@ public class RaylibWindowHost : IWindowHost
         _backgroundColor = backgroundColor;
     }
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         Console.WriteLine("RaylibWindowHost initializing...");
         try
@@ -10595,6 +10814,7 @@ public class RaylibWindowHost : IWindowHost
             Raylib.SetTargetFPS(60);
 
             _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+            _appEngine.UIScale = initialScale;
             _renderer = new DirectUI.Backends.RaylibRenderer();
             _textService = new DirectUI.Backends.RaylibTextService();
 
@@ -10620,8 +10840,29 @@ public class RaylibWindowHost : IWindowHost
     {
         while (!Raylib.WindowShouldClose())
         {
-            // Process Raylib input events directly
-            _appEngine?.Input.ProcessRaylibInput();
+            if (_appEngine is null) continue;
+
+            // --- Zoom Logic ---
+            bool isCtrlDown = Raylib.IsKeyDown(KeyboardKey.LeftControl) || Raylib.IsKeyDown(KeyboardKey.RightControl);
+            float wheelMove = Raylib.GetMouseWheelMove();
+            if (isCtrlDown && wheelMove != 0)
+            {
+                float scaleDelta = wheelMove * 0.1f;
+                _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+                // Consume the scroll event by not passing it to the InputManager.
+                // We still need to process other inputs, so we create a temporary manager.
+                var tempInput = new InputManager();
+                tempInput.ProcessRaylibInput();
+                // Manually add the scroll delta we are ignoring
+                tempInput.AddMouseWheelDelta(-wheelMove);
+                _appEngine.Input.ProcessRaylibInput();
+            }
+            else
+            {
+                // If not zooming, process input normally
+                _appEngine.Input.ProcessRaylibInput();
+            }
+
 
             // Begin drawing
             Raylib.BeginDrawing();
@@ -10633,7 +10874,7 @@ public class RaylibWindowHost : IWindowHost
             ));
 
             // Update and render the UI through the AppEngine
-            if (_renderer is not null && _textService is not null && _appEngine is not null)
+            if (_renderer is not null && _textService is not null)
             {
                 _appEngine.UpdateAndRender(_renderer, _textService);
             }
@@ -10666,6 +10907,11 @@ public class RaylibWindowHost : IWindowHost
     public void Dispose()
     {
         Cleanup();
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        throw new NotImplementedException();
     }
 
     private class RaylibDummyModalWindowService : IModalWindowService
@@ -11399,6 +11645,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private int _modalResultCode;
     private bool _isModalClosing;
 
+    public AppEngine AppEngine => _appEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
     public IntPtr Handle => _windowPtr;
     public InputManager Input => _appEngine?.Input ?? new();
     public SizeI ClientSize
@@ -11438,7 +11685,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _backgroundColor = backgroundColor;
     }
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
 
@@ -11485,6 +11732,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             _appEngine = new(uiDrawCallback, backgroundColor);
+            _appEngine.UIScale = initialScale;
             _renderer = new(_rendererPtr, _windowPtr);
             _textService = new();
             _appEngine.Initialize(_textService, _renderer);
@@ -11515,13 +11763,25 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             {
                 while (SDL.PollEvent(out SDL.Event ev))
                 {
+                    var keyModifiers = SDL.GetModState();
+                    bool isCtrlDown = (keyModifiers & SDL.Keymod.Ctrl) != 0;
+
                     if (ev.Type == (uint)SDL.EventType.Quit)
                     {
                         running = false;
                         break;
                     }
 
-                    Input.ProcessSDL3Event(ev);
+                    if (ev.Type == (uint)SDL.EventType.MouseWheel && isCtrlDown && _appEngine is not null)
+                    {
+                        float deltaY = ev.Wheel.Y;
+                        float scaleDelta = deltaY * 0.1f;
+                        _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+                    }
+                    else
+                    {
+                        Input.ProcessSDL3Event(ev);
+                    }
                 }
 
                 RenderFrame();
@@ -11537,6 +11797,9 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         {
             while (SDL.PollEvent(out SDL.Event ev))
             {
+                var keyModifiers = SDL.GetModState();
+                bool isCtrlDown = (keyModifiers & SDL.Keymod.Ctrl) != 0;
+
                 if (ev.Type == (uint)SDL.EventType.Quit)
                 {
                     modalRunning = false;
@@ -11553,7 +11816,16 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                     }
                 }
 
-                Input.ProcessSDL3Event(ev);
+                if (ev.Type == (uint)SDL.EventType.MouseWheel && isCtrlDown && _appEngine is not null)
+                {
+                    float deltaY = ev.Wheel.Y;
+                    float scaleDelta = deltaY * 0.1f;
+                    _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+                }
+                else
+                {
+                    Input.ProcessSDL3Event(ev);
+                }
             }
 
             if (_isModalClosing)
@@ -11735,6 +12007,11 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _onModalClosedCallback = null;
         _modalResultCode = 0;
         _isModalClosing = false;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        throw new NotImplementedException();
     }
 }
 </file>
@@ -11950,6 +12227,11 @@ public interface IWindowHost : IDisposable
     IntPtr Handle { get; }
 
     /// <summary>
+    /// Gets the AppEngine instance associated with this host.
+    /// </summary>
+    AppEngine AppEngine { get; }
+
+    /// <summary>
     /// Provides access to the InputManager for the host to feed input events.
     /// </summary>
     InputManager Input { get; }
@@ -11974,8 +12256,9 @@ public interface IWindowHost : IDisposable
     /// </summary>
     /// <param name="uiDrawCallback">The callback function that contains the application's UI drawing logic.</param>
     /// <param name="backgroundColor">The background color to clear the window with each frame.</param>
+    /// <param name="initialScale">The initial UI scale factor to apply.</param>
     /// <returns>True if initialization was successful, false otherwise.</returns>
-    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor);
+    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f);
 
     /// <summary>
     /// Runs the platform-specific main message/event loop for the application.

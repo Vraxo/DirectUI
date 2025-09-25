@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using DirectUI.Animation;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
 
@@ -21,7 +22,8 @@ public static partial class UI
         Vector2? origin = null, // This parameter is now unused but kept for compatibility to avoid breaking changes elsewhere. It will be removed in the future.
         object? userData = null,
         bool isActive = false,
-        int layer = 1)
+        int layer = 1,
+        AnimationInfo? animation = null)
     {
         if (!IsContextValid()) return false;
         var scale = Context.UIScale;
@@ -97,7 +99,8 @@ public static partial class UI
             clickBehavior,
             (textOffset ?? Vector2.Zero) * scale,
             isActive: isActive,
-            layer: layer
+            layer: layer,
+            animation: animation
         );
 
         if (pushedClip)
