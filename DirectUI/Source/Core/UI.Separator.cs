@@ -12,26 +12,41 @@ public static partial class UI
             return;
         }
 
+        var scale = Context.UIScale;
+
+        // All input parameters are logical
+        float logicalWidth = width;
+        float logicalThickness = thickness;
+        float logicalPadding = verticalPadding;
+
         Color4 finalColor = color ?? DefaultTheme.NormalBorder;
-        float totalHeight = thickness + (verticalPadding * 2);
-        Vector2 size = new(width, totalHeight);
+        float logicalTotalHeight = logicalThickness + (logicalPadding * 2);
+        Vector2 logicalSize = new(logicalWidth, logicalTotalHeight);
 
-        Vector2 drawPos = Context.Layout.GetCurrentPosition();
-        Rect widgetBounds = new(drawPos.X, drawPos.Y, size.X, size.Y);
+        // Get the physical top-left position for drawing
+        Vector2 physicalDrawPos = Context.Layout.ApplyLayout(Vector2.Zero);
+        Vector2 physicalSize = logicalSize * scale;
 
-        if (!Context.Layout.IsRectVisible(widgetBounds))
+        Rect physicalWidgetBounds = new(physicalDrawPos.X, physicalDrawPos.Y, physicalSize.X, physicalSize.Y);
+
+        if (!Context.Layout.IsRectVisible(physicalWidgetBounds))
         {
-            Context.Layout.AdvanceLayout(size);
+            Context.Layout.AdvanceLayout(logicalSize);
             return;
         }
 
-        float lineY = drawPos.Y + verticalPadding + (thickness * 0.5f);
-        Vector2 lineStart = new(drawPos.X, lineY);
-        Vector2 lineEnd = new(drawPos.X + width, lineY);
+        // Calculate physical line properties for rendering
+        float physicalThickness = logicalThickness * scale;
+        float physicalPadding = logicalPadding * scale;
 
-        // Use the renderer to draw the line
-        Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, thickness);
+        float lineY = physicalDrawPos.Y + physicalPadding + (physicalThickness * 0.5f);
+        Vector2 lineStart = new(physicalDrawPos.X, lineY);
+        Vector2 lineEnd = new(physicalDrawPos.X + physicalSize.X, lineY);
 
-        Context.Layout.AdvanceLayout(size);
+        // Use the renderer to draw the line with physical values
+        Context.Renderer.DrawLine(lineStart, lineEnd, finalColor, physicalThickness);
+
+        // Advance the layout using the logical size
+        Context.Layout.AdvanceLayout(logicalSize);
     }
 }
