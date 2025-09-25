@@ -79,7 +79,11 @@ public class KanbanAppLogic : IAppLogic
         settingsTheme.Normal.BorderLength = 0;
         settingsTheme.Hover.FillColor = new Color(50, 50, 50, 255);
         settingsTheme.Roundness = 0.5f;
-        UI.Button("settings_btn", "⚙️", size: settingsButtonSize, origin: settingsButtonPos, theme: settingsTheme);
+        if (UI.Button("settings_btn", "⚙️", size: settingsButtonSize, origin: settingsButtonPos, theme: settingsTheme) && !_windowHost.ModalWindowService.IsModalWindowOpen)
+        {
+            _windowHost.ModalWindowService.OpenModalWindow(
+                "Settings", 500, 250, DrawSettingsModal, _ => { /* No action needed on close */ });
+        }
 
         // --- FIXED-SIZE SCROLLING/CENTERING BOARD LAYOUT ---
 
@@ -179,6 +183,49 @@ public class KanbanAppLogic : IAppLogic
         viewState.ContentSize = currentContentSize;
     }
 
+    private void DrawSettingsModal(UIContext context)
+    {
+        var modalContentWidth = 460f;
+        UI.BeginVBoxContainer("settings_vbox", new Vector2(20, 20), 20f);
+
+        var titleStyle = new ButtonStyle { FontSize = 20, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold };
+        UI.Text("settings_title", "Settings", style: titleStyle);
+
+        UI.Separator(modalContentWidth);
+
+        var settingLabelStyle = new ButtonStyle { FontColor = new Color(200, 200, 200, 255) };
+        var toggleLabelStyle = new ButtonStyle { FontColor = new Color(170, 170, 170, 255) };
+
+        // --- Task Color Style Setting ---
+        UI.BeginHBoxContainer("color_style_hbox", UI.Context.Layout.GetCurrentPosition(), 15f, VAlignment.Center);
+        UI.Text("color_style_label", "Task Color Style", new Vector2(180, 24), settingLabelStyle);
+        UI.Text("border_label", "Border", style: toggleLabelStyle);
+
+        bool useBackgroundStyle = _settings.ColorStyle == TaskColorStyle.Background;
+        if (UI.Checkbox("color_style_toggle", "", ref useBackgroundStyle))
+        {
+            _settings.ColorStyle = useBackgroundStyle ? TaskColorStyle.Background : TaskColorStyle.Border;
+        }
+        UI.Text("background_label", "Background", style: toggleLabelStyle);
+        UI.EndHBoxContainer();
+
+        // --- Task Text Alignment Setting ---
+        UI.BeginHBoxContainer("text_align_hbox", UI.Context.Layout.GetCurrentPosition(), 15f, VAlignment.Center);
+        UI.Text("text_align_label", "Task Text Alignment", new Vector2(180, 24), settingLabelStyle);
+        UI.Text("left_align_label", "Left", style: toggleLabelStyle);
+
+        bool useCenterAlign = _settings.TextAlign == TaskTextAlign.Center;
+        if (UI.Checkbox("text_align_toggle", "", ref useCenterAlign))
+        {
+            _settings.TextAlign = useCenterAlign ? TaskTextAlign.Center : TaskTextAlign.Left;
+        }
+        UI.Text("center_align_label", "Center", style: toggleLabelStyle);
+        UI.EndHBoxContainer();
+
+        UI.EndVBoxContainer();
+    }
+
+
     private float CalculateColumnContentHeight(KanbanColumn column)
     {
         float contentPadding = 15f;
@@ -240,7 +287,11 @@ public class KanbanAppLogic : IAppLogic
 
         if (column.Id == "todo")
         {
-            UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40));
+            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40)))
+            {
+                // TODO: Open add task modal
+                Console.WriteLine($"Add Task button clicked for column '{column.Title}'!");
+            }
         }
 
         UI.EndVBoxContainer();
@@ -296,6 +347,12 @@ public class KanbanAppLogic : IAppLogic
             isPressed = false;
         }
         isPressed = state.ActivelyPressedElementId == taskId;
+
+        if (clickResult != ClickResult.None)
+        {
+            // TODO: Open edit task modal
+            Console.WriteLine($"Task '{task.Text}' was clicked!");
+        }
 
         // --- Style Resolution and Drawing ---
         var taskTheme = new ButtonStylePack();
