@@ -132,14 +132,29 @@ public class KanbanBoardRenderer
             _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, pos);
         }
 
-        if (UI.BeginContextMenu(task.Id))
+        if (context.InputState.WasRightMousePressedThisFrame && isHovering && UI.State.PotentialInputTargetId == task.Id.GetHashCode())
         {
+            _modalManager.SetActiveContextMenuOwner(task.Id);
+        }
+
+        if (_modalManager.ActiveContextMenuOwnerId == task.Id)
+        {
+            int contextMenuId = $"context_{task.Id}".GetHashCode();
             int choice = UI.ContextMenu($"context_{task.Id}", new[] { "Edit Task", "Delete Task" });
-            if (choice == 0) _modalManager.OpenEditTaskModal(task);
-            else if (choice == 1)
+
+            if (choice != -1)
             {
-                column.Tasks.Remove(task);
-                _modalManager.RequestSave();
+                if (choice == 0) _modalManager.OpenEditTaskModal(task);
+                else if (choice == 1)
+                {
+                    column.Tasks.Remove(task);
+                    _modalManager.RequestSave();
+                }
+                _modalManager.ClearActiveContextMenuOwner();
+            }
+            else if (UI.State.ActivePopupId != contextMenuId && !UI.State.PopupWasOpenedThisFrame)
+            {
+                _modalManager.ClearActiveContextMenuOwner();
             }
         }
         context.Layout.AdvanceLayout(new Vector2(width, height));

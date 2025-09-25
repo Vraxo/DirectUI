@@ -19,6 +19,9 @@ public class KanbanModalManager
     private KanbanTask? _taskToEdit;
     private KanbanColumn? _columnToAddTaskTo;
 
+    private string? _activeContextMenuOwnerId;
+    public string? ActiveContextMenuOwnerId => _activeContextMenuOwnerId;
+
     private readonly List<string> _availableTaskColors = new() { "#bb86fc", "#ff7597", "#75ffff", "#75ff9f", "#ffdf75" };
 
     public bool IsModalOpen => _windowHost.ModalWindowService.IsModalWindowOpen;
@@ -31,6 +34,14 @@ public class KanbanModalManager
     }
 
     public void RequestSave() => _saveRequestCallback?.Invoke();
+
+    public void SetActiveContextMenuOwner(string taskId)
+    {
+        UI.State.ClearActivePopup();
+        _activeContextMenuOwnerId = taskId;
+    }
+
+    public void ClearActiveContextMenuOwner() => _activeContextMenuOwnerId = null;
 
     public void OpenSettingsModal(KanbanSettings settings)
     {
