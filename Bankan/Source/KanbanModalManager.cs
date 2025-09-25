@@ -18,9 +18,6 @@ public class KanbanModalManager
 
     private object? _activeModalLogic;
 
-    private string? _activeContextMenuOwnerId;
-    public string? ActiveContextMenuOwnerId => _activeContextMenuOwnerId;
-
     private KanbanTask? _taskToDelete;
 
     public bool IsModalOpen => _windowHost.ModalWindowService.IsModalWindowOpen;
@@ -38,14 +35,6 @@ public class KanbanModalManager
 
     public void RequestSave() => _saveRequestCallback.Invoke();
 
-    public void SetActiveContextMenuOwner(string taskId)
-    {
-        UI.State.ClearActivePopup();
-        _activeContextMenuOwnerId = taskId;
-    }
-
-    public void ClearActiveContextMenuOwner() => _activeContextMenuOwnerId = null;
-
     public void RequestTaskDeletion(KanbanTask task) => _taskToDelete = task;
 
     public void ProcessPendingActions()
@@ -60,28 +49,6 @@ public class KanbanModalManager
             }
             _taskToDelete = null;
         }
-    }
-
-    public void OpenContextMenuForTask(KanbanTask task)
-    {
-        int contextMenuId = $"context_{task.Id}".GetHashCode();
-
-        // This defines the drawing logic that will be executed by UI.EndFrame for the popup.
-        Action<UIContext> drawCallback = (ctx) =>
-        {
-            var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
-            if (choice != -1)
-            {
-                if (choice == 0) OpenEditTaskModal(task);
-                else if (choice == 1) RequestTaskDeletion(task);
-
-                // Once a choice is made, we must close the popup.
-                UI.State.ClearActivePopup();
-            }
-        };
-
-        // This registers the popup to be drawn. Bounds can be empty as UI.ContextMenu calculates them.
-        UI.State.SetActivePopup(contextMenuId, drawCallback, new Vortice.Mathematics.Rect());
     }
 
     public void OpenSettingsModal(KanbanSettings settings)

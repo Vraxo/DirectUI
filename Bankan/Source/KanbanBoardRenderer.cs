@@ -12,6 +12,7 @@ public class KanbanBoardRenderer
     private readonly KanbanSettings _settings;
     private readonly KanbanModalManager _modalManager;
     private readonly KanbanDragDropHandler _dragDropHandler;
+    private string? _activeContextMenuTaskId;
 
     public KanbanBoardRenderer(KanbanBoard board, KanbanSettings settings, KanbanModalManager modalManager, KanbanDragDropHandler dragDropHandler)
     {
@@ -215,10 +216,27 @@ public class KanbanBoardRenderer
             _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, physicalPos);
         }
 
-        // --- FIX: Use the task's actual ID to trigger the context menu. ---
+        // Trigger setting the active context menu on right-click
         if (UI.BeginContextMenu(task.Id))
         {
-            _modalManager.OpenContextMenuForTask(task);
+            _activeContextMenuTaskId = task.Id;
+        }
+
+        // If this task's context menu should be open, draw it and check for results
+        if (_activeContextMenuTaskId == task.Id)
+        {
+            var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
+            if (choice != -1)
+            {
+                if (choice == 0) _modalManager.OpenEditTaskModal(task);
+                else if (choice == 1) _modalManager.RequestTaskDeletion(task);
+                _activeContextMenuTaskId = null; // Consume the result and close
+            }
+            // If the popup was closed by other means (e.g. clicking outside), sync our state
+            else if (!UI.State.IsPopupOpen)
+            {
+                _activeContextMenuTaskId = null;
+            }
         }
 
         var finalStyle = isHovering ? taskTheme.Hover : taskTheme.Normal;
