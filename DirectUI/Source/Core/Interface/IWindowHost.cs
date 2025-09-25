@@ -18,6 +18,11 @@ public interface IWindowHost : IDisposable
     IntPtr Handle { get; }
 
     /// <summary>
+    /// Gets the AppEngine instance associated with this host.
+    /// </summary>
+    AppEngine AppEngine { get; }
+
+    /// <summary>
     /// Provides access to the InputManager for the host to feed input events.
     /// </summary>
     InputManager Input { get; }
@@ -42,8 +47,9 @@ public interface IWindowHost : IDisposable
     /// </summary>
     /// <param name="uiDrawCallback">The callback function that contains the application's UI drawing logic.</param>
     /// <param name="backgroundColor">The background color to clear the window with each frame.</param>
+    /// <param name="initialScale">The initial UI scale factor to apply.</param>
     /// <returns>True if initialization was successful, false otherwise.</returns>
-    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor);
+    bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f);
 
     /// <summary>
     /// Runs the platform-specific main message/event loop for the application.

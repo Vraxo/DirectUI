@@ -25,7 +25,7 @@ public class RaylibWindowHost : IWindowHost
     private ITextService? _textService;
     private bool _isDisposed = false;
 
-    // Raylib doesn't have a native window handle like Win32 or SDL, so this will be IntPtr.Zero.
+    public AppEngine AppEngine => _appEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
     public IntPtr Handle => IntPtr.Zero;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
     public SizeI ClientSize => new SizeI(Raylib.GetScreenWidth(), Raylib.GetScreenHeight());
@@ -46,7 +46,7 @@ public class RaylibWindowHost : IWindowHost
         _backgroundColor = backgroundColor;
     }
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         Console.WriteLine("RaylibWindowHost initializing...");
         try
@@ -56,6 +56,7 @@ public class RaylibWindowHost : IWindowHost
             Raylib.SetTargetFPS(60);
 
             _appEngine = new AppEngine(uiDrawCallback, backgroundColor);
+            _appEngine.UIScale = initialScale;
             _renderer = new DirectUI.Backends.RaylibRenderer();
             _textService = new DirectUI.Backends.RaylibTextService();
 
@@ -148,6 +149,11 @@ public class RaylibWindowHost : IWindowHost
     public void Dispose()
     {
         Cleanup();
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        throw new NotImplementedException();
     }
 
     private class RaylibDummyModalWindowService : IModalWindowService

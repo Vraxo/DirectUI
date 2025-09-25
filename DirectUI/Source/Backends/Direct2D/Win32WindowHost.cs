@@ -38,6 +38,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         _throttleTimer.Start();
     }
 
+    public AppEngine AppEngine => appServices?.AppEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
     public InputManager Input => appServices?.AppEngine.Input ?? new();
     public SizeI ClientSize => GetClientRectSize();
 
@@ -61,7 +62,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     public IModalWindowService ModalWindowService => this;
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         Console.WriteLine("Win32WindowHost initializing...");
 
@@ -78,6 +79,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         try
         {
             appServices = Win32AppServicesInitializer.Initialize(Handle, GetClientRectSize(), uiDrawCallback, backgroundColor);
+            appServices.AppEngine.UIScale = initialScale;
             return true;
         }
         catch (Exception ex)
@@ -414,5 +416,10 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         onModalClosedCallback = null;
         modalResultCode = 0;
         _isModalClosing = false;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        throw new NotImplementedException();
     }
 }

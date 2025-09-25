@@ -60,6 +60,7 @@ namespace DirectUI.Backends.SkiaSharp
             IntPtr dwNewLong);
         private const int GWL_HWNDPARENT = -8;
 
+        public AppEngine AppEngine => _mainWindow?.AppEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
         public IntPtr Handle => _mainWindow?.Handle ?? IntPtr.Zero;
         public InputManager Input => _mainWindow?.Input ?? new InputManager();
         public SizeI ClientSize => _mainWindow?.ClientSize ?? new SizeI(_width, _height);
@@ -85,11 +86,13 @@ namespace DirectUI.Backends.SkiaSharp
             _throttleTimer.Start();
         }
 
-        public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+        public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
         {
             _mainWindow = new SilkNetSkiaWindow(
                 _title, _width, _height, this, isModal: false);
-            return _mainWindow.Initialize(uiDrawCallback, backgroundColor);
+
+            // Pass the initial scale down to the window, which will apply it when its AppEngine is created.
+            return _mainWindow.Initialize(uiDrawCallback, backgroundColor, initialScale);
         }
 
         public void RunLoop()

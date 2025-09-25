@@ -20,7 +20,7 @@ public class SilkNetSkiaWindow : IDisposable
     private readonly Vector2D<int>? _initialPosition;
 
     internal IWindow IWindow { get; }
-    private AppEngine? _appEngine;
+    internal AppEngine AppEngine { get; private set; }
     private SilkNetRenderer? _renderer;
     private SilkNetTextService? _textService;
     private GL? _gl;
@@ -30,14 +30,15 @@ public class SilkNetSkiaWindow : IDisposable
     private IInputContext? _inputContext;
     private bool _isDisposed;
     private bool _isCtrlDown; // For zoom
+    private float _initialScale = 1.0f;
 
     public IntPtr Handle => IWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
-    public InputManager Input => _appEngine?.Input ?? new InputManager();
+    public InputManager Input => AppEngine?.Input ?? new InputManager();
     public SizeI ClientSize => new(IWindow.Size.X, IWindow.Size.Y);
     public bool ShowFpsCounter
     {
-        get => _appEngine?.ShowFpsCounter ?? false;
-        set { if (_appEngine != null) _appEngine.ShowFpsCounter = value; }
+        get => AppEngine?.ShowFpsCounter ?? false;
+        set { if (AppEngine != null) AppEngine.ShowFpsCounter = value; }
     }
 
     public SilkNetSkiaWindow(
@@ -80,10 +81,11 @@ public class SilkNetSkiaWindow : IDisposable
         IWindow = Window.Create(options);
     }
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         if (IWindow == null) return false;
 
+        _initialScale = initialScale; // Store the scale for the OnLoad event.
         IWindow.Load += () => OnLoad(uiDrawCallback, backgroundColor);
         IWindow.Closing += OnClose;
         IWindow.Resize += OnResize;
@@ -117,10 +119,11 @@ public class SilkNetSkiaWindow : IDisposable
         // build the initial Skia surface
         OnResize(IWindow.Size);
 
-        _appEngine = new AppEngine(uiDrawCallback, finalBg);
+        AppEngine = new AppEngine(uiDrawCallback, finalBg);
+        AppEngine.UIScale = _initialScale; // Apply the stored scale here.
         _textService = new SilkNetTextService();
         _renderer = new SilkNetRenderer(_textService);
-        _appEngine.Initialize(_textService, _renderer);
+        AppEngine.Initialize(_textService, _renderer);
 
         _inputContext = IWindow.CreateInput();
         foreach (var kb in _inputContext.Keyboards)
@@ -144,7 +147,7 @@ public class SilkNetSkiaWindow : IDisposable
             || _skSurface is null
             || _renderer is null
             || _textService is null
-            || _appEngine is null
+            || AppEngine is null
             || _gl is null)
             return;
 
@@ -155,7 +158,7 @@ public class SilkNetSkiaWindow : IDisposable
           | ClearBufferMask.StencilBufferBit
         );
 
-        var bg = _appEngine.BackgroundColor;
+        var bg = AppEngine.BackgroundColor;
         _skSurface.Canvas.Clear(new SKColor(
             (byte)(bg.R * 255),
             (byte)(bg.G * 255),
@@ -164,7 +167,7 @@ public class SilkNetSkiaWindow : IDisposable
         ));
 
         _renderer.SetCanvas(_skSurface.Canvas, new Vector2(IWindow.Size.X, IWindow.Size.Y));
-        _appEngine.UpdateAndRender(_renderer, _textService);
+        AppEngine.UpdateAndRender(_renderer, _textService);
         _skSurface.Canvas.Flush();
         IWindow.SwapBuffers();
     }
@@ -269,11 +272,11 @@ public class SilkNetSkiaWindow : IDisposable
         => Input.SetMousePosition((int)pos.X, (int)pos.Y);
     private void OnMouseWheel(IMouse m, ScrollWheel s)
     {
-        if (_appEngine is null) return;
+        if (AppEngine is null) return;
         if (_isCtrlDown)
         {
             float scaleDelta = s.Y * 0.1f;
-            _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+            AppEngine.UIScale = Math.Clamp(AppEngine.UIScale + scaleDelta, 0.5f, 3.0f);
         }
         else
         {
@@ -289,7 +292,7 @@ public class SilkNetSkiaWindow : IDisposable
     {
         if (_isDisposed) return;
 
-        _appEngine?.Cleanup();
+        AppEngine?.Cleanup();
         _renderer?.Cleanup();
         _textService?.Cleanup();
         _skSurface?.Dispose();

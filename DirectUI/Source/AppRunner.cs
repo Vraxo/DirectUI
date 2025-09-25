@@ -16,6 +16,9 @@ public static class ApplicationRunner
         IWindowHost? host = null;
         IAppLogic? appLogic = null;
 
+        // Load settings at the very beginning of the application run.
+        var settings = SettingsManager.LoadSettings();
+
         // Define a guarded save action to prevent saving more than once on exit.
         Action? saveAction = null;
 
@@ -34,24 +37,34 @@ public static class ApplicationRunner
 
             appLogic = appLogicFactory(host);
 
-            saveAction = () =>
+            // Pass the loaded scale to the host during initialization.
+            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f), settings.UIScale)) // #2D2D2D
             {
-                if (_isSavedOnExit || appLogic == null) return;
+                // --- FIX: Define the save action AFTER the host and its AppEngine are initialized. ---
+                saveAction = () =>
+                {
+                    if (_isSavedOnExit || appLogic == null) return;
 
-                Console.WriteLine("Exit detected. Saving application state...");
-                appLogic.SaveState();
-                _isSavedOnExit = true;
-            };
+                    Console.WriteLine("Exit detected. Saving application state...");
+                    appLogic.SaveState();
 
-            // Hook into the AppDomain.ProcessExit event. This is a more reliable way
-            // to catch process termination, including closing the console window.
-            AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
-            {
-                saveAction?.Invoke();
-            };
+                    // Save DirectUI settings on exit.
+                    if (host?.AppEngine is not null)
+                    {
+                        settings.UIScale = host.AppEngine.UIScale;
+                        SettingsManager.SaveSettings(settings);
+                        Console.WriteLine($"Saved UI Scale: {settings.UIScale}");
+                    }
 
-            if (host.Initialize(appLogic.DrawUI, new Vortice.Mathematics.Color4(45 / 255f, 45 / 255f, 45 / 255f, 1.0f))) // #2D2D2D
-            {
+                    _isSavedOnExit = true;
+                };
+
+                // Hook into the AppDomain.ProcessExit event AFTER initialization.
+                AppDomain.CurrentDomain.ProcessExit += (sender, e) =>
+                {
+                    saveAction?.Invoke();
+                };
+
                 host.RunLoop();
             }
             else

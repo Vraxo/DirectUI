@@ -30,6 +30,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private int _modalResultCode;
     private bool _isModalClosing;
 
+    public AppEngine AppEngine => _appEngine ?? throw new InvalidOperationException("AppEngine is not initialized.");
     public IntPtr Handle => _windowPtr;
     public InputManager Input => _appEngine?.Input ?? new();
     public SizeI ClientSize
@@ -69,7 +70,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _backgroundColor = backgroundColor;
     }
 
-    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
         Console.WriteLine($"SDL3WindowHost initializing for '{_title}'...");
 
@@ -116,6 +117,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             }
 
             _appEngine = new(uiDrawCallback, backgroundColor);
+            _appEngine.UIScale = initialScale;
             _renderer = new(_rendererPtr, _windowPtr);
             _textService = new();
             _appEngine.Initialize(_textService, _renderer);
@@ -390,5 +392,10 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         _onModalClosedCallback = null;
         _modalResultCode = 0;
         _isModalClosing = false;
+    }
+
+    public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor)
+    {
+        throw new NotImplementedException();
     }
 }
