@@ -5,9 +5,9 @@ namespace DirectUI;
 public class GridContainerState : ILayoutContainer
 {
     internal int Id { get; }
-    internal Vector2 StartPosition { get; } // Top-left corner of the grid area
+    public Vector2 StartPosition { get; } // Top-left corner of the grid area
     internal int NumColumns { get; }
-    internal Vector2 Gap { get; } // Gap between cells (X and Y)
+    public Vector2 Gap { get; } // Gap between cells (X and Y)
     public Vector2 AvailableSize { get; } // Total area the grid can occupy
 
     // Calculated layout values
