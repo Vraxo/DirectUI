@@ -80,7 +80,7 @@ public class KanbanAppLogic : IAppLogic
 
         // --- Define board and column dimensions ---
         float columnWidth = 350f;
-        float columnGap = 25f;
+        float columnGap = 40f;
         float scrollbarSize = 12f;
         var boardPadding = new Vector2(20, 20);
         var topMargin = 80f;
