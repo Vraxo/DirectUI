@@ -9,12 +9,19 @@ namespace Bankan;
 public class KanbanDragDropHandler
 {
     public KanbanTask? DraggedTask { get; private set; }
+
+    // State for the CURRENT frame's render pass (calculated last frame)
     public KanbanColumn? DropTargetColumn { get; private set; }
     public int DropIndex { get; private set; } = -1;
 
     private KanbanColumn? _sourceColumn;
     private Vector2 _dragOffset;
     private readonly KanbanBoard _board;
+
+    // State being calculated THIS frame for use in the NEXT frame
+    private KanbanColumn? _nextFrameDropTargetColumn;
+    private int _nextFrameDropIndex = -1;
+    private bool _dropTargetFoundThisFrame;
 
     public KanbanDragDropHandler(KanbanBoard board)
     {
@@ -31,13 +38,14 @@ public class KanbanDragDropHandler
     }
 
     /// <summary>
-    /// Resets the per-frame drop target state. Called by the renderer before processing the board.
+    /// Resets the state that will be calculated this frame for use in the next one.
     /// </summary>
-    public void ResetFrameDropTarget()
+    public void PrepareNextFrameTarget()
     {
         if (!IsDragging()) return;
-        DropTargetColumn = null;
-        DropIndex = -1;
+        _nextFrameDropTargetColumn = null;
+        _nextFrameDropIndex = -1;
+        _dropTargetFoundThisFrame = false;
     }
 
     public bool Update()
@@ -45,11 +53,15 @@ public class KanbanDragDropHandler
         var input = UI.Context.InputState;
         if (DraggedTask == null) return false;
 
-        // The only logic here is to finalize the drop when the mouse is released.
-        // The drop target itself is continuously calculated by the renderer.
+        // At the start of the logic update, cycle the state. The drop target calculated
+        // in the previous frame's render pass now becomes the current drop target.
+        DropTargetColumn = _nextFrameDropTargetColumn;
+        DropIndex = _nextFrameDropIndex;
+
         if (!input.IsLeftMouseDown)
         {
             bool modified = false;
+            // Use the now-current DropTargetColumn and DropIndex for the final action.
             if (DraggedTask != null && _sourceColumn != null && DropTargetColumn != null && DropIndex != -1)
             {
                 int originalIndex = _sourceColumn.Tasks.IndexOf(DraggedTask);
@@ -66,11 +78,14 @@ public class KanbanDragDropHandler
                 }
             }
 
-            // Clean up all state
+            // Clean up all state now that the drag is over
             DraggedTask = null;
             _sourceColumn = null;
             DropTargetColumn = null;
             DropIndex = -1;
+            _nextFrameDropTargetColumn = null;
+            _nextFrameDropIndex = -1;
+
             UI.State.ClearAllActivePressState();
             return modified;
         }
@@ -78,51 +93,39 @@ public class KanbanDragDropHandler
     }
 
     /// <summary>
-    /// Called by the renderer for each task widget to determine if it's a potential drop target.
-    /// This will overwrite previous targets found in the same frame, ensuring the one under the mouse wins.
+    /// Called by the renderer for each task widget. It calculates the drop target for the NEXT frame.
     /// </summary>
     public void UpdateDropTarget(KanbanColumn column, int taskIndex, Vortice.Mathematics.Rect taskBounds)
     {
-        if (!IsDragging()) return;
+        if (!IsDragging() || _dropTargetFoundThisFrame) return;
 
         var mousePos = UI.Context.InputState.MousePosition;
 
-        // Check if mouse is inside the horizontal bounds of the task
         if (mousePos.X >= taskBounds.Left && mousePos.X <= taskBounds.Right)
         {
             float midPointY = taskBounds.Y + taskBounds.Height / 2f;
             if (mousePos.Y < midPointY)
             {
-                // Only update if we haven't already found a target *above* this one.
-                // This prevents a lower task from stealing the drop target if the mouse is
-                // between two tasks.
-                if (DropTargetColumn == null || DropTargetColumn != column || DropIndex > taskIndex)
-                {
-                    DropTargetColumn = column;
-                    DropIndex = taskIndex;
-                }
+                _nextFrameDropTargetColumn = column;
+                _nextFrameDropIndex = taskIndex;
+                _dropTargetFoundThisFrame = true;
             }
         }
     }
 
     /// <summary>
-    /// Called by the renderer for each column to handle dropping into an empty column
-    /// or at the very end of a column with existing tasks.
+    /// Called by the renderer for each column to handle dropping at the end. It calculates for the NEXT frame.
     /// </summary>
     public void UpdateDropTargetForColumn(KanbanColumn column, Vortice.Mathematics.Rect columnBounds, int lastTaskIndex)
     {
-        if (!IsDragging()) return;
+        if (!IsDragging() || _dropTargetFoundThisFrame) return;
 
         var mousePos = UI.Context.InputState.MousePosition;
         if (columnBounds.Contains(mousePos))
         {
-            // If we are here, it means the mouse is over the column but no specific
-            // task target has been set yet, so we drop at the end.
-            if (DropTargetColumn == null)
-            {
-                DropTargetColumn = column;
-                DropIndex = lastTaskIndex;
-            }
+            _nextFrameDropTargetColumn = column;
+            _nextFrameDropIndex = lastTaskIndex;
+            _dropTargetFoundThisFrame = true;
         }
     }
 

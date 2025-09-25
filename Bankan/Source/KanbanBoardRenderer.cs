@@ -23,9 +23,8 @@ public class KanbanBoardRenderer
 
     public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)
     {
-        // Reset the drop target state at the beginning of the render pass.
-        // This ensures targets are freshly calculated based on this frame's layout.
-        _dragDropHandler.ResetFrameDropTarget();
+        // Reset the state that will be calculated this frame for use in the next frame.
+        _dragDropHandler.PrepareNextFrameTarget();
 
         UI.BeginHBoxContainer("board_content_hbox", boardStartPosition, gap: columnGap);
         foreach (var column in _board.Columns)
