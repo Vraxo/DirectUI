@@ -15,6 +15,12 @@ public static class StateSerializer
     {
         try
         {
+            string? directory = Path.GetDirectoryName(filePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
             string json = JsonSerializer.Serialize(data, Options);
             File.WriteAllText(filePath, json);
         }

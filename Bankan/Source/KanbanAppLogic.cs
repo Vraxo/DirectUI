@@ -7,8 +7,8 @@ namespace Bankan;
 
 public class KanbanAppLogic : IAppLogic
 {
-    private const string BoardStateFile = "kanban_board.json";
-    private const string SettingsStateFile = "kanban_settings.json";
+    private const string BoardStateFile = "Data/kanban_board.json";
+    private const string SettingsStateFile = "Data/kanban_settings.json";
 
     private readonly IWindowHost _windowHost;
     private readonly KanbanBoard _board;
