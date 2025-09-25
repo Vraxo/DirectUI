@@ -247,10 +247,23 @@ public class KanbanAppLogic : IAppLogic
         {
             if (_draggedTask != null && _sourceColumn != null && _dropTargetColumn != null && _dropIndex != -1)
             {
-                _sourceColumn.Tasks.Remove(_draggedTask);
-                _dropTargetColumn.Tasks.Insert(_dropIndex, _draggedTask);
-                SaveState();
+                int originalIndex = _sourceColumn.Tasks.IndexOf(_draggedTask);
+                if (originalIndex != -1)
+                {
+                    _sourceColumn.Tasks.RemoveAt(originalIndex);
+
+                    if (_sourceColumn == _dropTargetColumn && _dropIndex > originalIndex)
+                    {
+                        _dropIndex--;
+                    }
+
+                    int clampedDropIndex = Math.Clamp(_dropIndex, 0, _dropTargetColumn.Tasks.Count);
+                    _dropTargetColumn.Tasks.Insert(clampedDropIndex, _draggedTask);
+
+                    SaveState();
+                }
             }
+
             _draggedTask = null;
             _sourceColumn = null;
             _dropTargetColumn = null;
@@ -291,7 +304,7 @@ public class KanbanAppLogic : IAppLogic
         int insertIndex = 0;
         foreach (var task in column.Tasks)
         {
-            var taskToMeasure = task == _draggedTask ? _sourceColumn!.Tasks.FirstOrDefault(t => t.Id == _draggedTask.Id) ?? _draggedTask : task;
+            var taskToMeasure = task;
             var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
             var layout = UI.Context.TextService.GetTextLayout(taskToMeasure.Text, textStyle, new Vector2(gridState.CellWidth - 60, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
             float taskHeight = layout.Size.Y + 30 + 10;
