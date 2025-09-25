@@ -17,6 +17,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
     private readonly System.Diagnostics.Stopwatch _throttleTimer = new();
     private long _lastModalRepaintTicks;
     private static readonly long _modalRepaintIntervalTicks = System.Diagnostics.Stopwatch.Frequency / 10;
+    private bool _isCtrlDown; // For zoom
 
     // --- Logic moved from Application.cs ---
     private static readonly List<Win32Window> s_windows = [];
@@ -262,12 +263,24 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnMouseWheel(float delta)
     {
-        appServices?.AppEngine.Input.AddMouseWheelDelta(delta);
+        if (appServices is null) return;
+
+        if (_isCtrlDown)
+        {
+            float scaleDelta = delta * 0.1f;
+            appServices.AppEngine.UIScale = Math.Clamp(appServices.AppEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+        }
+        else
+        {
+            appServices.AppEngine.Input.AddMouseWheelDelta(delta);
+        }
         Invalidate();
     }
 
     protected override void OnKeyDown(Keys key)
     {
+        if (key == Keys.Control) _isCtrlDown = true;
+
         appServices?.AppEngine.Input.AddKeyPressed(key);
 
         if (key == Keys.Escape)
@@ -285,6 +298,7 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
 
     protected override void OnKeyUp(Keys key)
     {
+        if (key == Keys.Control) _isCtrlDown = false;
         appServices?.AppEngine.Input.AddKeyReleased(key);
         Invalidate();
     }

@@ -1,12 +1,20 @@
-﻿using DirectUI.Core;
+﻿using DirectUI.Backends.SkiaSharp;
+using System.Numerics;
+using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
+using Silk.NET.GLFW;
+using Silk.NET.Input;
+using Silk.NET.Maths;
+using Silk.NET.OpenGL;
+using Silk.NET.Windowing;
+using SkiaSharp;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SDL3;
 
-public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
+public unsafe class SDL3WindowHost : Core.IWindowHost, IModalWindowService
 {
     private readonly string _title;
     private readonly int _initialWidth;
@@ -134,6 +142,7 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     public void RunLoop()
     {
         bool running = true;
+        var keyModifiers = SDL.Keymod.None;
 
         while (running)
         {
@@ -146,13 +155,25 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
             {
                 while (SDL.PollEvent(out SDL.Event ev))
                 {
+                    keyModifiers = SDL.GetModState();
+                    bool isCtrlDown = (keyModifiers & SDL.Keymod.Ctrl) != 0;
+
                     if (ev.Type == (uint)SDL.EventType.Quit)
                     {
                         running = false;
                         break;
                     }
 
-                    Input.ProcessSDL3Event(ev);
+                    if (ev.Type == (uint)SDL.EventType.MouseWheel && isCtrlDown && _appEngine is not null)
+                    {
+                        float deltaY = ev.Wheel.Y;
+                        float scaleDelta = deltaY * 0.1f;
+                        _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+                    }
+                    else
+                    {
+                        Input.ProcessSDL3Event(ev);
+                    }
                 }
 
                 RenderFrame();
@@ -163,11 +184,15 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
     private void ModalRunLoop()
     {
         bool modalRunning = true;
+        var keyModifiers = SDL.Keymod.None;
 
         while (modalRunning)
         {
             while (SDL.PollEvent(out SDL.Event ev))
             {
+                keyModifiers = SDL.GetModState();
+                bool isCtrlDown = (keyModifiers & SDL.Keymod.Ctrl) != 0;
+
                 if (ev.Type == (uint)SDL.EventType.Quit)
                 {
                     modalRunning = false;
@@ -184,7 +209,16 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
                     }
                 }
 
-                Input.ProcessSDL3Event(ev);
+                if (ev.Type == (uint)SDL.EventType.MouseWheel && isCtrlDown && _appEngine is not null)
+                {
+                    float deltaY = ev.Wheel.Y;
+                    float scaleDelta = deltaY * 0.1f;
+                    _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+                }
+                else
+                {
+                    Input.ProcessSDL3Event(ev);
+                }
             }
 
             if (_isModalClosing)

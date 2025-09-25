@@ -81,8 +81,23 @@ public class RaylibWindowHost : IWindowHost
     {
         while (!Raylib.WindowShouldClose())
         {
-            // Process Raylib input events directly
-            _appEngine?.Input.ProcessRaylibInput();
+            if (_appEngine is null) continue;
+
+            // --- Zoom Logic ---
+            bool isCtrlDown = Raylib.IsKeyDown(KeyboardKey.LeftControl) || Raylib.IsKeyDown(KeyboardKey.RightControl);
+            float wheelMove = Raylib.GetMouseWheelMove();
+            if (isCtrlDown && wheelMove != 0)
+            {
+                float scaleDelta = wheelMove * 0.1f;
+                _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+                // Consume the scroll event so it doesn't also scroll UI elements
+            }
+            else
+            {
+                // If not zooming, process input normally
+                _appEngine.Input.ProcessRaylibInput();
+            }
+
 
             // Begin drawing
             Raylib.BeginDrawing();
@@ -94,7 +109,7 @@ public class RaylibWindowHost : IWindowHost
             ));
 
             // Update and render the UI through the AppEngine
-            if (_renderer is not null && _textService is not null && _appEngine is not null)
+            if (_renderer is not null && _textService is not null)
             {
                 _appEngine.UpdateAndRender(_renderer, _textService);
             }

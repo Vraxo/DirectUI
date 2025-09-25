@@ -29,6 +29,7 @@ public class SilkNetSkiaWindow : IDisposable
     private GRBackendRenderTarget? _renderTarget;
     private IInputContext? _inputContext;
     private bool _isDisposed;
+    private bool _isCtrlDown; // For zoom
 
     public IntPtr Handle => IWindow.Native.Win32?.Hwnd ?? IntPtr.Zero;
     public InputManager Input => _appEngine?.Input ?? new InputManager();
@@ -248,8 +249,16 @@ public class SilkNetSkiaWindow : IDisposable
 
     #region Input Callbacks & Mapping
 
-    private void OnKeyDown(IKeyboard kb, Key k, int s) => Input.AddKeyPressed(MapKey(k));
-    private void OnKeyUp(IKeyboard kb, Key k, int s) => Input.AddKeyReleased(MapKey(k));
+    private void OnKeyDown(IKeyboard kb, Key k, int s)
+    {
+        if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = true;
+        Input.AddKeyPressed(MapKey(k));
+    }
+    private void OnKeyUp(IKeyboard kb, Key k, int s)
+    {
+        if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = false;
+        Input.AddKeyReleased(MapKey(k));
+    }
     private void OnKeyChar(IKeyboard kb, char c) => Input.AddCharacterInput(c);
 
     private void OnMouseDown(IMouse m, Silk.NET.Input.MouseButton b)
@@ -259,7 +268,18 @@ public class SilkNetSkiaWindow : IDisposable
     private void OnMouseMove(IMouse m, Vector2 pos)
         => Input.SetMousePosition((int)pos.X, (int)pos.Y);
     private void OnMouseWheel(IMouse m, ScrollWheel s)
-        => Input.AddMouseWheelDelta(s.Y);
+    {
+        if (_appEngine is null) return;
+        if (_isCtrlDown)
+        {
+            float scaleDelta = s.Y * 0.1f;
+            _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
+        }
+        else
+        {
+            Input.AddMouseWheelDelta(s.Y);
+        }
+    }
 
     // full MapKey/MapMouseButton omitted for brevity—you keep yours here unchanged
 

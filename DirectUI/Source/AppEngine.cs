@@ -29,6 +29,7 @@ public class AppEngine
     public bool ShowFpsCounter { get; set; } = true;
     public InputManager Input => _inputManager;
     public Color4 BackgroundColor { get; }
+    public float UIScale { get; set; } = 1.0f;
 
     public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
@@ -83,10 +84,32 @@ public class AppEngine
 
         try
         {
-            // Get the immutable input state for this frame from the InputManager
-            var inputState = _inputManager.GetCurrentState();
+            // Get the physical input state from the InputManager
+            var physicalInputState = _inputManager.GetCurrentState();
 
-            var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime);
+            // Create a LOGICAL input state by un-scaling the mouse position.
+            // All UI hit-testing will now happen in a consistent, logical coordinate space.
+            var logicalMousePosition = physicalInputState.MousePosition / UIScale;
+            var logicalPreviousMousePosition = physicalInputState.PreviousMousePosition / UIScale;
+
+            var logicalInputState = new InputState(
+                logicalMousePosition,
+                logicalPreviousMousePosition,
+                physicalInputState.WasLeftMousePressedThisFrame,
+                physicalInputState.IsLeftMouseDown,
+                physicalInputState.WasRightMousePressedThisFrame,
+                physicalInputState.IsRightMouseDown,
+                physicalInputState.WasMiddleMousePressedThisFrame,
+                physicalInputState.IsMiddleMouseDown,
+                physicalInputState.ScrollDelta,
+                physicalInputState.TypedCharacters,
+                physicalInputState.PressedKeys,
+                physicalInputState.ReleasedKeys,
+                physicalInputState.HeldKeys,
+                physicalInputState.PressedMouseButtons
+            );
+
+            var uiContext = new UIContext(renderer, textService, logicalInputState, deltaTime, totalTime, UIScale);
             uiContext.State = _persistentState; // Assign instance-specific state to the context
             UI.BeginFrame(uiContext);
 
