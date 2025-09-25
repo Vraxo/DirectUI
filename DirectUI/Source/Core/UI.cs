@@ -182,56 +182,6 @@ public static partial class UI
     }
 
 
-    // --- Procedural Animation ---
-
-    /// <summary>
-    /// Calculates a value over time based on a trigger and a user-defined animation curve.
-    /// This is ideal for complex, non-linear, "keyframe"-style animations.
-    /// </summary>
-    /// <typeparam name="T">The type of value to animate (e.g., float, Vector2, Color).</typeparam>
-    /// <param name="id">A unique string identifier for this animation instance.</param>
-    /// <param name="trigger">A boolean that starts the animation when true and resets it when false.</param>
-    /// <param name="defaultValue">The value to return when the animation is not active.</param>
-    /// <param name="animationCurve">A function that takes the elapsed time in seconds and returns the animated value.</param>
-    /// <returns>The calculated value for the current frame.</returns>
-    public static T Animate<T>(
-        string id,
-        bool trigger,
-        T defaultValue,
-        Func<float, T> animationCurve)
-    {
-        if (!IsContextValid()) return defaultValue;
-
-        int intId = id.GetHashCode();
-        var state = UI.State.AnimationState;
-        var currentTime = UI.Context.TotalTime;
-
-        float startTime = state.GetEventTime(intId);
-
-        if (trigger)
-        {
-            if (startTime < 0)
-            {
-                // Event just started, record the time.
-                startTime = currentTime;
-                state.SetEventTime(intId, startTime);
-            }
-
-            float elapsedTime = currentTime - startTime;
-            return animationCurve(elapsedTime);
-        }
-        else
-        {
-            // Event is not active, clear the timer.
-            if (startTime >= 0)
-            {
-                state.ClearEventTime(intId);
-            }
-            return defaultValue;
-        }
-    }
-
-
     // --- Helper Methods ---
     private static bool IsContextValid()
     {

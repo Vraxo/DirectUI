@@ -85,7 +85,6 @@ public class UIPersistentState
 
     // --- Animation State ---
     public AnimationManager AnimationManager { get; } = new();
-    public AnimationState AnimationState { get; } = new();
 
 
     /// <summary>

@@ -95,7 +95,16 @@ public class KanbanBoardRenderer
 
         if (column.Id == "todo")
         {
-            DrawAddTaskButton(column, contentWidth);
+            var addTaskTheme = new ButtonStylePack();
+            addTaskTheme.Normal.FillColor = Colors.Transparent;
+            addTaskTheme.Normal.BorderColor = new Color(51, 51, 51, 255);
+            addTaskTheme.Hover.FillColor = DefaultTheme.Accent;
+            addTaskTheme.Hover.BorderColor = DefaultTheme.Accent;
+
+            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40), theme: addTaskTheme, animation: new AnimationInfo()))
+            {
+                _modalManager.OpenAddTaskModal(column);
+            }
         }
 
         var vboxState = UI.Context.Layout.PeekContainer() as VBoxContainerState;
@@ -113,74 +122,6 @@ public class KanbanBoardRenderer
 
         UI.EndVBoxContainer();
     }
-
-    private void DrawAddTaskButton(KanbanColumn column, float logicalContentWidth)
-    {
-        var scale = UI.Context.UIScale;
-        var buttonId = column.Id + "_add_task";
-        var logicalSize = new Vector2(logicalContentWidth, 40);
-
-        // We must calculate hover state before calling UI.Animate
-        var logicalPos = UI.Context.Layout.GetCurrentPosition();
-        var physicalBounds = new Vortice.Mathematics.Rect(
-            logicalPos.X * scale, logicalPos.Y * scale,
-            logicalSize.X * scale, logicalSize.Y * scale
-        );
-        bool isHovering = physicalBounds.Contains(UI.Context.InputState.MousePosition);
-
-        // Use the new procedural animation system to get a scale factor
-        float scaleFactor = UI.Animate(
-            buttonId + "_scale",
-            isHovering,
-            defaultValue: 1.0f,
-            WiggleOnHover
-        );
-
-        // Apply the animated scale to the button's logical size
-        // This will cause the button to visually pop and also affect the layout,
-        // pushing subsequent elements down, which is a nice effect for this.
-        var animatedLogicalSize = logicalSize * scaleFactor;
-
-
-        var addTaskTheme = new ButtonStylePack();
-        addTaskTheme.Normal.FillColor = Colors.Transparent;
-        addTaskTheme.Normal.BorderColor = new Color(51, 51, 51, 255);
-        addTaskTheme.Hover.FillColor = DefaultTheme.Accent;
-        addTaskTheme.Hover.BorderColor = DefaultTheme.Accent;
-
-        if (UI.Button(buttonId, "+ Add Task", size: animatedLogicalSize, theme: addTaskTheme, animation: new AnimationInfo(1)))
-        {
-            _modalManager.OpenAddTaskModal(column);
-        }
-    }
-
-    private float WiggleOnHover(float elapsedTime)
-    {
-        const float growDuration = 1f;
-        const float shrinkDuration = 0.15f;
-        const float maxScale = 1.05f;
-        const float finalScale = 1.02f;
-        const float normalScale = 1.0f;
-
-        if (elapsedTime < growDuration)
-        {
-            // Phase 1: Grow from 1.0 to 1.05
-            float progress = elapsedTime / growDuration;
-            return normalScale + (maxScale - normalScale) * progress;
-        }
-        else if (elapsedTime < growDuration + shrinkDuration)
-        {
-            // Phase 2: Shrink from 1.05 to 1.02
-            float progress = (elapsedTime - growDuration) / shrinkDuration;
-            return maxScale + (finalScale - maxScale) * progress;
-        }
-        else
-        {
-            // Phase 3: Hold the final size
-            return finalScale;
-        }
-    }
-
 
     private float CalculateColumnContentHeight(KanbanColumn column)
     {
