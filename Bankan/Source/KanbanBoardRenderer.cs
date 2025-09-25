@@ -215,7 +215,8 @@ public class KanbanBoardRenderer
             _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, physicalPos);
         }
 
-        if (UI.BeginContextMenu($"context_widget_{task.Id}"))
+        // --- FIX: Use the task's actual ID to trigger the context menu. ---
+        if (UI.BeginContextMenu(task.Id))
         {
             _modalManager.OpenContextMenuForTask(task);
         }
@@ -225,6 +226,8 @@ public class KanbanBoardRenderer
 
         context.Renderer.DrawBox(taskBounds, finalStyle);
         var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
+
+        // We need to pass the render style to the primitive, not the measurement style.
         UI.DrawTextPrimitive(textBounds, task.Text, renderTextStyle, textAlign, Vector2.Zero);
 
         context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
