@@ -16,15 +16,6 @@ public class KanbanDragDropHandler
     private Vector2 _dragOffset;
     private readonly KanbanBoard _board;
 
-    // Layout parameters for hit-testing, updated each frame
-    private Vector2 _boardScrollOffset;
-    private float _boardWidth;
-    private float _boardHeight;
-    private float _columnWidth;
-    private float _columnGap;
-    private float _topMargin;
-    private Vector2 _boardPadding;
-
     public KanbanDragDropHandler(KanbanBoard board)
     {
         _board = board;
@@ -39,25 +30,24 @@ public class KanbanDragDropHandler
         _dragOffset = mousePosition - taskPosition;
     }
 
-    public bool Update(Vector2 scrollOffset, float boardWidth, float boardHeight, float columnWidth, float columnGap, float topMargin, Vector2 boardPadding)
+    /// <summary>
+    /// Resets the per-frame drop target state. Called by the renderer before processing the board.
+    /// </summary>
+    public void ResetFrameDropTarget()
     {
-        _boardScrollOffset = scrollOffset;
-        _boardWidth = boardWidth;
-        _boardHeight = boardHeight;
-        _columnWidth = columnWidth;
-        _columnGap = columnGap;
-        _topMargin = topMargin;
-        _boardPadding = boardPadding;
+        if (!IsDragging()) return;
+        DropTargetColumn = null;
+        DropIndex = -1;
+    }
 
+    public bool Update()
+    {
         var input = UI.Context.InputState;
         if (DraggedTask == null) return false;
 
-        if (input.IsLeftMouseDown)
-        {
-            DropTargetColumn = FindDropColumn();
-            DropIndex = DropTargetColumn != null ? FindDropIndexInColumn(DropTargetColumn) : -1;
-        }
-        else
+        // The only logic here is to finalize the drop when the mouse is released.
+        // The drop target itself is continuously calculated by the renderer.
+        if (!input.IsLeftMouseDown)
         {
             bool modified = false;
             if (DraggedTask != null && _sourceColumn != null && DropTargetColumn != null && DropIndex != -1)
@@ -76,14 +66,64 @@ public class KanbanDragDropHandler
                 }
             }
 
+            // Clean up all state
             DraggedTask = null;
             _sourceColumn = null;
             DropTargetColumn = null;
             DropIndex = -1;
-            UI.State.ClearActivePress(0); // Clear any active press state globally
+            UI.State.ClearAllActivePressState();
             return modified;
         }
         return false;
+    }
+
+    /// <summary>
+    /// Called by the renderer for each task widget to determine if it's a potential drop target.
+    /// This will overwrite previous targets found in the same frame, ensuring the one under the mouse wins.
+    /// </summary>
+    public void UpdateDropTarget(KanbanColumn column, int taskIndex, Vortice.Mathematics.Rect taskBounds)
+    {
+        if (!IsDragging()) return;
+
+        var mousePos = UI.Context.InputState.MousePosition;
+
+        // Check if mouse is inside the horizontal bounds of the task
+        if (mousePos.X >= taskBounds.Left && mousePos.X <= taskBounds.Right)
+        {
+            float midPointY = taskBounds.Y + taskBounds.Height / 2f;
+            if (mousePos.Y < midPointY)
+            {
+                // Only update if we haven't already found a target *above* this one.
+                // This prevents a lower task from stealing the drop target if the mouse is
+                // between two tasks.
+                if (DropTargetColumn == null || DropTargetColumn != column || DropIndex > taskIndex)
+                {
+                    DropTargetColumn = column;
+                    DropIndex = taskIndex;
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Called by the renderer for each column to handle dropping into an empty column
+    /// or at the very end of a column with existing tasks.
+    /// </summary>
+    public void UpdateDropTargetForColumn(KanbanColumn column, Vortice.Mathematics.Rect columnBounds, int lastTaskIndex)
+    {
+        if (!IsDragging()) return;
+
+        var mousePos = UI.Context.InputState.MousePosition;
+        if (columnBounds.Contains(mousePos))
+        {
+            // If we are here, it means the mouse is over the column but no specific
+            // task target has been set yet, so we drop at the end.
+            if (DropTargetColumn == null)
+            {
+                DropTargetColumn = column;
+                DropIndex = lastTaskIndex;
+            }
+        }
     }
 
     public void DrawDraggedTaskOverlay(float width)
@@ -105,69 +145,5 @@ public class KanbanDragDropHandler
         var textBounds = new Vortice.Mathematics.Rect(bounds.X + 15, bounds.Y, bounds.Width - 30, bounds.Height);
         var textAlign = new Alignment(HAlignment.Left, VAlignment.Center);
         UI.DrawTextPrimitive(textBounds, DraggedTask.Text, new ButtonStyle(textStyle) { FontColor = new Color(18, 18, 18, 255) }, textAlign, Vector2.Zero);
-    }
-
-    private KanbanColumn? FindDropColumn()
-    {
-        var mousePos = UI.Context.InputState.MousePosition;
-        var windowSize = UI.Context.Renderer.RenderTargetSize;
-
-        // Calculate the centered start position of the board content
-        float startX = _boardPadding.X;
-        if (_boardWidth < (windowSize.X - _boardPadding.X * 2))
-            startX += ((windowSize.X - _boardPadding.X * 2) - _boardWidth) / 2f;
-        else
-            startX -= _boardScrollOffset.X;
-
-        for (int i = 0; i < _board.Columns.Count; i++)
-        {
-            var colX = startX + i * (_columnWidth + _columnGap);
-            var colBounds = new Vortice.Mathematics.Rect(colX, _topMargin, _columnWidth, _boardHeight);
-            if (colBounds.Contains(mousePos))
-            {
-                return _board.Columns[i];
-            }
-        }
-        return null;
-    }
-
-    private int FindDropIndexInColumn(KanbanColumn column)
-    {
-        var mousePos = UI.Context.InputState.MousePosition;
-        var windowSize = UI.Context.Renderer.RenderTargetSize;
-
-        // Calculate start positions again, as in FindDropColumn
-        float startX = _boardPadding.X;
-        if (_boardWidth < (windowSize.X - _boardPadding.X * 2))
-            startX += ((windowSize.X - _boardPadding.X * 2) - _boardWidth) / 2f;
-        else
-            startX -= _boardScrollOffset.X;
-
-        float startY = _topMargin;
-        if (_boardHeight < (windowSize.Y - _topMargin - _boardPadding.Y))
-            startY += ((windowSize.Y - _topMargin - _boardPadding.Y) - _boardHeight) / 2f;
-        else
-            startY -= _boardScrollOffset.Y;
-
-        // Start Y position for the first task inside a column
-        float currentY = startY + 15f + 30f + 10f + 14f + 10f; // Padding + Title + Gap + Separator + Gap
-
-        int insertIndex = 0;
-        foreach (var task in column.Tasks.Where(t => t != DraggedTask))
-        {
-            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
-            var layout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(_columnWidth - 60, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-            float taskHeight = layout.Size.Y + 30;
-            float gap = 10f;
-
-            float midPoint = currentY + (taskHeight / 2f);
-            if (mousePos.Y < midPoint)
-            {
-                return insertIndex;
-            }
-            currentY += taskHeight + gap;
-            insertIndex++;
-        }
-        return insertIndex; // Drop at the end if not between any tasks
     }
 }

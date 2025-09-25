@@ -23,6 +23,10 @@ public class KanbanBoardRenderer
 
     public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)
     {
+        // Reset the drop target state at the beginning of the render pass.
+        // This ensures targets are freshly calculated based on this frame's layout.
+        _dragDropHandler.ResetFrameDropTarget();
+
         UI.BeginHBoxContainer("board_content_hbox", boardStartPosition, gap: columnGap);
         foreach (var column in _board.Columns)
         {
@@ -43,6 +47,7 @@ public class KanbanBoardRenderer
         // 1. Calculate this column's total height, which includes its outer padding.
         float myTotalHeight = CalculateColumnContentHeight(column);
         var myPosition = UI.Context.Layout.GetCurrentPosition();
+        var columnBounds = new Vortice.Mathematics.Rect(myPosition.X, myPosition.Y, columnWidth, myTotalHeight);
 
         // 2. Draw the background for the entire column area.
         DrawColumnBackground(myPosition, new Vector2(columnWidth, myTotalHeight));
@@ -64,7 +69,7 @@ public class KanbanBoardRenderer
             DrawDropIndicator(column, currentTaskIndex, contentWidth);
             if (task != _dragDropHandler.DraggedTask)
             {
-                DrawTaskWidget(column, task, contentWidth);
+                DrawTaskWidget(column, task, currentTaskIndex, contentWidth);
             }
             else
             {
@@ -72,7 +77,11 @@ public class KanbanBoardRenderer
             }
             currentTaskIndex++;
         }
+        // Draw a final drop indicator at the end of the list
         DrawDropIndicator(column, currentTaskIndex, contentWidth);
+        // After iterating through tasks, check for a drop in an empty or final position
+        _dragDropHandler.UpdateDropTargetForColumn(column, columnBounds, currentTaskIndex);
+
 
         if (column.Id == "todo")
         {
@@ -141,7 +150,7 @@ public class KanbanBoardRenderer
         return height;
     }
 
-    private void DrawTaskWidget(KanbanColumn column, KanbanTask task, float width)
+    private void DrawTaskWidget(KanbanColumn column, KanbanTask task, int taskIndex, float width)
     {
         var context = UI.Context;
         var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
@@ -176,6 +185,10 @@ public class KanbanBoardRenderer
 
         var pos = context.Layout.GetCurrentPosition();
         var taskBounds = new Vortice.Mathematics.Rect(pos.X, pos.Y, width, height);
+
+        // --- New Drag and Drop Logic ---
+        // During the render pass, we tell the drag handler about this valid drop target.
+        _dragDropHandler.UpdateDropTarget(column, taskIndex, taskBounds);
 
         if (!context.Layout.IsRectVisible(taskBounds))
         {

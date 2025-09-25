@@ -97,8 +97,8 @@ public class KanbanAppLogic : IAppLogic
         var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
 
         // --- Process Logic ---
-        // Pass layout info to the drag handler so it can calculate drop targets.
-        if (_dragDropHandler.Update(new Vector2(viewState.ScrollOffset.X, viewState.ScrollOffset.Y), totalBoardWidth, maxColumnHeight, columnWidth, columnGap, topMargin, boardPadding))
+        // Update now simply manages the start/end of a drag operation.
+        if (_dragDropHandler.Update())
         {
             SaveState(); // Save if drag-drop resulted in a change
         }
