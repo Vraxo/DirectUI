@@ -90,7 +90,13 @@ public class RaylibWindowHost : IWindowHost
             {
                 float scaleDelta = wheelMove * 0.1f;
                 _appEngine.UIScale = Math.Clamp(_appEngine.UIScale + scaleDelta, 0.5f, 3.0f);
-                // Consume the scroll event so it doesn't also scroll UI elements
+                // Consume the scroll event by not passing it to the InputManager.
+                // We still need to process other inputs, so we create a temporary manager.
+                var tempInput = new InputManager();
+                tempInput.ProcessRaylibInput();
+                // Manually add the scroll delta we are ignoring
+                tempInput.AddMouseWheelDelta(-wheelMove);
+                _appEngine.Input.ProcessRaylibInput();
             }
             else
             {

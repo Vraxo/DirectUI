@@ -9,9 +9,15 @@ public class UILayoutManager
     private readonly Stack<ILayoutContainer> _containerStack = new();
     private readonly Dictionary<int, object> _containerStateCache = new();
     private readonly Stack<Rect> _clipRectStack = new();
+    private readonly float _uiScale;
 
     public int ContainerStackCount => _containerStack.Count;
     public bool IsInLayoutContainer() => _containerStack.Count > 0;
+
+    public UILayoutManager(float uiScale)
+    {
+        _uiScale = uiScale;
+    }
 
     public void PushContainer(ILayoutContainer containerState) => _containerStack.Push(containerState);
     public ILayoutContainer PopContainer() => _containerStack.Pop();
@@ -106,12 +112,15 @@ public class UILayoutManager
 
     public Vector2 ApplyLayout(Vector2 positionOffset)
     {
-        // If in a container, add the widget's desired position as a relative offset.
-        return IsInLayoutContainer() ? GetCurrentPosition() + positionOffset : positionOffset;
+        // Calculate the final logical position.
+        var logicalPosition = IsInLayoutContainer() ? GetCurrentPosition() + positionOffset : positionOffset;
+        // Return the physical, scaled position for rendering.
+        return logicalPosition * _uiScale;
     }
 
     public void AdvanceLayout(Vector2 elementSize)
     {
+        // This method receives a logical size and advances the internal logical layout.
         if (IsInLayoutContainer())
         {
             AdvanceContainerLayout(new Vector2(Math.Max(0, elementSize.X), Math.Max(0, elementSize.Y)));
@@ -124,7 +133,7 @@ public class UILayoutManager
         {
             return Vector2.Zero;
         }
-        // Polymorphic call to the container at the top of the stack.
+        // Polymorphic call to the container at the top of the stack. Returns a logical position.
         return _containerStack.Peek().GetCurrentPosition();
     }
 
@@ -132,7 +141,7 @@ public class UILayoutManager
     {
         if (_containerStack.Count == 0) return;
 
-        // Polymorphic call to the container at the top of the stack.
+        // Polymorphic call to the container at the top of the stack with a logical size.
         _containerStack.Peek().Advance(elementSize);
     }
 }

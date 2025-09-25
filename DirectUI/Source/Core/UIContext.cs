@@ -30,6 +30,6 @@ public class UIContext
         DeltaTime = deltaTime;
         TotalTime = totalTime;
         UIScale = uiScale;
-        Layout = new UILayoutManager();
+        Layout = new UILayoutManager(uiScale);
     }
 }

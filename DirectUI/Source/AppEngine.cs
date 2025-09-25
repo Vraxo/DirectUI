@@ -84,32 +84,11 @@ public class AppEngine
 
         try
         {
-            // Get the physical input state from the InputManager
-            var physicalInputState = _inputManager.GetCurrentState();
+            // Get the immutable, physical input state for this frame from the InputManager.
+            // Mouse coordinates are in physical pixels. Hit-testing will be done in physical space.
+            var inputState = _inputManager.GetCurrentState();
 
-            // Create a LOGICAL input state by un-scaling the mouse position.
-            // All UI hit-testing will now happen in a consistent, logical coordinate space.
-            var logicalMousePosition = physicalInputState.MousePosition / UIScale;
-            var logicalPreviousMousePosition = physicalInputState.PreviousMousePosition / UIScale;
-
-            var logicalInputState = new InputState(
-                logicalMousePosition,
-                logicalPreviousMousePosition,
-                physicalInputState.WasLeftMousePressedThisFrame,
-                physicalInputState.IsLeftMouseDown,
-                physicalInputState.WasRightMousePressedThisFrame,
-                physicalInputState.IsRightMouseDown,
-                physicalInputState.WasMiddleMousePressedThisFrame,
-                physicalInputState.IsMiddleMouseDown,
-                physicalInputState.ScrollDelta,
-                physicalInputState.TypedCharacters,
-                physicalInputState.PressedKeys,
-                physicalInputState.ReleasedKeys,
-                physicalInputState.HeldKeys,
-                physicalInputState.PressedMouseButtons
-            );
-
-            var uiContext = new UIContext(renderer, textService, logicalInputState, deltaTime, totalTime, UIScale);
+            var uiContext = new UIContext(renderer, textService, inputState, deltaTime, totalTime, UIScale);
             uiContext.State = _persistentState; // Assign instance-specific state to the context
             UI.BeginFrame(uiContext);
 
