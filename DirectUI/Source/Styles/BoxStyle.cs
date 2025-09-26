@@ -27,7 +27,7 @@ public class BoxStyle
 
     public BoxStyle() { }
 
-    public BoxStyle(BoxStyle other)
+    protected BoxStyle(BoxStyle other)
     {
         this.Roundness = other.Roundness;
         this.FillColor = other.FillColor;

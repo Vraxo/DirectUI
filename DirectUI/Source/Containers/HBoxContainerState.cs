@@ -5,7 +5,7 @@ namespace DirectUI;
 public class HBoxContainerState : ILayoutContainer
 {
     internal int Id { get; }
-    public Vector2 StartPosition { get; internal set; }
+    internal Vector2 StartPosition { get; set; }
     internal Vector2 CurrentPosition { get; set; }
     internal float Gap { get; set; }
     internal float MaxElementHeight { get; set; } = 0f;
@@ -13,10 +13,6 @@ public class HBoxContainerState : ILayoutContainer
     internal int ElementCount { get; set; } = 0;
     internal VAlignment VerticalAlignment { get; set; } = VAlignment.Top;
     internal float? FixedRowHeight { get; set; }
-    internal BoxStyle? BackgroundStyle { get; set; }
-    internal bool IsBufferingCommands { get; set; }
-    public float? ForcedHeight { get; set; }
-
 
     internal HBoxContainerState(int id)
     {
@@ -41,6 +37,4 @@ public class HBoxContainerState : ILayoutContainer
         CurrentPosition = new Vector2(CurrentPosition.X + advanceX, CurrentPosition.Y);
         ElementCount++;
     }
-
-    public Vector2 GetAccumulatedSize() => new(AccumulatedWidth, ForcedHeight ?? MaxElementHeight);
 }
