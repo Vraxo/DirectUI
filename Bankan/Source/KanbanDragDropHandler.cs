@@ -8,7 +8,7 @@ namespace Bankan;
 
 public class KanbanDragDropHandler
 {
-    public KanbanTask? DraggedTask { get; private set; }
+    public Task? DraggedTask { get; private set; }
 
     // State for the CURRENT frame's render pass (calculated last frame)
     public KanbanColumn? DropTargetColumn { get; private set; }
@@ -30,7 +30,7 @@ public class KanbanDragDropHandler
 
     public bool IsDragging() => DraggedTask != null;
 
-    public void BeginDrag(KanbanTask task, KanbanColumn sourceColumn, Vector2 mousePosition, Vector2 taskPosition)
+    public void BeginDrag(Task task, KanbanColumn sourceColumn, Vector2 mousePosition, Vector2 taskPosition)
     {
         DraggedTask = task;
         _sourceColumn = sourceColumn;

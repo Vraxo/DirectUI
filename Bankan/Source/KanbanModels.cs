@@ -28,7 +28,7 @@ public class KanbanSettings
 
 // --- Board Models ---
 
-public class KanbanTask
+public class Task
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Text { get; set; } = string.Empty;
@@ -69,7 +69,7 @@ public class KanbanColumn
 {
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
-    public List<KanbanTask> Tasks { get; set; } = new();
+    public List<Task> Tasks { get; set; } = new();
 }
 
 public class KanbanBoard

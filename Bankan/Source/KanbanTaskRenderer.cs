@@ -20,7 +20,7 @@ public class KanbanTaskRenderer
         _dragDropHandler = dragDropHandler;
     }
 
-    public void DrawTaskWidget(KanbanColumn column, KanbanTask task, int taskIndex, float logicalWidth)
+    public void DrawTaskWidget(KanbanColumn column, Task task, int taskIndex, float logicalWidth)
     {
         var context = UI.Context;
         var scale = context.UIScale;
@@ -122,7 +122,7 @@ public class KanbanTaskRenderer
         context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
     }
 
-    public void DrawDragPlaceholder(KanbanTask task, float logicalWidth)
+    public void DrawDragPlaceholder(Task task, float logicalWidth)
     {
         var scale = UI.Context.UIScale;
         var logicalFontSize = 14f;

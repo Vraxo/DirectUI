@@ -46,8 +46,8 @@ public class KanbanAppLogic : IAppLogic
                 Id = "todo",
                 Title = "To Do",
                 Tasks = new() {
-                new KanbanTask { Text = "Design the main UI", ColorHex = "#bb86fc" },
-                new KanbanTask { Text = "Implement drag and drop", ColorHex = "#ff7597" },
+                new Task { Text = "Design the main UI", ColorHex = "#bb86fc" },
+                new Task { Text = "Implement drag and drop", ColorHex = "#ff7597" },
             }
             });
             _board.Columns.Add(new KanbanColumn
@@ -55,7 +55,7 @@ public class KanbanAppLogic : IAppLogic
                 Id = "inprogress",
                 Title = "In Progress",
                 Tasks = new() {
-                new KanbanTask { Text = "Set up DirectUI project", ColorHex = "#75ffff" }
+                new Task { Text = "Set up DirectUI project", ColorHex = "#75ffff" }
             }
             });
             _board.Columns.Add(new KanbanColumn
@@ -63,7 +63,7 @@ public class KanbanAppLogic : IAppLogic
                 Id = "done",
                 Title = "Done",
                 Tasks = new() {
-                new KanbanTask { Text = "Analyze the web Kanban board", ColorHex = "#75ff9f" }
+                new Task { Text = "Analyze the web Kanban board", ColorHex = "#75ff9f" }
             }
             });
         }

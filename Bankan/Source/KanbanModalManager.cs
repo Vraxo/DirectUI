@@ -18,7 +18,7 @@ public class KanbanModalManager
 
     private object? _activeModalLogic;
 
-    private KanbanTask? _taskToDelete;
+    private Task? _taskToDelete;
 
     public bool IsModalOpen => _windowHost.ModalWindowService.IsModalWindowOpen;
 
@@ -35,7 +35,7 @@ public class KanbanModalManager
 
     public void RequestSave() => _saveRequestCallback.Invoke();
 
-    public void RequestTaskDeletion(KanbanTask task) => _taskToDelete = task;
+    public void RequestTaskDeletion(Task task) => _taskToDelete = task;
 
     public void ProcessPendingActions()
     {
@@ -75,7 +75,7 @@ public class KanbanModalManager
             {
                 if (resultCode == 0 && !string.IsNullOrWhiteSpace(_addTaskModal.TaskText))
                 {
-                    var newTask = new KanbanTask { Text = _addTaskModal.TaskText.Trim(), ColorHex = _addTaskModal.SelectedColorHex };
+                    var newTask = new Task { Text = _addTaskModal.TaskText.Trim(), ColorHex = _addTaskModal.SelectedColorHex };
                     column.Tasks.Add(newTask);
                     RequestSave();
                 }
@@ -83,7 +83,7 @@ public class KanbanModalManager
         );
     }
 
-    public void OpenEditTaskModal(KanbanTask task)
+    public void OpenEditTaskModal(Task task)
     {
         if (IsModalOpen) return;
         _editTaskModal.Open(task);

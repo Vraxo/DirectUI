@@ -10,7 +10,7 @@ public class EditTaskModal
 {
     public string TaskText { get; private set; } = "";
     public string SelectedColorHex { get; private set; } = "";
-    public KanbanTask? TaskToEdit { get; private set; }
+    public Task? TaskToEdit { get; private set; }
 
     private readonly IWindowHost _windowHost;
     private readonly List<string> _availableTaskColors;
@@ -21,7 +21,7 @@ public class EditTaskModal
         _availableTaskColors = availableColors;
     }
 
-    public void Open(KanbanTask task)
+    public void Open(Task task)
     {
         TaskToEdit = task;
         TaskText = task.Text;
@@ -57,7 +57,7 @@ public class EditTaskModal
         UI.BeginHBoxContainer($"{idPrefix}_color_selector_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
         foreach (var colorHex in _availableTaskColors)
         {
-            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new KanbanTask { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
+            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new Task { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
             if (UI.Button($"{idPrefix}_swatch_{colorHex}", "", size: new Vector2(30, 30), theme: swatchTheme))
             {
                 selectedColorHex = colorHex;
