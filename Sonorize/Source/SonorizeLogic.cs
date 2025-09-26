@@ -141,7 +141,7 @@ public class SonorizeLogic : IAppLogic
 
         UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
         {
-            if (_albumFilter != null || _artistFilter != null || _playlistFilter != null)
+            if (_albumFilter is not null || _artistFilter is not null || _playlistFilter is not null)
             {
                 if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
                 {
@@ -219,17 +219,17 @@ public class SonorizeLogic : IAppLogic
     private void OnBack()
     {
         _searchText = ""; // Clear search on navigating back
-        if (_playlistFilter != null)
+        if (_playlistFilter is not null)
         {
             _playlistFilter = null;
             _activeTabIndex = 3; // Go back to the playlists view
         }
-        else if (_albumFilter != null)
+        else if (_albumFilter is not null)
         {
             _albumFilter = null;
             _activeTabIndex = 1;
         }
-        else if (_artistFilter != null)
+        else if (_artistFilter is not null)
         {
             _artistFilter = null;
             _activeTabIndex = 2;

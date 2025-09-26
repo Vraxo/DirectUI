@@ -57,7 +57,7 @@ public class MenuBarView
             // Placeholder for future dropdown logic. For now, top-level buttons do nothing.
             // A real implementation would open a popup here.
             // For simplicity, we make the first item the default action.
-            if (onItemSelected != null && items.Length > 0)
+            if (onItemSelected is not null && items.Length > 0)
             {
                 onItemSelected(items[0]);
             }

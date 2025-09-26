@@ -21,7 +21,7 @@ public static class Easing
 
     public static Func<float, float> GetEasingFunction(string? name)
     {
-        if (name != null && s_easingFunctions.TryGetValue(name, out var func))
+        if (name is not null && s_easingFunctions.TryGetValue(name, out var func))
         {
             return func;
         }

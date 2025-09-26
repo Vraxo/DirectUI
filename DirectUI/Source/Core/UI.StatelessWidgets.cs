@@ -119,7 +119,7 @@ public static partial class UI
         AnimationInfo? finalAnimation = animation ?? targetStyle.Animation ?? theme.Animation;
 
 
-        if (finalAnimation != null && !disabled)
+        if (finalAnimation is not null && !disabled)
         {
             var animManager = state.AnimationManager;
             var currentTime = context.TotalTime;

@@ -1,8 +1,5 @@
-﻿using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using DirectUI;
-using DirectUI.Animation;
-using DirectUI.Core;
 using DirectUI.Drawing;
 using DirectUI.Styling;
 
@@ -21,10 +18,6 @@ public class ColumnRenderer
         _modalManager = modalManager;
     }
 
-    /// <summary>
-    /// Draws the shared UI elements that make up the inside of a column.
-    /// This logic is used for both the calculation pass and the final drawing pass.
-    /// </summary>
     private void DrawColumnInterior(KanbanColumn column, float innerContentLogicalWidth)
     {
         DrawColumnHeader(column, innerContentLogicalWidth);
@@ -190,13 +183,12 @@ public class ColumnRenderer
         //    }
         //};
 
-        bool clicked = UI.Button(
+
+        if (UI.Button(
             id: column.Id + "_add_task",
             text: "+ Add Task",
             size: new(innerContentLogicalWidth, 40),
-            theme: addTaskTheme);
-
-        if (clicked)
+            theme: addTaskTheme))
         {
             _modalManager.OpenAddTaskModal(column);
         }

@@ -127,7 +127,7 @@ public class MusicLibrary
                         };
 
                         var playlistDirectory = Path.GetDirectoryName(playlistPath);
-                        if (playlistDirectory == null) continue;
+                        if (playlistDirectory is null) continue;
 
                         var lines = System.IO.File.ReadAllLines(playlistPath);
                         foreach (var line in lines)
@@ -174,12 +174,12 @@ public class MusicLibrary
     /// </summary>
     private static byte[]? CreateAbstractArt(byte[]? originalArtData, int width = 128, float blurSigma = 10f)
     {
-        if (originalArtData == null || originalArtData.Length == 0) return null;
+        if (originalArtData is null || originalArtData.Length == 0) return null;
 
         try
         {
             using var originalBitmap = SKBitmap.Decode(originalArtData);
-            if (originalBitmap == null) return null;
+            if (originalBitmap is null) return null;
 
             // 1. Create a bitmap that is `width` pixels wide and 1 pixel tall.
             var info = new SKImageInfo(width, 1);

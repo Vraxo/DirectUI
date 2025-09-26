@@ -28,7 +28,7 @@ public class DragDropHandler
         _board = board;
     }
 
-    public bool IsDragging() => DraggedTask != null;
+    public bool IsDragging() => DraggedTask is not null;
 
     public void BeginDrag(Task task, KanbanColumn sourceColumn, Vector2 mousePosition, Vector2 taskPosition)
     {
@@ -51,7 +51,7 @@ public class DragDropHandler
     public bool Update()
     {
         var input = UI.Context.InputState;
-        if (DraggedTask == null) return false;
+        if (DraggedTask is null) return false;
 
         // At the start of the logic update, cycle the state. The drop target calculated
         // in the previous frame's render pass now becomes the current drop target.
@@ -62,7 +62,7 @@ public class DragDropHandler
         {
             bool modified = false;
             // Use the now-current DropTargetColumn and DropIndex for the final action.
-            if (DraggedTask != null && _sourceColumn != null && DropTargetColumn != null && DropIndex != -1)
+            if (DraggedTask is not null && _sourceColumn is not null && DropTargetColumn is not null && DropIndex != -1)
             {
                 int originalIndex = _sourceColumn.Tasks.IndexOf(DraggedTask);
                 if (originalIndex != -1)
@@ -131,7 +131,7 @@ public class DragDropHandler
 
     public void DrawDraggedTaskOverlay(float physicalWidth)
     {
-        if (DraggedTask == null || physicalWidth <= 0) return;
+        if (DraggedTask is null || physicalWidth <= 0) return;
         var scale = UI.Context.UIScale;
         var mousePos = UI.Context.InputState.MousePosition;
 

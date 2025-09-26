@@ -71,14 +71,14 @@ public static class StyleManager
         // Apply pack-level properties to all styles first
         if (yamlPack.Roundness.HasValue) pack.Roundness = yamlPack.Roundness.Value;
         if (yamlPack.BorderLength.HasValue) pack.BorderLength = yamlPack.BorderLength.Value;
-        if (yamlPack.FontName != null) pack.FontName = yamlPack.FontName;
+        if (yamlPack.FontName is not null) pack.FontName = yamlPack.FontName;
         if (yamlPack.FontSize.HasValue) pack.FontSize = yamlPack.FontSize.Value;
         if (yamlPack.FontWeight.HasValue) pack.FontWeight = yamlPack.FontWeight.Value;
         if (yamlPack.FontStyle.HasValue) pack.FontStyle = yamlPack.FontStyle.Value;
         if (yamlPack.FontStretch.HasValue) pack.FontStretch = yamlPack.FontStretch.Value;
 
         // Apply global animation info (acts as a fallback)
-        if (yamlPack.Animation != null)
+        if (yamlPack.Animation is not null)
         {
             pack.Animation = new AnimationInfo(
                 yamlPack.Animation.Duration ?? 0.15f,
@@ -100,12 +100,12 @@ public static class StyleManager
 
     private static void ApplyYamlStyle(ButtonStyle target, YamlButtonStyle? source)
     {
-        if (source == null) return;
+        if (source is null) return;
 
         // BoxStyle properties
         if (source.Roundness.HasValue) target.Roundness = source.Roundness.Value;
-        if (source.FillColor != null) target.FillColor = ParseColor(source.FillColor);
-        if (source.BorderColor != null) target.BorderColor = ParseColor(source.BorderColor);
+        if (source.FillColor is not null) target.FillColor = ParseColor(source.FillColor);
+        if (source.BorderColor is not null) target.BorderColor = ParseColor(source.BorderColor);
         if (source.BorderLength.HasValue) target.BorderLength = source.BorderLength.Value;
         if (source.BorderLengthTop.HasValue) target.BorderLengthTop = source.BorderLengthTop.Value;
         if (source.BorderLengthRight.HasValue) target.BorderLengthRight = source.BorderLengthRight.Value;
@@ -113,16 +113,16 @@ public static class StyleManager
         if (source.BorderLengthLeft.HasValue) target.BorderLengthLeft = source.BorderLengthLeft.Value;
 
         // ButtonStyle properties
-        if (source.FontColor != null) target.FontColor = ParseColor(source.FontColor);
-        if (source.FontName != null) target.FontName = source.FontName;
+        if (source.FontColor is not null) target.FontColor = ParseColor(source.FontColor);
+        if (source.FontName is not null) target.FontName = source.FontName;
         if (source.FontSize.HasValue) target.FontSize = source.FontSize.Value;
         if (source.FontWeight.HasValue) target.FontWeight = source.FontWeight.Value;
         if (source.FontStyle.HasValue) target.FontStyle = source.FontStyle.Value;
         if (source.FontStretch.HasValue) target.FontStretch = source.FontStretch.Value;
-        if (source.Scale != null && source.Scale.Count == 2) target.Scale = new Vector2(source.Scale[0], source.Scale[1]);
+        if (source.Scale is not null && source.Scale.Count == 2) target.Scale = new Vector2(source.Scale[0], source.Scale[1]);
 
         // Per-state animation
-        if (source.Animation != null)
+        if (source.Animation is not null)
         {
             target.Animation = new AnimationInfo(
                 source.Animation.Duration ?? 0.15f,
@@ -133,7 +133,7 @@ public static class StyleManager
 
     private static Color ParseColor(object? colorObj)
     {
-        if (colorObj == null)
+        if (colorObj is null)
         {
             Console.WriteLine($"[StyleManager] Warning: Null color value provided. Defaulting to transparent.");
             return Colors.Transparent;

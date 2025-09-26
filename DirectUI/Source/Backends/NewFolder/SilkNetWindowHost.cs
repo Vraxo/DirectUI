@@ -68,11 +68,11 @@ namespace DirectUI.Backends.SkiaSharp
         public bool ShowFpsCounter
         {
             get => _mainWindow?.ShowFpsCounter ?? false;
-            set { if (_mainWindow != null) _mainWindow.ShowFpsCounter = value; }
+            set { if (_mainWindow is not null) _mainWindow.ShowFpsCounter = value; }
         }
 
         public IModalWindowService ModalWindowService => this;
-        public bool IsModalWindowOpen => _activeModalWindow != null;
+        public bool IsModalWindowOpen => _activeModalWindow is not null;
 
         public WindowBackdropType BackdropType { get; set; } = WindowBackdropType.Default;
         public WindowTitleBarTheme TitleBarTheme { get; set; } = WindowTitleBarTheme.Dark;
@@ -97,7 +97,7 @@ namespace DirectUI.Backends.SkiaSharp
 
         public void RunLoop()
         {
-            if (_mainWindow == null)
+            if (_mainWindow is null)
                 return;
 
             // 1) Create GL/Skia contexts (still hidden)
@@ -143,7 +143,7 @@ namespace DirectUI.Backends.SkiaSharp
             Action<UIContext> drawCallback,
             Action<int>? onClosedCallback = null)
         {
-            if (IsModalWindowOpen || _mainWindow == null)
+            if (IsModalWindowOpen || _mainWindow is null)
                 return;
 
             // Compute centered coords relative to parent
@@ -229,7 +229,7 @@ namespace DirectUI.Backends.SkiaSharp
                 EnableWindow(parentHwnd, true);
             }
 
-            if (_activeModalWindow != null)
+            if (_activeModalWindow is not null)
             {
                 // Now, before the OS can repaint, instantly move the modal far off-screen
                 // and hide it. This is the crucial step to prevent the visual glitch.

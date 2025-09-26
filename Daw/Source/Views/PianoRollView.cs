@@ -49,7 +49,7 @@ public class PianoRollView
 
         HandleInput(input, gridArea);
 
-        if (_activeTrack != null)
+        if (_activeTrack is not null)
         {
             DrawKeyboard(new Rect(viewArea.X, viewArea.Y, DawMetrics.KeyboardWidth, viewArea.Height));
             DrawGrid(gridArea, song);
@@ -139,7 +139,7 @@ public class PianoRollView
     private void FinalizeBoxSelection(Rect gridArea)
     {
         _state.SelectedNotes.Clear();
-        if (_activeTrack == null) return;
+        if (_activeTrack is null) return;
 
         float pixelsPerMs = GetPixelsPerMs();
         if (pixelsPerMs <= 0) return;
@@ -171,7 +171,7 @@ public class PianoRollView
         switch (_currentTool)
         {
             case PianoRollTool.Select:
-                if (hitNote != null)
+                if (hitNote is not null)
                 {
                     if (isShiftHeld)
                     {
@@ -213,7 +213,7 @@ public class PianoRollView
                 break;
 
             case PianoRollTool.Pencil:
-                if (hitNote != null)
+                if (hitNote is not null)
                 {
                     _activeTrack?.Events.Remove(hitNote);
                     if (_state.SelectedNotes.Contains(hitNote)) _state.SelectedNotes.Remove(hitNote);
@@ -234,7 +234,7 @@ public class PianoRollView
         float quantization = msPerBeat / 4; // 16th note snapping
 
         // Multi-note drag
-        if (_state.NoteBeingDragged != null)
+        if (_state.NoteBeingDragged is not null)
         {
             var targetNoteScreenPos = input.MousePosition - _state.DragStartOffset;
             var (targetTime, targetPitch) = ScreenToGrid(targetNoteScreenPos, gridArea);
@@ -254,7 +254,7 @@ public class PianoRollView
 
         // Single-note resize
         var singleSelected = _state.GetSingleSelectedNote();
-        if (_state.IsResizingRight && singleSelected != null)
+        if (_state.IsResizingRight && singleSelected is not null)
         {
             var gridPos = ScreenToGrid(input.MousePosition, gridArea);
             float endEdgeTime = (int)(Math.Round(gridPos.timeMs / quantization) * quantization);
@@ -272,7 +272,7 @@ public class PianoRollView
 
     private void AddNewNote(Vector2 screenPos, Rect gridArea)
     {
-        if (_song == null || _activeTrack == null) return;
+        if (_song is null || _activeTrack is null) return;
         var (time, pitch) = ScreenToGrid(screenPos, gridArea);
 
         float msPerBeat = (float)(60000.0 / _song.Tempo);
@@ -338,7 +338,7 @@ public class PianoRollView
             beatIndex++;
         }
 
-        if (_song != null && _song.IsLoopingEnabled)
+        if (_song is not null && _song.IsLoopingEnabled)
         {
             float loopStartX = gridArea.X + (_song.LoopStartMs * pixelsPerMs) - _state.PanOffset.X;
             float loopEndX = gridArea.X + (_song.LoopEndMs * pixelsPerMs) - _state.PanOffset.X;
@@ -351,7 +351,7 @@ public class PianoRollView
 
     private void DrawNotes(Rect gridArea)
     {
-        if (_song == null || _activeTrack == null) return;
+        if (_song is null || _activeTrack is null) return;
         var renderer = UI.Context.Renderer;
 
         float pixelsPerMs = GetPixelsPerMs();
@@ -412,7 +412,7 @@ public class PianoRollView
 
     private (NoteEvent? note, bool isEdge) HitTestNotes(Vector2 screenPos, Rect gridArea)
     {
-        if (_song == null || _activeTrack == null) return (null, false);
+        if (_song is null || _activeTrack is null) return (null, false);
         const float edgeWidth = 8f;
 
         float pixelsPerMs = GetPixelsPerMs();

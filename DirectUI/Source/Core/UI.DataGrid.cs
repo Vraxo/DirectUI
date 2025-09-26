@@ -173,7 +173,7 @@ public static partial class UI
         state.ScrollOffset = scrollOffset; // Assign back before drawing rows
 
         // Find the index of the selected item within the newly sorted list for display.
-        int displayIndex = (currentSelectedItem != null) ? sortedItems.IndexOf(currentSelectedItem) : -1;
+        int displayIndex = (currentSelectedItem is not null) ? sortedItems.IndexOf(currentSelectedItem) : -1;
         int displayIndexBeforeDraw = displayIndex;
 
         // Define and push clip rect for content area
@@ -449,7 +449,7 @@ public static partial class UI
 
     private static object? GetPropertyValue<T>(T item, string propertyName)
     {
-        if (item == null || string.IsNullOrEmpty(propertyName)) return null;
+        if (item is null || string.IsNullOrEmpty(propertyName)) return null;
         var type = typeof(T);
 
         if (!_propertyInfoCache.TryGetValue(type, out var propertyMap))

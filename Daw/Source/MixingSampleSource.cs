@@ -56,7 +56,7 @@ public class MixingSampleSource : ISampleSource
     public int Read(float[] buffer, int offset, int count)
     {
         // Ensure our temporary buffer for reading from sources is large enough
-        if (_sourceBuffer == null || _sourceBuffer.Length < count)
+        if (_sourceBuffer is null || _sourceBuffer.Length < count)
         {
             _sourceBuffer = new float[count];
         }

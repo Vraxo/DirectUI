@@ -166,7 +166,7 @@ public class SilkNetRenderer : IRenderer
             try
             {
                 bitmap = SKBitmap.Decode(imageData);
-                if (bitmap != null)
+                if (bitmap is not null)
                 {
                     _bitmapCache[imageKey] = bitmap;
                 }

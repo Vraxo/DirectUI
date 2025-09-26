@@ -33,7 +33,7 @@ public class PlaybackControlsView
         DrawBackground(context, controlsRect);
 
         // 2. If available, draw the stretched abstract art on top of the solid background.
-        if (currentTrack?.AbstractAlbumArt != null && currentTrack.AbstractAlbumArt.Length > 0)
+        if (currentTrack?.AbstractAlbumArt is not null && currentTrack.AbstractAlbumArt.Length > 0)
         {
             // The file path provides a unique key for the renderer's image cache.
             string abstractArtKey = currentTrack.FilePath + "_abstract";

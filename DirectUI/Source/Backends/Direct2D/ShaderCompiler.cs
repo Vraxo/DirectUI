@@ -28,7 +28,7 @@ public static class ShaderCompiler
         if (compileResult.Failure)
         {
             string errorMessage = "Shader compilation failed";
-            if (error != null)
+            if (error is not null)
             {
                 // The error blob contains detailed diagnostics from the compiler.
                 errorMessage = error.AsString();

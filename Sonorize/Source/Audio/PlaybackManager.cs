@@ -71,7 +71,7 @@ public class PlaybackManager : IDisposable
                     _audioPlayer.Resume();
                     break;
                 case PlaybackState.Stopped:
-                    if (CurrentTrack != null) Play(CurrentTrackIndex);
+                    if (CurrentTrack is not null) Play(CurrentTrackIndex);
                     break;
             }
         }

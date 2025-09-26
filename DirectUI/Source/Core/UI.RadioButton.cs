@@ -13,7 +13,7 @@ public static partial class UI
         bool autoWidth = false,
         float gap = 10f)
     {
-        if (!IsContextValid() || labels == null || labels.Length == 0)
+        if (!IsContextValid() || labels is null || labels.Length == 0)
         {
             return false;
         }

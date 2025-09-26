@@ -1,5 +1,4 @@
-﻿using System.IO;
-using System.Text.Json;
+﻿using System.Text.Json;
 
 namespace Bankan;
 
@@ -16,6 +15,7 @@ public static class StateSerializer
         try
         {
             string? directory = Path.GetDirectoryName(filePath);
+            
             if (!string.IsNullOrEmpty(directory))
             {
                 Directory.CreateDirectory(directory);
@@ -24,9 +24,9 @@ public static class StateSerializer
             string json = JsonSerializer.Serialize(data, Options);
             File.WriteAllText(filePath, json);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            System.Console.WriteLine($"Error saving state to {filePath}: {ex.Message}");
+            Console.WriteLine($"Error saving state to {filePath}: {ex.Message}");
         }
     }
 
@@ -34,7 +34,7 @@ public static class StateSerializer
     {
         if (!File.Exists(filePath))
         {
-            return new T(); // Return a new instance if file doesn't exist
+            return new T();
         }
 
         try
@@ -42,10 +42,10 @@ public static class StateSerializer
             string json = File.ReadAllText(filePath);
             return JsonSerializer.Deserialize<T>(json, Options) ?? new T();
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            System.Console.WriteLine($"Error loading state from {filePath}: {ex.Message}");
-            return new T(); // Return a new instance on error
+            Console.WriteLine($"Error loading state from {filePath}: {ex.Message}");
+            return new T();
         }
     }
 }

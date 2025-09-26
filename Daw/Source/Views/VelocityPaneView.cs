@@ -35,7 +35,7 @@ public class VelocityPaneView
         if (isHoveringVelocity && input.WasLeftMousePressedThisFrame)
         {
             var hitNote = HitTestVelocityBars(input.MousePosition, velocityArea, track, song, state.PanOffset, state.Zoom);
-            if (hitNote != null)
+            if (hitNote is not null)
             {
                 state.VelocityBarBeingDragged = hitNote;
                 state.SelectedNotes.Clear();
@@ -48,7 +48,7 @@ public class VelocityPaneView
             state.VelocityBarBeingDragged = null;
         }
 
-        if (state.VelocityBarBeingDragged != null)
+        if (state.VelocityBarBeingDragged is not null)
         {
             float mouseY = input.MousePosition.Y;
             float areaY = velocityArea.Y;

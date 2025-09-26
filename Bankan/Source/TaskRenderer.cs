@@ -1,5 +1,4 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
 using DirectUI;
 using DirectUI.Animation;
 using DirectUI.Core;
@@ -68,14 +67,23 @@ public class TaskRenderer
         ITextLayout wrappedLayout = context.TextService.GetTextLayout(task.Text, measurementStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
         float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
 
-        return new Vector2(logicalWidth, logicalHeight);
+        return new (logicalWidth, logicalHeight);
     }
 
     private ButtonStylePack CreateTaskTheme(Task task)
     {
-        ButtonStylePack taskTheme = new() { Roundness = 0.1f };
+        ButtonStylePack taskTheme = new() 
+        { 
+            Roundness = 0.1f 
+        };
+
         Color cardBackground = new(42, 42, 42, 255);
-        ButtonStyle fontStyle = new() { FontName = "Segoe UI", FontSize = 14f };
+
+        ButtonStyle fontStyle = new()
+        {
+            FontName = "Segoe UI",
+            FontSize = 14f
+        };
 
         if (_settings.ColorStyle == TaskColorStyle.Background)
         {
@@ -84,10 +92,11 @@ public class TaskRenderer
             fontStyle.FontColor = new Color(18, 18, 18, 255);
 
             Color baseHoverColor = task.Color;
+            
             taskTheme.Hover.FillColor = new Color(
-                (byte)Math.Min(255, baseHoverColor.R * 1.2f),
-                (byte)Math.Min(255, baseHoverColor.G * 1.2f),
-                (byte)Math.Min(255, baseHoverColor.B * 1.2f),
+                (byte)float.Min(255, baseHoverColor.R * 1.2f),
+                (byte)float.Min(255, baseHoverColor.G * 1.2f),
+                (byte)float.Min(255, baseHoverColor.B * 1.2f),
                 baseHoverColor.A);
         }
         else
@@ -103,6 +112,7 @@ public class TaskRenderer
         }
 
         ButtonStyle[] allStyles = [taskTheme.Normal, taskTheme.Hover, taskTheme.Pressed, taskTheme.Disabled, taskTheme.Focused, taskTheme.Active, taskTheme.ActiveHover];
+       
         foreach (ButtonStyle s in allStyles)
         {
             s.FontName = fontStyle.FontName;
@@ -136,7 +146,7 @@ public class TaskRenderer
 
         bool isPressed = UI.State.ActivelyPressedElementId == taskIdHash;
 
-        return new InteractionState(isHovering, isPressed, isInteractive);
+        return new(isHovering, isPressed, isInteractive);
     }
 
     private void HandleContextMenu(Task task, InteractionState interaction)
@@ -151,24 +161,48 @@ public class TaskRenderer
             return;
         }
 
-        int choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
+        int choice = UI.ContextMenu($"context_menu_{task.Id}", ["Edit Task", "Delete Task"]);
 
-        if (choice != -1)
+        switch (choice)
         {
-            if (choice == 0)
-            {
+            case -1:
+                if (UI.State.IsPopupOpen)
+                {
+                    break;
+                }
+
+                _activeContextMenuTaskId = null;
+                break;
+            case 0:
                 _modalManager.OpenEditTaskModal(task);
-            }
-            else if (choice == 1)
-            {
+                break;
+            case 1:
                 _modalManager.RequestTaskDeletion(task);
-            }
-            _activeContextMenuTaskId = null;
+                break;
         }
-        else if (!UI.State.IsPopupOpen)
+    }
+
+    private static ButtonStyle CalculateAnimatedStyle(int taskIdHash, ButtonStylePack theme, InteractionState interaction)
+    {
+        theme.UpdateCurrentStyle(interaction.IsHovering, interaction.IsPressed, !interaction.IsInteractive, false, false);
+        ButtonStyle targetStyle = theme.Current;
+        AnimationInfo? finalAnimation = targetStyle.Animation ?? theme.Animation;
+
+        if (finalAnimation is null || !interaction.IsInteractive)
         {
-            _activeContextMenuTaskId = null;
+            return targetStyle;
         }
+
+        AnimationManager animManager = UI.State.AnimationManager;
+        float currentTime = UI.Context.TotalTime;
+
+        return new(targetStyle)
+        {
+            FillColor = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "FillColor"), targetStyle.FillColor, currentTime, finalAnimation.Duration, finalAnimation.Easing),
+            BorderColor = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "BorderColor"), targetStyle.BorderColor, currentTime, finalAnimation.Duration, finalAnimation.Easing),
+            BorderLengthLeft = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "BorderLengthLeft"), targetStyle.BorderLengthLeft, currentTime, finalAnimation.Duration, finalAnimation.Easing),
+            Scale = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "Scale"), targetStyle.Scale, currentTime, finalAnimation.Duration, finalAnimation.Easing)
+        };
     }
 
     private void DrawAnimatedTask(Task task, ButtonStylePack theme, InteractionState interaction, Vortice.Mathematics.Rect taskBounds)
@@ -177,27 +211,7 @@ public class TaskRenderer
         float scale = context.UIScale;
         int taskIdHash = task.Id.GetHashCode();
 
-        theme.UpdateCurrentStyle(interaction.IsHovering, interaction.IsPressed, !interaction.IsInteractive, false, false);
-        ButtonStyle targetStyle = theme.Current;
-        AnimationInfo? finalAnimation = targetStyle.Animation ?? theme.Animation;
-
-        ButtonStyle animatedStyle;
-        if (finalAnimation != null && interaction.IsInteractive)
-        {
-            AnimationManager animManager = UI.State.AnimationManager;
-            float currentTime = context.TotalTime;
-            animatedStyle = new ButtonStyle(targetStyle)
-            {
-                FillColor = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "FillColor"), targetStyle.FillColor, currentTime, finalAnimation.Duration, finalAnimation.Easing),
-                BorderColor = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "BorderColor"), targetStyle.BorderColor, currentTime, finalAnimation.Duration, finalAnimation.Easing),
-                BorderLengthLeft = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "BorderLengthLeft"), targetStyle.BorderLengthLeft, currentTime, finalAnimation.Duration, finalAnimation.Easing),
-                Scale = animManager.GetOrAnimate(HashCode.Combine(taskIdHash, "Scale"), targetStyle.Scale, currentTime, finalAnimation.Duration, finalAnimation.Easing)
-            };
-        }
-        else
-        {
-            animatedStyle = targetStyle;
-        }
+        ButtonStyle animatedStyle = CalculateAnimatedStyle(taskIdHash, theme, interaction);
 
         Vector2 center = new(taskBounds.X + taskBounds.Width / 2f, taskBounds.Y + taskBounds.Height / 2f);
         float renderWidth = taskBounds.Width * animatedStyle.Scale.X;
@@ -226,7 +240,7 @@ public class TaskRenderer
             : new(HAlignment.Center, VAlignment.Center);
     }
 
-    public void DrawDragPlaceholder(Task task, float logicalWidth)
+    public static void DrawDragPlaceholder(Task task, float logicalWidth)
     {
         Vector2 logicalSize = CalculateTaskLogicalSize(task, logicalWidth);
         float scale = UI.Context.UIScale;

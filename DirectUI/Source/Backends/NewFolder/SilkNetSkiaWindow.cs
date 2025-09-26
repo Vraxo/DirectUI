@@ -38,7 +38,7 @@ public class SilkNetSkiaWindow : IDisposable
     public bool ShowFpsCounter
     {
         get => AppEngine?.ShowFpsCounter ?? false;
-        set { if (AppEngine != null) AppEngine.ShowFpsCounter = value; }
+        set { if (AppEngine is not null) AppEngine.ShowFpsCounter = value; }
     }
 
     public SilkNetSkiaWindow(
@@ -83,7 +83,7 @@ public class SilkNetSkiaWindow : IDisposable
 
     public bool Initialize(Action<UIContext> uiDrawCallback, Color4 backgroundColor, float initialScale = 1.0f)
     {
-        if (IWindow == null) return false;
+        if (IWindow is null) return false;
 
         _initialScale = initialScale; // Store the scale for the OnLoad event.
         IWindow.Load += () => OnLoad(uiDrawCallback, backgroundColor);

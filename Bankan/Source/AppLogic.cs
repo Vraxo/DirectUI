@@ -34,35 +34,57 @@ public class AppLogic : IAppLogic
         _board = StateSerializer.Load<KanbanBoard>(BoardStateFile) ?? new KanbanBoard();
         _settings = StateSerializer.Load<KanbanSettings>(SettingsStateFile) ?? new KanbanSettings();
 
-        // If the board is empty, create a default structure
-        if (_board.Columns.Count == 0)
+        if (_board.Columns.Count != 0)
         {
-            _board.Columns.Add(new KanbanColumn
-            {
-                Id = "todo",
-                Title = "To Do",
-                Tasks = new() {
-                new Task { Text = "Design the main UI", ColorHex = "#bb86fc" },
-                new Task { Text = "Implement drag and drop", ColorHex = "#ff7597" },
-            }
-            });
-            _board.Columns.Add(new KanbanColumn
-            {
-                Id = "inprogress",
-                Title = "In Progress",
-                Tasks = new() {
-                new Task { Text = "Set up DirectUI project", ColorHex = "#75ffff" }
-            }
-            });
-            _board.Columns.Add(new KanbanColumn
-            {
-                Id = "done",
-                Title = "Done",
-                Tasks = new() {
-                new Task { Text = "Analyze the web Kanban board", ColorHex = "#75ff9f" }
-            }
-            });
+            return;
         }
+
+        _board.Columns.Add(new()
+        {
+            Id = "todo",
+            Title = "To Do",
+            Tasks = 
+            [
+                new()
+                {
+                    Text = "Design the main UI",
+                    ColorHex = "#bb86fc"
+                },
+                new()
+                {
+                    Text = "Implement drag and drop",
+                    ColorHex = "#ff7597"
+                },
+            ]
+        });
+
+        _board.Columns.Add(new()
+        {
+            Id = "inprogress",
+            Title = "In Progress",
+            Tasks = 
+            [
+                new()
+                {
+                    Text = "Set up DirectUI project",
+                    ColorHex = "#75ffff"
+                }
+            ]
+        });
+
+        _board.Columns.Add(new()
+        {
+            Id = "done",
+            Title = "Done",
+            Tasks = 
+            [
+                new()
+                {
+                    Text = "Analyze the web Kanban board",
+                    ColorHex = "#75ff9f"
+                }
+            ]
+        });
     }
 
     public void SaveState()
@@ -73,7 +95,7 @@ public class AppLogic : IAppLogic
 
     public void DrawUI(UIContext context)
     {
-        var windowSize = UI.Context.Renderer.RenderTargetSize;
+        Vector2 windowSize = UI.Context.Renderer.RenderTargetSize;
         var scale = context.UIScale;
 
         // --- Process Logic ---
@@ -118,22 +140,31 @@ public class AppLogic : IAppLogic
 
     private void DrawSettingsButton(Vector2 windowSize, float scale)
     {
-        var settingsButtonSize = new Vector2(40, 40) * scale;
-        var settingsButtonPos = new Vector2(windowSize.X - settingsButtonSize.X - (20 * scale), 20 * scale);
+        Vector2 settingsButtonSize = new Vector2(40, 40) * scale;
+        _ = new Vector2(windowSize.X - settingsButtonSize.X - (20 * scale), 20 * scale);
 
-        var settingsTheme = new ButtonStylePack
+        ButtonStylePack settingsTheme = new()
         {
-            Roundness = 0.5f
+            Roundness = 0.5f,
+            Normal =
+            {
+                FontName = "Seoge UI Symbol",
+                FontSize = 20 * scale,
+                FillColor = Colors.Transparent,
+                BorderLength = 0,
+            },
+            Hover =
+            {
+                FillColor = new(50, 50, 50, 255)
+            }
         };
-        settingsTheme.Normal.FontName = "Segoe UI Symbol";
-        settingsTheme.Normal.FontSize = 20 * scale;
-        settingsTheme.Normal.FillColor = Colors.Transparent;
-        settingsTheme.Normal.BorderLength = 0;
-        settingsTheme.Hover.FillColor = new Color(50, 50, 50, 255);
 
-        // Note: The UI.Button method internally handles scaling its logical size parameter.
-        // We pass the unscaled size.
-        if (UI.Button("settings_btn", "⚙️", size: new Vector2(40, 40), origin: new Vector2(windowSize.X / scale - 40 - 20, 20), theme: settingsTheme))
+        if (UI.Button(
+            "settings_btn",
+            "⚙️",
+            size: new(40, 40),
+            origin: new(windowSize.X / scale - 40 - 20, 20),
+            theme: settingsTheme))
         {
             _modalManager.OpenSettingsModal(_settings);
         }

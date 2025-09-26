@@ -160,7 +160,7 @@ public class BottomPanelView
         // --- Deferred Action ---
         // After all drawing loops are complete, check if navigation was requested.
         // This prevents modifying the collection while it's being enumerated.
-        if (_pathToNavigateTo != null)
+        if (_pathToNavigateTo is not null)
         {
             _currentPath = _pathToNavigateTo;
             LoadDirectoryContents();
@@ -187,7 +187,7 @@ public class BottomPanelView
                     if (name == "..")
                     {
                         var parentDir = Directory.GetParent(_currentPath);
-                        if (parentDir != null)
+                        if (parentDir is not null)
                         {
                             _pathToNavigateTo = parentDir.FullName; // Defer navigation
                         }

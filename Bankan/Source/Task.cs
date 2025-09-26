@@ -1,30 +1,8 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text.Json.Serialization;
+﻿using System.Text.Json.Serialization;
 using DirectUI;
 using DirectUI.Drawing;
 
 namespace Bankan;
-
-// --- Settings Models ---
-
-public enum TaskColorStyle
-{
-    Border,
-    Background
-}
-
-public enum TaskTextAlign
-{
-    Left,
-    Center
-}
-
-public class KanbanSettings
-{
-    public TaskColorStyle ColorStyle { get; set; } = TaskColorStyle.Border;
-    public TaskTextAlign TextAlign { get; set; } = TaskTextAlign.Left;
-}
 
 // --- Board Models ---
 
@@ -63,16 +41,4 @@ public class Task
             }
         }
     }
-}
-
-public class KanbanColumn
-{
-    public string Id { get; set; } = string.Empty;
-    public string Title { get; set; } = string.Empty;
-    public List<Task> Tasks { get; set; } = new();
-}
-
-public class KanbanBoard
-{
-    public List<KanbanColumn> Columns { get; set; } = new();
 }

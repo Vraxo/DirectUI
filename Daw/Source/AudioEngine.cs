@@ -41,7 +41,7 @@ public class AudioEngine : IDisposable
     {
         // Find a free (inactive) voice to play the note.
         var voice = _voices.FirstOrDefault(v => !v.IsActive);
-        if (voice != null)
+        if (voice is not null)
         {
             // The mixer needs to be aware of the voice to process its audio.
             _mixer.AddSource(voice);

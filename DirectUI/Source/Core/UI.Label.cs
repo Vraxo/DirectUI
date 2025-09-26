@@ -116,7 +116,7 @@ public static partial class UI
         // The height constraint is set to max to allow it to grow and wrap naturally.
         var textLayout = Context.TextService.GetTextLayout(text, renderStyle, new Vector2(logicalSize.X * scale, float.MaxValue), finalAlignment);
 
-        if (textLayout == null)
+        if (textLayout is null)
         {
             if (logicalSize.Y > 0) Context.Layout.AdvanceLayout(logicalSize);
             return;

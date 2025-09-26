@@ -69,7 +69,7 @@ public class InputMapEditor
                     if (!_inputMap.TryGetValue(actionName, out var bindings)) continue;
 
                     string? removedAction = DrawInputMapAction(actionName, bindings);
-                    if (removedAction != null)
+                    if (removedAction is not null)
                     {
                         actionToRemove = removedAction;
                     }
@@ -78,7 +78,7 @@ public class InputMapEditor
             UI.EndVBoxContainer();
             UI.EndScrollableRegion();
 
-            if (actionToRemove != null)
+            if (actionToRemove is not null)
             {
                 _inputMap.Remove(actionToRemove);
                 UpdateActionNamesCache();

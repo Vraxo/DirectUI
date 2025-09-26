@@ -43,7 +43,7 @@ public static class ApplicationRunner
                 // --- FIX: Define the save action AFTER the host and its AppEngine are initialized. ---
                 saveAction = () =>
                 {
-                    if (_isSavedOnExit || appLogic == null) return;
+                    if (_isSavedOnExit || appLogic is null) return;
 
                     Console.WriteLine("Exit detected. Saving application state...");
                     appLogic.SaveState();

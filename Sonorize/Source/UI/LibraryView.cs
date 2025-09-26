@@ -37,11 +37,11 @@ public class LibraryView
         IEnumerable<MusicFile> filesToDisplay;
 
         // Highest priority filter is the playlist
-        if (playlistFilter != null)
+        if (playlistFilter is not null)
         {
             filesToDisplay = playlistFilter.Tracks;
         }
-        else if (albumFilter != null)
+        else if (albumFilter is not null)
         {
             filesToDisplay = _musicLibrary.Files
                 .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);

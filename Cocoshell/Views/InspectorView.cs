@@ -101,7 +101,7 @@ public class InspectorView
             FontSize = 13f
         };
 
-        while (currentType != null && typeof(Node).IsAssignableFrom(currentType))
+        while (currentType is not null && typeof(Node).IsAssignableFrom(currentType))
         {
             var properties = currentType
                 .GetProperties(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)

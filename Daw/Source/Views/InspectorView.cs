@@ -14,7 +14,7 @@ public class InspectorView
         UI.Text("inspector_header", "Inspector");
         UI.Separator(200);
 
-        if (activeTrack == null)
+        if (activeTrack is null)
         {
             UI.Text("inspector_no_track", "No track selected.");
             return;

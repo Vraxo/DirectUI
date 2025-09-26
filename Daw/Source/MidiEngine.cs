@@ -183,7 +183,7 @@ public class MidiEngine : IDisposable
 
     public void Stop()
     {
-        if (_playback != null)
+        if (_playback is not null)
         {
             _playback.Stop();
             _playback.NotesPlaybackStarted -= OnNotesPlaybackStarted;
