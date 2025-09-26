@@ -5,10 +5,11 @@ using Bankan.Rendering;
 using DirectUI;
 using DirectUI.Core;
 using DirectUI.Drawing;
+using DirectUI.Styling;
 
 namespace Bankan;
 
-public class KanbanAppLogic : IAppLogic
+public class AppLogic : IAppLogic
 {
     private const string BoardStateFile = "kanban_board.json";
     private const string SettingsStateFile = "kanban_settings.json";
@@ -16,21 +17,22 @@ public class KanbanAppLogic : IAppLogic
     private KanbanBoard _board = new();
     private KanbanSettings _settings = new();
 
-    private readonly KanbanModalManager _modalManager;
-    private readonly KanbanDragDropHandler _dragDropHandler;
-    private readonly KanbanBoardRenderer _boardRenderer;
+    private readonly ModalManager _modalManager;
+    private readonly DragDropHandler _dragDropHandler;
+    private readonly BoardRenderer _boardRenderer;
 
     // State for our custom scrollable board view
     private class BoardViewState { public Vector2 ScrollOffset; public Vector2 ContentSize; }
 
 
-    public KanbanAppLogic(IWindowHost windowHost)
+    public AppLogic(IWindowHost windowHost)
     {
         LoadState();
+        StyleManager.LoadStylesFromFile("Data/styles.yaml");
 
-        _dragDropHandler = new KanbanDragDropHandler(_board);
-        _modalManager = new KanbanModalManager(windowHost, _board, SaveState);
-        _boardRenderer = new KanbanBoardRenderer(_board, _settings, _modalManager, _dragDropHandler);
+        _dragDropHandler = new DragDropHandler(_board);
+        _modalManager = new ModalManager(windowHost, _board, SaveState);
+        _boardRenderer = new BoardRenderer(_board, _settings, _modalManager, _dragDropHandler);
     }
 
     private void LoadState()
@@ -94,7 +96,7 @@ public class KanbanAppLogic : IAppLogic
         float maxColumnHeight = 0f;
         if (_board.Columns.Any())
         {
-            maxColumnHeight = _board.Columns.Max(c => KanbanLayoutCalculator.CalculateColumnContentHeight(c, scale));
+            maxColumnHeight = _board.Columns.Max(c => LayoutCalculator.CalculateColumnContentHeight(c, scale));
         }
         var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
 

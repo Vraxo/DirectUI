@@ -6,14 +6,14 @@ using DirectUI.Drawing;
 
 namespace Bankan.Rendering;
 
-public class KanbanTaskRenderer
+public class TaskRenderer
 {
     private readonly KanbanSettings _settings;
-    private readonly KanbanModalManager _modalManager;
-    private readonly KanbanDragDropHandler _dragDropHandler;
+    private readonly ModalManager _modalManager;
+    private readonly DragDropHandler _dragDropHandler;
     private string? _activeContextMenuTaskId;
 
-    public KanbanTaskRenderer(KanbanSettings settings, KanbanModalManager modalManager, KanbanDragDropHandler dragDropHandler)
+    public TaskRenderer(KanbanSettings settings, ModalManager modalManager, DragDropHandler dragDropHandler)
     {
         _settings = settings;
         _modalManager = modalManager;

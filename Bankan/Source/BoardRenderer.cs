@@ -4,18 +4,18 @@ using DirectUI;
 
 namespace Bankan;
 
-public class KanbanBoardRenderer
+public class BoardRenderer
 {
     private readonly KanbanBoard _board;
-    private readonly KanbanColumnRenderer _columnRenderer;
-    private readonly KanbanDragDropHandler _dragDropHandler;
+    private readonly ColumnRenderer _columnRenderer;
+    private readonly DragDropHandler _dragDropHandler;
 
-    public KanbanBoardRenderer(KanbanBoard board, KanbanSettings settings, KanbanModalManager modalManager, KanbanDragDropHandler dragDropHandler)
+    public BoardRenderer(KanbanBoard board, KanbanSettings settings, ModalManager modalManager, DragDropHandler dragDropHandler)
     {
         _board = board;
         _dragDropHandler = dragDropHandler;
-        var taskRenderer = new KanbanTaskRenderer(settings, modalManager, dragDropHandler);
-        _columnRenderer = new KanbanColumnRenderer(taskRenderer, dragDropHandler, modalManager);
+        var taskRenderer = new TaskRenderer(settings, modalManager, dragDropHandler);
+        _columnRenderer = new ColumnRenderer(taskRenderer, dragDropHandler, modalManager);
     }
 
     public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)

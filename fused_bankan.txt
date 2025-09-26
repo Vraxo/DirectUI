@@ -12494,17 +12494,18 @@ public interface IWindowHost : IDisposable
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\KanbanAppLogic.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\AppLogic.cs">
 using System;
 using System.Linq;
 using System.Numerics;
+using Bankan.Rendering;
 using DirectUI;
 using DirectUI.Core;
 using DirectUI.Drawing;
 
 namespace Bankan;
 
-public class KanbanAppLogic : IAppLogic
+public class AppLogic : IAppLogic
 {
     private const string BoardStateFile = "kanban_board.json";
     private const string SettingsStateFile = "kanban_settings.json";
@@ -12512,21 +12513,21 @@ public class KanbanAppLogic : IAppLogic
     private KanbanBoard _board = new();
     private KanbanSettings _settings = new();
 
-    private readonly KanbanModalManager _modalManager;
-    private readonly KanbanDragDropHandler _dragDropHandler;
-    private readonly KanbanBoardRenderer _boardRenderer;
+    private readonly ModalManager _modalManager;
+    private readonly DragDropHandler _dragDropHandler;
+    private readonly BoardRenderer _boardRenderer;
 
     // State for our custom scrollable board view
     private class BoardViewState { public Vector2 ScrollOffset; public Vector2 ContentSize; }
 
 
-    public KanbanAppLogic(IWindowHost windowHost)
+    public AppLogic(IWindowHost windowHost)
     {
         LoadState();
 
-        _dragDropHandler = new KanbanDragDropHandler(_board);
-        _modalManager = new KanbanModalManager(windowHost, _board, SaveState);
-        _boardRenderer = new KanbanBoardRenderer(_board, _settings, _modalManager, _dragDropHandler);
+        _dragDropHandler = new DragDropHandler(_board);
+        _modalManager = new ModalManager(windowHost, _board, SaveState);
+        _boardRenderer = new BoardRenderer(_board, _settings, _modalManager, _dragDropHandler);
     }
 
     private void LoadState()
@@ -12542,8 +12543,8 @@ public class KanbanAppLogic : IAppLogic
                 Id = "todo",
                 Title = "To Do",
                 Tasks = new() {
-                new KanbanTask { Text = "Design the main UI", ColorHex = "#bb86fc" },
-                new KanbanTask { Text = "Implement drag and drop", ColorHex = "#ff7597" },
+                new Task { Text = "Design the main UI", ColorHex = "#bb86fc" },
+                new Task { Text = "Implement drag and drop", ColorHex = "#ff7597" },
             }
             });
             _board.Columns.Add(new KanbanColumn
@@ -12551,7 +12552,7 @@ public class KanbanAppLogic : IAppLogic
                 Id = "inprogress",
                 Title = "In Progress",
                 Tasks = new() {
-                new KanbanTask { Text = "Set up DirectUI project", ColorHex = "#75ffff" }
+                new Task { Text = "Set up DirectUI project", ColorHex = "#75ffff" }
             }
             });
             _board.Columns.Add(new KanbanColumn
@@ -12559,7 +12560,7 @@ public class KanbanAppLogic : IAppLogic
                 Id = "done",
                 Title = "Done",
                 Tasks = new() {
-                new KanbanTask { Text = "Analyze the web Kanban board", ColorHex = "#75ff9f" }
+                new Task { Text = "Analyze the web Kanban board", ColorHex = "#75ff9f" }
             }
             });
         }
@@ -12590,7 +12591,7 @@ public class KanbanAppLogic : IAppLogic
         float maxColumnHeight = 0f;
         if (_board.Columns.Any())
         {
-            maxColumnHeight = _board.Columns.Max(c => CalculateColumnContentHeight(c, scale));
+            maxColumnHeight = _board.Columns.Max(c => LayoutCalculator.CalculateColumnContentHeight(c, scale));
         }
         var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
 
@@ -12673,41 +12674,6 @@ public class KanbanAppLogic : IAppLogic
         viewState.ContentSize = currentContentSize;
     }
 
-    private float CalculateColumnContentHeight(KanbanColumn column, float scale)
-    {
-        // This calculation is an estimate and must match the layout logic in the renderer.
-        float columnWidth = 350f * scale;
-        float contentPadding = 15f * scale;
-        float gap = 10f * scale;
-        float tasksInnerWidth = columnWidth - (contentPadding * 2);
-
-        float height = 0;
-        height += contentPadding; // Top padding
-        height += 30f * scale + gap;      // Title + gap
-        height += 12f * scale + gap;      // Separator (2 thickness + 5*2 padding) + gap
-
-        if (column.Tasks.Any())
-        {
-            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
-            foreach (var task in column.Tasks)
-            {
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(tasksInnerWidth - (30 * scale), float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-                height += wrappedLayout.Size.Y + (30 * scale); // Task widget height
-                height += gap;
-            }
-            height -= gap; // Remove final gap after last task
-        }
-
-        if (column.Id == "todo")
-        {
-            height += gap;
-            height += 40f * scale; // Add task button
-        }
-
-        height += contentPadding; // Bottom padding
-        return height;
-    }
-
     private void DrawSettingsButton(Vector2 windowSize, float scale)
     {
         var settingsButtonSize = new Vector2(40, 40) * scale;
@@ -12733,30 +12699,25 @@ public class KanbanAppLogic : IAppLogic
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\KanbanBoardRenderer.cs">
-using System.Linq;
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\BoardRenderer.cs">
 using System.Numerics;
+using Bankan.Rendering;
 using DirectUI;
-using DirectUI.Animation;
-using DirectUI.Core;
-using DirectUI.Drawing;
 
 namespace Bankan;
 
-public class KanbanBoardRenderer
+public class BoardRenderer
 {
     private readonly KanbanBoard _board;
-    private readonly KanbanSettings _settings;
-    private readonly KanbanModalManager _modalManager;
-    private readonly KanbanDragDropHandler _dragDropHandler;
-    private string? _activeContextMenuTaskId;
+    private readonly ColumnRenderer _columnRenderer;
+    private readonly DragDropHandler _dragDropHandler;
 
-    public KanbanBoardRenderer(KanbanBoard board, KanbanSettings settings, KanbanModalManager modalManager, KanbanDragDropHandler dragDropHandler)
+    public BoardRenderer(KanbanBoard board, KanbanSettings settings, ModalManager modalManager, DragDropHandler dragDropHandler)
     {
         _board = board;
-        _settings = settings;
-        _modalManager = modalManager;
         _dragDropHandler = dragDropHandler;
+        var taskRenderer = new TaskRenderer(settings, modalManager, dragDropHandler);
+        _columnRenderer = new ColumnRenderer(taskRenderer, dragDropHandler, modalManager);
     }
 
     public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)
@@ -12772,260 +12733,194 @@ public class KanbanBoardRenderer
         foreach (var column in _board.Columns)
         {
             // The column width passed here is LOGICAL width.
-            DrawColumnContent(column, columnWidth / scale);
+            _columnRenderer.DrawColumnContent(column, columnWidth / scale);
         }
         UI.EndHBoxContainer();
-    }
-
-    private void DrawColumnBackground(Vector2 position, Vector2 size)
-    {
-        var columnBgColor = new Color(30, 30, 30, 255); // #1e1e1e
-        var columnStyle = new BoxStyle { FillColor = columnBgColor, Roundness = 0.1f, BorderLength = 0 };
-        UI.Context.Renderer.DrawBox(new Vortice.Mathematics.Rect(position.X, position.Y, size.X, size.Y), columnStyle);
-    }
-
-    private void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
-    {
-        var scale = UI.Context.UIScale;
-
-        // 1. Calculate this column's total height, which includes its outer padding.
-        float myTotalLogicalHeight = CalculateColumnContentHeight(column) / scale;
-        var myLogicalPosition = UI.Context.Layout.GetCurrentPosition();
-        var myPhysicalPosition = myLogicalPosition * scale;
-
-        // 2. Draw the background for the entire column area using PHYSICAL dimensions.
-        DrawColumnBackground(myPhysicalPosition, new Vector2(logicalColumnWidth * scale, myTotalLogicalHeight * scale));
-
-        // 3. Begin a VBox for the column's inner content. It operates in LOGICAL space.
-        var contentPadding = 15f;
-        var contentStartPosition = myLogicalPosition + new Vector2(contentPadding, contentPadding);
-        UI.BeginVBoxContainer(column.Id, contentStartPosition, gap: 10f);
-
-        // 4. Draw the actual widgets inside the column using LOGICAL dimensions.
-        var contentWidth = logicalColumnWidth - contentPadding * 2;
-        var titleStyle = new ButtonStyle { FontColor = new Color(224, 224, 224, 255), FontSize = 18, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold };
-        UI.Text(column.Id + "_title", column.Title, new Vector2(contentWidth, 30), titleStyle, new Alignment(HAlignment.Center, VAlignment.Center));
-
-        // Separator vertical padding is 5, thickness 2. Total logical height = 12.
-        UI.Separator(contentWidth, 2, 5, new Color(51, 51, 51, 255));
-
-        int currentTaskIndex = 0;
-        foreach (var task in column.Tasks)
-        {
-            DrawDropIndicator(column, currentTaskIndex, contentWidth);
-            if (task != _dragDropHandler.DraggedTask)
-            {
-                DrawTaskWidget(column, task, currentTaskIndex, contentWidth);
-            }
-            else
-            {
-                DrawDragPlaceholder(task, contentWidth);
-            }
-            currentTaskIndex++;
-        }
-        // Draw a final drop indicator at the end of the list
-        DrawDropIndicator(column, currentTaskIndex, contentWidth);
-        // After iterating through tasks, check for a drop in an empty or final position
-        var columnBounds = new Vortice.Mathematics.Rect(myPhysicalPosition.X, myPhysicalPosition.Y, logicalColumnWidth * scale, myTotalLogicalHeight * scale);
-        _dragDropHandler.UpdateDropTargetForColumn(column, columnBounds, currentTaskIndex);
-
-        if (column.Id == "todo")
-        {
-            var addTaskTheme = new ButtonStylePack();
-            addTaskTheme.Normal.FillColor = Colors.Transparent;
-            addTaskTheme.Normal.BorderColor = new Color(51, 51, 51, 255);
-
-            addTaskTheme.Hover.FillColor = DefaultTheme.Accent;
-            addTaskTheme.Hover.BorderColor = DefaultTheme.Accent;
-            addTaskTheme.Hover.Scale = new Vector2(0.95f, 0.95f); // Scale down on hover
-
-            addTaskTheme.Pressed.Scale = new Vector2(0.9f, 0.9f); // Scale down further on press
-
-            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40), theme: addTaskTheme, animation: new AnimationInfo()))
-            {
-                _modalManager.OpenAddTaskModal(column);
-            }
-        }
-
-        var vboxState = UI.Context.Layout.PeekContainer() as VBoxContainerState;
-        if (vboxState != null)
-        {
-            float actualContentLogicalHeight = vboxState.GetAccumulatedSize().Y;
-            float desiredContentLogicalHeight = myTotalLogicalHeight - (contentPadding * 2);
-
-            if (desiredContentLogicalHeight > actualContentLogicalHeight)
-            {
-                float paddingAmount = desiredContentLogicalHeight - actualContentLogicalHeight;
-                UI.Context.Layout.AdvanceLayout(new Vector2(0, paddingAmount));
-            }
-        }
-
-        UI.EndVBoxContainer();
-    }
-
-    private float CalculateColumnContentHeight(KanbanColumn column)
-    {
-        var scale = UI.Context.UIScale;
-        float columnWidth = 350f; // Use logical width for calculation
-        float contentPadding = 15f;
-        float gap = 10f;
-        float tasksInnerWidth = columnWidth - (contentPadding * 2);
-
-        float height = 0;
-        height += contentPadding; // Top padding
-        height += 30f + gap;      // Title + gap
-        height += 12f + gap;      // Separator (2 thickness + 5*2 padding) + gap
-
-        if (column.Tasks.Any())
-        {
-            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale }; // Use scaled font size for measurement
-            foreach (var task in column.Tasks)
-            {
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((tasksInnerWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-                height += (wrappedLayout.Size.Y / scale) + 30; // Unscale measured height to get logical height, add logical padding
-                height += gap;
-            }
-            height -= gap; // Remove final gap after last task
-        }
-
-        if (column.Id == "todo")
-        {
-            height += gap;
-            height += 40f; // Add task button
-        }
-
-        height += contentPadding; // Bottom padding
-        return height * scale; // Return final physical height
-    }
-
-    private void DrawTaskWidget(KanbanColumn column, KanbanTask task, int taskIndex, float logicalWidth)
-    {
-        var context = UI.Context;
-        var scale = context.UIScale;
-        var logicalFontSize = 14f;
-
-        var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
-        var wrappedLayout = context.TextService.GetTextLayout(task.Text, measurementStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-        float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
-
-        var taskTheme = new ButtonStylePack { Roundness = 0.1f };
-        var cardBackground = new Color(42, 42, 42, 255);
-        var hoverBackground = new Color(60, 60, 60, 255);
-
-        var renderTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
-
-        if (_settings.ColorStyle == TaskColorStyle.Background)
-        {
-            taskTheme.Normal.FillColor = task.Color;
-            taskTheme.Normal.BorderColor = Colors.Transparent;
-            renderTextStyle.FontColor = new Color(18, 18, 18, 255);
-        }
-        else
-        {
-            taskTheme.Normal.FillColor = cardBackground;
-            taskTheme.Normal.BorderColor = task.Color;
-            taskTheme.Normal.BorderLengthLeft = 4f;
-            taskTheme.Normal.BorderLengthTop = 0;
-            taskTheme.Normal.BorderLengthRight = 0;
-            taskTheme.Normal.BorderLengthBottom = 0;
-            renderTextStyle.FontColor = DefaultTheme.Text;
-        }
-
-        taskTheme.Hover.FillColor = hoverBackground; // Hover is always the same
-        var textAlign = _settings.TextAlign == TaskTextAlign.Left ? new Alignment(HAlignment.Left, VAlignment.Center) : new Alignment(HAlignment.Center, VAlignment.Center);
-
-        var logicalPos = context.Layout.GetCurrentPosition();
-        var physicalPos = logicalPos * scale;
-        var physicalSize = new Vector2(logicalWidth * scale, logicalHeight * scale);
-        var taskBounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
-
-        _dragDropHandler.UpdateDropTarget(column, taskIndex, taskBounds);
-
-        if (!context.Layout.IsRectVisible(taskBounds))
-        {
-            context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
-            return;
-        }
-
-        // If a popup or native modal is open, this task is not interactive.
-        bool isInteractive = !UI.State.IsPopupOpen && !_modalManager.IsModalOpen;
-        bool isHovering = isInteractive && taskBounds.Contains(context.InputState.MousePosition);
-
-        if (isHovering)
-        {
-            UI.State.SetPotentialInputTarget(task.Id.GetHashCode());
-        }
-        if (context.InputState.WasLeftMousePressedThisFrame && isHovering && UI.State.TrySetActivePress(task.Id.GetHashCode(), 1))
-        {
-            _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, physicalPos);
-        }
-
-        // Trigger setting the active context menu on right-click, only if interactive.
-        if (isInteractive && UI.BeginContextMenu(task.Id))
-        {
-            _activeContextMenuTaskId = task.Id;
-        }
-
-        // If this task's context menu should be open, draw it and check for results.
-        if (_activeContextMenuTaskId == task.Id)
-        {
-            var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
-            if (choice != -1)
-            {
-                if (choice == 0) _modalManager.OpenEditTaskModal(task);
-                else if (choice == 1) _modalManager.RequestTaskDeletion(task);
-                _activeContextMenuTaskId = null; // Consume the result and close.
-            }
-            // If the popup was closed by other means (e.g., clicking outside), sync our state.
-            else if (!UI.State.IsPopupOpen)
-            {
-                _activeContextMenuTaskId = null;
-            }
-        }
-
-        var finalStyle = isHovering ? taskTheme.Hover : taskTheme.Normal;
-        finalStyle.BorderLengthLeft *= scale;
-
-        context.Renderer.DrawBox(taskBounds, finalStyle);
-        var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
-
-        // We need to pass the render style to the primitive, not the measurement style.
-        UI.DrawTextPrimitive(textBounds, task.Text, renderTextStyle, textAlign, Vector2.Zero);
-
-        context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
-    }
-
-
-    private void DrawDragPlaceholder(KanbanTask task, float logicalWidth)
-    {
-        var scale = UI.Context.UIScale;
-        var logicalFontSize = 14f;
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
-        var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-        float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
-
-        var logicalSize = new Vector2(logicalWidth, logicalHeight);
-        var physicalSize = logicalSize * scale;
-        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
-        var bounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
-        var style = new BoxStyle { FillColor = new Color(0, 0, 0, 100), BorderColor = DefaultTheme.Accent, BorderLength = 1 * scale, Roundness = 0.1f };
-        UI.Context.Renderer.DrawBox(bounds, style);
-        UI.Context.Layout.AdvanceLayout(logicalSize);
-    }
-
-    private void DrawDropIndicator(KanbanColumn column, int index, float logicalWidth)
-    {
-        var scale = UI.Context.UIScale;
-        if (!_dragDropHandler.IsDragging() || _dragDropHandler.DropTargetColumn != column || _dragDropHandler.DropIndex != index) return;
-        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
-        var indicatorRect = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y - (5 * scale), logicalWidth * scale, 4 * scale);
-        var style = new BoxStyle { FillColor = DefaultTheme.Accent, BorderLength = 0, Roundness = 0.5f };
-        UI.Context.Renderer.DrawBox(indicatorRect, style);
     }
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\KanbanDragDropHandler.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\ColumnRenderer.cs">
+using System.Numerics;
+using DirectUI;
+using DirectUI.Drawing;
+
+namespace Bankan.Rendering;
+
+public class ColumnRenderer
+{
+    private readonly TaskRenderer _taskRenderer;
+    private readonly DragDropHandler _dragDropHandler;
+    private readonly ModalManager _modalManager;
+
+    public ColumnRenderer(TaskRenderer taskRenderer, DragDropHandler dragDropHandler, ModalManager modalManager)
+    {
+        _taskRenderer = taskRenderer;
+        _dragDropHandler = dragDropHandler;
+        _modalManager = modalManager;
+    }
+
+    public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
+    {
+        float scale = UI.Context.UIScale;
+        float columnPhysicalHeight = LayoutCalculator.CalculateColumnContentHeight(column, scale);
+        Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
+        Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
+
+        DrawColumnBackground(
+            columnPhysicalPosition,
+            new(logicalColumnWidth * scale, columnPhysicalHeight));
+
+        float contentPadding = 15f;
+        Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
+        
+        UI.BeginVBoxContainer(
+            column.Id,
+            contentStartPosition,
+            gap: 10f);
+
+        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+
+        DrawColumnHeader(column, innerContentLogicalWidth);
+        DrawColumnTasks(column, innerContentLogicalWidth);
+
+        Vortice.Mathematics.Rect columnBoundsForDropTarget = new(columnPhysicalPosition.X, columnPhysicalPosition.Y, logicalColumnWidth * scale, columnPhysicalHeight);
+        int finalTaskIndex = column.Tasks.Count;
+        
+        _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
+
+        DrawAddTaskButton(column, innerContentLogicalWidth);
+        AddFlexibleSpaceToFillColumn(columnPhysicalHeight, contentPadding);
+
+        UI.EndVBoxContainer();
+    }
+
+    private static void DrawColumnBackground(Vector2 position, Vector2 size)
+    {
+        Color columnBgColor = new(30, 30, 30, 255);
+        
+        BoxStyle columnStyle = new()
+        { 
+            FillColor = 
+            columnBgColor, 
+            Roundness = 0.1f, 
+            BorderLength = 0 
+        };
+
+        UI.Context.Renderer.DrawBox(
+            new(position.X, position.Y, size.X, size.Y),
+            columnStyle);
+    }
+
+    private static void DrawColumnHeader(KanbanColumn column, float innerContentLogicalWidth)
+    {
+        ButtonStyle titleStyle = new() 
+        { 
+            FontColor = new(224, 224, 224, 255), 
+            FontSize = 18, 
+            FontWeight = Vortice.DirectWrite.FontWeight.SemiBold 
+        };
+
+        UI.Text(
+            column.Id + "_title",
+            column.Title,
+            new(innerContentLogicalWidth, 30),
+            titleStyle,
+            new(HAlignment.Center, VAlignment.Center));
+
+        UI.Separator(
+            innerContentLogicalWidth,
+            2,
+            5,
+            new(51, 51, 51, 255));
+    }
+
+    private void DrawColumnTasks(KanbanColumn column, float innerContentLogicalWidth)
+    {
+        int currentTaskIndex = 0;
+        
+        foreach (Task task in column.Tasks)
+        {
+            _taskRenderer.DrawDropIndicator(column, currentTaskIndex, innerContentLogicalWidth);
+            
+            if (task != _dragDropHandler.DraggedTask)
+            {
+                _taskRenderer.DrawTaskWidget(column, task, currentTaskIndex, innerContentLogicalWidth);
+            }
+            else
+            {
+                _taskRenderer.DrawDragPlaceholder(task, innerContentLogicalWidth);
+            }
+
+            currentTaskIndex++;
+        }
+
+        _taskRenderer.DrawDropIndicator(column, currentTaskIndex, innerContentLogicalWidth);
+    }
+
+    private void DrawAddTaskButton(KanbanColumn column, float innerContentLogicalWidth)
+    {
+        if (column.Id != "todo")
+        {
+            return;
+        }
+
+        ButtonStylePack addTaskTheme = new()
+        {
+            Normal =
+            {
+                FillColor = Colors.Transparent,
+                BorderColor = new(51, 51, 51, 255)
+            },
+            Hover =
+            {
+                FillColor = DefaultTheme.Accent,
+                BorderColor = DefaultTheme.Accent,
+                Scale = new(0.95f, 0.95f)
+            },
+            Pressed =
+            {
+                Scale = new(0.9f, 0.9f)
+            }
+        };
+
+        bool clicked = UI.Button(
+            id: column.Id + "_add_task",
+            text: "+ Add Task",
+            size: new(innerContentLogicalWidth, 40),
+            theme: addTaskTheme,
+            animation: new());
+
+        if (clicked)
+        {
+            _modalManager.OpenAddTaskModal(column);
+        }
+    }
+
+    private static void AddFlexibleSpaceToFillColumn(float columnPhysicalHeight, float contentPadding)
+    {
+        float scale = UI.Context.UIScale;
+
+        if (UI.Context.Layout.PeekContainer() is not VBoxContainerState vboxState)
+        {
+            return;
+        }
+
+        float actualContentLogicalHeight = vboxState.GetAccumulatedSize().Y;
+        float desiredContentLogicalHeight = (columnPhysicalHeight / scale) - (contentPadding * 2);
+
+        if (desiredContentLogicalHeight <= actualContentLogicalHeight)
+        {
+            return;
+        }
+
+        float paddingAmount = desiredContentLogicalHeight - actualContentLogicalHeight;
+        UI.Context.Layout.AdvanceLayout(new(0, paddingAmount));
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\DragDropHandler.cs">
 using System;
 using System.Linq;
 using System.Numerics;
@@ -13034,9 +12929,9 @@ using DirectUI.Drawing;
 
 namespace Bankan;
 
-public class KanbanDragDropHandler
+public class DragDropHandler
 {
-    public KanbanTask? DraggedTask { get; private set; }
+    public Task? DraggedTask { get; private set; }
 
     // State for the CURRENT frame's render pass (calculated last frame)
     public KanbanColumn? DropTargetColumn { get; private set; }
@@ -13051,14 +12946,14 @@ public class KanbanDragDropHandler
     private int _nextFrameDropIndex = -1;
     private bool _dropTargetFoundThisFrame;
 
-    public KanbanDragDropHandler(KanbanBoard board)
+    public DragDropHandler(KanbanBoard board)
     {
         _board = board;
     }
 
     public bool IsDragging() => DraggedTask != null;
 
-    public void BeginDrag(KanbanTask task, KanbanColumn sourceColumn, Vector2 mousePosition, Vector2 taskPosition)
+    public void BeginDrag(Task task, KanbanColumn sourceColumn, Vector2 mousePosition, Vector2 taskPosition)
     {
         DraggedTask = task;
         _sourceColumn = sourceColumn;
@@ -13181,7 +13076,67 @@ public class KanbanDragDropHandler
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\KanbanModalManager.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\LayoutCalculator.cs">
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Bankan.Rendering;
+
+public static class LayoutCalculator
+{
+    public static float CalculateColumnContentHeight(KanbanColumn column, float scale)
+    {
+        // This is a layout calculation, so we use LOGICAL units for everything internally
+        // and only scale at the end.
+        float logicalColumnWidth = 350f;
+        float logicalContentPadding = 15f;
+        float logicalGap = 10f;
+        float logicalTasksInnerWidth = logicalColumnWidth - (logicalContentPadding * 2);
+
+        float height = 0;
+        height += logicalContentPadding; // Top padding
+        height += 30f + logicalGap;      // Title + gap
+        height += 12f + logicalGap;      // Separator (2 thickness + 5*2 padding) + gap
+
+        if (column.Tasks.Any())
+        {
+            // For text measurement, we need to use the physical (scaled) font size.
+            var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+            foreach (var task in column.Tasks)
+            {
+                // Task text area has padding (15 left/right)
+                float taskTextAreaWidth = logicalTasksInnerWidth - 30f;
+                var wrappedLayout = UI.Context.TextService.GetTextLayout(
+                    task.Text,
+                    measurementStyle,
+                    new Vector2(taskTextAreaWidth * scale, float.MaxValue),
+                    new Alignment(HAlignment.Left, VAlignment.Top));
+
+                // The layout size is physical, so we unscale it to get the logical height.
+                // Then add the logical padding for the task widget.
+                height += (wrappedLayout.Size.Y / scale) + 30f;
+                height += logicalGap;
+            }
+            height -= logicalGap;
+        }
+
+        if (column.Id == "todo")
+        {
+            height += logicalGap;
+            height += 40f; // Add task button
+        }
+
+        height += logicalContentPadding; // Bottom padding
+
+        // Return the final PHYSICAL height
+        return height * scale;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\ModalManager.cs">
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -13191,7 +13146,7 @@ using DirectUI.Core;
 
 namespace Bankan;
 
-public class KanbanModalManager
+public class ModalManager
 {
     private readonly IWindowHost _windowHost;
     private readonly KanbanBoard _board;
@@ -13202,11 +13157,11 @@ public class KanbanModalManager
 
     private object? _activeModalLogic;
 
-    private KanbanTask? _taskToDelete;
+    private Task? _taskToDelete;
 
     public bool IsModalOpen => _windowHost.ModalWindowService.IsModalWindowOpen;
 
-    public KanbanModalManager(IWindowHost windowHost, KanbanBoard board, Action saveRequestCallback)
+    public ModalManager(IWindowHost windowHost, KanbanBoard board, Action saveRequestCallback)
     {
         _windowHost = windowHost;
         _board = board;
@@ -13219,7 +13174,7 @@ public class KanbanModalManager
 
     public void RequestSave() => _saveRequestCallback.Invoke();
 
-    public void RequestTaskDeletion(KanbanTask task) => _taskToDelete = task;
+    public void RequestTaskDeletion(Task task) => _taskToDelete = task;
 
     public void ProcessPendingActions()
     {
@@ -13259,7 +13214,7 @@ public class KanbanModalManager
             {
                 if (resultCode == 0 && !string.IsNullOrWhiteSpace(_addTaskModal.TaskText))
                 {
-                    var newTask = new KanbanTask { Text = _addTaskModal.TaskText.Trim(), ColorHex = _addTaskModal.SelectedColorHex };
+                    var newTask = new Task { Text = _addTaskModal.TaskText.Trim(), ColorHex = _addTaskModal.SelectedColorHex };
                     column.Tasks.Add(newTask);
                     RequestSave();
                 }
@@ -13267,7 +13222,7 @@ public class KanbanModalManager
         );
     }
 
-    public void OpenEditTaskModal(KanbanTask task)
+    public void OpenEditTaskModal(Task task)
     {
         if (IsModalOpen) return;
         _editTaskModal.Open(task);
@@ -13296,7 +13251,7 @@ public class KanbanModalManager
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\KanbanModels.cs">
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\Models.cs">
 using System;
 using System.Collections.Generic;
 using System.Text.Json.Serialization;
@@ -13327,7 +13282,7 @@ public class KanbanSettings
 
 // --- Board Models ---
 
-public class KanbanTask
+public class Task
 {
     public string Id { get; set; } = Guid.NewGuid().ToString();
     public string Text { get; set; } = string.Empty;
@@ -13368,7 +13323,7 @@ public class KanbanColumn
 {
     public string Id { get; set; } = string.Empty;
     public string Title { get; set; } = string.Empty;
-    public List<KanbanTask> Tasks { get; set; } = new();
+    public List<Task> Tasks { get; set; } = new();
 }
 
 public class KanbanBoard
@@ -13450,7 +13405,161 @@ public static class Program
     {
         // The window host is passed to our app logic so it can access
         // services like opening modal windows.
-        return new KanbanAppLogic(windowHost);
+        return new AppLogic(windowHost);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\TaskRenderer.cs">
+using System.Numerics;
+using DirectUI;
+using DirectUI.Animation;
+using DirectUI.Core;
+using DirectUI.Drawing;
+
+namespace Bankan.Rendering;
+
+public class TaskRenderer
+{
+    private readonly KanbanSettings _settings;
+    private readonly ModalManager _modalManager;
+    private readonly DragDropHandler _dragDropHandler;
+    private string? _activeContextMenuTaskId;
+
+    public TaskRenderer(KanbanSettings settings, ModalManager modalManager, DragDropHandler dragDropHandler)
+    {
+        _settings = settings;
+        _modalManager = modalManager;
+        _dragDropHandler = dragDropHandler;
+    }
+
+    public void DrawTaskWidget(KanbanColumn column, Task task, int taskIndex, float logicalWidth)
+    {
+        var context = UI.Context;
+        var scale = context.UIScale;
+        var logicalFontSize = 14f;
+
+        var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
+        var wrappedLayout = context.TextService.GetTextLayout(task.Text, measurementStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
+
+        var taskTheme = new ButtonStylePack { Roundness = 0.1f };
+        var cardBackground = new Color(42, 42, 42, 255);
+        var hoverBackground = new Color(60, 60, 60, 255);
+
+        var renderTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize };
+
+        if (_settings.ColorStyle == TaskColorStyle.Background)
+        {
+            taskTheme.Normal.FillColor = task.Color;
+            taskTheme.Normal.BorderColor = Colors.Transparent;
+            renderTextStyle.FontColor = new Color(18, 18, 18, 255);
+        }
+        else
+        {
+            taskTheme.Normal.FillColor = cardBackground;
+            taskTheme.Normal.BorderColor = task.Color;
+            taskTheme.Normal.BorderLengthLeft = 4f;
+            taskTheme.Normal.BorderLengthTop = 0;
+            taskTheme.Normal.BorderLengthRight = 0;
+            taskTheme.Normal.BorderLengthBottom = 0;
+            renderTextStyle.FontColor = DefaultTheme.Text;
+        }
+
+        taskTheme.Hover.FillColor = hoverBackground; // Hover is always the same
+        var textAlign = _settings.TextAlign == TaskTextAlign.Left ? new Alignment(HAlignment.Left, VAlignment.Center) : new Alignment(HAlignment.Center, VAlignment.Center);
+
+        var logicalPos = context.Layout.GetCurrentPosition();
+        var physicalPos = logicalPos * scale;
+        var physicalSize = new Vector2(logicalWidth * scale, logicalHeight * scale);
+        var taskBounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
+
+        _dragDropHandler.UpdateDropTarget(column, taskIndex, taskBounds);
+
+        if (!context.Layout.IsRectVisible(taskBounds))
+        {
+            context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
+            return;
+        }
+
+        // If a popup or native modal is open, this task is not interactive.
+        bool isInteractive = !UI.State.IsPopupOpen && !_modalManager.IsModalOpen;
+        bool isHovering = isInteractive && taskBounds.Contains(context.InputState.MousePosition);
+
+        if (isHovering)
+        {
+            UI.State.SetPotentialInputTarget(task.Id.GetHashCode());
+        }
+        if (context.InputState.WasLeftMousePressedThisFrame && isHovering && UI.State.TrySetActivePress(task.Id.GetHashCode(), 1))
+        {
+            _dragDropHandler.BeginDrag(task, column, context.InputState.MousePosition, physicalPos);
+        }
+
+        // Trigger setting the active context menu on right-click, only if interactive.
+        if (isInteractive && UI.BeginContextMenu(task.Id))
+        {
+            _activeContextMenuTaskId = task.Id;
+        }
+
+        // If this task's context menu should be open, draw it and check for results.
+        if (_activeContextMenuTaskId == task.Id)
+        {
+            var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
+            if (choice != -1)
+            {
+                if (choice == 0) _modalManager.OpenEditTaskModal(task);
+                else if (choice == 1) _modalManager.RequestTaskDeletion(task);
+                _activeContextMenuTaskId = null; // Consume the result and close.
+            }
+            // If the popup was closed by other means (e.g., clicking outside), sync our state.
+            else if (!UI.State.IsPopupOpen)
+            {
+                _activeContextMenuTaskId = null;
+            }
+        }
+
+        var finalStyle = isHovering ? taskTheme.Hover : taskTheme.Normal;
+
+        var renderBoxStyle = new ButtonStyle(finalStyle);
+        // We only pass physical dimensions to the renderer, so scale the border length here
+        renderBoxStyle.BorderLengthLeft *= scale;
+        renderBoxStyle.FontSize *= scale;
+
+        context.Renderer.DrawBox(taskBounds, renderBoxStyle);
+        var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
+
+        renderTextStyle.FontSize *= scale;
+
+        UI.DrawTextPrimitive(textBounds, task.Text, renderTextStyle, textAlign, Vector2.Zero);
+
+        context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
+    }
+
+    public void DrawDragPlaceholder(Task task, float logicalWidth)
+    {
+        var scale = UI.Context.UIScale;
+        var logicalFontSize = 14f;
+        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
+        var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
+
+        var logicalSize = new Vector2(logicalWidth, logicalHeight);
+        var physicalSize = logicalSize * scale;
+        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
+        var bounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
+        var style = new BoxStyle { FillColor = new Color(0, 0, 0, 100), BorderColor = DefaultTheme.Accent, BorderLength = 1 * scale, Roundness = 0.1f };
+        UI.Context.Renderer.DrawBox(bounds, style);
+        UI.Context.Layout.AdvanceLayout(logicalSize);
+    }
+
+    public void DrawDropIndicator(KanbanColumn column, int index, float logicalWidth)
+    {
+        var scale = UI.Context.UIScale;
+        if (!_dragDropHandler.IsDragging() || _dragDropHandler.DropTargetColumn != column || _dragDropHandler.DropIndex != index) return;
+        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
+        var indicatorRect = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y - (5 * scale), logicalWidth * scale, 4 * scale);
+        var style = new BoxStyle { FillColor = DefaultTheme.Accent, BorderLength = 0, Roundness = 0.5f };
+        UI.Context.Renderer.DrawBox(indicatorRect, style);
     }
 }
 </file>
@@ -13512,7 +13621,7 @@ public class AddTaskModal
         UI.BeginHBoxContainer($"{idPrefix}_color_selector_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
         foreach (var colorHex in _availableTaskColors)
         {
-            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new KanbanTask { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
+            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new Task { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
             if (UI.Button($"{idPrefix}_swatch_{colorHex}", "", size: new Vector2(30, 30), theme: swatchTheme))
             {
                 selectedColorHex = colorHex;
@@ -13536,7 +13645,7 @@ public class EditTaskModal
 {
     public string TaskText { get; private set; } = "";
     public string SelectedColorHex { get; private set; } = "";
-    public KanbanTask? TaskToEdit { get; private set; }
+    public Task? TaskToEdit { get; private set; }
 
     private readonly IWindowHost _windowHost;
     private readonly List<string> _availableTaskColors;
@@ -13547,7 +13656,7 @@ public class EditTaskModal
         _availableTaskColors = availableColors;
     }
 
-    public void Open(KanbanTask task)
+    public void Open(Task task)
     {
         TaskToEdit = task;
         TaskText = task.Text;
@@ -13583,7 +13692,7 @@ public class EditTaskModal
         UI.BeginHBoxContainer($"{idPrefix}_color_selector_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
         foreach (var colorHex in _availableTaskColors)
         {
-            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new KanbanTask { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
+            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new Task { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
             if (UI.Button($"{idPrefix}_swatch_{colorHex}", "", size: new Vector2(30, 30), theme: swatchTheme))
             {
                 selectedColorHex = colorHex;

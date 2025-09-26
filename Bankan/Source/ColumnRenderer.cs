@@ -1,16 +1,17 @@
 ﻿using System.Numerics;
 using DirectUI;
 using DirectUI.Drawing;
+using DirectUI.Styling;
 
 namespace Bankan.Rendering;
 
-public class KanbanColumnRenderer
+public class ColumnRenderer
 {
-    private readonly KanbanTaskRenderer _taskRenderer;
-    private readonly KanbanDragDropHandler _dragDropHandler;
-    private readonly KanbanModalManager _modalManager;
+    private readonly TaskRenderer _taskRenderer;
+    private readonly DragDropHandler _dragDropHandler;
+    private readonly ModalManager _modalManager;
 
-    public KanbanColumnRenderer(KanbanTaskRenderer taskRenderer, KanbanDragDropHandler dragDropHandler, KanbanModalManager modalManager)
+    public ColumnRenderer(TaskRenderer taskRenderer, DragDropHandler dragDropHandler, ModalManager modalManager)
     {
         _taskRenderer = taskRenderer;
         _dragDropHandler = dragDropHandler;
@@ -20,7 +21,7 @@ public class KanbanColumnRenderer
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
         float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = KanbanLayoutCalculator.CalculateColumnContentHeight(column, scale);
+        float columnPhysicalHeight = LayoutCalculator.CalculateColumnContentHeight(column, scale);
         Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
         Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
 
@@ -30,7 +31,7 @@ public class KanbanColumnRenderer
 
         float contentPadding = 15f;
         Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
-        
+
         UI.BeginVBoxContainer(
             column.Id,
             contentStartPosition,
@@ -43,7 +44,7 @@ public class KanbanColumnRenderer
 
         Vortice.Mathematics.Rect columnBoundsForDropTarget = new(columnPhysicalPosition.X, columnPhysicalPosition.Y, logicalColumnWidth * scale, columnPhysicalHeight);
         int finalTaskIndex = column.Tasks.Count;
-        
+
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
 
         DrawAddTaskButton(column, innerContentLogicalWidth);
@@ -55,13 +56,13 @@ public class KanbanColumnRenderer
     private static void DrawColumnBackground(Vector2 position, Vector2 size)
     {
         Color columnBgColor = new(30, 30, 30, 255);
-        
+
         BoxStyle columnStyle = new()
-        { 
-            FillColor = 
-            columnBgColor, 
-            Roundness = 0.1f, 
-            BorderLength = 0 
+        {
+            FillColor =
+            columnBgColor,
+            Roundness = 0.1f,
+            BorderLength = 0
         };
 
         UI.Context.Renderer.DrawBox(
@@ -71,11 +72,11 @@ public class KanbanColumnRenderer
 
     private static void DrawColumnHeader(KanbanColumn column, float innerContentLogicalWidth)
     {
-        ButtonStyle titleStyle = new() 
-        { 
-            FontColor = new(224, 224, 224, 255), 
-            FontSize = 18, 
-            FontWeight = Vortice.DirectWrite.FontWeight.SemiBold 
+        ButtonStyle titleStyle = new()
+        {
+            FontColor = new(224, 224, 224, 255),
+            FontSize = 18,
+            FontWeight = Vortice.DirectWrite.FontWeight.SemiBold
         };
 
         UI.Text(
@@ -95,11 +96,11 @@ public class KanbanColumnRenderer
     private void DrawColumnTasks(KanbanColumn column, float innerContentLogicalWidth)
     {
         int currentTaskIndex = 0;
-        
+
         foreach (Task task in column.Tasks)
         {
             _taskRenderer.DrawDropIndicator(column, currentTaskIndex, innerContentLogicalWidth);
-            
+
             if (task != _dragDropHandler.DraggedTask)
             {
                 _taskRenderer.DrawTaskWidget(column, task, currentTaskIndex, innerContentLogicalWidth);
@@ -122,24 +123,7 @@ public class KanbanColumnRenderer
             return;
         }
 
-        ButtonStylePack addTaskTheme = new()
-        {
-            Normal =
-            {
-                FillColor = Colors.Transparent,
-                BorderColor = new(51, 51, 51, 255)
-            },
-            Hover =
-            {
-                FillColor = DefaultTheme.Accent,
-                BorderColor = DefaultTheme.Accent,
-                Scale = new(0.95f, 0.95f)
-            },
-            Pressed =
-            {
-                Scale = new(0.9f, 0.9f)
-            }
-        };
+        ButtonStylePack addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
 
         bool clicked = UI.Button(
             id: column.Id + "_add_task",

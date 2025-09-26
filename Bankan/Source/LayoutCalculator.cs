@@ -5,7 +5,7 @@ using DirectUI.Core;
 
 namespace Bankan.Rendering;
 
-public static class KanbanLayoutCalculator
+public static class LayoutCalculator
 {
     public static float CalculateColumnContentHeight(KanbanColumn column, float scale)
     {

@@ -16,6 +16,6 @@ public static class Program
     {
         // The window host is passed to our app logic so it can access
         // services like opening modal windows.
-        return new KanbanAppLogic(windowHost);
+        return new AppLogic(windowHost);
     }
 }

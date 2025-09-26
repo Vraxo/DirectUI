@@ -7,7 +7,7 @@ using DirectUI.Core;
 
 namespace Bankan;
 
-public class KanbanModalManager
+public class ModalManager
 {
     private readonly IWindowHost _windowHost;
     private readonly KanbanBoard _board;
@@ -22,7 +22,7 @@ public class KanbanModalManager
 
     public bool IsModalOpen => _windowHost.ModalWindowService.IsModalWindowOpen;
 
-    public KanbanModalManager(IWindowHost windowHost, KanbanBoard board, Action saveRequestCallback)
+    public ModalManager(IWindowHost windowHost, KanbanBoard board, Action saveRequestCallback)
     {
         _windowHost = windowHost;
         _board = board;

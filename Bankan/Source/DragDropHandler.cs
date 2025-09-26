@@ -6,7 +6,7 @@ using DirectUI.Drawing;
 
 namespace Bankan;
 
-public class KanbanDragDropHandler
+public class DragDropHandler
 {
     public Task? DraggedTask { get; private set; }
 
@@ -23,7 +23,7 @@ public class KanbanDragDropHandler
     private int _nextFrameDropIndex = -1;
     private bool _dropTargetFoundThisFrame;
 
-    public KanbanDragDropHandler(KanbanBoard board)
+    public DragDropHandler(KanbanBoard board)
     {
         _board = board;
     }
