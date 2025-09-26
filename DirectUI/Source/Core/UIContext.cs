@@ -8,7 +8,7 @@ namespace DirectUI;
 public class UIContext
 {
     // Per-frame services and state
-    public IRenderer Renderer { get; }
+    public IRenderer Renderer { get; internal set; }
     public ITextService TextService { get; }
     public InputState InputState { get; }
     public float DeltaTime { get; }
@@ -17,7 +17,7 @@ public class UIContext
     public UIPersistentState State { get; internal set; } = null!;
 
     // Layout and state management
-    public UILayoutManager Layout { get; }
+    public UILayoutManager Layout { get; internal set; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();

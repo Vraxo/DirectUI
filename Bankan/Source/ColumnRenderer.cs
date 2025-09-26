@@ -21,93 +21,73 @@ public class ColumnRenderer
         _modalManager = modalManager;
     }
 
+    /// <summary>
+    /// Draws the shared UI elements that make up the inside of a column.
+    /// This logic is used for both the calculation pass and the final drawing pass.
+    /// </summary>
+    private void DrawColumnInterior(KanbanColumn column, float innerContentLogicalWidth)
+    {
+        DrawColumnHeader(column, innerContentLogicalWidth);
+        DrawColumnTasks(column, innerContentLogicalWidth);
+        DrawAddTaskButton(column, innerContentLogicalWidth);
+    }
+
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
-        float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = CalculateColumnContentHeight(column, logicalColumnWidth, scale);
-        Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
-        Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
+        var scale = UI.Context.UIScale;
+        var contentPadding = 15f;
+        var gap = 10f;
+        var innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+
+        // --- 1. Calculation Pass ---
+        // Use the built-in layout calculation feature to determine the content's size
+        // by running the shared drawing logic in a "dry run" mode.
+        var contentSize = UI.CalculateLayout(() =>
+        {
+            UI.BeginVBoxContainer(
+                column.Id + "_calc",
+                Vector2.Zero,
+                gap: gap);
+
+            DrawColumnInterior(column, innerContentLogicalWidth);
+
+            UI.EndVBoxContainer();
+        });
+
+        // The total size of the column includes its internal padding.
+        var columnLogicalHeight = contentSize.Y + contentPadding * 2;
+        var columnLogicalSize = new Vector2(logicalColumnWidth, columnLogicalHeight);
+
+        // --- 2. Drawing Pass ---
+        var columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
+        var columnPhysicalPosition = columnLogicalPosition * scale;
 
         DrawColumnBackground(
             columnPhysicalPosition,
-            new(logicalColumnWidth * scale, columnPhysicalHeight));
+            new Vector2(columnLogicalSize.X * scale, columnLogicalSize.Y * scale));
 
-        float contentPadding = 15f;
-        Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
+        var contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
 
-        // Calculate the minimum logical height for the VBox content area.
-        // This ensures the container reports a height that matches the background, even if content is shorter.
-        float columnLogicalHeight = columnPhysicalHeight / scale;
-        float minContentLogicalHeight = columnLogicalHeight - (contentPadding * 2);
-
+        // Begin a VBox for arranging the content. It will NOT advance the parent layout itself.
         UI.BeginVBoxContainer(
             column.Id,
             contentStartPosition,
-            gap: 10f,
-            minSize: new Vector2(0, minContentLogicalHeight));
+            gap: gap);
 
-        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+        // Call the shared logic again, this time for actual rendering.
+        DrawColumnInterior(column, innerContentLogicalWidth);
 
-        DrawColumnHeader(column, innerContentLogicalWidth);
-        DrawColumnTasks(column, innerContentLogicalWidth);
-
-        Vortice.Mathematics.Rect columnBoundsForDropTarget = new(columnPhysicalPosition.X, columnPhysicalPosition.Y, logicalColumnWidth * scale, columnPhysicalHeight);
+        // Update the drop target for the entire column area, now that we know its final physical size.
+        var columnBoundsForDropTarget = new Vortice.Mathematics.Rect(columnPhysicalPosition.X, columnPhysicalPosition.Y, columnLogicalSize.X * scale, columnLogicalSize.Y * scale);
         int finalTaskIndex = column.Tasks.Count;
-
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
 
-        DrawAddTaskButton(column, innerContentLogicalWidth);
+        // End the container without advancing the parent (the HBox).
+        UI.EndVBoxContainer(advanceParentLayout: false);
 
-        UI.EndVBoxContainer();
+        // Manually advance the parent HBox layout by the full calculated size of this column widget.
+        UI.Context.Layout.AdvanceLayout(columnLogicalSize);
     }
-
-    private static float CalculateColumnContentHeight(KanbanColumn column, float logicalColumnWidth, float scale)
-    {
-        // This is a layout calculation, so we use LOGICAL units for everything internally
-        // and only scale at the end.
-        float logicalContentPadding = 15f;
-        float logicalGap = 10f;
-        float logicalTasksInnerWidth = logicalColumnWidth - (logicalContentPadding * 2);
-
-        float height = 0;
-        height += logicalContentPadding; // Top padding
-        height += 30f + logicalGap;      // Title + gap
-        height += 12f + logicalGap;      // Separator (2 thickness + 5*2 padding) + gap
-
-        if (column.Tasks.Any())
-        {
-            // For text measurement, we need to use the physical (scaled) font size.
-            var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
-            foreach (var task in column.Tasks)
-            {
-                // Task text area has padding (15 left/right)
-                float taskTextAreaWidth = logicalTasksInnerWidth - 30f;
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(
-                    task.Text,
-                    measurementStyle,
-                    new Vector2(taskTextAreaWidth * scale, float.MaxValue),
-                    new Alignment(HAlignment.Left, VAlignment.Top));
-
-                // The layout size is physical, so we unscale it to get the logical height.
-                // Then add the logical padding for the task widget.
-                height += (wrappedLayout.Size.Y / scale) + 30f;
-                height += logicalGap;
-            }
-            height -= logicalGap;
-        }
-
-        if (column.Id == "todo")
-        {
-            height += logicalGap;
-            height += 40f; // Add task button
-        }
-
-        height += logicalContentPadding; // Bottom padding
-
-        // Return the final PHYSICAL height
-        return height * scale;
-    }
-
 
     private static void DrawColumnBackground(Vector2 position, Vector2 size)
     {

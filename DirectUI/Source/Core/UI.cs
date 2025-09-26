@@ -1,6 +1,10 @@
 ﻿// Entire file content here
 using System;
 using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -13,6 +17,74 @@ public static partial class UI
     {
         get; private set;
     } = false;
+
+    /// <summary>
+    /// A private, internal renderer that performs no-op drawing calls.
+    /// Used by CalculateLayout to run UI logic for measurement purposes only,
+    /// without generating any GPU commands.
+    /// </summary>
+    private class NullRenderer : IRenderer
+    {
+        public Vector2 RenderTargetSize { get; }
+
+        public NullRenderer(Vector2 renderTargetSize)
+        {
+            RenderTargetSize = renderTargetSize;
+        }
+
+        public void DrawBox(Rect rect, BoxStyle style) { }
+        public void DrawImage(byte[] imageData, string imageKey, Rect destination) { }
+        public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth) { }
+        public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color) { }
+        public void Flush() { }
+        public void PopClipRect() { }
+        public void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
+    }
+
+    /// <summary>
+    /// Executes a block of UI logic in a calculation-only mode to determine its final size
+    /// without performing any actual rendering. This is useful for sizing containers based on
+    /// their dynamic content before drawing them.
+    /// </summary>
+    /// <param name="layoutCode">An action containing the UI calls to be measured.</param>
+    /// <returns>The final logical size of the content within the provided action.</returns>
+    public static Vector2 CalculateLayout(Action layoutCode)
+    {
+        if (!IsContextValid()) return Vector2.Zero;
+
+        var originalLayout = Context.Layout;
+        var originalRenderer = Context.Renderer;
+
+        // Create a new layout manager for this calculation to keep it isolated.
+        var calculationLayout = new UILayoutManager(Context.UIScale);
+        // Put a root VBox in it to measure the total size of whatever the user does.
+        calculationLayout.BeginVBox("calc_root".GetHashCode(), Vector2.Zero, 0);
+
+        // Swap context properties for the calculation pass
+        Context.Layout = calculationLayout;
+        Context.Renderer = new NullRenderer(originalRenderer.RenderTargetSize);
+
+        // Run user's UI code. It will only perform layout actions.
+        layoutCode();
+
+        // Pop the root container to get its final calculated state.
+        if (calculationLayout.ContainerStackCount > 0)
+        {
+            var measuredVBox = (VBoxContainerState)calculationLayout.PopContainer();
+            var size = measuredVBox.GetAccumulatedSize();
+
+            // Restore original context state
+            Context.Layout = originalLayout;
+            Context.Renderer = originalRenderer;
+
+            return size;
+        }
+
+        // Restore context state even if the container stack was mismatched.
+        Context.Layout = originalLayout;
+        Context.Renderer = originalRenderer;
+        return Vector2.Zero;
+    }
 
     // --- Frame Management ---
     public static void BeginFrame(UIContext context)

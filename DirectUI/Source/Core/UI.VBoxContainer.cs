@@ -1,4 +1,5 @@
 ﻿using System.Numerics;
+using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -9,7 +10,7 @@ public static partial class UI
         Context.Layout.BeginVBox(id.GetHashCode(), position, gap, minSize);
     }
 
-    public static void EndVBoxContainer()
+    public static void EndVBoxContainer(bool advanceParentLayout = true)
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
         {
@@ -19,11 +20,9 @@ public static partial class UI
 
         Context.Layout.PopContainer();
 
-        if (!Context.Layout.IsInLayoutContainer())
+        if (advanceParentLayout && Context.Layout.IsInLayoutContainer())
         {
-            return;
+            Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
         }
-
-        Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
     }
 }
