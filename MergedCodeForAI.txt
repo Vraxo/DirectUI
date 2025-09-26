@@ -1636,6 +1636,97 @@ public static partial class UI
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ColorSelector.cs">
+using System;
+using System.Collections.Generic;
+using System.Numerics;
+using DirectUI.Drawing;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static bool ColorSelector(
+        string id,
+        ref string selectedColorHex,
+        IReadOnlyList<string> availableColors,
+        Vector2 swatchSize,
+        float gap = 10f)
+    {
+        if (!IsContextValid() || availableColors is null || availableColors.Count == 0)
+        {
+            return false;
+        }
+
+        bool selectionChanged = false;
+
+        // This theme is created once per call and configured to use the Button's `isActive` state.
+        var swatchTheme = new ButtonStylePack
+        {
+            Roundness = 0.5f,
+            BorderLength = 3f,
+        };
+        // The 'Active' state (when isActive is true) has a white border.
+        swatchTheme.Active.BorderColor = Colors.White;
+        swatchTheme.ActiveHover.BorderColor = Colors.White; // Keep border on active hover
+
+        // The 'Normal' state has a transparent border.
+        swatchTheme.Normal.BorderColor = Colors.Transparent;
+        swatchTheme.Hover.BorderColor = Colors.Transparent; // No border change on hover
+
+        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), gap);
+
+        foreach (var colorHex in availableColors)
+        {
+            bool isSelected = colorHex == selectedColorHex;
+
+            // Since the fill color is different for each button, we must modify the theme
+            // inside the loop before passing it to the Button call.
+            var fillColor = ParseColorHex(colorHex);
+            swatchTheme.Normal.FillColor = fillColor;
+            swatchTheme.Hover.FillColor = fillColor;
+            swatchTheme.Active.FillColor = fillColor;
+            swatchTheme.ActiveHover.FillColor = fillColor;
+
+            // Use the `isActive` parameter to control the selection state visually.
+            if (Button(id + "_swatch_" + colorHex, "", size: swatchSize, theme: swatchTheme, isActive: isSelected))
+            {
+                if (!isSelected)
+                {
+                    selectedColorHex = colorHex;
+                    selectionChanged = true;
+                }
+            }
+        }
+
+        EndHBoxContainer();
+
+        return selectionChanged;
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                // Fallback on parsing error
+                return DefaultTheme.Accent;
+            }
+        }
+        // Fallback if format is wrong
+        return DefaultTheme.Accent;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ComboBox.cs">
 using System.Numerics;
 
@@ -1686,6 +1777,10 @@ public static partial class UI
 // Entire file content here
 using System;
 using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -1698,6 +1793,74 @@ public static partial class UI
     {
         get; private set;
     } = false;
+
+    /// <summary>
+    /// A private, internal renderer that performs no-op drawing calls.
+    /// Used by CalculateLayout to run UI logic for measurement purposes only,
+    /// without generating any GPU commands.
+    /// </summary>
+    private class NullRenderer : IRenderer
+    {
+        public Vector2 RenderTargetSize { get; }
+
+        public NullRenderer(Vector2 renderTargetSize)
+        {
+            RenderTargetSize = renderTargetSize;
+        }
+
+        public void DrawBox(Rect rect, BoxStyle style) { }
+        public void DrawImage(byte[] imageData, string imageKey, Rect destination) { }
+        public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth) { }
+        public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color) { }
+        public void Flush() { }
+        public void PopClipRect() { }
+        public void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
+    }
+
+    /// <summary>
+    /// Executes a block of UI logic in a calculation-only mode to determine its final size
+    /// without performing any actual rendering. This is useful for sizing containers based on
+    /// their dynamic content before drawing them.
+    /// </summary>
+    /// <param name="layoutCode">An action containing the UI calls to be measured.</param>
+    /// <returns>The final logical size of the content within the provided action.</returns>
+    public static Vector2 CalculateLayout(Action layoutCode)
+    {
+        if (!IsContextValid()) return Vector2.Zero;
+
+        var originalLayout = Context.Layout;
+        var originalRenderer = Context.Renderer;
+
+        // Create a new layout manager for this calculation to keep it isolated.
+        var calculationLayout = new UILayoutManager(Context.UIScale);
+        // Put a root VBox in it to measure the total size of whatever the user does.
+        calculationLayout.BeginVBox("calc_root".GetHashCode(), Vector2.Zero, 0);
+
+        // Swap context properties for the calculation pass
+        Context.Layout = calculationLayout;
+        Context.Renderer = new NullRenderer(originalRenderer.RenderTargetSize);
+
+        // Run user's UI code. It will only perform layout actions.
+        layoutCode();
+
+        // Pop the root container to get its final calculated state.
+        if (calculationLayout.ContainerStackCount > 0)
+        {
+            var measuredVBox = (VBoxContainerState)calculationLayout.PopContainer();
+            var size = measuredVBox.GetAccumulatedSize();
+
+            // Restore original context state
+            Context.Layout = originalLayout;
+            Context.Renderer = originalRenderer;
+
+            return size;
+        }
+
+        // Restore context state even if the container stack was mismatched.
+        Context.Layout = originalLayout;
+        Context.Renderer = originalRenderer;
+        return Vector2.Zero;
+    }
 
     // --- Frame Management ---
     public static void BeginFrame(UIContext context)
@@ -2713,6 +2876,58 @@ public static partial class UI
             Vector2.Zero);
 
         Context.Layout.AdvanceLayout(finalLogicalSize);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.RadioButton.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static bool RadioButtons(
+        string id,
+        string[] labels,
+        ref int activeIndex,
+        ButtonStylePack? theme = null,
+        Vector2 size = default,
+        bool autoWidth = false,
+        float gap = 10f)
+    {
+        if (!IsContextValid() || labels == null || labels.Length == 0)
+        {
+            return false;
+        }
+
+        bool valueChanged = false;
+
+        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), gap);
+
+        for (int i = 0; i < labels.Length; i++)
+        {
+            // Use isActive parameter of the Button to control visual state.
+            if (Button(
+                    id: id + "_btn_" + i,
+                    text: labels[i],
+                    isActive: i == activeIndex,
+                    theme: theme,
+                    size: size,
+                    autoWidth: autoWidth
+                    ))
+            {
+                if (activeIndex != i)
+                {
+                    activeIndex = i;
+                    valueChanged = true;
+                }
+            }
+        }
+
+        EndHBoxContainer();
+
+        return valueChanged;
     }
 }
 </file>
@@ -4018,6 +4233,7 @@ public static partial class UI
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.VBoxContainer.cs">
 using System.Numerics;
+using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -4028,7 +4244,7 @@ public static partial class UI
         Context.Layout.BeginVBox(id.GetHashCode(), position, gap, minSize);
     }
 
-    public static void EndVBoxContainer()
+    public static void EndVBoxContainer(bool advanceParentLayout = true)
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
         {
@@ -4038,12 +4254,10 @@ public static partial class UI
 
         Context.Layout.PopContainer();
 
-        if (!Context.Layout.IsInLayoutContainer())
+        if (advanceParentLayout && Context.Layout.IsInLayoutContainer())
         {
-            return;
+            Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
         }
-
-        Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
     }
 }
 </file>
@@ -4059,7 +4273,7 @@ namespace DirectUI;
 public class UIContext
 {
     // Per-frame services and state
-    public IRenderer Renderer { get; }
+    public IRenderer Renderer { get; internal set; }
     public ITextService TextService { get; }
     public InputState InputState { get; }
     public float DeltaTime { get; }
@@ -4068,7 +4282,7 @@ public class UIContext
     public UIPersistentState State { get; internal set; } = null!;
 
     // Layout and state management
-    public UILayoutManager Layout { get; }
+    public UILayoutManager Layout { get; internal set; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();

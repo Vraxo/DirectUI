@@ -1777,6 +1777,10 @@ public static partial class UI
 // Entire file content here
 using System;
 using System.Numerics;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using Vortice.Direct2D1;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -1789,6 +1793,74 @@ public static partial class UI
     {
         get; private set;
     } = false;
+
+    /// <summary>
+    /// A private, internal renderer that performs no-op drawing calls.
+    /// Used by CalculateLayout to run UI logic for measurement purposes only,
+    /// without generating any GPU commands.
+    /// </summary>
+    private class NullRenderer : IRenderer
+    {
+        public Vector2 RenderTargetSize { get; }
+
+        public NullRenderer(Vector2 renderTargetSize)
+        {
+            RenderTargetSize = renderTargetSize;
+        }
+
+        public void DrawBox(Rect rect, BoxStyle style) { }
+        public void DrawImage(byte[] imageData, string imageKey, Rect destination) { }
+        public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth) { }
+        public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color) { }
+        public void Flush() { }
+        public void PopClipRect() { }
+        public void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
+    }
+
+    /// <summary>
+    /// Executes a block of UI logic in a calculation-only mode to determine its final size
+    /// without performing any actual rendering. This is useful for sizing containers based on
+    /// their dynamic content before drawing them.
+    /// </summary>
+    /// <param name="layoutCode">An action containing the UI calls to be measured.</param>
+    /// <returns>The final logical size of the content within the provided action.</returns>
+    public static Vector2 CalculateLayout(Action layoutCode)
+    {
+        if (!IsContextValid()) return Vector2.Zero;
+
+        var originalLayout = Context.Layout;
+        var originalRenderer = Context.Renderer;
+
+        // Create a new layout manager for this calculation to keep it isolated.
+        var calculationLayout = new UILayoutManager(Context.UIScale);
+        // Put a root VBox in it to measure the total size of whatever the user does.
+        calculationLayout.BeginVBox("calc_root".GetHashCode(), Vector2.Zero, 0);
+
+        // Swap context properties for the calculation pass
+        Context.Layout = calculationLayout;
+        Context.Renderer = new NullRenderer(originalRenderer.RenderTargetSize);
+
+        // Run user's UI code. It will only perform layout actions.
+        layoutCode();
+
+        // Pop the root container to get its final calculated state.
+        if (calculationLayout.ContainerStackCount > 0)
+        {
+            var measuredVBox = (VBoxContainerState)calculationLayout.PopContainer();
+            var size = measuredVBox.GetAccumulatedSize();
+
+            // Restore original context state
+            Context.Layout = originalLayout;
+            Context.Renderer = originalRenderer;
+
+            return size;
+        }
+
+        // Restore context state even if the container stack was mismatched.
+        Context.Layout = originalLayout;
+        Context.Renderer = originalRenderer;
+        return Vector2.Zero;
+    }
 
     // --- Frame Management ---
     public static void BeginFrame(UIContext context)
@@ -2804,6 +2876,58 @@ public static partial class UI
             Vector2.Zero);
 
         Context.Layout.AdvanceLayout(finalLogicalSize);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.RadioButton.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static bool RadioButtons(
+        string id,
+        string[] labels,
+        ref int activeIndex,
+        ButtonStylePack? theme = null,
+        Vector2 size = default,
+        bool autoWidth = false,
+        float gap = 10f)
+    {
+        if (!IsContextValid() || labels == null || labels.Length == 0)
+        {
+            return false;
+        }
+
+        bool valueChanged = false;
+
+        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), gap);
+
+        for (int i = 0; i < labels.Length; i++)
+        {
+            // Use isActive parameter of the Button to control visual state.
+            if (Button(
+                    id: id + "_btn_" + i,
+                    text: labels[i],
+                    isActive: i == activeIndex,
+                    theme: theme,
+                    size: size,
+                    autoWidth: autoWidth
+                    ))
+            {
+                if (activeIndex != i)
+                {
+                    activeIndex = i;
+                    valueChanged = true;
+                }
+            }
+        }
+
+        EndHBoxContainer();
+
+        return valueChanged;
     }
 }
 </file>
@@ -4109,6 +4233,7 @@ public static partial class UI
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.VBoxContainer.cs">
 using System.Numerics;
+using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -4119,7 +4244,7 @@ public static partial class UI
         Context.Layout.BeginVBox(id.GetHashCode(), position, gap, minSize);
     }
 
-    public static void EndVBoxContainer()
+    public static void EndVBoxContainer(bool advanceParentLayout = true)
     {
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
         {
@@ -4129,12 +4254,10 @@ public static partial class UI
 
         Context.Layout.PopContainer();
 
-        if (!Context.Layout.IsInLayoutContainer())
+        if (advanceParentLayout && Context.Layout.IsInLayoutContainer())
         {
-            return;
+            Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
         }
-
-        Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
     }
 }
 </file>
@@ -4150,7 +4273,7 @@ namespace DirectUI;
 public class UIContext
 {
     // Per-frame services and state
-    public IRenderer Renderer { get; }
+    public IRenderer Renderer { get; internal set; }
     public ITextService TextService { get; }
     public InputState InputState { get; }
     public float DeltaTime { get; }
@@ -4159,7 +4282,7 @@ public class UIContext
     public UIPersistentState State { get; internal set; } = null!;
 
     // Layout and state management
-    public UILayoutManager Layout { get; }
+    public UILayoutManager Layout { get; internal set; }
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
@@ -13450,93 +13573,73 @@ public class ColumnRenderer
         _modalManager = modalManager;
     }
 
+    /// <summary>
+    /// Draws the shared UI elements that make up the inside of a column.
+    /// This logic is used for both the calculation pass and the final drawing pass.
+    /// </summary>
+    private void DrawColumnInterior(KanbanColumn column, float innerContentLogicalWidth)
+    {
+        DrawColumnHeader(column, innerContentLogicalWidth);
+        DrawColumnTasks(column, innerContentLogicalWidth);
+        DrawAddTaskButton(column, innerContentLogicalWidth);
+    }
+
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
-        float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = CalculateColumnContentHeight(column, logicalColumnWidth, scale);
-        Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
-        Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
+        var scale = UI.Context.UIScale;
+        var contentPadding = 15f;
+        var gap = 10f;
+        var innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+
+        // --- 1. Calculation Pass ---
+        // Use the built-in layout calculation feature to determine the content's size
+        // by running the shared drawing logic in a "dry run" mode.
+        var contentSize = UI.CalculateLayout(() =>
+        {
+            UI.BeginVBoxContainer(
+                column.Id + "_calc",
+                Vector2.Zero,
+                gap: gap);
+
+            DrawColumnInterior(column, innerContentLogicalWidth);
+
+            UI.EndVBoxContainer();
+        });
+
+        // The total size of the column includes its internal padding.
+        var columnLogicalHeight = contentSize.Y + contentPadding * 2;
+        var columnLogicalSize = new Vector2(logicalColumnWidth, columnLogicalHeight);
+
+        // --- 2. Drawing Pass ---
+        var columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
+        var columnPhysicalPosition = columnLogicalPosition * scale;
 
         DrawColumnBackground(
             columnPhysicalPosition,
-            new(logicalColumnWidth * scale, columnPhysicalHeight));
+            new Vector2(columnLogicalSize.X * scale, columnLogicalSize.Y * scale));
 
-        float contentPadding = 15f;
-        Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
+        var contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
 
-        // Calculate the minimum logical height for the VBox content area.
-        // This ensures the container reports a height that matches the background, even if content is shorter.
-        float columnLogicalHeight = columnPhysicalHeight / scale;
-        float minContentLogicalHeight = columnLogicalHeight - (contentPadding * 2);
-
+        // Begin a VBox for arranging the content. It will NOT advance the parent layout itself.
         UI.BeginVBoxContainer(
             column.Id,
             contentStartPosition,
-            gap: 10f,
-            minSize: new Vector2(0, minContentLogicalHeight));
+            gap: gap);
 
-        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+        // Call the shared logic again, this time for actual rendering.
+        DrawColumnInterior(column, innerContentLogicalWidth);
 
-        DrawColumnHeader(column, innerContentLogicalWidth);
-        DrawColumnTasks(column, innerContentLogicalWidth);
-
-        Vortice.Mathematics.Rect columnBoundsForDropTarget = new(columnPhysicalPosition.X, columnPhysicalPosition.Y, logicalColumnWidth * scale, columnPhysicalHeight);
+        // Update the drop target for the entire column area, now that we know its final physical size.
+        var columnBoundsForDropTarget = new Vortice.Mathematics.Rect(columnPhysicalPosition.X, columnPhysicalPosition.Y, columnLogicalSize.X * scale, columnLogicalSize.Y * scale);
         int finalTaskIndex = column.Tasks.Count;
-
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
 
-        DrawAddTaskButton(column, innerContentLogicalWidth);
+        // End the container without advancing the parent (the HBox).
+        UI.EndVBoxContainer(advanceParentLayout: false);
 
-        UI.EndVBoxContainer();
+        // Manually advance the parent HBox layout by the full calculated size of this column widget.
+        UI.Context.Layout.AdvanceLayout(columnLogicalSize);
     }
-
-    private static float CalculateColumnContentHeight(KanbanColumn column, float logicalColumnWidth, float scale)
-    {
-        // This is a layout calculation, so we use LOGICAL units for everything internally
-        // and only scale at the end.
-        float logicalContentPadding = 15f;
-        float logicalGap = 10f;
-        float logicalTasksInnerWidth = logicalColumnWidth - (logicalContentPadding * 2);
-
-        float height = 0;
-        height += logicalContentPadding; // Top padding
-        height += 30f + logicalGap;      // Title + gap
-        height += 12f + logicalGap;      // Separator (2 thickness + 5*2 padding) + gap
-
-        if (column.Tasks.Any())
-        {
-            // For text measurement, we need to use the physical (scaled) font size.
-            var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
-            foreach (var task in column.Tasks)
-            {
-                // Task text area has padding (15 left/right)
-                float taskTextAreaWidth = logicalTasksInnerWidth - 30f;
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(
-                    task.Text,
-                    measurementStyle,
-                    new Vector2(taskTextAreaWidth * scale, float.MaxValue),
-                    new Alignment(HAlignment.Left, VAlignment.Top));
-
-                // The layout size is physical, so we unscale it to get the logical height.
-                // Then add the logical padding for the task widget.
-                height += (wrappedLayout.Size.Y / scale) + 30f;
-                height += logicalGap;
-            }
-            height -= logicalGap;
-        }
-
-        if (column.Id == "todo")
-        {
-            height += logicalGap;
-            height += 40f; // Add task button
-        }
-
-        height += logicalContentPadding; // Bottom padding
-
-        // Return the final PHYSICAL height
-        return height * scale;
-    }
-
 
     private static void DrawColumnBackground(Vector2 position, Vector2 size)
     {
@@ -14370,30 +14473,88 @@ public class SettingsModal
 
     public void DrawUI(UIContext context)
     {
-        var windowSize = context.Renderer.RenderTargetSize;
-        UI.BeginVBoxContainer("settings_vbox", new Vector2(20, 20), gap: 15f);
-        UI.Text("settings_title", "Settings", style: new ButtonStyle { FontSize = 18, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
-        UI.Separator(windowSize.X - 40);
+        Vector2 windowSize = context.Renderer.RenderTargetSize;
 
-        UI.Text("color_style_label", "Task Color Style");
-        UI.BeginHBoxContainer("color_style_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
-        if (UI.Button("style_border_btn", "Border", isActive: _settings.ColorStyle == TaskColorStyle.Border)) _settings.ColorStyle = TaskColorStyle.Border;
-        if (UI.Button("style_bg_btn", "Background", isActive: _settings.ColorStyle == TaskColorStyle.Background)) _settings.ColorStyle = TaskColorStyle.Background;
-        UI.EndHBoxContainer();
-
-        UI.Text("align_label", "Task Text Alignment");
-        UI.BeginHBoxContainer("align_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
-        if (UI.Button("align_left_btn", "Left", isActive: _settings.TextAlign == TaskTextAlign.Left)) _settings.TextAlign = TaskTextAlign.Left;
-        if (UI.Button("align_center_btn", "Center", isActive: _settings.TextAlign == TaskTextAlign.Center)) _settings.TextAlign = TaskTextAlign.Center;
-        UI.EndHBoxContainer();
-
-        var closeButtonPos = new Vector2((windowSize.X - 100) / 2, windowSize.Y - 60);
-        if (UI.Button("close_settings_btn", "Close", size: new Vector2(100, 40), origin: closeButtonPos))
+        UI.BeginVBoxContainer("settings_vbox", new(20, 20), gap: 15f);
         {
-            _windowHost.ModalWindowService.CloseModalWindow(0);
+            DrawHeader(windowSize);
+            DrawColorStyleSelectors();
+            DrawTextAlignSelectors();
+            DrawCloseButton(windowSize);
         }
         UI.EndVBoxContainer();
     }
+
+    private static void DrawHeader(Vector2 windowSize)
+    {
+        ButtonStyle style = new()
+        {
+            FontSize = 18,
+            FontWeight =
+            Vortice.DirectWrite.FontWeight.SemiBold
+        };
+
+        UI.Text("settings_title", "Settings", style: style);
+
+        UI.Separator(windowSize.X - 40);
+    }
+
+    private void DrawColorStyleSelectors()
+    {
+        UI.Text("color_style_label", "Task Color Style");
+
+        int colorStyleIndex = (int)_settings.ColorStyle;
+
+        if (UI.RadioButtons("color_style_selectors", ["Border", "Background"], ref colorStyleIndex))
+        {
+            _settings.ColorStyle = (TaskColorStyle)colorStyleIndex;
+        }
+    }
+
+    private void DrawTextAlignSelectors()
+    {
+        UI.Text("align_label", "Task Text Alignment");
+
+        int textAlignIndex = (int)_settings.TextAlign;
+
+        if (UI.RadioButtons("text_align_selectors", ["Left", "Center"], ref textAlignIndex))
+        {
+            _settings.TextAlign = (TaskTextAlign)textAlignIndex;
+        }
+    }
+
+    private void DrawCloseButton(Vector2 windowSize)
+    {
+        Vector2 closeButtonPos = new((windowSize.X - 100) / 2, windowSize.Y - 60);
+
+        if (UI.Button("close_settings_btn", "Close", size: new(100, 40), origin: closeButtonPos))
+        {
+            _windowHost.ModalWindowService.CloseModalWindow(0);
+        }
+    }
 }
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Data\styles.yaml">
+addTaskButton:
+  # This is the fallback animation for any state that doesn't define its own.
+  # This will be used when transitioning from Hover back TO the Normal state.
+  Animation:
+    Duration: 0.25
+    Easing: EaseOutQuad
+  Normal:
+    FillColor: "#00000000"
+    BorderColor: [51, 51, 51, 255]
+  Hover:
+    FillColor: "#3366CCFF"
+    BorderColor: "#3366CCFF"
+    Scale: [0.95, 0.95]
+    # This animation is used specifically when transitioning TO the hover state.
+    Animation:
+      Duration: 0.1
+      Easing: EaseOutQuad
+  Pressed:
+    Scale: [0.9, 0.9]
+    # Transition to Pressed state will use the fallback 0.25s duration.
 </file>
 
