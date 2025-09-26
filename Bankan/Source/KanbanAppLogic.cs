@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Linq;
 using System.Numerics;
+using Bankan.Rendering;
 using DirectUI;
 using DirectUI.Core;
 using DirectUI.Drawing;
@@ -93,7 +94,7 @@ public class KanbanAppLogic : IAppLogic
         float maxColumnHeight = 0f;
         if (_board.Columns.Any())
         {
-            maxColumnHeight = _board.Columns.Max(c => CalculateColumnContentHeight(c, scale));
+            maxColumnHeight = _board.Columns.Max(c => KanbanLayoutCalculator.CalculateColumnContentHeight(c, scale));
         }
         var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
 
@@ -174,41 +175,6 @@ public class KanbanAppLogic : IAppLogic
 
         // 10. Store this frame's content size for the next frame's prediction
         viewState.ContentSize = currentContentSize;
-    }
-
-    private float CalculateColumnContentHeight(KanbanColumn column, float scale)
-    {
-        // This calculation is an estimate and must match the layout logic in the renderer.
-        float columnWidth = 350f * scale;
-        float contentPadding = 15f * scale;
-        float gap = 10f * scale;
-        float tasksInnerWidth = columnWidth - (contentPadding * 2);
-
-        float height = 0;
-        height += contentPadding; // Top padding
-        height += 30f * scale + gap;      // Title + gap
-        height += 12f * scale + gap;      // Separator (2 thickness + 5*2 padding) + gap
-
-        if (column.Tasks.Any())
-        {
-            var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
-            foreach (var task in column.Tasks)
-            {
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2(tasksInnerWidth - (30 * scale), float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
-                height += wrappedLayout.Size.Y + (30 * scale); // Task widget height
-                height += gap;
-            }
-            height -= gap; // Remove final gap after last task
-        }
-
-        if (column.Id == "todo")
-        {
-            height += gap;
-            height += 40f * scale; // Add task button
-        }
-
-        height += contentPadding; // Bottom padding
-        return height;
     }
 
     private void DrawSettingsButton(Vector2 windowSize, float scale)

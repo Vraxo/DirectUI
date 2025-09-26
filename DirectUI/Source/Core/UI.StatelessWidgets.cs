@@ -109,6 +109,7 @@ public static partial class UI
         isPressed = state.ActivelyPressedElementId == id;
         ButtonStyle targetStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
         ButtonStyle animatedStyle;
+        Vector2 animatedScale = targetStyle.Scale;
 
         if (animation != null && !disabled)
         {
@@ -118,12 +119,14 @@ public static partial class UI
             var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, animation.Duration, animation.Easing);
             var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, animation.Duration, animation.Easing);
             var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, animation.Duration, animation.Easing);
+            animatedScale = animManager.GetOrAnimate(HashCode.Combine(id, "Scale"), targetStyle.Scale, currentTime, animation.Duration, animation.Easing);
 
             animatedStyle = new ButtonStyle(targetStyle)
             {
                 FillColor = fillColor,
                 BorderColor = borderColor,
-                BorderLength = borderLength
+                BorderLength = borderLength,
+                Scale = animatedScale
             };
         }
         else
@@ -145,11 +148,22 @@ public static partial class UI
         // --- Drawing ---
         if (bounds.Width > 0 && bounds.Height > 0)
         {
-            // Draw Background using the style with scaled border lengths
-            renderer.DrawBox(bounds, renderStyle);
+            // Calculate visual bounds based on animated scale, centered within the layout bounds.
+            Vector2 center = new Vector2(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f);
+            float renderWidth = bounds.Width * animatedScale.X;
+            float renderHeight = bounds.Height * animatedScale.Y;
+            Rect renderBounds = new Rect(
+                center.X - renderWidth / 2f,
+                center.Y - renderHeight / 2f,
+                renderWidth,
+                renderHeight
+            );
 
-            // Draw Text using the style with scaled font size
-            DrawTextPrimitive(bounds, text, renderStyle, textAlignment, textOffset);
+            // Draw Background using the style with scaled border lengths and the animated render bounds.
+            renderer.DrawBox(renderBounds, renderStyle);
+
+            // Draw Text using the style with scaled font size and the animated render bounds.
+            DrawTextPrimitive(renderBounds, text, renderStyle, textAlignment, textOffset);
         }
 
         return clickResult;
@@ -179,7 +193,8 @@ public static partial class UI
             FontSize = baseStyle.FontSize,
             FontWeight = baseStyle.FontWeight,
             FontStyle = baseStyle.FontStyle,
-            FontStretch = baseStyle.FontStretch
+            FontStretch = baseStyle.FontStretch,
+            Scale = baseStyle.Scale
         };
 
         // Override with values from the style stack if they exist

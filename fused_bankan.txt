@@ -1272,6 +1272,7 @@ public readonly record struct TextHitTestResult(
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Button.cs">
 using System.Numerics;
+using DirectUI.Animation;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
 
@@ -1294,7 +1295,8 @@ public static partial class UI
         Vector2? origin = null, // This parameter is now unused but kept for compatibility to avoid breaking changes elsewhere. It will be removed in the future.
         object? userData = null,
         bool isActive = false,
-        int layer = 1)
+        int layer = 1,
+        AnimationInfo? animation = null)
     {
         if (!IsContextValid()) return false;
         var scale = Context.UIScale;
@@ -1370,7 +1372,8 @@ public static partial class UI
             clickBehavior,
             (textOffset ?? Vector2.Zero) * scale,
             isActive: isActive,
-            layer: layer
+            layer: layer,
+            animation: animation
         );
 
         if (pushedClip)
@@ -1949,6 +1952,9 @@ public static partial class UI
         IsRendering = true;
 
         UI.Context = context;
+
+        // Update animations with the current time before any UI logic runs.
+        context.State.AnimationManager.Update(context.TotalTime);
 
         context.State.ResetFrameState(context.InputState);
 
@@ -3158,7 +3164,9 @@ public static partial class UI
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.StatelessWidgets.cs">
 // Entire file content here
+using System;
 using System.Numerics;
+using DirectUI.Animation;
 using DirectUI.Drawing;
 using Vortice.Direct2D1; // Still used for AntialiasMode enum
 using Vortice.Mathematics;
@@ -3184,7 +3192,8 @@ public static partial class UI
         DirectUI.Button.ClickBehavior clickBehavior,
         Vector2 textOffset,
         bool isActive = false,
-        int layer = 1)
+        int layer = 1,
+        AnimationInfo? animation = null)
     {
         var context = UI.Context;
         var scale = context.UIScale;
@@ -3263,26 +3272,63 @@ public static partial class UI
         // --- Style Resolution ---
         // Re-check `isPressed` for correct visual state, as it might have changed above.
         isPressed = state.ActivelyPressedElementId == id;
-        ButtonStyle logicalStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle targetStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
+        ButtonStyle animatedStyle;
+        Vector2 animatedScale = targetStyle.Scale;
+
+        if (animation != null && !disabled)
+        {
+            var animManager = state.AnimationManager;
+            var currentTime = context.TotalTime;
+
+            var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, animation.Duration, animation.Easing);
+            var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, animation.Duration, animation.Easing);
+            var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, animation.Duration, animation.Easing);
+            animatedScale = animManager.GetOrAnimate(HashCode.Combine(id, "Scale"), targetStyle.Scale, currentTime, animation.Duration, animation.Easing);
+
+            animatedStyle = new ButtonStyle(targetStyle)
+            {
+                FillColor = fillColor,
+                BorderColor = borderColor,
+                BorderLength = borderLength,
+                Scale = animatedScale
+            };
+        }
+        else
+        {
+            animatedStyle = targetStyle;
+        }
+
 
         // Create a physical style for rendering with scaled properties.
-        var renderStyle = new ButtonStyle(logicalStyle)
+        var renderStyle = new ButtonStyle(animatedStyle)
         {
-            FontSize = logicalStyle.FontSize * scale,
-            BorderLengthTop = logicalStyle.BorderLengthTop * scale,
-            BorderLengthRight = logicalStyle.BorderLengthRight * scale,
-            BorderLengthBottom = logicalStyle.BorderLengthBottom * scale,
-            BorderLengthLeft = logicalStyle.BorderLengthLeft * scale
+            FontSize = animatedStyle.FontSize * scale,
+            BorderLengthTop = animatedStyle.BorderLengthTop * scale,
+            BorderLengthRight = animatedStyle.BorderLengthRight * scale,
+            BorderLengthBottom = animatedStyle.BorderLengthBottom * scale,
+            BorderLengthLeft = animatedStyle.BorderLengthLeft * scale
         };
 
         // --- Drawing ---
         if (bounds.Width > 0 && bounds.Height > 0)
         {
-            // Draw Background using the style with scaled border lengths
-            renderer.DrawBox(bounds, renderStyle);
+            // Calculate visual bounds based on animated scale, centered within the layout bounds.
+            Vector2 center = new Vector2(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f);
+            float renderWidth = bounds.Width * animatedScale.X;
+            float renderHeight = bounds.Height * animatedScale.Y;
+            Rect renderBounds = new Rect(
+                center.X - renderWidth / 2f,
+                center.Y - renderHeight / 2f,
+                renderWidth,
+                renderHeight
+            );
 
-            // Draw Text using the style with scaled font size
-            DrawTextPrimitive(bounds, text, renderStyle, textAlignment, textOffset);
+            // Draw Background using the style with scaled border lengths and the animated render bounds.
+            renderer.DrawBox(renderBounds, renderStyle);
+
+            // Draw Text using the style with scaled font size and the animated render bounds.
+            DrawTextPrimitive(renderBounds, text, renderStyle, textAlignment, textOffset);
         }
 
         return clickResult;
@@ -3312,7 +3358,8 @@ public static partial class UI
             FontSize = baseStyle.FontSize,
             FontWeight = baseStyle.FontWeight,
             FontStyle = baseStyle.FontStyle,
-            FontStretch = baseStyle.FontStretch
+            FontStretch = baseStyle.FontStretch,
+            Scale = baseStyle.Scale
         };
 
         // Override with values from the style stack if they exist
@@ -3849,6 +3896,7 @@ public class UILayoutManager
 // Entire file content here
 using System;
 using System.Collections.Generic;
+using DirectUI.Animation;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -3929,6 +3977,9 @@ public class UIPersistentState
     // The winner of a 'Press' action, resolved at the end of the previous frame.
     public int PressActionWinnerId { get; private set; }
     private int _nextFramePressWinnerId;
+
+    // --- Animation State ---
+    public AnimationManager AnimationManager { get; } = new();
 
 
     /// <summary>
@@ -5141,6 +5192,7 @@ public class BoxStyle
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\ButtonStyle.cs">
 // ButtonStyle.cs
+using System.Numerics;
 using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
 
@@ -5160,6 +5212,7 @@ public class ButtonStyle : BoxStyle
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
+    public Vector2 Scale { get; set; } = Vector2.One;
 
     public ButtonStyle() { }
 
@@ -5171,6 +5224,7 @@ public class ButtonStyle : BoxStyle
         this.FontWeight = other.FontWeight;
         this.FontStyle = other.FontStyle;
         this.FontStretch = other.FontStretch;
+        this.Scale = other.Scale;
     }
 }
 </file>
@@ -12007,6 +12061,183 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AdnimationInfo.cs">
+// DirectUI/Source/Animation/AnimationInfo.cs
+using System;
+
+namespace DirectUI.Animation;
+
+public class AnimationInfo
+{
+    public float Duration { get; }
+    public Func<float, float> Easing { get; }
+
+    public AnimationInfo(float duration = 0.15f, Func<float, float>? easing = null)
+    {
+        Duration = duration;
+        Easing = easing ?? DirectUI.Animation.Easing.EaseOutQuad;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimatedValue.cs">
+// DirectUI/Source/Animation/AnimatedValue.cs
+using System;
+
+namespace DirectUI.Animation;
+
+internal class AnimatedValue
+{
+    public object CurrentValue { get; set; }
+    public object StartValue { get; set; }
+    public object TargetValue { get; set; }
+    public float StartTime { get; set; }
+    public float Duration { get; set; }
+    public Func<float, float> Easing { get; set; }
+    public bool IsAnimating { get; set; }
+
+    public AnimatedValue(object initialValue)
+    {
+        CurrentValue = initialValue;
+        StartValue = initialValue;
+        TargetValue = initialValue;
+        Easing = DirectUI.Animation.Easing.Linear;
+    }
+
+    public void Start(object newTarget, float currentTime, float duration, Func<float, float> easing)
+    {
+        // Don't restart if we are already animating towards the same target,
+        // unless the new target is actually different from the current animated value.
+        // This handles cases where the state flickers but the target value is the same.
+        if (newTarget.Equals(TargetValue) && IsAnimating) return;
+
+        StartValue = CurrentValue;
+        TargetValue = newTarget;
+        StartTime = currentTime;
+        Duration = duration;
+        Easing = easing;
+        IsAnimating = true;
+    }
+
+    public bool Update(float currentTime)
+    {
+        if (!IsAnimating) return false; // Not running
+
+        float elapsedTime = currentTime - StartTime;
+        if (elapsedTime >= Duration)
+        {
+            CurrentValue = TargetValue;
+            IsAnimating = false;
+            return false; // Animation just finished
+        }
+
+        float progress = Easing(elapsedTime / Duration);
+        CurrentValue = ValueInterpolators.Lerp(StartValue, TargetValue, progress);
+
+        return true; // Still running
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimationManager.cs">
+// DirectUI/Source/Animation/AnimationManager.cs
+using System;
+using System.Collections.Generic;
+
+namespace DirectUI.Animation;
+
+public class AnimationManager
+{
+    private readonly Dictionary<int, AnimatedValue> _animatedProperties = new();
+
+    public void Update(float currentTime)
+    {
+        var keys = new List<int>(_animatedProperties.Keys);
+        foreach (var key in keys)
+        {
+            if (_animatedProperties.TryGetValue(key, out var animValue))
+            {
+                animValue.Update(currentTime);
+            }
+        }
+    }
+
+    public T GetOrAnimate<T>(int propertyId, T targetValue, float currentTime, float duration, Func<float, float> easing)
+    {
+        if (!_animatedProperties.TryGetValue(propertyId, out var animValue))
+        {
+            animValue = new AnimatedValue(targetValue);
+            _animatedProperties[propertyId] = animValue;
+        }
+
+        // Check if the target has changed
+        if (animValue.TargetValue is not T || !EqualityComparer<T>.Default.Equals((T)animValue.TargetValue, targetValue))
+        {
+            animValue.Start(targetValue, currentTime, duration, easing);
+        }
+
+        return (T)animValue.CurrentValue;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\Easing.cs">
+// DirectUI/Source/Animation/Easing.cs
+namespace DirectUI.Animation;
+
+public static class Easing
+{
+    public static float Linear(float t) => t;
+    public static float EaseInQuad(float t) => t * t;
+    public static float EaseOutQuad(float t) => t * (2 - t);
+    public static float EaseInOutQuad(float t) => t < 0.5f ? 2 * t * t : -1 + (4 - 2 * t) * t;
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\ValueInterpolator.cs">
+// DirectUI/Source/Animation/ValueInterpolators.cs
+using System.Numerics;
+using DirectUI.Drawing;
+
+namespace DirectUI.Animation;
+
+internal static class ValueInterpolators
+{
+    // Generic Lerp selector
+    public static T Lerp<T>(T from, T to, float progress)
+    {
+        if (from is float fFrom && to is float fTo)
+        {
+            return (T)(object)LerpFloat(fFrom, fTo, progress);
+        }
+        if (from is Color cFrom && to is Color cTo)
+        {
+            return (T)(object)LerpColor(cFrom, cTo, progress);
+        }
+        if (from is Vector2 v2From && to is Vector2 v2To)
+        {
+            return (T)(object)LerpVector2(v2From, v2To, progress);
+        }
+        // If no specific lerp is found, snap to the target value at the end of the animation
+        return progress >= 1.0f ? to : from;
+    }
+
+    private static float LerpFloat(float from, float to, float progress) => from + (to - from) * progress;
+
+    private static Vector2 LerpVector2(Vector2 from, Vector2 to, float progress) => from + (to - from) * progress;
+
+    private static Color LerpColor(Color from, Color to, float progress)
+    {
+        return new Color(
+            (byte)(from.R + (to.R - from.R) * progress),
+            (byte)(from.G + (to.G - from.G) * progress),
+            (byte)(from.B + (to.B - from.B) * progress),
+            (byte)(from.A + (to.A - from.A) * progress)
+        );
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IAppLogic.cs">
 namespace DirectUI.Core;
 
@@ -12506,6 +12737,7 @@ public class KanbanAppLogic : IAppLogic
 using System.Linq;
 using System.Numerics;
 using DirectUI;
+using DirectUI.Animation;
 using DirectUI.Core;
 using DirectUI.Drawing;
 
@@ -12602,10 +12834,14 @@ public class KanbanBoardRenderer
             var addTaskTheme = new ButtonStylePack();
             addTaskTheme.Normal.FillColor = Colors.Transparent;
             addTaskTheme.Normal.BorderColor = new Color(51, 51, 51, 255);
+
             addTaskTheme.Hover.FillColor = DefaultTheme.Accent;
             addTaskTheme.Hover.BorderColor = DefaultTheme.Accent;
+            addTaskTheme.Hover.Scale = new Vector2(0.95f, 0.95f); // Scale down on hover
 
-            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40), theme: addTaskTheme))
+            addTaskTheme.Pressed.Scale = new Vector2(0.9f, 0.9f); // Scale down further on press
+
+            if (UI.Button(column.Id + "_add_task", "+ Add Task", size: new Vector2(contentWidth, 40), theme: addTaskTheme, animation: new AnimationInfo()))
             {
                 _modalManager.OpenAddTaskModal(column);
             }

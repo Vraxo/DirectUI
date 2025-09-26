@@ -1,4 +1,5 @@
 ﻿// ButtonStyle.cs
+using System.Numerics;
 using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
 
@@ -18,6 +19,7 @@ public class ButtonStyle : BoxStyle
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
+    public Vector2 Scale { get; set; } = Vector2.One;
 
     public ButtonStyle() { }
 
@@ -29,5 +31,6 @@ public class ButtonStyle : BoxStyle
         this.FontWeight = other.FontWeight;
         this.FontStyle = other.FontStyle;
         this.FontStretch = other.FontStretch;
+        this.Scale = other.Scale;
     }
 }
