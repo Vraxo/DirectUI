@@ -143,7 +143,7 @@ public class ColumnRenderer
             }
             else
             {
-                _taskRenderer.DrawDragPlaceholder(task, innerContentLogicalWidth);
+                TaskRenderer.DrawDragPlaceholder(task, innerContentLogicalWidth);
             }
 
             currentTaskIndex++;

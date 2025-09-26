@@ -1,4 +1,6 @@
-﻿using System.Numerics;
+﻿using System;
+using System.Linq;
+using System.Numerics;
 using DirectUI;
 using DirectUI.Animation;
 using DirectUI.Core;
@@ -44,18 +46,34 @@ public class TaskRenderer
             return;
         }
 
-        var taskTheme = new ButtonStylePack { Roundness = 0.1f };
-        var cardBackground = new Color(42, 42, 42, 255);
-        var hoverBackground = new Color(60, 60, 60, 255);
+        ButtonStylePack taskTheme = new()
+        {
+            Roundness = 0.1f
+        };
+
+        Color cardBackground = new(42, 42, 42, 255);
 
         // This style will hold font properties, including color, which we'll apply to all states in the theme.
-        var fontStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize };
+        ButtonStyle fontStyle = new()
+        {
+            FontName = "Segoe UI",
+            FontSize = logicalFontSize
+        };
 
         if (_settings.ColorStyle == TaskColorStyle.Background)
         {
             taskTheme.Normal.FillColor = task.Color;
             taskTheme.Normal.BorderColor = Colors.Transparent;
             fontStyle.FontColor = new Color(18, 18, 18, 255); // Dark text on colored background
+
+            // Make the hover color a slightly lighter version of the task color.
+            Color baseHoverColor = task.Color;
+
+            taskTheme.Hover.FillColor = new(
+                (byte)float.Min(255, baseHoverColor.R * 1.2f),
+                (byte)float.Min(255, baseHoverColor.G * 1.2f),
+                (byte)float.Min(255, baseHoverColor.B * 1.2f),
+                baseHoverColor.A);
         }
         else // Border style
         {
@@ -66,23 +84,33 @@ public class TaskRenderer
             taskTheme.Normal.BorderLengthRight = 0;
             taskTheme.Normal.BorderLengthBottom = 0;
             fontStyle.FontColor = DefaultTheme.Text; // Light text on dark background
+
+            // For the border style, a generic gray hover is still appropriate.
+            taskTheme.Hover.FillColor = new Color(60, 60, 60, 255);
         }
 
-        // Apply hover state and font properties to all theme states
-        taskTheme.Hover.FillColor = hoverBackground;
-        var allStyles = new[] { taskTheme.Normal, taskTheme.Hover, taskTheme.Pressed, taskTheme.Disabled, taskTheme.Focused, taskTheme.Active, taskTheme.ActiveHover };
-        foreach (var s in allStyles)
+        // Apply font properties to all theme states
+        ButtonStyle[] allStyles =
+        [
+            taskTheme.Normal,
+            taskTheme.Hover, taskTheme.Pressed,
+            taskTheme.Disabled,
+            taskTheme.Focused,
+            taskTheme.Active,
+            taskTheme.ActiveHover
+        ];
+
+        foreach (ButtonStyle s in allStyles)
         {
             s.FontName = fontStyle.FontName;
             s.FontSize = fontStyle.FontSize;
             s.FontColor = fontStyle.FontColor;
         }
 
-
         // Add animation properties to the theme
-        taskTheme.Animation = new AnimationInfo(0.15f, Easing.EaseOutQuad);
-        taskTheme.Hover.Scale = new Vector2(0.98f, 0.98f);
-        taskTheme.Pressed.Scale = new Vector2(0.95f, 0.95f);
+        taskTheme.Animation = new(0.15f, Easing.EaseOutQuad);
+        taskTheme.Hover.Scale = new(0.98f, 0.98f);
+        taskTheme.Pressed.Scale = new(0.95f, 0.95f);
 
         // --- Interaction & Animation Logic (inspired by UI.DrawButtonPrimitive) ---
         int taskIdHash = task.Id.GetHashCode();
@@ -133,29 +161,40 @@ public class TaskRenderer
         renderBoxStyle.BorderLengthLeft *= scale;
         context.Renderer.DrawBox(renderBounds, renderBoxStyle);
 
-        var textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
-        var renderTextStyle = new ButtonStyle
+        Vortice.Mathematics.Rect textBounds = new Vortice.Mathematics.Rect(taskBounds.X + (15 * scale), taskBounds.Y, taskBounds.Width - (30 * scale), taskBounds.Height);
+        
+        ButtonStyle renderTextStyle = new()
         {
             FontName = animatedStyle.FontName,
             FontSize = animatedStyle.FontSize * scale,
             FontColor = animatedStyle.FontColor
         };
-        var textAlign = _settings.TextAlign == TaskTextAlign.Left ? new Alignment(HAlignment.Left, VAlignment.Center) : new Alignment(HAlignment.Center, VAlignment.Center);
-        UI.DrawTextPrimitive(textBounds, task.Text, renderTextStyle, textAlign, Vector2.Zero);
 
+        Alignment textAlignment = GetTextAlignment();
+
+        UI.DrawTextPrimitive(textBounds, task.Text, renderTextStyle, textAlignment, Vector2.Zero);
 
         // --- Context Menu Logic (unchanged) ---
         if (isInteractive && UI.BeginContextMenu(task.Id))
         {
             _activeContextMenuTaskId = task.Id;
         }
+
         if (_activeContextMenuTaskId == task.Id)
         {
-            var choice = UI.ContextMenu($"context_menu_{task.Id}", new[] { "Edit Task", "Delete Task" });
+            int choice = UI.ContextMenu($"context_menu_{task.Id}", ["Edit Task", "Delete Task"]);
+
             if (choice != -1)
             {
-                if (choice == 0) _modalManager.OpenEditTaskModal(task);
-                else if (choice == 1) _modalManager.RequestTaskDeletion(task);
+                if (choice == 0)
+                {
+                    _modalManager.OpenEditTaskModal(task);
+                }
+                else if (choice == 1)
+                {
+                    _modalManager.RequestTaskDeletion(task);
+                }
+
                 _activeContextMenuTaskId = null;
             }
             else if (!UI.State.IsPopupOpen)
@@ -167,30 +206,63 @@ public class TaskRenderer
         context.Layout.AdvanceLayout(new Vector2(logicalWidth, logicalHeight));
     }
 
-    public void DrawDragPlaceholder(Task task, float logicalWidth)
+    private Alignment GetTextAlignment()
     {
-        var scale = UI.Context.UIScale;
-        var logicalFontSize = 14f;
-        var textStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = logicalFontSize * scale };
-        var wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new Vector2((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
+        return _settings.TextAlign == TaskTextAlign.Left
+            ? new(HAlignment.Left, VAlignment.Center)
+            : new(HAlignment.Center, VAlignment.Center);
+    }
+
+    public static void DrawDragPlaceholder(Task task, float logicalWidth)
+    {
+        float scale = UI.Context.UIScale;
+        float logicalFontSize = 14f;
+        
+        ButtonStyle textStyle = new()
+        {
+            FontName = "Segoe UI", 
+            FontSize = logicalFontSize * scale 
+        };
+
+        ITextLayout wrappedLayout = UI.Context.TextService.GetTextLayout(task.Text, textStyle, new((logicalWidth - 30) * scale, float.MaxValue), new Alignment(HAlignment.Left, VAlignment.Top));
         float logicalHeight = (wrappedLayout.Size.Y / scale) + 30;
 
-        var logicalSize = new Vector2(logicalWidth, logicalHeight);
-        var physicalSize = logicalSize * scale;
-        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
-        var bounds = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
-        var style = new BoxStyle { FillColor = new Color(0, 0, 0, 100), BorderColor = DefaultTheme.Accent, BorderLength = 1 * scale, Roundness = 0.1f };
+        Vector2 logicalSize = new(logicalWidth, logicalHeight);
+        Vector2 physicalSize = logicalSize * scale;
+        Vector2 physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
+        Vortice.Mathematics.Rect bounds = new(physicalPos.X, physicalPos.Y, physicalSize.X, physicalSize.Y);
+        
+        BoxStyle style = new()
+        { 
+            FillColor = new(0, 0, 0, 100), 
+            BorderColor = DefaultTheme.Accent, 
+            BorderLength = 1 * scale, 
+            Roundness = 0.1f 
+        };
+       
         UI.Context.Renderer.DrawBox(bounds, style);
         UI.Context.Layout.AdvanceLayout(logicalSize);
     }
 
     public void DrawDropIndicator(KanbanColumn column, int index, float logicalWidth)
     {
-        var scale = UI.Context.UIScale;
-        if (!_dragDropHandler.IsDragging() || _dragDropHandler.DropTargetColumn != column || _dragDropHandler.DropIndex != index) return;
-        var physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
-        var indicatorRect = new Vortice.Mathematics.Rect(physicalPos.X, physicalPos.Y - (5 * scale), logicalWidth * scale, 4 * scale);
-        var style = new BoxStyle { FillColor = DefaultTheme.Accent, BorderLength = 0, Roundness = 0.5f };
+        float scale = UI.Context.UIScale;
+        
+        if (!_dragDropHandler.IsDragging() || _dragDropHandler.DropTargetColumn != column || _dragDropHandler.DropIndex != index)
+        {
+            return;
+        }
+
+        Vector2 physicalPos = UI.Context.Layout.ApplyLayout(Vector2.Zero);
+        Vortice.Mathematics.Rect indicatorRect = new(physicalPos.X, physicalPos.Y - (5 * scale), logicalWidth * scale, 4 * scale);
+        
+        BoxStyle style = new()
+        {
+            FillColor = DefaultTheme.Accent,
+            BorderLength = 0,
+            Roundness = 0.5f
+        };
+
         UI.Context.Renderer.DrawBox(indicatorRect, style);
     }
 }
