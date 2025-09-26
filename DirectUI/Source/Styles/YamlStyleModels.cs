@@ -49,4 +49,8 @@ internal class YamlButtonStylePack
     public FontWeight? FontWeight { get; set; }
     public FontStyle? FontStyle { get; set; }
     public FontStretch? FontStretch { get; set; }
+
+    // Animation properties
+    public float? TransitionDuration { get; set; }
+    public string? TransitionEasing { get; set; }
 }

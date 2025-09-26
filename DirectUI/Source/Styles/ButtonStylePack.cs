@@ -2,6 +2,7 @@
 using System;
 using Vortice.Mathematics;
 using Vortice.DirectWrite;
+using DirectUI.Animation;
 
 namespace DirectUI;
 
@@ -15,6 +16,7 @@ public sealed class ButtonStylePack
     public ButtonStyle Focused { get; set; } = new();
     public ButtonStyle Active { get; set; } = new();
     public ButtonStyle ActiveHover { get; set; } = new();
+    public AnimationInfo? Animation { get; set; }
 
     public ButtonStylePack()
     {
@@ -56,6 +58,7 @@ public sealed class ButtonStylePack
         Focused = new ButtonStyle(other.Focused);
         Active = new ButtonStyle(other.Active);
         ActiveHover = new ButtonStyle(other.ActiveHover);
+        Animation = other.Animation; // Copy animation info
         Current = Normal; // Reset current to normal
     }
 

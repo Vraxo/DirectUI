@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Numerics;
+using DirectUI.Animation;
 using DirectUI.Drawing;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
@@ -75,6 +76,15 @@ public static class StyleManager
         if (yamlPack.FontWeight.HasValue) pack.FontWeight = yamlPack.FontWeight.Value;
         if (yamlPack.FontStyle.HasValue) pack.FontStyle = yamlPack.FontStyle.Value;
         if (yamlPack.FontStretch.HasValue) pack.FontStretch = yamlPack.FontStretch.Value;
+
+        // Apply animation info
+        if (yamlPack.TransitionDuration.HasValue || yamlPack.TransitionEasing != null)
+        {
+            pack.Animation = new AnimationInfo(
+                yamlPack.TransitionDuration ?? 0.15f,
+                Easing.GetEasingFunction(yamlPack.TransitionEasing)
+            );
+        }
 
         // Apply specific style overrides
         ApplyYamlStyle(pack.Normal, yamlPack.Normal);

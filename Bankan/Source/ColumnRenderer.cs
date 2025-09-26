@@ -129,8 +129,7 @@ public class ColumnRenderer
             id: column.Id + "_add_task",
             text: "+ Add Task",
             size: new(innerContentLogicalWidth, 40),
-            theme: addTaskTheme,
-            animation: new());
+            theme: addTaskTheme);
 
         if (clicked)
         {

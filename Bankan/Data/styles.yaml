@@ -1,4 +1,6 @@
 addTaskButton:
+  TransitionDuration: 0.2
+  TransitionEasing: EaseOutQuad
   Normal:
     FillColor: "#00000000"
     BorderColor: [51, 51, 51, 255]

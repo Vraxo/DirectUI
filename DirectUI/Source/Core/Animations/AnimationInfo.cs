@@ -1,7 +1,4 @@
-﻿// DirectUI/Source/Animation/AnimationInfo.cs
-using System;
-
-namespace DirectUI.Animation;
+﻿namespace DirectUI;
 
 public class AnimationInfo
 {
