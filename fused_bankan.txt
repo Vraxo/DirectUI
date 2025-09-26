@@ -279,6 +279,65 @@ public enum GraphicsBackend
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\LayoutCalculator.cs">
+using System.Numerics;
+using DirectUI.Core;
+
+namespace DirectUI;
+
+public class LayoutCalculator
+{
+    public Vector2 Size => _vbox.GetAccumulatedSize();
+
+    private readonly UIContext _context;
+    private readonly VBoxContainerState _vbox;
+
+    public LayoutCalculator(float gap = 0)
+    {
+        _context = UI.Context;
+        _vbox = new VBoxContainerState(0) { Gap = gap };
+    }
+
+    public void Add(Vector2 logicalSize)
+    {
+        _vbox.Advance(logicalSize);
+    }
+
+    public void AddWrappedText(string text, float logicalMaxWidth, ButtonStyle? style = null)
+    {
+        if (string.IsNullOrEmpty(text))
+        {
+            return;
+        }
+
+        ButtonStyle finalStyle = style ?? new();
+
+        ButtonStyle physicalStyle = new(finalStyle) 
+        { 
+            FontSize = finalStyle.FontSize * _context.UIScale 
+        };
+
+        ITextLayout layout = _context.TextService.GetTextLayout(
+            text,
+            physicalStyle,
+            new(logicalMaxWidth * _context.UIScale, float.MaxValue),
+            new(HAlignment.Left, VAlignment.Top)
+        );
+
+        Vector2 logicalSize = new(logicalMaxWidth, layout.Size.Y / _context.UIScale);
+        
+        _vbox.Advance(logicalSize);
+    }
+
+    public void AddSeparator(float logicalWidth, float thickness = 1f, float verticalPadding = 4f)
+    {
+        float logicalTotalHeight = thickness + (verticalPadding * 2);
+        
+        _vbox.Advance(new(logicalWidth, logicalTotalHeight));
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\ModalWindow.cs">
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -1178,6 +1237,7 @@ public class VBoxContainerState : ILayoutContainer
     internal float MaxElementWidth { get; set; } = 0f; // Track width for container bounds
     internal float AccumulatedHeight { get; set; } = 0f; // Track height for container bounds
     internal int ElementCount { get; set; } = 0;
+    internal Vector2 MinSize { get; set; } = Vector2.Zero;
 
     internal VBoxContainerState(int id)
     {
@@ -1203,7 +1263,7 @@ public class VBoxContainerState : ILayoutContainer
         ElementCount++;
     }
 
-    public Vector2 GetAccumulatedSize() => new(MaxElementWidth, AccumulatedHeight);
+    public Vector2 GetAccumulatedSize() => new(Math.Max(MinSize.X, MaxElementWidth), Math.Max(MinSize.Y, AccumulatedHeight));
 }
 </file>
 
@@ -3963,9 +4023,9 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f, Vector2 minSize = default)
     {
-        Context.Layout.BeginVBox(id.GetHashCode(), position, gap);
+        Context.Layout.BeginVBox(id.GetHashCode(), position, gap, minSize);
     }
 
     public static void EndVBoxContainer()
@@ -3983,7 +4043,7 @@ public static partial class UI
             return;
         }
 
-        Context.Layout.AdvanceContainerLayout(new(state.MaxElementWidth, state.AccumulatedHeight));
+        Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
     }
 }
 </file>
@@ -4124,7 +4184,7 @@ public class UILayoutManager
         PushContainer(hboxState);
     }
 
-    public void BeginVBox(int id, Vector2 startPosition, float gap)
+    public void BeginVBox(int id, Vector2 startPosition, float gap, Vector2 minSize = default)
     {
         VBoxContainerState vboxState = GetOrCreateVBoxState(id);
 
@@ -4135,6 +4195,7 @@ public class UILayoutManager
         vboxState.MaxElementWidth = 0f;
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
+        vboxState.MinSize = minSize;
 
         PushContainer(vboxState);
     }
@@ -10563,17 +10624,19 @@ public class SilkNetTextService : ITextService
         private readonly string FontName;
         private readonly FontWeight FontWeight;
         private readonly FontStyle FontStyle;
+        private readonly float FontSize; // Added FontSize to the key for measurement
 
         public FontKey(ButtonStyle style)
         {
             FontName = style.FontName;
             FontWeight = style.FontWeight;
             FontStyle = style.FontStyle;
+            FontSize = style.FontSize; // Capture FontSize
         }
 
-        public bool Equals(FontKey other) => FontName == other.FontName && FontWeight == other.FontWeight && FontStyle == other.FontStyle;
+        public bool Equals(FontKey other) => FontName == other.FontName && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontSize.Equals(other.FontSize);
         public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(FontName, FontWeight, FontStyle);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontWeight, FontStyle, FontSize);
     }
     private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
     {
@@ -10592,8 +10655,9 @@ public class SilkNetTextService : ITextService
     }
     public SKTypeface GetOrCreateTypeface(ButtonStyle style)
     {
-        var key = new FontKey(style);
-        if (_typefaceCache.TryGetValue(key, out var typeface))
+        // Re-create a key without FontSize for typeface caching, as a typeface is size-independent.
+        var typefaceKey = new FontKey(new ButtonStyle { FontName = style.FontName, FontWeight = style.FontWeight, FontStyle = style.FontStyle });
+        if (_typefaceCache.TryGetValue(typefaceKey, out var typeface))
         {
             return typeface;
         }
@@ -10602,19 +10666,30 @@ public class SilkNetTextService : ITextService
         SKFontStyleSlant slant = style.FontStyle == FontStyle.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
 
         typeface = SKTypeface.FromFamilyName(style.FontName, weight, SKFontStyleWidth.Normal, slant);
-        _typefaceCache[key] = typeface;
+        _typefaceCache[typefaceKey] = typeface;
         return typeface;
     }
     public Vector2 MeasureText(string text, ButtonStyle style)
     {
         if (string.IsNullOrEmpty(text)) return Vector2.Zero;
 
+        // Use the full FontKey that includes size for measurement caching.
+        var measurementKey = new FontKey(style);
+        var cacheKey = (text, measurementKey);
+        if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize))
+        {
+            return cachedSize;
+        }
+
         var typeface = GetOrCreateTypeface(style);
         using var font = new SKFont(typeface, style.FontSize);
         using var paint = new SKPaint(font);
         var rect = new SKRect();
         paint.MeasureText(text, ref rect);
-        return new Vector2(rect.Width, rect.Height);
+
+        var measuredSize = new Vector2(rect.Width, rect.Height);
+        _textSizeCache[cacheKey] = measuredSize; // Store in cache
+        return measuredSize;
     }
 
     public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
@@ -13261,9 +13336,11 @@ public class BoardRenderer
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\ColumnRenderer.cs">
+using System.Linq;
 using System.Numerics;
 using DirectUI;
 using DirectUI.Animation;
+using DirectUI.Core;
 using DirectUI.Drawing;
 using DirectUI.Styling;
 
@@ -13285,7 +13362,7 @@ public class ColumnRenderer
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
         float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = LayoutCalculator.CalculateColumnContentHeight(column, scale);
+        float columnPhysicalHeight = CalculateColumnContentHeight(column, logicalColumnWidth, scale);
         Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
         Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
 
@@ -13296,10 +13373,16 @@ public class ColumnRenderer
         float contentPadding = 15f;
         Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
 
+        // Calculate the minimum logical height for the VBox content area.
+        // This ensures the container reports a height that matches the background, even if content is shorter.
+        float columnLogicalHeight = columnPhysicalHeight / scale;
+        float minContentLogicalHeight = columnLogicalHeight - (contentPadding * 2);
+
         UI.BeginVBoxContainer(
             column.Id,
             contentStartPosition,
-            gap: 10f);
+            gap: 10f,
+            minSize: new Vector2(0, minContentLogicalHeight));
 
         float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
 
@@ -13312,10 +13395,57 @@ public class ColumnRenderer
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
 
         DrawAddTaskButton(column, innerContentLogicalWidth);
-        AddFlexibleSpaceToFillColumn(columnPhysicalHeight, contentPadding);
 
         UI.EndVBoxContainer();
     }
+
+    private static float CalculateColumnContentHeight(KanbanColumn column, float logicalColumnWidth, float scale)
+    {
+        // This is a layout calculation, so we use LOGICAL units for everything internally
+        // and only scale at the end.
+        float logicalContentPadding = 15f;
+        float logicalGap = 10f;
+        float logicalTasksInnerWidth = logicalColumnWidth - (logicalContentPadding * 2);
+
+        float height = 0;
+        height += logicalContentPadding; // Top padding
+        height += 30f + logicalGap;      // Title + gap
+        height += 12f + logicalGap;      // Separator (2 thickness + 5*2 padding) + gap
+
+        if (column.Tasks.Any())
+        {
+            // For text measurement, we need to use the physical (scaled) font size.
+            var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+            foreach (var task in column.Tasks)
+            {
+                // Task text area has padding (15 left/right)
+                float taskTextAreaWidth = logicalTasksInnerWidth - 30f;
+                var wrappedLayout = UI.Context.TextService.GetTextLayout(
+                    task.Text,
+                    measurementStyle,
+                    new Vector2(taskTextAreaWidth * scale, float.MaxValue),
+                    new Alignment(HAlignment.Left, VAlignment.Top));
+
+                // The layout size is physical, so we unscale it to get the logical height.
+                // Then add the logical padding for the task widget.
+                height += (wrappedLayout.Size.Y / scale) + 30f;
+                height += logicalGap;
+            }
+            height -= logicalGap;
+        }
+
+        if (column.Id == "todo")
+        {
+            height += logicalGap;
+            height += 40f; // Add task button
+        }
+
+        height += logicalContentPadding; // Bottom padding
+
+        // Return the final PHYSICAL height
+        return height * scale;
+    }
+
 
     private static void DrawColumnBackground(Vector2 position, Vector2 size)
     {
@@ -13393,7 +13523,7 @@ public class ColumnRenderer
         // This is the recommended approach for styles that are shared or need easy tweaking.
         var addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
 
-        
+
         // Method 2: Code-Driven (defined directly here)
         // This is useful for one-off styles or for developers who prefer to keep everything in C#.
         // To use this, just uncomment this block and comment out the StyleManager line above.
@@ -13417,7 +13547,7 @@ public class ColumnRenderer
         //        Scale = new(0.9f, 0.9f)
         //    }
         //};
-        
+
         bool clicked = UI.Button(
             id: column.Id + "_add_task",
             text: "+ Add Task",
@@ -13428,27 +13558,6 @@ public class ColumnRenderer
         {
             _modalManager.OpenAddTaskModal(column);
         }
-    }
-
-    private static void AddFlexibleSpaceToFillColumn(float columnPhysicalHeight, float contentPadding)
-    {
-        float scale = UI.Context.UIScale;
-
-        if (UI.Context.Layout.PeekContainer() is not VBoxContainerState vboxState)
-        {
-            return;
-        }
-
-        float actualContentLogicalHeight = vboxState.GetAccumulatedSize().Y;
-        float desiredContentLogicalHeight = (columnPhysicalHeight / scale) - (contentPadding * 2);
-
-        if (desiredContentLogicalHeight <= actualContentLogicalHeight)
-        {
-            return;
-        }
-
-        float paddingAmount = desiredContentLogicalHeight - actualContentLogicalHeight;
-        UI.Context.Layout.AdvanceLayout(new(0, paddingAmount));
     }
 }
 </file>
@@ -13605,66 +13714,6 @@ public class DragDropHandler
         var textBounds = new Vortice.Mathematics.Rect(bounds.X + (15 * scale), bounds.Y, bounds.Width - (30 * scale), bounds.Height);
         var renderTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14, FontColor = new Color(18, 18, 18, 255) };
         UI.DrawTextPrimitive(textBounds, DraggedTask.Text, renderTextStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\LayoutCalculator.cs">
-using System.Linq;
-using System.Numerics;
-using DirectUI;
-using DirectUI.Core;
-
-namespace Bankan.Rendering;
-
-public static class LayoutCalculator
-{
-    public static float CalculateColumnContentHeight(KanbanColumn column, float scale)
-    {
-        // This is a layout calculation, so we use LOGICAL units for everything internally
-        // and only scale at the end.
-        float logicalColumnWidth = 350f;
-        float logicalContentPadding = 15f;
-        float logicalGap = 10f;
-        float logicalTasksInnerWidth = logicalColumnWidth - (logicalContentPadding * 2);
-
-        float height = 0;
-        height += logicalContentPadding; // Top padding
-        height += 30f + logicalGap;      // Title + gap
-        height += 12f + logicalGap;      // Separator (2 thickness + 5*2 padding) + gap
-
-        if (column.Tasks.Any())
-        {
-            // For text measurement, we need to use the physical (scaled) font size.
-            var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
-            foreach (var task in column.Tasks)
-            {
-                // Task text area has padding (15 left/right)
-                float taskTextAreaWidth = logicalTasksInnerWidth - 30f;
-                var wrappedLayout = UI.Context.TextService.GetTextLayout(
-                    task.Text,
-                    measurementStyle,
-                    new Vector2(taskTextAreaWidth * scale, float.MaxValue),
-                    new Alignment(HAlignment.Left, VAlignment.Top));
-
-                // The layout size is physical, so we unscale it to get the logical height.
-                // Then add the logical padding for the task widget.
-                height += (wrappedLayout.Size.Y / scale) + 30f;
-                height += logicalGap;
-            }
-            height -= logicalGap;
-        }
-
-        if (column.Id == "todo")
-        {
-            height += logicalGap;
-            height += 40f; // Add task button
-        }
-
-        height += logicalContentPadding; // Bottom padding
-
-        // Return the final PHYSICAL height
-        return height * scale;
     }
 }
 </file>

@@ -39,7 +39,8 @@ public class EditTaskModal
         TaskText = tempText;
 
         string tempColor = SelectedColorHex;
-        DrawColorSelector("edit_task", ref tempColor);
+        // Replaced local implementation with a call to the new built-in DirectUI widget.
+        UI.ColorSelector("edit_task_color_selector", ref tempColor, _availableTaskColors, new Vector2(30, 30));
         SelectedColorHex = tempColor;
 
         UI.Separator(windowSize.X - 40);
@@ -50,19 +51,5 @@ public class EditTaskModal
         if (UI.Button("delete_task_btn", "Delete Task", size: new Vector2(120, 40), theme: deleteTheme)) _windowHost.ModalWindowService.CloseModalWindow(2);
         UI.EndHBoxContainer();
         UI.EndVBoxContainer();
-    }
-
-    private void DrawColorSelector(string idPrefix, ref string selectedColorHex)
-    {
-        UI.BeginHBoxContainer($"{idPrefix}_color_selector_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
-        foreach (var colorHex in _availableTaskColors)
-        {
-            var swatchTheme = new ButtonStylePack { Roundness = 0.5f, Normal = { FillColor = new Task { ColorHex = colorHex }.Color, BorderColor = colorHex == selectedColorHex ? Colors.White : Colors.Transparent, BorderLength = 3f } };
-            if (UI.Button($"{idPrefix}_swatch_{colorHex}", "", size: new Vector2(30, 30), theme: swatchTheme))
-            {
-                selectedColorHex = colorHex;
-            }
-        }
-        UI.EndHBoxContainer();
     }
 }

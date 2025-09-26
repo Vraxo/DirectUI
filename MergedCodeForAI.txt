@@ -1237,6 +1237,7 @@ public class VBoxContainerState : ILayoutContainer
     internal float MaxElementWidth { get; set; } = 0f; // Track width for container bounds
     internal float AccumulatedHeight { get; set; } = 0f; // Track height for container bounds
     internal int ElementCount { get; set; } = 0;
+    internal Vector2 MinSize { get; set; } = Vector2.Zero;
 
     internal VBoxContainerState(int id)
     {
@@ -1262,7 +1263,7 @@ public class VBoxContainerState : ILayoutContainer
         ElementCount++;
     }
 
-    public Vector2 GetAccumulatedSize() => new(MaxElementWidth, AccumulatedHeight);
+    public Vector2 GetAccumulatedSize() => new(Math.Max(MinSize.X, MaxElementWidth), Math.Max(MinSize.Y, AccumulatedHeight));
 }
 </file>
 
@@ -4022,9 +4023,9 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f, Vector2 minSize = default)
     {
-        Context.Layout.BeginVBox(id.GetHashCode(), position, gap);
+        Context.Layout.BeginVBox(id.GetHashCode(), position, gap, minSize);
     }
 
     public static void EndVBoxContainer()
@@ -4042,7 +4043,7 @@ public static partial class UI
             return;
         }
 
-        Context.Layout.AdvanceContainerLayout(new(state.MaxElementWidth, state.AccumulatedHeight));
+        Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
     }
 }
 </file>
@@ -4183,7 +4184,7 @@ public class UILayoutManager
         PushContainer(hboxState);
     }
 
-    public void BeginVBox(int id, Vector2 startPosition, float gap)
+    public void BeginVBox(int id, Vector2 startPosition, float gap, Vector2 minSize = default)
     {
         VBoxContainerState vboxState = GetOrCreateVBoxState(id);
 
@@ -4194,6 +4195,7 @@ public class UILayoutManager
         vboxState.MaxElementWidth = 0f;
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
+        vboxState.MinSize = minSize;
 
         PushContainer(vboxState);
     }
