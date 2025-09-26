@@ -7,15 +7,6 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    /// <summary>
-    /// Displays a horizontal row of color swatches for selection.
-    /// </summary>
-    /// <param name="id">A unique identifier for the control.</param>
-    /// <param name="selectedColorHex">A reference to the string holding the selected color in "#RRGGBB" format.</param>
-    /// <param name="availableColors">A list of available colors in "#RRGGBB" format.</param>
-    /// <param name="swatchSize">The size of each color swatch button.</param>
-    /// <param name="gap">The horizontal gap between swatches.</param>
-    /// <returns>True if the selection changed this frame, otherwise false.</returns>
     public static bool ColorSelector(
         string id,
         ref string selectedColorHex,
@@ -30,31 +21,36 @@ public static partial class UI
 
         bool selectionChanged = false;
 
+        // This theme is created once per call and configured to use the Button's `isActive` state.
+        var swatchTheme = new ButtonStylePack
+        {
+            Roundness = 0.5f,
+            BorderLength = 3f,
+        };
+        // The 'Active' state (when isActive is true) has a white border.
+        swatchTheme.Active.BorderColor = Colors.White;
+        swatchTheme.ActiveHover.BorderColor = Colors.White; // Keep border on active hover
+
+        // The 'Normal' state has a transparent border.
+        swatchTheme.Normal.BorderColor = Colors.Transparent;
+        swatchTheme.Hover.BorderColor = Colors.Transparent; // No border change on hover
+
         BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), gap);
 
         foreach (var colorHex in availableColors)
         {
             bool isSelected = colorHex == selectedColorHex;
 
-            // The theme is dependent on the isSelected state, so we construct it every frame.
-            // This is a common and acceptable pattern in immediate mode GUI.
-            var swatchTheme = new ButtonStylePack
-            {
-                Roundness = 0.5f,
-                Normal =
-                {
-                    FillColor = ParseColorHex(colorHex),
-                    BorderColor = isSelected ? Colors.White : Colors.Transparent,
-                    BorderLength = 3f
-                }
-            };
-            // Ensure hover state doesn't look out of place
-            swatchTheme.Hover.FillColor = swatchTheme.Normal.FillColor;
-            swatchTheme.Hover.BorderColor = swatchTheme.Normal.BorderColor;
-            swatchTheme.Hover.BorderLength = swatchTheme.Normal.BorderLength;
+            // Since the fill color is different for each button, we must modify the theme
+            // inside the loop before passing it to the Button call.
+            var fillColor = ParseColorHex(colorHex);
+            swatchTheme.Normal.FillColor = fillColor;
+            swatchTheme.Hover.FillColor = fillColor;
+            swatchTheme.Active.FillColor = fillColor;
+            swatchTheme.ActiveHover.FillColor = fillColor;
 
-
-            if (Button(id + "_swatch_" + colorHex, "", size: swatchSize, theme: swatchTheme))
+            // Use the `isActive` parameter to control the selection state visually.
+            if (Button(id + "_swatch_" + colorHex, "", size: swatchSize, theme: swatchTheme, isActive: isSelected))
             {
                 if (!isSelected)
                 {
@@ -69,9 +65,6 @@ public static partial class UI
         return selectionChanged;
     }
 
-    /// <summary>
-    /// A private helper to parse a hex color string, with a fallback.
-    /// </summary>
     private static Color ParseColorHex(string hex)
     {
         if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
