@@ -4,9 +4,9 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f, Vector2 minSize = default)
     {
-        Context.Layout.BeginVBox(id.GetHashCode(), position, gap);
+        Context.Layout.BeginVBox(id.GetHashCode(), position, gap, minSize);
     }
 
     public static void EndVBoxContainer()
@@ -24,6 +24,6 @@ public static partial class UI
             return;
         }
 
-        Context.Layout.AdvanceContainerLayout(new(state.MaxElementWidth, state.AccumulatedHeight));
+        Context.Layout.AdvanceContainerLayout(state.GetAccumulatedSize());
     }
 }

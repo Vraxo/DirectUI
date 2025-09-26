@@ -95,7 +95,7 @@ public class UILayoutManager
         PushContainer(hboxState);
     }
 
-    public void BeginVBox(int id, Vector2 startPosition, float gap)
+    public void BeginVBox(int id, Vector2 startPosition, float gap, Vector2 minSize = default)
     {
         VBoxContainerState vboxState = GetOrCreateVBoxState(id);
 
@@ -106,6 +106,7 @@ public class UILayoutManager
         vboxState.MaxElementWidth = 0f;
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
+        vboxState.MinSize = minSize;
 
         PushContainer(vboxState);
     }

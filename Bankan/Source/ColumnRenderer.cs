@@ -1,6 +1,8 @@
-﻿using System.Numerics;
+﻿using System.Linq;
+using System.Numerics;
 using DirectUI;
 using DirectUI.Animation;
+using DirectUI.Core;
 using DirectUI.Drawing;
 using DirectUI.Styling;
 
@@ -19,56 +21,10 @@ public class ColumnRenderer
         _modalManager = modalManager;
     }
 
-    /// <summary>
-    /// Performs a layout dry run to calculate the total physical height of the column's content.
-    /// </summary>
-    private float CalculateColumnPhysicalHeight(KanbanColumn column, float logicalColumnWidth)
-    {
-        float contentPadding = 15f;
-        float gap = 10f;
-        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
-
-        var calc = new DirectUI.LayoutCalculator(gap);
-
-        // Header Title
-        calc.Add(new Vector2(innerContentLogicalWidth, 30));
-        // Header Separator
-        calc.AddSeparator(innerContentLogicalWidth, 2, 5);
-
-        // Tasks
-        var taskTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
-        float taskTextAreaWidth = innerContentLogicalWidth - 30f; // 15 padding on each side of text inside task
-        foreach (var task in column.Tasks)
-        {
-            // The task widget has 15px top/bottom padding around the wrapped text.
-            float taskTextLogicalHeight = 0;
-            if (!string.IsNullOrEmpty(task.Text))
-            {
-                // Create a temporary calculator just for the text height
-                var textCalc = new DirectUI.LayoutCalculator();
-                textCalc.AddWrappedText(task.Text, taskTextAreaWidth, taskTextStyle);
-                taskTextLogicalHeight = textCalc.Size.Y;
-            }
-            float taskTotalLogicalHeight = taskTextLogicalHeight + 30f; // 15 top + 15 bottom padding
-            calc.Add(new Vector2(innerContentLogicalWidth, taskTotalLogicalHeight));
-        }
-
-        // "Add Task" button for 'todo' column
-        if (column.Id == "todo")
-        {
-            calc.Add(new Vector2(innerContentLogicalWidth, 40));
-        }
-
-        // Get total logical height of content, add vertical padding, and convert to physical units.
-        float totalContentLogicalHeight = calc.Size.Y;
-        return (totalContentLogicalHeight + contentPadding * 2) * UI.Context.UIScale;
-    }
-
-
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
         float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = CalculateColumnPhysicalHeight(column, logicalColumnWidth);
+        float columnPhysicalHeight = CalculateColumnContentHeight(column, logicalColumnWidth, scale);
         Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
         Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
 
@@ -79,10 +35,16 @@ public class ColumnRenderer
         float contentPadding = 15f;
         Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
 
+        // Calculate the minimum logical height for the VBox content area.
+        // This ensures the container reports a height that matches the background, even if content is shorter.
+        float columnLogicalHeight = columnPhysicalHeight / scale;
+        float minContentLogicalHeight = columnLogicalHeight - (contentPadding * 2);
+
         UI.BeginVBoxContainer(
             column.Id,
             contentStartPosition,
-            gap: 10f);
+            gap: 10f,
+            minSize: new Vector2(0, minContentLogicalHeight));
 
         float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
 
@@ -95,10 +57,57 @@ public class ColumnRenderer
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
 
         DrawAddTaskButton(column, innerContentLogicalWidth);
-        AddFlexibleSpaceToFillColumn(columnPhysicalHeight, contentPadding);
 
         UI.EndVBoxContainer();
     }
+
+    private static float CalculateColumnContentHeight(KanbanColumn column, float logicalColumnWidth, float scale)
+    {
+        // This is a layout calculation, so we use LOGICAL units for everything internally
+        // and only scale at the end.
+        float logicalContentPadding = 15f;
+        float logicalGap = 10f;
+        float logicalTasksInnerWidth = logicalColumnWidth - (logicalContentPadding * 2);
+
+        float height = 0;
+        height += logicalContentPadding; // Top padding
+        height += 30f + logicalGap;      // Title + gap
+        height += 12f + logicalGap;      // Separator (2 thickness + 5*2 padding) + gap
+
+        if (column.Tasks.Any())
+        {
+            // For text measurement, we need to use the physical (scaled) font size.
+            var measurementStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 * scale };
+            foreach (var task in column.Tasks)
+            {
+                // Task text area has padding (15 left/right)
+                float taskTextAreaWidth = logicalTasksInnerWidth - 30f;
+                var wrappedLayout = UI.Context.TextService.GetTextLayout(
+                    task.Text,
+                    measurementStyle,
+                    new Vector2(taskTextAreaWidth * scale, float.MaxValue),
+                    new Alignment(HAlignment.Left, VAlignment.Top));
+
+                // The layout size is physical, so we unscale it to get the logical height.
+                // Then add the logical padding for the task widget.
+                height += (wrappedLayout.Size.Y / scale) + 30f;
+                height += logicalGap;
+            }
+            height -= logicalGap;
+        }
+
+        if (column.Id == "todo")
+        {
+            height += logicalGap;
+            height += 40f; // Add task button
+        }
+
+        height += logicalContentPadding; // Bottom padding
+
+        // Return the final PHYSICAL height
+        return height * scale;
+    }
+
 
     private static void DrawColumnBackground(Vector2 position, Vector2 size)
     {
@@ -211,26 +220,5 @@ public class ColumnRenderer
         {
             _modalManager.OpenAddTaskModal(column);
         }
-    }
-
-    private static void AddFlexibleSpaceToFillColumn(float columnPhysicalHeight, float contentPadding)
-    {
-        float scale = UI.Context.UIScale;
-
-        if (UI.Context.Layout.PeekContainer() is not VBoxContainerState vboxState)
-        {
-            return;
-        }
-
-        float actualContentLogicalHeight = vboxState.GetAccumulatedSize().Y;
-        float desiredContentLogicalHeight = (columnPhysicalHeight / scale) - (contentPadding * 2);
-
-        if (desiredContentLogicalHeight <= actualContentLogicalHeight)
-        {
-            return;
-        }
-
-        float paddingAmount = desiredContentLogicalHeight - actualContentLogicalHeight;
-        UI.Context.Layout.AdvanceLayout(new(0, paddingAmount));
     }
 }

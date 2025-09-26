@@ -11,6 +11,7 @@ public class VBoxContainerState : ILayoutContainer
     internal float MaxElementWidth { get; set; } = 0f; // Track width for container bounds
     internal float AccumulatedHeight { get; set; } = 0f; // Track height for container bounds
     internal int ElementCount { get; set; } = 0;
+    internal Vector2 MinSize { get; set; } = Vector2.Zero;
 
     internal VBoxContainerState(int id)
     {
@@ -36,5 +37,5 @@ public class VBoxContainerState : ILayoutContainer
         ElementCount++;
     }
 
-    public Vector2 GetAccumulatedSize() => new(MaxElementWidth, AccumulatedHeight);
+    public Vector2 GetAccumulatedSize() => new(Math.Max(MinSize.X, MaxElementWidth), Math.Max(MinSize.Y, AccumulatedHeight));
 }
