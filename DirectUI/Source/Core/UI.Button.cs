@@ -88,9 +88,6 @@ public static partial class UI
             }
         }
 
-        // Prioritize the animation passed directly to the function, but fall back to the one defined in the theme.
-        AnimationInfo? finalAnimation = animation ?? finalTheme.Animation;
-
         ClickResult clickResult = DrawButtonPrimitive(
             intId,
             widgetBounds,
@@ -103,7 +100,7 @@ public static partial class UI
             (textOffset ?? Vector2.Zero) * scale,
             isActive: isActive,
             layer: layer,
-            animation: finalAnimation
+            animation: animation
         );
 
         if (pushedClip)

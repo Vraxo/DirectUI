@@ -1,5 +1,6 @@
 ﻿// ButtonStyle.cs
 using System.Numerics;
+using DirectUI.Animation;
 using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
 
@@ -21,6 +22,11 @@ public class ButtonStyle : BoxStyle
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
     public Vector2 Scale { get; set; } = Vector2.One;
 
+    /// <summary>
+    /// Optional animation info for transitioning *to* this specific state.
+    /// </summary>
+    public AnimationInfo? Animation { get; set; }
+
     public ButtonStyle() { }
 
     public ButtonStyle(ButtonStyle other) : base(other)
@@ -32,5 +38,6 @@ public class ButtonStyle : BoxStyle
         this.FontStyle = other.FontStyle;
         this.FontStretch = other.FontStretch;
         this.Scale = other.Scale;
+        this.Animation = other.Animation;
     }
 }

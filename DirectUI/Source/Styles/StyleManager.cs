@@ -77,16 +77,16 @@ public static class StyleManager
         if (yamlPack.FontStyle.HasValue) pack.FontStyle = yamlPack.FontStyle.Value;
         if (yamlPack.FontStretch.HasValue) pack.FontStretch = yamlPack.FontStretch.Value;
 
-        // Apply animation info
-        if (yamlPack.TransitionDuration.HasValue || yamlPack.TransitionEasing != null)
+        // Apply global animation info (acts as a fallback)
+        if (yamlPack.Animation != null)
         {
             pack.Animation = new AnimationInfo(
-                yamlPack.TransitionDuration ?? 0.15f,
-                Easing.GetEasingFunction(yamlPack.TransitionEasing)
+                yamlPack.Animation.Duration ?? 0.15f,
+                Easing.GetEasingFunction(yamlPack.Animation.Easing)
             );
         }
 
-        // Apply specific style overrides
+        // Apply specific style overrides, including per-state animations
         ApplyYamlStyle(pack.Normal, yamlPack.Normal);
         ApplyYamlStyle(pack.Hover, yamlPack.Hover);
         ApplyYamlStyle(pack.Pressed, yamlPack.Pressed);
@@ -120,6 +120,15 @@ public static class StyleManager
         if (source.FontStyle.HasValue) target.FontStyle = source.FontStyle.Value;
         if (source.FontStretch.HasValue) target.FontStretch = source.FontStretch.Value;
         if (source.Scale != null && source.Scale.Count == 2) target.Scale = new Vector2(source.Scale[0], source.Scale[1]);
+
+        // Per-state animation
+        if (source.Animation != null)
+        {
+            target.Animation = new AnimationInfo(
+                source.Animation.Duration ?? 0.15f,
+                Easing.GetEasingFunction(source.Animation.Easing)
+            );
+        }
     }
 
     private static Color ParseColor(object? colorObj)

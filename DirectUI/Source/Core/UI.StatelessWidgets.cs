@@ -111,15 +111,23 @@ public static partial class UI
         ButtonStyle animatedStyle;
         Vector2 animatedScale = targetStyle.Scale;
 
-        if (animation != null && !disabled)
+        // --- Animation Resolution ---
+        // Hierarchy of animation preference:
+        // 1. Explicitly passed 'animation' parameter.
+        // 2. Animation defined on the target style state (e.g., Hover style).
+        // 3. Animation defined on the parent ButtonStylePack.
+        AnimationInfo? finalAnimation = animation ?? targetStyle.Animation ?? theme.Animation;
+
+
+        if (finalAnimation != null && !disabled)
         {
             var animManager = state.AnimationManager;
             var currentTime = context.TotalTime;
 
-            var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, animation.Duration, animation.Easing);
-            var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, animation.Duration, animation.Easing);
-            var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, animation.Duration, animation.Easing);
-            animatedScale = animManager.GetOrAnimate(HashCode.Combine(id, "Scale"), targetStyle.Scale, currentTime, animation.Duration, animation.Easing);
+            var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, finalAnimation.Duration, finalAnimation.Easing);
+            var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, finalAnimation.Duration, finalAnimation.Easing);
+            var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, finalAnimation.Duration, finalAnimation.Easing);
+            animatedScale = animManager.GetOrAnimate(HashCode.Combine(id, "Scale"), targetStyle.Scale, currentTime, finalAnimation.Duration, finalAnimation.Easing);
 
             animatedStyle = new ButtonStyle(targetStyle)
             {
@@ -194,7 +202,8 @@ public static partial class UI
             FontWeight = baseStyle.FontWeight,
             FontStyle = baseStyle.FontStyle,
             FontStretch = baseStyle.FontStretch,
-            Scale = baseStyle.Scale
+            Scale = baseStyle.Scale,
+            Animation = baseStyle.Animation // Copy animation info
         };
 
         // Override with values from the style stack if they exist

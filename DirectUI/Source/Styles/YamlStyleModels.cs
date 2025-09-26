@@ -1,12 +1,20 @@
 ﻿// DirectUI/Source/Styling/YamlStyleModels.cs
+using System;
 using System.Collections.Generic;
+using DirectUI.Animation;
+using Silk.NET.OpenAL;
+using Silk.NET.Vulkan;
+using System.Threading.Channels;
+using Vortice.Direct2D1.Effects;
 using Vortice.DirectWrite;
 
 namespace DirectUI.Styling;
 
-// These models are used specifically for deserializing from YAML.
-// They use simple types (like string for color) that are easy to write in YAML.
-// They are then converted to the real style objects used by the UI.
+internal class YamlAnimationInfo
+{
+    public float? Duration { get; set; }
+    public string? Easing { get; set; }
+}
 
 internal class YamlButtonStyle
 {
@@ -28,6 +36,9 @@ internal class YamlButtonStyle
     public FontStyle? FontStyle { get; set; }
     public FontStretch? FontStretch { get; set; }
     public List<float>? Scale { get; set; }
+
+    // State-specific animation
+    public YamlAnimationInfo? Animation { get; set; }
 }
 
 internal class YamlButtonStylePack
@@ -50,7 +61,6 @@ internal class YamlButtonStylePack
     public FontStyle? FontStyle { get; set; }
     public FontStretch? FontStretch { get; set; }
 
-    // Animation properties
-    public float? TransitionDuration { get; set; }
-    public string? TransitionEasing { get; set; }
+    // Global/fallback animation properties for the pack
+    public YamlAnimationInfo? Animation { get; set; }
 }
