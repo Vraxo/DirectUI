@@ -47,7 +47,7 @@ public class ColumnRenderer
                 // Create a temporary calculator just for the text height
                 var textCalc = new DirectUI.LayoutCalculator();
                 textCalc.AddWrappedText(task.Text, taskTextAreaWidth, taskTextStyle);
-                taskTextLogicalHeight = textCalc.GetSize().Y;
+                taskTextLogicalHeight = textCalc.Size.Y;
             }
             float taskTotalLogicalHeight = taskTextLogicalHeight + 30f; // 15 top + 15 bottom padding
             calc.Add(new Vector2(innerContentLogicalWidth, taskTotalLogicalHeight));
@@ -60,7 +60,7 @@ public class ColumnRenderer
         }
 
         // Get total logical height of content, add vertical padding, and convert to physical units.
-        float totalContentLogicalHeight = calc.GetSize().Y;
+        float totalContentLogicalHeight = calc.Size.Y;
         return (totalContentLogicalHeight + contentPadding * 2) * UI.Context.UIScale;
     }
 
