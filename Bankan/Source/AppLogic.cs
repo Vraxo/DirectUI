@@ -1,6 +1,4 @@
-﻿using System;
-using System.Linq;
-using System.Numerics;
+﻿using System.Numerics;
 using Bankan.Rendering;
 using DirectUI;
 using DirectUI.Core;
@@ -20,10 +18,6 @@ public class AppLogic : IAppLogic
     private readonly ModalManager _modalManager;
     private readonly DragDropHandler _dragDropHandler;
     private readonly BoardRenderer _boardRenderer;
-
-    // State for our custom scrollable board view
-    private class BoardViewState { public Vector2 ScrollOffset; public Vector2 ContentSize; }
-
 
     public AppLogic(IWindowHost windowHost)
     {
@@ -82,26 +76,7 @@ public class AppLogic : IAppLogic
         var windowSize = UI.Context.Renderer.RenderTargetSize;
         var scale = context.UIScale;
 
-        // --- Define board and column dimensions ---
-        float columnWidth = 350f * scale;
-        float columnGap = 40f * scale;
-        float scrollbarSize = 12f * scale;
-        var boardPadding = new Vector2(20, 20) * scale;
-        var topMargin = 80f * scale;
-
-        var viewState = UI.State.GetOrCreateElement<BoardViewState>("board_view_state".GetHashCode());
-
-        // 1. Pre-calculate the total required size of the content
-        float totalBoardWidth = (_board.Columns.Count * columnWidth) + Math.Max(0, _board.Columns.Count - 1) * columnGap;
-        float maxColumnHeight = 0f;
-        if (_board.Columns.Any())
-        {
-            maxColumnHeight = _board.Columns.Max(c => LayoutCalculator.CalculateColumnContentHeight(c, scale));
-        }
-        var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
-
         // --- Process Logic ---
-        // Update now simply manages the start/end of a drag operation.
         if (_dragDropHandler.Update())
         {
             SaveState(); // Save if drag-drop resulted in a change
@@ -111,72 +86,34 @@ public class AppLogic : IAppLogic
         // --- Draw UI ---
         DrawSettingsButton(windowSize, scale);
 
-        // 2. Define the visible area (viewport) for the board
-        var viewRect = new Vortice.Mathematics.Rect(
-            boardPadding.X, topMargin,
-            windowSize.X - boardPadding.X * 2,
-            windowSize.Y - topMargin - boardPadding.Y
+        // --- Define board dimensions in LOGICAL units for UI controls ---
+        float columnLogicalWidth = 350f;
+        float columnLogicalGap = 40f;
+        var boardLogicalPadding = new Vector2(20, 20);
+        var topLogicalMargin = 80f;
+
+        // The scroll area takes up the remaining space.
+        var scrollAreaLogicalSize = new Vector2(
+            (windowSize.X / scale) - boardLogicalPadding.X * 2,
+            (windowSize.Y / scale) - topLogicalMargin - boardLogicalPadding.Y
         );
 
-        // 3. Predict scrollbar visibility based on LAST frame's content size to prevent layout jitter
-        bool vScrollVisible = viewState.ContentSize.Y > viewRect.Height;
-        bool hScrollVisible = viewState.ContentSize.X > viewRect.Width;
+        // Use a container to position the scroll area within the padding.
+        UI.BeginVBoxContainer("main_layout", Vector2.Zero);
+        UI.Context.Layout.AdvanceLayout(new Vector2(boardLogicalPadding.X, topLogicalMargin));
 
-        // 4. Calculate the actual available area for content this frame
-        float availableWidth = viewRect.Width - (vScrollVisible ? scrollbarSize : 0);
-        float availableHeight = viewRect.Height - (hScrollVisible ? scrollbarSize : 0);
+        UI.BeginScrollArea("board_scroll_area", scrollAreaLogicalSize);
 
-        // 5. Handle input and draw scrollbars based on CURRENT frame's content size
-        if (viewRect.Contains(UI.Context.InputState.MousePosition) && !_dragDropHandler.IsDragging())
-        {
-            // Scroll speed is scaled for a more natural feel when zoomed in/out
-            viewState.ScrollOffset.Y -= UI.Context.InputState.ScrollDelta * 40 * scale;
-        }
+        // Inside the scroll area, we use the BoardRenderer which starts its own HBox.
+        // We pass logical (unscaled) dimensions to it.
+        _boardRenderer.DrawBoard(columnLogicalWidth, columnLogicalGap);
 
-        if (currentContentSize.Y > availableHeight)
-        {
-            viewState.ScrollOffset.Y = UI.VScrollBar("board_v_scroll", viewState.ScrollOffset.Y,
-                new Vector2(viewRect.Right - scrollbarSize, viewRect.Y), availableHeight,
-                currentContentSize.Y, availableHeight, scrollbarSize);
-        }
-        if (currentContentSize.X > availableWidth)
-        {
-            viewState.ScrollOffset.X = UI.HScrollBar("board_h_scroll", viewState.ScrollOffset.X,
-                new Vector2(viewRect.X, viewRect.Bottom - scrollbarSize), availableWidth,
-                currentContentSize.X, availableWidth, scrollbarSize);
-        }
+        UI.EndScrollArea();
+        UI.EndVBoxContainer();
 
-        // 6. Clamp scroll offsets
-        viewState.ScrollOffset.X = Math.Clamp(viewState.ScrollOffset.X, 0, Math.Max(0, currentContentSize.X - availableWidth));
-        viewState.ScrollOffset.Y = Math.Clamp(viewState.ScrollOffset.Y, 0, Math.Max(0, currentContentSize.Y - availableHeight));
-
-        // 7. Calculate final content start position (for centering or scrolling)
-        float startX = viewRect.X;
-        if (currentContentSize.X < availableWidth) // Center horizontally if content is smaller than view
-            startX += (availableWidth - currentContentSize.X) / 2f;
-        else
-            startX -= viewState.ScrollOffset.X;
-
-        // Always align to the top of the view area, adjusted by the scroll offset.
-        float startY = viewRect.Y - viewState.ScrollOffset.Y;
-
-        var boardStartPosition = new Vector2(startX, startY);
-
-        // 8. Draw columns inside a clipped area
-        var contentClipRect = new Vortice.Mathematics.Rect(viewRect.X, viewRect.Y, availableWidth, availableHeight);
-        UI.Context.Renderer.PushClipRect(contentClipRect);
-        UI.Context.Layout.PushClipRect(contentClipRect);
-
-        _boardRenderer.DrawBoard(boardStartPosition, columnWidth, columnGap);
-
-        UI.Context.Layout.PopClipRect();
-        UI.Context.Renderer.PopClipRect();
-
-        // 9. Draw overlays (e.g., the task being dragged) on top of everything else
-        _dragDropHandler.DrawDraggedTaskOverlay((350f * scale) - (30f * scale)); // Logical size scaled
-
-        // 10. Store this frame's content size for the next frame's prediction
-        viewState.ContentSize = currentContentSize;
+        // Draw overlays (e.g., the task being dragged) on top of everything else.
+        // The width passed here should be physical.
+        _dragDropHandler.DrawDraggedTaskOverlay((columnLogicalWidth * scale) - (30f * scale));
     }
 
     private void DrawSettingsButton(Vector2 windowSize, float scale)
