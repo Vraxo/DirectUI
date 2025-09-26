@@ -1,4 +1,4 @@
-﻿namespace DirectUI;
+﻿namespace DirectUI.Animation;
 
 public class AnimationInfo
 {

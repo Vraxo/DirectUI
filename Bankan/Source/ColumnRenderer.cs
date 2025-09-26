@@ -1,5 +1,6 @@
 ﻿using System.Numerics;
 using DirectUI;
+using DirectUI.Animation;
 using DirectUI.Drawing;
 using DirectUI.Styling;
 
@@ -123,8 +124,37 @@ public class ColumnRenderer
             return;
         }
 
-        ButtonStylePack addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
+        // --- DEMONSTRATION OF BOTH STYLING METHODS ---
 
+        // Method 1: Data-Driven (from styles.yaml)
+        // This is the recommended approach for styles that are shared or need easy tweaking.
+        var addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
+
+        
+        // Method 2: Code-Driven (defined directly here)
+        // This is useful for one-off styles or for developers who prefer to keep everything in C#.
+        // To use this, just uncomment this block and comment out the StyleManager line above.
+        //ButtonStylePack addTaskTheme = new()
+        //{
+        //    Animation = new(2.5f), // Fallback animation
+        //    Normal =
+        //    {
+        //        FillColor = Colors.Transparent,
+        //        BorderColor = new(51, 51, 51, 255)
+        //    },
+        //    Hover =
+        //    {
+        //        FillColor = DefaultTheme.Accent,
+        //        BorderColor = DefaultTheme.Accent,
+        //        Scale = new(0.95f, 0.95f),
+        //        Animation = new(0.25f) // Faster animation TO this state
+        //    },
+        //    Pressed =
+        //    {
+        //        Scale = new(0.9f, 0.9f)
+        //    }
+        //};
+        
         bool clicked = UI.Button(
             id: column.Id + "_add_task",
             text: "+ Add Task",
