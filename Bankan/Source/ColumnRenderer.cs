@@ -19,10 +19,56 @@ public class ColumnRenderer
         _modalManager = modalManager;
     }
 
+    /// <summary>
+    /// Performs a layout dry run to calculate the total physical height of the column's content.
+    /// </summary>
+    private float CalculateColumnPhysicalHeight(KanbanColumn column, float logicalColumnWidth)
+    {
+        float contentPadding = 15f;
+        float gap = 10f;
+        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+
+        var calc = new DirectUI.LayoutCalculator(gap);
+
+        // Header Title
+        calc.Add(new Vector2(innerContentLogicalWidth, 30));
+        // Header Separator
+        calc.AddSeparator(innerContentLogicalWidth, 2, 5);
+
+        // Tasks
+        var taskTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14 };
+        float taskTextAreaWidth = innerContentLogicalWidth - 30f; // 15 padding on each side of text inside task
+        foreach (var task in column.Tasks)
+        {
+            // The task widget has 15px top/bottom padding around the wrapped text.
+            float taskTextLogicalHeight = 0;
+            if (!string.IsNullOrEmpty(task.Text))
+            {
+                // Create a temporary calculator just for the text height
+                var textCalc = new DirectUI.LayoutCalculator();
+                textCalc.AddWrappedText(task.Text, taskTextAreaWidth, taskTextStyle);
+                taskTextLogicalHeight = textCalc.GetSize().Y;
+            }
+            float taskTotalLogicalHeight = taskTextLogicalHeight + 30f; // 15 top + 15 bottom padding
+            calc.Add(new Vector2(innerContentLogicalWidth, taskTotalLogicalHeight));
+        }
+
+        // "Add Task" button for 'todo' column
+        if (column.Id == "todo")
+        {
+            calc.Add(new Vector2(innerContentLogicalWidth, 40));
+        }
+
+        // Get total logical height of content, add vertical padding, and convert to physical units.
+        float totalContentLogicalHeight = calc.GetSize().Y;
+        return (totalContentLogicalHeight + contentPadding * 2) * UI.Context.UIScale;
+    }
+
+
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
         float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = LayoutCalculator.CalculateColumnContentHeight(column, scale);
+        float columnPhysicalHeight = CalculateColumnPhysicalHeight(column, logicalColumnWidth);
         Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
         Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
 
@@ -130,7 +176,7 @@ public class ColumnRenderer
         // This is the recommended approach for styles that are shared or need easy tweaking.
         var addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
 
-        
+
         // Method 2: Code-Driven (defined directly here)
         // This is useful for one-off styles or for developers who prefer to keep everything in C#.
         // To use this, just uncomment this block and comment out the StyleManager line above.
@@ -154,7 +200,7 @@ public class ColumnRenderer
         //        Scale = new(0.9f, 0.9f)
         //    }
         //};
-        
+
         bool clicked = UI.Button(
             id: column.Id + "_add_task",
             text: "+ Add Task",
