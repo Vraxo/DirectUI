@@ -22,53 +22,59 @@ public class ColumnRenderer
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
         float scale = UI.Context.UIScale;
-        float columnPhysicalHeight = LayoutCalculator.CalculateColumnContentHeight(column, scale);
         Vector2 columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
-        Vector2 columnPhysicalPosition = columnLogicalPosition * scale;
 
-        DrawColumnBackground(
-            columnPhysicalPosition,
-            new(logicalColumnWidth * scale, columnPhysicalHeight));
-
-        float contentPadding = 15f;
-        Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
-
-        UI.BeginVBoxContainer(
-            column.Id,
-            contentStartPosition,
-            gap: 10f);
-
-        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
-
-        DrawColumnHeader(column, innerContentLogicalWidth);
-        DrawColumnTasks(column, innerContentLogicalWidth);
-
-        Vortice.Mathematics.Rect columnBoundsForDropTarget = new(columnPhysicalPosition.X, columnPhysicalPosition.Y, logicalColumnWidth * scale, columnPhysicalHeight);
-        int finalTaskIndex = column.Tasks.Count;
-
-        _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
-
-        DrawAddTaskButton(column, innerContentLogicalWidth);
-        AddFlexibleSpaceToFillColumn(columnPhysicalHeight, contentPadding);
-
-        UI.EndVBoxContainer();
-    }
-
-    private static void DrawColumnBackground(Vector2 position, Vector2 size)
-    {
         Color columnBgColor = new(30, 30, 30, 255);
-
         BoxStyle columnStyle = new()
         {
-            FillColor =
-            columnBgColor,
+            FillColor = columnBgColor,
             Roundness = 0.1f,
             BorderLength = 0
         };
 
-        UI.Context.Renderer.DrawBox(
-            new(position.X, position.Y, size.X, size.Y),
-            columnStyle);
+        // The outer VBoxContainer's width is forced, so its background will be the correct size.
+        UI.BeginVBoxContainer(
+            column.Id,
+            columnLogicalPosition,
+            background: columnStyle,
+            forcedWidth: logicalColumnWidth);
+
+        float contentPadding = 15f;
+        float innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
+
+        // Use an inner VBox for the actual content, indented by the padding.
+        var innerContainerPosition = UI.Context.Layout.GetCurrentPosition() + new Vector2(contentPadding, contentPadding);
+        UI.BeginVBoxContainer(
+            column.Id + "_inner",
+            innerContainerPosition,
+            gap: 10f);
+
+        DrawColumnHeader(column, innerContentLogicalWidth);
+        DrawColumnTasks(column, innerContentLogicalWidth);
+
+        // --- Drop Target for end-of-column ---
+        var innerVboxState = (VBoxContainerState)UI.Context.Layout.PeekContainer();
+        var contentLogicalSize = innerVboxState.GetAccumulatedSize();
+        var contentLogicalPos = innerVboxState.StartPosition;
+        var dropTargetWidth = logicalColumnWidth * scale;
+        var dropTargetX = (contentLogicalPos.X - contentPadding) * scale;
+        var dropTargetY = contentLogicalPos.Y * scale;
+        var dropTargetHeight = contentLogicalSize.Y * scale;
+        Vortice.Mathematics.Rect columnContentBounds = new(dropTargetX, dropTargetY, dropTargetWidth, dropTargetHeight);
+        int finalTaskIndex = column.Tasks.Count;
+        _dragDropHandler.UpdateDropTargetForColumn(column, columnContentBounds, finalTaskIndex);
+
+
+        DrawAddTaskButton(column, innerContentLogicalWidth);
+
+        // This ends the inner container. Its calculated size will be advanced into the outer container.
+        UI.EndVBoxContainer();
+
+        // Add bottom padding by advancing the outer container.
+        UI.Context.Layout.AdvanceLayout(new(0, contentPadding));
+
+        // This ends the outer container. It will now draw its background and replay the content.
+        UI.EndVBoxContainer();
     }
 
     private static void DrawColumnHeader(KanbanColumn column, float innerContentLogicalWidth)
@@ -130,7 +136,7 @@ public class ColumnRenderer
         // This is the recommended approach for styles that are shared or need easy tweaking.
         var addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
 
-        
+
         // Method 2: Code-Driven (defined directly here)
         // This is useful for one-off styles or for developers who prefer to keep everything in C#.
         // To use this, just uncomment this block and comment out the StyleManager line above.
@@ -154,7 +160,7 @@ public class ColumnRenderer
         //        Scale = new(0.9f, 0.9f)
         //    }
         //};
-        
+
         bool clicked = UI.Button(
             id: column.Id + "_add_task",
             text: "+ Add Task",
@@ -165,26 +171,5 @@ public class ColumnRenderer
         {
             _modalManager.OpenAddTaskModal(column);
         }
-    }
-
-    private static void AddFlexibleSpaceToFillColumn(float columnPhysicalHeight, float contentPadding)
-    {
-        float scale = UI.Context.UIScale;
-
-        if (UI.Context.Layout.PeekContainer() is not VBoxContainerState vboxState)
-        {
-            return;
-        }
-
-        float actualContentLogicalHeight = vboxState.GetAccumulatedSize().Y;
-        float desiredContentLogicalHeight = (columnPhysicalHeight / scale) - (contentPadding * 2);
-
-        if (desiredContentLogicalHeight <= actualContentLogicalHeight)
-        {
-            return;
-        }
-
-        float paddingAmount = desiredContentLogicalHeight - actualContentLogicalHeight;
-        UI.Context.Layout.AdvanceLayout(new(0, paddingAmount));
     }
 }

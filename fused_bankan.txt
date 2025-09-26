@@ -1074,6 +1074,52 @@ internal class ResizablePanelState : ILayoutContainer
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ScrollAreaState.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+/// <summary>
+/// A state object for the 2D ScrollArea container.
+/// </summary>
+public class ScrollAreaState : ILayoutContainer
+{
+    // --- State managed by the UI system ---
+    internal Vector2 CurrentScrollOffset { get; set; } // Stored in logical units
+
+    // --- Per-frame calculated/cached values ---
+    internal int Id { get; set; }
+    internal Vector2 Position { get; set; }      // Top-left of the entire control (logical)
+    internal Vector2 VisibleSize { get; set; }   // The size of the viewport (logical)
+    internal Vector2 ContentSize { get; set; }     // The full content size from the *previous* frame (logical)
+    internal bool IsHovered { get; set; }
+
+    // --- State for the current frame's layout pass ---
+    internal Vector2 CalculatedContentSize { get; set; } // The content size measured *this* frame (logical)
+    private Vector2 ContentStartPosition { get; set; }   // The top-left where content should begin drawing (logical)
+
+    public ScrollAreaState() { }
+
+    // This is called by the UILayoutManager to get the starting position for child elements.
+    public Vector2 GetCurrentPosition() => ContentStartPosition;
+
+    // This is called by a child container (like HBox) when it finishes laying out its elements.
+    // The 'elementSize' is the total size of that child container.
+    public void Advance(Vector2 elementSize)
+    {
+        // A scroll area should ideally only have one direct child container.
+        // We take the max in case of weird usage, but it's the size of that single child.
+        CalculatedContentSize = Vector2.Max(CalculatedContentSize, elementSize);
+    }
+
+    // Internal method for BeginScrollArea to set up the content's drawing position.
+    internal void SetContentStartPosition(Vector2 position)
+    {
+        ContentStartPosition = position;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ScrollContainerState.cs">
 using System.Numerics;
 
@@ -1572,359 +1618,6 @@ public static partial class UI
 
         Context.Layout.AdvanceLayout(size);
         return valueChanged;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Containers.cs">
-// Core/UI.Containers.cs
-using System;
-using System.Numerics;
-using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1;
-
-namespace DirectUI;
-
-public static partial class UI
-{
-    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f, VAlignment verticalAlignment = VAlignment.Top, float? fixedRowHeight = null)
-    {
-        var hboxState = Context.Layout.GetOrCreateHBoxState(id.GetHashCode());
-        hboxState.VerticalAlignment = verticalAlignment;
-        hboxState.FixedRowHeight = fixedRowHeight;
-        Context.Layout.BeginHBox(id.GetHashCode(), position, gap);
-    }
-
-    public static void EndHBoxContainer()
-    {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not HBoxContainerState state)
-        { Console.WriteLine("Error: EndHBoxContainer called without a matching BeginHBoxContainer."); return; }
-        Context.Layout.PopContainer();
-        if (Context.Layout.IsInLayoutContainer())
-        { Context.Layout.AdvanceContainerLayout(new Vector2(state.AccumulatedWidth, state.MaxElementHeight)); }
-    }
-
-    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
-    {
-        Context.Layout.BeginVBox(id.GetHashCode(), position, gap);
-    }
-
-    public static void EndVBoxContainer()
-    {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
-        { Console.WriteLine("Error: EndVBoxContainer called without a matching BeginVBoxContainer."); return; }
-        Context.Layout.PopContainer();
-        if (Context.Layout.IsInLayoutContainer())
-        { Context.Layout.AdvanceContainerLayout(new Vector2(state.MaxElementWidth, state.AccumulatedHeight)); }
-    }
-
-    public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
-    {
-        Context.Layout.PushContainer(new GridContainerState(id.GetHashCode(), position, availableSize, numColumns, gap));
-    }
-
-    public static void EndGridContainer()
-    {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not GridContainerState state)
-        { Console.WriteLine("Error: EndGridContainer called without a matching BeginGridContainer."); return; }
-        Context.Layout.PopContainer();
-        if (Context.Layout.IsInLayoutContainer())
-        {
-            Vector2 containerSize = state.GetTotalOccupiedSize();
-            Context.Layout.AdvanceContainerLayout(containerSize);
-        }
-    }
-
-    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth)
-    {
-        if (!IsContextValid())
-        {
-            availableInnerWidth = size.X;
-            return;
-        }
-
-        int intId = id.GetHashCode();
-        Vector2 position = Context.Layout.GetCurrentPosition();
-        Rect regionBounds = new Rect(position.X, position.Y, size.X, size.Y);
-
-        var scrollState = State.GetOrCreateElement<ScrollContainerState>(intId);
-        scrollState.Id = intId;
-        scrollState.Position = position;
-        scrollState.VisibleSize = size;
-        scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
-
-        // Predict if a scrollbar will be needed based on the previous frame's content size.
-        // This is a common and effective pattern in immediate-mode UIs.
-        const float scrollbarThickness = 12f; // Must match the value in EndScrollableRegion
-        const float scrollbarGap = 4f; // Add a small gap between content and scrollbar
-        bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
-        // If scrollbar is visible, reduce the available width by its thickness and a small gap.
-        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness - scrollbarGap : size.X;
-
-
-        // Handle scroll input
-        if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
-        {
-            var offset = scrollState.CurrentScrollOffset;
-            offset.Y -= Context.InputState.ScrollDelta * 20; // Apply scroll wheel input
-            scrollState.CurrentScrollOffset = offset;
-        }
-
-        // Clamp the offset *before* using it for layout. Use the content size from the *previous* frame for this.
-        float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
-        var clampedOffset = scrollState.CurrentScrollOffset;
-        clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
-        scrollState.CurrentScrollOffset = clampedOffset;
-
-        // Begin the inner container for content layout, offset by the now-clamped scroll position
-        var contentVBoxId = HashCode.Combine(intId, "scroll_vbox");
-        var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
-        contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
-        contentVBox.CurrentPosition = position - scrollState.CurrentScrollOffset;
-        contentVBox.Gap = 0; // The user can nest another VBox inside for gaps
-        contentVBox.MaxElementWidth = 0f;
-        contentVBox.AccumulatedHeight = 0f;
-        contentVBox.ElementCount = 0;
-        scrollState.ContentVBox = contentVBox;
-
-        Context.Layout.PushClipRect(regionBounds);
-        Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
-
-        Context.Layout.PushContainer(scrollState);
-    }
-
-    public static void EndScrollableRegion()
-    {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
-        { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
-
-        // Finalize content size based on what was rendered inside the container.
-        // This new size will be used for clamping in the *next* frame.
-        scrollState.ContentSize = new Vector2(scrollState.ContentVBox.MaxElementWidth, scrollState.ContentVBox.AccumulatedHeight);
-
-        // Pop the container and clip rect so the scrollbar can be drawn outside the content's clipped area.
-        Context.Layout.PopContainer();
-        Context.Renderer.PopClipRect();
-        Context.Layout.PopClipRect();
-
-        // Draw scrollbar if needed. This will return a new, validated scroll offset.
-        if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
-        {
-            string scrollBarIdString = scrollState.Id + "_scrollbar";
-            float scrollbarThickness = 12f;
-            var scrollBarPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - scrollbarThickness, scrollState.Position.Y);
-
-            // The VScrollBar handles all its own logic, including clamping the value against the new content size.
-            float newScrollY = VScrollBar(
-                id: scrollBarIdString,
-                currentScrollOffset: scrollState.CurrentScrollOffset.Y,
-                position: scrollBarPos,
-                trackHeight: scrollState.VisibleSize.Y,
-                contentHeight: scrollState.ContentSize.Y,
-                visibleHeight: scrollState.VisibleSize.Y,
-                thickness: scrollbarThickness);
-
-            // Update the state with the value from the scrollbar for the next frame.
-            scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, newScrollY);
-        }
-        else
-        {
-            // If no scrollbar is needed, ensure the offset is zero.
-            scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, 0);
-        }
-
-        // After everything, advance the main layout cursor by the size of the scroll region itself.
-        Context.Layout.AdvanceLayout(scrollState.VisibleSize);
-    }
-
-    public static void BeginResizableVPanel(
-        string id,
-        ref float currentWidth,
-        HAlignment alignment = HAlignment.Left,
-        float topOffset = 0f,
-        float minWidth = 50f,
-        float maxWidth = 500f,
-        float resizeHandleWidth = 5f,
-        BoxStyle? panelStyle = null,
-        Vector2 padding = default,
-        float gap = 5f,
-        bool disabled = false)
-    {
-        if (!IsContextValid()) return;
-        var intId = id.GetHashCode();
-        var state = State; // Define local state variable
-
-        Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
-
-        var input = Context.InputState;
-        var renderer = Context.Renderer;
-        var windowWidth = renderer.RenderTargetSize.X;
-        var windowHeight = renderer.RenderTargetSize.Y;
-        var availableHeight = windowHeight - topOffset;
-
-        if (!disabled)
-        {
-            float handleWidth = Math.Min(resizeHandleWidth, currentWidth);
-            float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-            float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
-            Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
-
-            bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
-
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
-            {
-                state.TrySetActivePress(intId, 10);
-            }
-
-            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
-
-            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
-            {
-                if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
-                else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, minWidth, maxWidth);
-            }
-        }
-
-        var finalPanelStyle = panelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentWidth = Math.Max(0, currentWidth);
-        float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
-        Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
-        if (panelRect.Width > 0 && panelRect.Height > 0)
-        {
-            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
-        }
-
-        Vector2 contentStartPosition = new Vector2(finalPanelX + finalPadding.X, topOffset + finalPadding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (finalPadding.X * 2)), Math.Max(0, availableHeight - (finalPadding.Y * 2)));
-        bool clipPushed = false;
-        if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
-        {
-            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
-            Context.Layout.PushClipRect(contentClipRect); // For culling
-            clipPushed = true;
-        }
-
-        var vboxId = HashCode.Combine(intId, "_vbox");
-        var vboxState = Context.Layout.GetOrCreateVBoxState(vboxId);
-        vboxState.StartPosition = contentStartPosition;
-        vboxState.CurrentPosition = contentStartPosition;
-        vboxState.Gap = gap;
-        vboxState.MaxElementWidth = 0f;
-        vboxState.AccumulatedHeight = 0f;
-        vboxState.ElementCount = 0;
-
-        var panelState = new ResizablePanelState(intId, vboxState, clipPushed);
-        Context.Layout.PushContainer(panelState);
-    }
-
-    public static void EndResizableVPanel()
-    {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizablePanelState state)
-        { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
-        if (state.ClipRectWasPushed)
-        {
-            Context.Layout.PopClipRect(); // For culling
-            Context.Renderer.PopClipRect();
-        }
-        Context.Layout.PopContainer();
-    }
-
-    public static void BeginResizableHPanel(
-        string id,
-        ref float currentHeight,
-        float reservedLeftSpace,
-        float reservedRightSpace,
-        float topOffset = 0f,
-        float minHeight = 50f,
-        float maxHeight = 300f,
-        float resizeHandleHeight = 5f,
-        BoxStyle? panelStyle = null,
-        Vector2 padding = default,
-        float gap = 5f,
-        bool disabled = false)
-    {
-        if (!IsContextValid()) return;
-        var intId = id.GetHashCode();
-        var state = State; // Define local state variable
-
-        Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
-
-        var input = Context.InputState;
-        var renderer = Context.Renderer;
-        var windowWidth = renderer.RenderTargetSize.X;
-        var windowHeight = renderer.RenderTargetSize.Y;
-        var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
-        var maxAllowedHeight = windowHeight - topOffset;
-        var effectiveMaxHeight = Math.Min(maxHeight, maxAllowedHeight);
-        float clampMax = Math.Max(minHeight, effectiveMaxHeight);
-
-        if (!disabled)
-        {
-            currentHeight = Math.Clamp(currentHeight, minHeight, clampMax);
-            float panelY = windowHeight - currentHeight;
-            float handleHeight = Math.Min(resizeHandleHeight, currentHeight);
-            Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
-
-            bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
-            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
-
-            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
-            {
-                state.TrySetActivePress(intId, 10);
-            }
-
-            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
-
-            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
-            {
-                float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
-                currentHeight = Math.Clamp(windowHeight - clampedMouseY, minHeight, clampMax);
-            }
-        }
-
-        var finalPanelStyle = panelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
-        currentHeight = Math.Clamp(currentHeight, minHeight, clampMax);
-        float finalPanelY = windowHeight - currentHeight;
-        Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
-        if (panelRect.Width > 0 && panelRect.Height > 0)
-        {
-            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
-        }
-
-        Vector2 contentStartPosition = new Vector2(reservedLeftSpace + finalPadding.X, finalPanelY + finalPadding.Y);
-        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, availableWidth - (finalPadding.X * 2)), Math.Max(0, currentHeight - (finalPadding.Y * 2)));
-        bool clipPushed = false;
-        if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
-        {
-            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
-            Context.Layout.PushClipRect(contentClipRect); // For culling
-            clipPushed = true;
-        }
-
-        var hboxId = HashCode.Combine(intId, "_hbox");
-        var hboxState = Context.Layout.GetOrCreateHBoxState(hboxId);
-        hboxState.StartPosition = contentStartPosition;
-        hboxState.CurrentPosition = contentStartPosition;
-        hboxState.Gap = gap;
-        hboxState.MaxElementHeight = 0f;
-        hboxState.AccumulatedWidth = 0f;
-        hboxState.ElementCount = 0;
-
-        var panelState = new ResizableHPanelState(intId, hboxState, clipPushed);
-        Context.Layout.PushContainer(panelState);
-    }
-
-    public static void EndResizableHPanel()
-    {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizableHPanelState state)
-        { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
-        if (state.ClipRectWasPushed)
-        {
-            Context.Layout.PopClipRect(); // For culling
-            Context.Renderer.PopClipRect();
-        }
-        Context.Layout.PopContainer();
     }
 }
 </file>
@@ -2599,6 +2292,75 @@ public static partial class UI
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.GridContainer.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
+    {
+        Context.Layout.PushContainer(new GridContainerState(id.GetHashCode(), position, availableSize, numColumns, gap));
+    }
+
+    public static void EndGridContainer()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not GridContainerState state)
+        {
+            Console.WriteLine("Error: EndGridContainer called without a matching BeginGridContainer.");
+            return;
+        }
+
+        Context.Layout.PopContainer();
+        
+        if (!Context.Layout.IsInLayoutContainer())
+        {
+            return;
+        }
+
+        Vector2 containerSize = state.GetTotalOccupiedSize();
+        Context.Layout.AdvanceContainerLayout(containerSize);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.HBoxContainer.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginHBoxContainer(string id, Vector2 position, float gap = 5.0f, VAlignment verticalAlignment = VAlignment.Top, float? fixedRowHeight = null)
+    {
+        HBoxContainerState hboxState = Context.Layout.GetOrCreateHBoxState(id.GetHashCode());
+        hboxState.VerticalAlignment = verticalAlignment;
+        hboxState.FixedRowHeight = fixedRowHeight;
+
+        Context.Layout.BeginHBox(id.GetHashCode(), position, gap);
+    }
+
+    public static void EndHBoxContainer()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not HBoxContainerState state)
+        {
+            Console.WriteLine("Error: EndHBoxContainer called without a matching BeginHBoxContainer.");
+            return;
+        }
+
+        Context.Layout.PopContainer();
+
+        if (!Context.Layout.IsInLayoutContainer())
+        {
+            return;
+        }
+
+        Context.Layout.AdvanceContainerLayout(new(state.AccumulatedWidth, state.MaxElementHeight));
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.InputText.cs">
 using System.Numerics;
 using Vortice.Mathematics;
@@ -2891,6 +2653,487 @@ public static partial class UI
             Vector2.Zero);
 
         Context.Layout.AdvanceLayout(finalLogicalSize);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ResizableHPanel.cs">
+// Core/UI.Containers.cs
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginResizableHPanel(
+        string id,
+        ref float currentHeight,
+        float reservedLeftSpace,
+        float reservedRightSpace,
+        float topOffset = 0f,
+        float minHeight = 50f,
+        float maxHeight = 300f,
+        float resizeHandleHeight = 5f,
+        BoxStyle? panelStyle = null,
+        Vector2 padding = default,
+        float gap = 5f,
+        bool disabled = false)
+    {
+        if (!IsContextValid()) return;
+        var intId = id.GetHashCode();
+        var state = State; // Define local state variable
+
+        Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
+
+        var input = Context.InputState;
+        var renderer = Context.Renderer;
+        var windowWidth = renderer.RenderTargetSize.X;
+        var windowHeight = renderer.RenderTargetSize.Y;
+        var availableWidth = Math.Max(0, windowWidth - reservedLeftSpace - reservedRightSpace);
+        var maxAllowedHeight = windowHeight - topOffset;
+        var effectiveMaxHeight = Math.Min(maxHeight, maxAllowedHeight);
+        float clampMax = Math.Max(minHeight, effectiveMaxHeight);
+
+        if (!disabled)
+        {
+            currentHeight = Math.Clamp(currentHeight, minHeight, clampMax);
+            float panelY = windowHeight - currentHeight;
+            float handleHeight = Math.Min(resizeHandleHeight, currentHeight);
+            Rect handleRect = new Rect(reservedLeftSpace, panelY, availableWidth, handleHeight);
+
+            bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
+            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
+
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
+            {
+                state.TrySetActivePress(intId, 10);
+            }
+
+            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
+
+            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            {
+                float clampedMouseY = Math.Max(input.MousePosition.Y, topOffset);
+                currentHeight = Math.Clamp(windowHeight - clampedMouseY, minHeight, clampMax);
+            }
+        }
+
+        var finalPanelStyle = panelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
+        currentHeight = Math.Clamp(currentHeight, minHeight, clampMax);
+        float finalPanelY = windowHeight - currentHeight;
+        Rect panelRect = new Rect(reservedLeftSpace, finalPanelY, availableWidth, currentHeight);
+        if (panelRect.Width > 0 && panelRect.Height > 0)
+        {
+            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
+        }
+
+        Vector2 contentStartPosition = new Vector2(reservedLeftSpace + finalPadding.X, finalPanelY + finalPadding.Y);
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, availableWidth - (finalPadding.X * 2)), Math.Max(0, currentHeight - (finalPadding.Y * 2)));
+        bool clipPushed = false;
+        if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
+        {
+            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
+            Context.Layout.PushClipRect(contentClipRect); // For culling
+            clipPushed = true;
+        }
+
+        var hboxId = HashCode.Combine(intId, "_hbox");
+        var hboxState = Context.Layout.GetOrCreateHBoxState(hboxId);
+        hboxState.StartPosition = contentStartPosition;
+        hboxState.CurrentPosition = contentStartPosition;
+        hboxState.Gap = gap;
+        hboxState.MaxElementHeight = 0f;
+        hboxState.AccumulatedWidth = 0f;
+        hboxState.ElementCount = 0;
+
+        var panelState = new ResizableHPanelState(intId, hboxState, clipPushed);
+        Context.Layout.PushContainer(panelState);
+    }
+
+    public static void EndResizableHPanel()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizableHPanelState state)
+        { Console.WriteLine("Error: EndResizableHPanel called without a matching BeginResizableHPanel."); return; }
+        if (state.ClipRectWasPushed)
+        {
+            Context.Layout.PopClipRect(); // For culling
+            Context.Renderer.PopClipRect();
+        }
+        Context.Layout.PopContainer();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ResizableVPanel.cs">
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginResizableVPanel(
+        string id,
+        ref float currentWidth,
+        HAlignment alignment = HAlignment.Left,
+        float topOffset = 0f,
+        float minWidth = 50f,
+        float maxWidth = 500f,
+        float resizeHandleWidth = 5f,
+        BoxStyle? panelStyle = null,
+        Vector2 padding = default,
+        float gap = 5f,
+        bool disabled = false)
+    {
+        if (!IsContextValid()) return;
+        var intId = id.GetHashCode();
+        var state = State; // Define local state variable
+
+        Vector2 finalPadding = (padding == default) ? new Vector2(5, 5) : padding;
+
+        var input = Context.InputState;
+        var renderer = Context.Renderer;
+        var windowWidth = renderer.RenderTargetSize.X;
+        var windowHeight = renderer.RenderTargetSize.Y;
+        var availableHeight = windowHeight - topOffset;
+
+        if (!disabled)
+        {
+            float handleWidth = Math.Min(resizeHandleWidth, currentWidth);
+            float panelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
+            float handleX = (alignment == HAlignment.Right) ? panelX : panelX + currentWidth - handleWidth;
+            Rect handleRect = new Rect(handleX, topOffset, handleWidth, availableHeight);
+
+            bool isHoveringHandle = handleRect.Contains(input.MousePosition.X, input.MousePosition.Y);
+            if (isHoveringHandle) state.SetPotentialInputTarget(intId);
+
+            if (input.WasLeftMousePressedThisFrame && isHoveringHandle && state.PotentialInputTargetId == intId && !state.DragInProgressFromPreviousFrame)
+            {
+                state.TrySetActivePress(intId, 10);
+            }
+
+            if (state.ActivelyPressedElementId == intId && !input.IsLeftMouseDown) state.ClearActivePress(intId);
+
+            if (state.ActivelyPressedElementId == intId && input.IsLeftMouseDown)
+            {
+                if (alignment == HAlignment.Left) currentWidth = Math.Clamp(input.MousePosition.X, minWidth, maxWidth);
+                else currentWidth = Math.Clamp(windowWidth - input.MousePosition.X, minWidth, maxWidth);
+            }
+        }
+
+        var finalPanelStyle = panelStyle ?? new BoxStyle { FillColor = new(0.15f, 0.15f, 0.2f, 1.0f), BorderColor = DefaultTheme.NormalBorder, BorderLength = 1 };
+        currentWidth = Math.Max(0, currentWidth);
+        float finalPanelX = (alignment == HAlignment.Right) ? windowWidth - currentWidth : 0;
+        Rect panelRect = new Rect(finalPanelX, topOffset, currentWidth, availableHeight);
+        if (panelRect.Width > 0 && panelRect.Height > 0)
+        {
+            renderer.DrawBox(new Rect(panelRect.X, panelRect.Y, panelRect.Width, panelRect.Height), finalPanelStyle);
+        }
+
+        Vector2 contentStartPosition = new Vector2(finalPanelX + finalPadding.X, topOffset + finalPadding.Y);
+        Rect contentClipRect = new Rect(contentStartPosition.X, contentStartPosition.Y, Math.Max(0, currentWidth - (finalPadding.X * 2)), Math.Max(0, availableHeight - (finalPadding.Y * 2)));
+        bool clipPushed = false;
+        if (contentClipRect.Width > 0 && contentClipRect.Height > 0)
+        {
+            renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
+            Context.Layout.PushClipRect(contentClipRect); // For culling
+            clipPushed = true;
+        }
+
+        var vboxId = HashCode.Combine(intId, "_vbox");
+        var vboxState = Context.Layout.GetOrCreateVBoxState(vboxId);
+        vboxState.StartPosition = contentStartPosition;
+        vboxState.CurrentPosition = contentStartPosition;
+        vboxState.Gap = gap;
+        vboxState.MaxElementWidth = 0f;
+        vboxState.AccumulatedHeight = 0f;
+        vboxState.ElementCount = 0;
+
+        var panelState = new ResizablePanelState(intId, vboxState, clipPushed);
+        Context.Layout.PushContainer(panelState);
+    }
+
+    public static void EndResizableVPanel()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ResizablePanelState state)
+        { Console.WriteLine("Error: EndResizableVPanel called without a matching BeginResizableVPanel."); return; }
+        if (state.ClipRectWasPushed)
+        {
+            Context.Layout.PopClipRect(); // For culling
+            Context.Renderer.PopClipRect();
+        }
+        Context.Layout.PopContainer();
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ScrollableRegion.cs">
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth)
+    {
+        if (!IsContextValid())
+        {
+            availableInnerWidth = size.X;
+            return;
+        }
+
+        int intId = id.GetHashCode();
+        Vector2 position = Context.Layout.GetCurrentPosition();
+        Rect regionBounds = new Rect(position.X, position.Y, size.X, size.Y);
+
+        var scrollState = State.GetOrCreateElement<ScrollContainerState>(intId);
+        scrollState.Id = intId;
+        scrollState.Position = position;
+        scrollState.VisibleSize = size;
+        scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
+
+        // Predict if a scrollbar will be needed based on the previous frame's content size.
+        // This is a common and effective pattern in immediate-mode UIs.
+        const float scrollbarThickness = 12f; // Must match the value in EndScrollableRegion
+        const float scrollbarGap = 4f; // Add a small gap between content and scrollbar
+        bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
+        // If scrollbar is visible, reduce the available width by its thickness and a small gap.
+        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness - scrollbarGap : size.X;
+
+
+        // Handle scroll input
+        if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
+        {
+            var offset = scrollState.CurrentScrollOffset;
+            offset.Y -= Context.InputState.ScrollDelta * 20; // Apply scroll wheel input
+            scrollState.CurrentScrollOffset = offset;
+        }
+
+        // Clamp the offset *before* using it for layout. Use the content size from the *previous* frame for this.
+        float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
+        var clampedOffset = scrollState.CurrentScrollOffset;
+        clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
+        scrollState.CurrentScrollOffset = clampedOffset;
+
+        // Begin the inner container for content layout, offset by the now-clamped scroll position
+        var contentVBoxId = HashCode.Combine(intId, "scroll_vbox");
+        var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
+        contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
+        contentVBox.CurrentPosition = position - scrollState.CurrentScrollOffset;
+        contentVBox.Gap = 0; // The user can nest another VBox inside for gaps
+        contentVBox.MaxElementWidth = 0f;
+        contentVBox.AccumulatedHeight = 0f;
+        contentVBox.ElementCount = 0;
+        scrollState.ContentVBox = contentVBox;
+
+        Context.Layout.PushClipRect(regionBounds);
+        Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
+
+        Context.Layout.PushContainer(scrollState);
+    }
+
+    public static void EndScrollableRegion()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
+        { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
+
+        // Finalize content size based on what was rendered inside the container.
+        // This new size will be used for clamping in the *next* frame.
+        scrollState.ContentSize = new Vector2(scrollState.ContentVBox.MaxElementWidth, scrollState.ContentVBox.AccumulatedHeight);
+
+        // Pop the container and clip rect so the scrollbar can be drawn outside the content's clipped area.
+        Context.Layout.PopContainer();
+        Context.Renderer.PopClipRect();
+        Context.Layout.PopClipRect();
+
+        // Draw scrollbar if needed. This will return a new, validated scroll offset.
+        if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
+        {
+            string scrollBarIdString = scrollState.Id + "_scrollbar";
+            float scrollbarThickness = 12f;
+            var scrollBarPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - scrollbarThickness, scrollState.Position.Y);
+
+            // The VScrollBar handles all its own logic, including clamping the value against the new content size.
+            float newScrollY = VScrollBar(
+                id: scrollBarIdString,
+                currentScrollOffset: scrollState.CurrentScrollOffset.Y,
+                position: scrollBarPos,
+                trackHeight: scrollState.VisibleSize.Y,
+                contentHeight: scrollState.ContentSize.Y,
+                visibleHeight: scrollState.VisibleSize.Y,
+                thickness: scrollbarThickness);
+
+            // Update the state with the value from the scrollbar for the next frame.
+            scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, newScrollY);
+        }
+        else
+        {
+            // If no scrollbar is needed, ensure the offset is zero.
+            scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, 0);
+        }
+
+        // After everything, advance the main layout cursor by the size of the scroll region itself.
+        Context.Layout.AdvanceLayout(scrollState.VisibleSize);
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ScrollArea.cs">
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+using D2D = Vortice.Direct2D1;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginScrollArea(string id, Vector2 size)
+    {
+        if (!IsContextValid())
+        {
+            return;
+        }
+
+        int intId = id.GetHashCode();
+        var state = State.GetOrCreateElement<ScrollAreaState>(intId);
+        var scale = Context.UIScale;
+
+        // --- Step 1: Initialize per-frame state (all units are logical) ---
+        state.Id = intId;
+        state.Position = Context.Layout.GetCurrentPosition();
+        state.VisibleSize = size;
+        state.CalculatedContentSize = Vector2.Zero; // Reset for this frame's measurement.
+
+        var viewRect = new Rect(state.Position.X * scale, state.Position.Y * scale, size.X * scale, size.Y * scale);
+        state.IsHovered = viewRect.Contains(Context.InputState.MousePosition);
+
+        // --- Step 2: Predict scrollbar visibility and calculate available space ---
+        // This uses ContentSize from the PREVIOUS frame to avoid layout jitter.
+        const float scrollbarThickness = 12f;
+        bool vScrollWillBeVisible = state.ContentSize.Y > state.VisibleSize.Y;
+        bool hScrollWillBeVisible = state.ContentSize.X > state.VisibleSize.X;
+
+        float availableWidth = state.VisibleSize.X - (vScrollWillBeVisible ? scrollbarThickness : 0);
+        float availableHeight = state.VisibleSize.Y - (hScrollWillBeVisible ? scrollbarThickness : 0);
+
+        // --- Step 3: Handle scroll input and clamp offset ---
+        // This also uses ContentSize from the PREVIOUS frame for clamping. Offset is LOGICAL.
+        if (state.IsHovered)
+        {
+            var offset = state.CurrentScrollOffset;
+            offset.Y -= Context.InputState.ScrollDelta * 40; // Apply vertical scroll wheel
+            state.CurrentScrollOffset = offset;
+        }
+
+        float maxScrollX = Math.Max(0, state.ContentSize.X - availableWidth);
+        float maxScrollY = Math.Max(0, state.ContentSize.Y - availableHeight);
+        var clampedOffset = state.CurrentScrollOffset;
+        clampedOffset.X = Math.Clamp(clampedOffset.X, 0, maxScrollX);
+        clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
+        state.CurrentScrollOffset = clampedOffset;
+
+        // --- Step 4: Calculate content start position (with centering) ---
+        float startX = state.Position.X;
+        if (state.ContentSize.X < availableWidth) // Center horizontally if content is smaller
+        {
+            startX += (availableWidth - state.ContentSize.X) / 2f;
+        }
+        else // Otherwise, apply scroll offset
+        {
+            startX -= state.CurrentScrollOffset.X;
+        }
+        float startY = state.Position.Y - state.CurrentScrollOffset.Y;
+
+        state.SetContentStartPosition(new Vector2(startX, startY));
+
+        // --- Step 5: Push clipping and container state ---
+        var contentClipRect = new Rect(state.Position.X * scale, state.Position.Y * scale, availableWidth * scale, availableHeight * scale);
+        Context.Layout.PushClipRect(contentClipRect);
+        Context.Renderer.PushClipRect(contentClipRect, D2D.AntialiasMode.Aliased);
+        Context.Layout.PushContainer(state);
+    }
+
+    public static void EndScrollArea()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollAreaState state)
+        {
+            Console.WriteLine("Error: EndScrollArea called without a matching BeginScrollArea.");
+            return;
+        }
+
+        var scale = Context.UIScale;
+
+        // --- Step 6: Pop container and clips ---
+        Context.Layout.PopContainer();
+        Context.Renderer.PopClipRect();
+        Context.Layout.PopClipRect();
+
+        // --- Step 7: Draw scrollbars based on THIS frame's content size ---
+        // The child container has called Advance(), so state.CalculatedContentSize is now populated.
+        var currentContentSize = state.CalculatedContentSize;
+        const float scrollbarThickness = 12f;
+
+        bool vScrollIsVisible = currentContentSize.Y > state.VisibleSize.Y;
+        bool hScrollIsVisible = currentContentSize.X > state.VisibleSize.X;
+
+        float availableWidth = state.VisibleSize.X - (vScrollIsVisible ? scrollbarThickness : 0);
+        float availableHeight = state.VisibleSize.Y - (hScrollIsVisible ? scrollbarThickness : 0);
+
+        var finalLogicalOffset = state.CurrentScrollOffset;
+
+        if (vScrollIsVisible)
+        {
+            var scrollBarPos = new Vector2((state.Position.X + state.VisibleSize.X - scrollbarThickness) * scale, state.Position.Y * scale);
+            float newPhysicalOffsetY = VScrollBar(
+               id: state.Id + "_vscroll",
+               currentScrollOffset: finalLogicalOffset.Y * scale,
+               position: scrollBarPos,
+               trackHeight: availableHeight * scale,
+               contentHeight: currentContentSize.Y * scale,
+               visibleHeight: availableHeight * scale,
+               thickness: scrollbarThickness * scale);
+            finalLogicalOffset.Y = newPhysicalOffsetY / scale;
+        }
+        else
+        {
+            finalLogicalOffset.Y = 0;
+        }
+
+        if (hScrollIsVisible)
+        {
+            var scrollBarPos = new Vector2(state.Position.X * scale, (state.Position.Y + state.VisibleSize.Y - scrollbarThickness) * scale);
+            float newPhysicalOffsetX = HScrollBar(
+               id: state.Id + "_hscroll",
+               currentScrollOffset: finalLogicalOffset.X * scale,
+               position: scrollBarPos,
+               trackWidth: availableWidth * scale,
+               contentWidth: currentContentSize.X * scale,
+               visibleWidth: availableWidth * scale,
+               thickness: scrollbarThickness * scale);
+            finalLogicalOffset.X = newPhysicalOffsetX / scale;
+        }
+        else
+        {
+            finalLogicalOffset.X = 0;
+        }
+
+        // Update state with the final offset from scrollbar interactions for next frame.
+        state.CurrentScrollOffset = finalLogicalOffset;
+
+        // --- Step 8: Store this frame's content size for next frame's prediction ---
+        state.ContentSize = currentContentSize;
+
+        // --- Step 9: Advance parent layout ---
+        Context.Layout.AdvanceLayout(state.VisibleSize);
     }
 }
 </file>
@@ -3276,15 +3519,23 @@ public static partial class UI
         ButtonStyle animatedStyle;
         Vector2 animatedScale = targetStyle.Scale;
 
-        if (animation != null && !disabled)
+        // --- Animation Resolution ---
+        // Hierarchy of animation preference:
+        // 1. Explicitly passed 'animation' parameter.
+        // 2. Animation defined on the target style state (e.g., Hover style).
+        // 3. Animation defined on the parent ButtonStylePack.
+        AnimationInfo? finalAnimation = animation ?? targetStyle.Animation ?? theme.Animation;
+
+
+        if (finalAnimation != null && !disabled)
         {
             var animManager = state.AnimationManager;
             var currentTime = context.TotalTime;
 
-            var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, animation.Duration, animation.Easing);
-            var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, animation.Duration, animation.Easing);
-            var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, animation.Duration, animation.Easing);
-            animatedScale = animManager.GetOrAnimate(HashCode.Combine(id, "Scale"), targetStyle.Scale, currentTime, animation.Duration, animation.Easing);
+            var fillColor = animManager.GetOrAnimate(HashCode.Combine(id, "FillColor"), targetStyle.FillColor, currentTime, finalAnimation.Duration, finalAnimation.Easing);
+            var borderColor = animManager.GetOrAnimate(HashCode.Combine(id, "BorderColor"), targetStyle.BorderColor, currentTime, finalAnimation.Duration, finalAnimation.Easing);
+            var borderLength = animManager.GetOrAnimate(HashCode.Combine(id, "BorderLength"), targetStyle.BorderLength, currentTime, finalAnimation.Duration, finalAnimation.Easing);
+            animatedScale = animManager.GetOrAnimate(HashCode.Combine(id, "Scale"), targetStyle.Scale, currentTime, finalAnimation.Duration, finalAnimation.Easing);
 
             animatedStyle = new ButtonStyle(targetStyle)
             {
@@ -3359,7 +3610,8 @@ public static partial class UI
             FontWeight = baseStyle.FontWeight,
             FontStyle = baseStyle.FontStyle,
             FontStretch = baseStyle.FontStretch,
-            Scale = baseStyle.Scale
+            Scale = baseStyle.Scale,
+            Animation = baseStyle.Animation // Copy animation info
         };
 
         // Override with values from the style stack if they exist
@@ -3700,6 +3952,38 @@ public static partial class UI
                 treeState.IndentLineState.Pop();
             }
         }
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.VBoxContainer.cs">
+using System.Numerics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    public static void BeginVBoxContainer(string id, Vector2 position, float gap = 5.0f)
+    {
+        Context.Layout.BeginVBox(id.GetHashCode(), position, gap);
+    }
+
+    public static void EndVBoxContainer()
+    {
+        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not VBoxContainerState state)
+        {
+            Console.WriteLine("Error: EndVBoxContainer called without a matching BeginVBoxContainer.");
+            return;
+        }
+
+        Context.Layout.PopContainer();
+
+        if (!Context.Layout.IsInLayoutContainer())
+        {
+            return;
+        }
+
+        Context.Layout.AdvanceContainerLayout(new(state.MaxElementWidth, state.AccumulatedHeight));
     }
 }
 </file>
@@ -5193,6 +5477,7 @@ public class BoxStyle
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\ButtonStyle.cs">
 // ButtonStyle.cs
 using System.Numerics;
+using DirectUI.Animation;
 using DirectUI.Drawing;
 using Vortice.DirectWrite; // For Font related enums eventually
 
@@ -5214,6 +5499,11 @@ public class ButtonStyle : BoxStyle
     public FontStretch FontStretch { get; set; } = FontStretch.Normal;
     public Vector2 Scale { get; set; } = Vector2.One;
 
+    /// <summary>
+    /// Optional animation info for transitioning *to* this specific state.
+    /// </summary>
+    public AnimationInfo? Animation { get; set; }
+
     public ButtonStyle() { }
 
     public ButtonStyle(ButtonStyle other) : base(other)
@@ -5225,6 +5515,7 @@ public class ButtonStyle : BoxStyle
         this.FontStyle = other.FontStyle;
         this.FontStretch = other.FontStretch;
         this.Scale = other.Scale;
+        this.Animation = other.Animation;
     }
 }
 </file>
@@ -5234,6 +5525,7 @@ using System.Collections.Generic;
 using System;
 using Vortice.Mathematics;
 using Vortice.DirectWrite;
+using DirectUI.Animation;
 
 namespace DirectUI;
 
@@ -5247,6 +5539,7 @@ public sealed class ButtonStylePack
     public ButtonStyle Focused { get; set; } = new();
     public ButtonStyle Active { get; set; } = new();
     public ButtonStyle ActiveHover { get; set; } = new();
+    public AnimationInfo? Animation { get; set; }
 
     public ButtonStylePack()
     {
@@ -5288,6 +5581,7 @@ public sealed class ButtonStylePack
         Focused = new ButtonStyle(other.Focused);
         Active = new ButtonStyle(other.Active);
         ActiveHover = new ButtonStyle(other.ActiveHover);
+        Animation = other.Animation; // Copy animation info
         Current = Normal; // Reset current to normal
     }
 
@@ -5572,6 +5866,208 @@ public class SliderStyle
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\StyleManager.cs">
+// DirectUI/Source/Styling/StyleManager.cs
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Numerics;
+using DirectUI.Animation;
+using DirectUI.Drawing;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
+
+namespace DirectUI.Styling;
+
+public static class StyleManager
+{
+    private static readonly Dictionary<string, object> s_styleCache = new();
+    private static readonly IDeserializer s_yamlDeserializer = new DeserializerBuilder()
+        .WithNamingConvention(PascalCaseNamingConvention.Instance)
+        .Build();
+
+    public static void LoadStylesFromFile(string filePath)
+    {
+        if (!File.Exists(filePath))
+        {
+            Console.WriteLine($"[StyleManager] Warning: Style file not found at '{filePath}'.");
+            return;
+        }
+
+        try
+        {
+            string yamlContent = File.ReadAllText(filePath);
+            var yamlStyles = s_yamlDeserializer.Deserialize<Dictionary<string, YamlButtonStylePack>>(yamlContent);
+
+            foreach (var kvp in yamlStyles)
+            {
+                var stylePack = ConvertFromYaml(kvp.Value);
+                s_styleCache[kvp.Key] = stylePack;
+            }
+
+            Console.WriteLine($"[StyleManager] Successfully loaded {yamlStyles.Count} styles from '{filePath}'.");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[StyleManager] Error loading styles from '{filePath}': {ex.Message}");
+        }
+    }
+
+    public static T Get<T>(string key) where T : class, new()
+    {
+        if (s_styleCache.TryGetValue(key, out var style))
+        {
+            if (style is T typedStyle)
+            {
+                // Return a copy to prevent modification of the cached master style.
+                if (typedStyle is ButtonStylePack bsp)
+                {
+                    return new ButtonStylePack(bsp) as T ?? new T();
+                }
+                // Add other copy-constructible style types here in the future
+                return typedStyle;
+            }
+        }
+        Console.WriteLine($"[StyleManager] Warning: Style key '{key}' not found. Returning new default style.");
+        return new T();
+    }
+
+    private static ButtonStylePack ConvertFromYaml(YamlButtonStylePack yamlPack)
+    {
+        var pack = new ButtonStylePack();
+
+        // Apply pack-level properties to all styles first
+        if (yamlPack.Roundness.HasValue) pack.Roundness = yamlPack.Roundness.Value;
+        if (yamlPack.BorderLength.HasValue) pack.BorderLength = yamlPack.BorderLength.Value;
+        if (yamlPack.FontName != null) pack.FontName = yamlPack.FontName;
+        if (yamlPack.FontSize.HasValue) pack.FontSize = yamlPack.FontSize.Value;
+        if (yamlPack.FontWeight.HasValue) pack.FontWeight = yamlPack.FontWeight.Value;
+        if (yamlPack.FontStyle.HasValue) pack.FontStyle = yamlPack.FontStyle.Value;
+        if (yamlPack.FontStretch.HasValue) pack.FontStretch = yamlPack.FontStretch.Value;
+
+        // Apply global animation info (acts as a fallback)
+        if (yamlPack.Animation != null)
+        {
+            pack.Animation = new AnimationInfo(
+                yamlPack.Animation.Duration ?? 0.15f,
+                Easing.GetEasingFunction(yamlPack.Animation.Easing)
+            );
+        }
+
+        // Apply specific style overrides, including per-state animations
+        ApplyYamlStyle(pack.Normal, yamlPack.Normal);
+        ApplyYamlStyle(pack.Hover, yamlPack.Hover);
+        ApplyYamlStyle(pack.Pressed, yamlPack.Pressed);
+        ApplyYamlStyle(pack.Disabled, yamlPack.Disabled);
+        ApplyYamlStyle(pack.Focused, yamlPack.Focused);
+        ApplyYamlStyle(pack.Active, yamlPack.Active);
+        ApplyYamlStyle(pack.ActiveHover, yamlPack.ActiveHover);
+
+        return pack;
+    }
+
+    private static void ApplyYamlStyle(ButtonStyle target, YamlButtonStyle? source)
+    {
+        if (source == null) return;
+
+        // BoxStyle properties
+        if (source.Roundness.HasValue) target.Roundness = source.Roundness.Value;
+        if (source.FillColor != null) target.FillColor = ParseColor(source.FillColor);
+        if (source.BorderColor != null) target.BorderColor = ParseColor(source.BorderColor);
+        if (source.BorderLength.HasValue) target.BorderLength = source.BorderLength.Value;
+        if (source.BorderLengthTop.HasValue) target.BorderLengthTop = source.BorderLengthTop.Value;
+        if (source.BorderLengthRight.HasValue) target.BorderLengthRight = source.BorderLengthRight.Value;
+        if (source.BorderLengthBottom.HasValue) target.BorderLengthBottom = source.BorderLengthBottom.Value;
+        if (source.BorderLengthLeft.HasValue) target.BorderLengthLeft = source.BorderLengthLeft.Value;
+
+        // ButtonStyle properties
+        if (source.FontColor != null) target.FontColor = ParseColor(source.FontColor);
+        if (source.FontName != null) target.FontName = source.FontName;
+        if (source.FontSize.HasValue) target.FontSize = source.FontSize.Value;
+        if (source.FontWeight.HasValue) target.FontWeight = source.FontWeight.Value;
+        if (source.FontStyle.HasValue) target.FontStyle = source.FontStyle.Value;
+        if (source.FontStretch.HasValue) target.FontStretch = source.FontStretch.Value;
+        if (source.Scale != null && source.Scale.Count == 2) target.Scale = new Vector2(source.Scale[0], source.Scale[1]);
+
+        // Per-state animation
+        if (source.Animation != null)
+        {
+            target.Animation = new AnimationInfo(
+                source.Animation.Duration ?? 0.15f,
+                Easing.GetEasingFunction(source.Animation.Easing)
+            );
+        }
+    }
+
+    private static Color ParseColor(object? colorObj)
+    {
+        if (colorObj == null)
+        {
+            Console.WriteLine($"[StyleManager] Warning: Null color value provided. Defaulting to transparent.");
+            return Colors.Transparent;
+        }
+
+        // Case 1: Hex string like "#RRGGBB" or "#RRGGBBAA"
+        if (colorObj is string colorStr)
+        {
+            if (string.IsNullOrEmpty(colorStr) || !colorStr.StartsWith("#"))
+            {
+                Console.WriteLine($"[StyleManager] Warning: Invalid hex color format '{colorStr}'. Defaulting to transparent.");
+                return Colors.Transparent;
+            }
+
+            try
+            {
+                if (colorStr.Length != 7 && colorStr.Length != 9)
+                    throw new FormatException("Hex color must be in #RRGGBB or #RRGGBBAA format.");
+
+                byte r = Convert.ToByte(colorStr.Substring(1, 2), 16);
+                byte g = Convert.ToByte(colorStr.Substring(3, 2), 16);
+                byte b = Convert.ToByte(colorStr.Substring(5, 2), 16);
+                byte a = 255;
+                if (colorStr.Length == 9)
+                {
+                    a = Convert.ToByte(colorStr.Substring(7, 2), 16);
+                }
+                return new Color(r, g, b, a);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[StyleManager] Warning: Could not parse hex color '{colorStr}'. Error: {ex.Message}. Defaulting to transparent.");
+                return Colors.Transparent;
+            }
+        }
+
+        // Case 2: List of numbers like [R, G, B] or [R, G, B, A]
+        if (colorObj is List<object> colorList)
+        {
+            try
+            {
+                var byteValues = colorList.Select(o => Convert.ToByte(o)).ToList();
+                if (byteValues.Count == 3)
+                {
+                    return new Color(byteValues[0], byteValues[1], byteValues[2], 255);
+                }
+                if (byteValues.Count == 4)
+                {
+                    return new Color(byteValues[0], byteValues[1], byteValues[2], byteValues[3]);
+                }
+                throw new FormatException($"Color list must contain 3 (RGB) or 4 (RGBA) values. Found {byteValues.Count}.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[StyleManager] Warning: Could not parse color from list. Error: {ex.Message}. Defaulting to transparent.");
+                return Colors.Transparent;
+            }
+        }
+
+        Console.WriteLine($"[StyleManager] Warning: Unrecognized color format type '{colorObj.GetType().Name}'. Defaulting to transparent.");
+        return Colors.Transparent;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TabStyle.cs">
 namespace DirectUI;
 
@@ -5700,6 +6196,75 @@ public class TreeStyle
         NodeLabelStyle.Pressed.FontColor = DefaultTheme.White;
         NodeLabelStyle.Pressed.BorderColor = DefaultTheme.AccentBorder;
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\YamlStyleModels.cs">
+// DirectUI/Source/Styling/YamlStyleModels.cs
+using System;
+using System.Collections.Generic;
+using DirectUI.Animation;
+using Silk.NET.OpenAL;
+using Silk.NET.Vulkan;
+using System.Threading.Channels;
+using Vortice.Direct2D1.Effects;
+using Vortice.DirectWrite;
+
+namespace DirectUI.Styling;
+
+internal class YamlAnimationInfo
+{
+    public float? Duration { get; set; }
+    public string? Easing { get; set; }
+}
+
+internal class YamlButtonStyle
+{
+    // BoxStyle properties
+    public float? Roundness { get; set; }
+    public object? FillColor { get; set; }
+    public object? BorderColor { get; set; }
+    public float? BorderLength { get; set; }
+    public float? BorderLengthTop { get; set; }
+    public float? BorderLengthRight { get; set; }
+    public float? BorderLengthBottom { get; set; }
+    public float? BorderLengthLeft { get; set; }
+
+    // ButtonStyle properties
+    public object? FontColor { get; set; }
+    public string? FontName { get; set; }
+    public float? FontSize { get; set; }
+    public FontWeight? FontWeight { get; set; }
+    public FontStyle? FontStyle { get; set; }
+    public FontStretch? FontStretch { get; set; }
+    public List<float>? Scale { get; set; }
+
+    // State-specific animation
+    public YamlAnimationInfo? Animation { get; set; }
+}
+
+internal class YamlButtonStylePack
+{
+    // Properties to match ButtonStylePack states
+    public YamlButtonStyle? Normal { get; set; }
+    public YamlButtonStyle? Hover { get; set; }
+    public YamlButtonStyle? Pressed { get; set; }
+    public YamlButtonStyle? Disabled { get; set; }
+    public YamlButtonStyle? Focused { get; set; }
+    public YamlButtonStyle? Active { get; set; }
+    public YamlButtonStyle? ActiveHover { get; set; }
+
+    // Properties that can be set on the pack level
+    public float? Roundness { get; set; }
+    public float? BorderLength { get; set; }
+    public string? FontName { get; set; }
+    public float? FontSize { get; set; }
+    public FontWeight? FontWeight { get; set; }
+    public FontStyle? FontStyle { get; set; }
+    public FontStretch? FontStretch { get; set; }
+
+    // Global/fallback animation properties for the pack
+    public YamlAnimationInfo? Animation { get; set; }
 }
 </file>
 
@@ -12061,25 +12626,6 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
 }
 </file>
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AdnimationInfo.cs">
-// DirectUI/Source/Animation/AnimationInfo.cs
-using System;
-
-namespace DirectUI.Animation;
-
-public class AnimationInfo
-{
-    public float Duration { get; }
-    public Func<float, float> Easing { get; }
-
-    public AnimationInfo(float duration = 0.15f, Func<float, float>? easing = null)
-    {
-        Duration = duration;
-        Easing = easing ?? DirectUI.Animation.Easing.EaseOutQuad;
-    }
-}
-</file>
-
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimatedValue.cs">
 // DirectUI/Source/Animation/AnimatedValue.cs
 using System;
@@ -12139,6 +12685,22 @@ internal class AnimatedValue
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimationInfo.cs">
+namespace DirectUI.Animation;
+
+public class AnimationInfo
+{
+    public float Duration { get; }
+    public Func<float, float> Easing { get; }
+
+    public AnimationInfo(float duration = 0.15f, Func<float, float>? easing = null)
+    {
+        Duration = duration;
+        Easing = easing ?? DirectUI.Animation.Easing.EaseOutQuad;
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimationManager.cs">
 // DirectUI/Source/Animation/AnimationManager.cs
 using System;
@@ -12183,14 +12745,34 @@ public class AnimationManager
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\Easing.cs">
 // DirectUI/Source/Animation/Easing.cs
+using System;
+using System.Collections.Generic;
+
 namespace DirectUI.Animation;
 
 public static class Easing
 {
+    private static readonly Dictionary<string, Func<float, float>> s_easingFunctions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        { "Linear", Linear },
+        { "EaseInQuad", EaseInQuad },
+        { "EaseOutQuad", EaseOutQuad },
+        { "EaseInOutQuad", EaseInOutQuad }
+    };
+
     public static float Linear(float t) => t;
     public static float EaseInQuad(float t) => t * t;
     public static float EaseOutQuad(float t) => t * (2 - t);
     public static float EaseInOutQuad(float t) => t < 0.5f ? 2 * t * t : -1 + (4 - 2 * t) * t;
+
+    public static Func<float, float> GetEasingFunction(string? name)
+    {
+        if (name != null && s_easingFunctions.TryGetValue(name, out var func))
+        {
+            return func;
+        }
+        return Linear; // Default to Linear if not found or name is null
+    }
 }
 </file>
 
@@ -12495,13 +13077,12 @@ public interface IWindowHost : IDisposable
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\AppLogic.cs">
-using System;
-using System.Linq;
 using System.Numerics;
 using Bankan.Rendering;
 using DirectUI;
 using DirectUI.Core;
 using DirectUI.Drawing;
+using DirectUI.Styling;
 
 namespace Bankan;
 
@@ -12517,13 +13098,10 @@ public class AppLogic : IAppLogic
     private readonly DragDropHandler _dragDropHandler;
     private readonly BoardRenderer _boardRenderer;
 
-    // State for our custom scrollable board view
-    private class BoardViewState { public Vector2 ScrollOffset; public Vector2 ContentSize; }
-
-
     public AppLogic(IWindowHost windowHost)
     {
         LoadState();
+        StyleManager.LoadStylesFromFile("Data/styles.yaml");
 
         _dragDropHandler = new DragDropHandler(_board);
         _modalManager = new ModalManager(windowHost, _board, SaveState);
@@ -12577,26 +13155,7 @@ public class AppLogic : IAppLogic
         var windowSize = UI.Context.Renderer.RenderTargetSize;
         var scale = context.UIScale;
 
-        // --- Define board and column dimensions ---
-        float columnWidth = 350f * scale;
-        float columnGap = 40f * scale;
-        float scrollbarSize = 12f * scale;
-        var boardPadding = new Vector2(20, 20) * scale;
-        var topMargin = 80f * scale;
-
-        var viewState = UI.State.GetOrCreateElement<BoardViewState>("board_view_state".GetHashCode());
-
-        // 1. Pre-calculate the total required size of the content
-        float totalBoardWidth = (_board.Columns.Count * columnWidth) + Math.Max(0, _board.Columns.Count - 1) * columnGap;
-        float maxColumnHeight = 0f;
-        if (_board.Columns.Any())
-        {
-            maxColumnHeight = _board.Columns.Max(c => LayoutCalculator.CalculateColumnContentHeight(c, scale));
-        }
-        var currentContentSize = new Vector2(totalBoardWidth, maxColumnHeight);
-
         // --- Process Logic ---
-        // Update now simply manages the start/end of a drag operation.
         if (_dragDropHandler.Update())
         {
             SaveState(); // Save if drag-drop resulted in a change
@@ -12606,72 +13165,34 @@ public class AppLogic : IAppLogic
         // --- Draw UI ---
         DrawSettingsButton(windowSize, scale);
 
-        // 2. Define the visible area (viewport) for the board
-        var viewRect = new Vortice.Mathematics.Rect(
-            boardPadding.X, topMargin,
-            windowSize.X - boardPadding.X * 2,
-            windowSize.Y - topMargin - boardPadding.Y
+        // --- Define board dimensions in LOGICAL units for UI controls ---
+        float columnLogicalWidth = 350f;
+        float columnLogicalGap = 40f;
+        var boardLogicalPadding = new Vector2(20, 20);
+        var topLogicalMargin = 80f;
+
+        // The scroll area takes up the remaining space.
+        var scrollAreaLogicalSize = new Vector2(
+            (windowSize.X / scale) - boardLogicalPadding.X * 2,
+            (windowSize.Y / scale) - topLogicalMargin - boardLogicalPadding.Y
         );
 
-        // 3. Predict scrollbar visibility based on LAST frame's content size to prevent layout jitter
-        bool vScrollVisible = viewState.ContentSize.Y > viewRect.Height;
-        bool hScrollVisible = viewState.ContentSize.X > viewRect.Width;
+        // Use a container to position the scroll area within the padding.
+        UI.BeginVBoxContainer("main_layout", Vector2.Zero);
+        UI.Context.Layout.AdvanceLayout(new Vector2(boardLogicalPadding.X, topLogicalMargin));
 
-        // 4. Calculate the actual available area for content this frame
-        float availableWidth = viewRect.Width - (vScrollVisible ? scrollbarSize : 0);
-        float availableHeight = viewRect.Height - (hScrollVisible ? scrollbarSize : 0);
+        UI.BeginScrollArea("board_scroll_area", scrollAreaLogicalSize);
 
-        // 5. Handle input and draw scrollbars based on CURRENT frame's content size
-        if (viewRect.Contains(UI.Context.InputState.MousePosition) && !_dragDropHandler.IsDragging())
-        {
-            // Scroll speed is scaled for a more natural feel when zoomed in/out
-            viewState.ScrollOffset.Y -= UI.Context.InputState.ScrollDelta * 40 * scale;
-        }
+        // Inside the scroll area, we use the BoardRenderer which starts its own HBox.
+        // We pass logical (unscaled) dimensions to it.
+        _boardRenderer.DrawBoard(columnLogicalWidth, columnLogicalGap);
 
-        if (currentContentSize.Y > availableHeight)
-        {
-            viewState.ScrollOffset.Y = UI.VScrollBar("board_v_scroll", viewState.ScrollOffset.Y,
-                new Vector2(viewRect.Right - scrollbarSize, viewRect.Y), availableHeight,
-                currentContentSize.Y, availableHeight, scrollbarSize);
-        }
-        if (currentContentSize.X > availableWidth)
-        {
-            viewState.ScrollOffset.X = UI.HScrollBar("board_h_scroll", viewState.ScrollOffset.X,
-                new Vector2(viewRect.X, viewRect.Bottom - scrollbarSize), availableWidth,
-                currentContentSize.X, availableWidth, scrollbarSize);
-        }
+        UI.EndScrollArea();
+        UI.EndVBoxContainer();
 
-        // 6. Clamp scroll offsets
-        viewState.ScrollOffset.X = Math.Clamp(viewState.ScrollOffset.X, 0, Math.Max(0, currentContentSize.X - availableWidth));
-        viewState.ScrollOffset.Y = Math.Clamp(viewState.ScrollOffset.Y, 0, Math.Max(0, currentContentSize.Y - availableHeight));
-
-        // 7. Calculate final content start position (for centering or scrolling)
-        float startX = viewRect.X;
-        if (currentContentSize.X < availableWidth) // Center horizontally if content is smaller than view
-            startX += (availableWidth - currentContentSize.X) / 2f;
-        else
-            startX -= viewState.ScrollOffset.X;
-
-        // Always align to the top of the view area, adjusted by the scroll offset.
-        float startY = viewRect.Y - viewState.ScrollOffset.Y;
-
-        var boardStartPosition = new Vector2(startX, startY);
-
-        // 8. Draw columns inside a clipped area
-        var contentClipRect = new Vortice.Mathematics.Rect(viewRect.X, viewRect.Y, availableWidth, availableHeight);
-        UI.Context.Renderer.PushClipRect(contentClipRect);
-        UI.Context.Layout.PushClipRect(contentClipRect);
-
-        _boardRenderer.DrawBoard(boardStartPosition, columnWidth, columnGap);
-
-        UI.Context.Layout.PopClipRect();
-        UI.Context.Renderer.PopClipRect();
-
-        // 9. Draw overlays (e.g., the task being dragged) on top of everything else
-        _dragDropHandler.DrawDraggedTaskOverlay((350f * scale) - (30f * scale)); // Logical size scaled
-
-        // 10. Store this frame's content size for the next frame's prediction
-        viewState.ContentSize = currentContentSize;
+        // Draw overlays (e.g., the task being dragged) on top of everything else.
+        // The width passed here should be physical.
+        _dragDropHandler.DrawDraggedTaskOverlay((columnLogicalWidth * scale) - (30f * scale));
     }
 
     private void DrawSettingsButton(Vector2 windowSize, float scale)
@@ -12720,20 +13241,19 @@ public class BoardRenderer
         _columnRenderer = new ColumnRenderer(taskRenderer, dragDropHandler, modalManager);
     }
 
-    public void DrawBoard(Vector2 boardStartPosition, float columnWidth, float columnGap)
+    public void DrawBoard(float columnLogicalWidth, float columnLogicalGap)
     {
-        var scale = UI.Context.UIScale;
         // Reset the drop target state at the beginning of the render pass.
         // This ensures targets are freshly calculated based on this frame's layout.
         _dragDropHandler.PrepareNextFrameTarget();
 
         // The container system operates in logical (unscaled) space.
-        // We pass the unscaled start position and gap.
-        UI.BeginHBoxContainer("board_content_hbox", boardStartPosition / scale, gap: columnGap / scale);
+        // The HBox starts at whatever position the parent container (the ScrollArea) provides.
+        UI.BeginHBoxContainer("board_content_hbox", UI.Context.Layout.GetCurrentPosition(), gap: columnLogicalGap);
         foreach (var column in _board.Columns)
         {
             // The column width passed here is LOGICAL width.
-            _columnRenderer.DrawColumnContent(column, columnWidth / scale);
+            _columnRenderer.DrawColumnContent(column, columnLogicalWidth);
         }
         UI.EndHBoxContainer();
     }
@@ -12743,7 +13263,9 @@ public class BoardRenderer
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Bankan\Source\ColumnRenderer.cs">
 using System.Numerics;
 using DirectUI;
+using DirectUI.Animation;
 using DirectUI.Drawing;
+using DirectUI.Styling;
 
 namespace Bankan.Rendering;
 
@@ -12773,7 +13295,7 @@ public class ColumnRenderer
 
         float contentPadding = 15f;
         Vector2 contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
-        
+
         UI.BeginVBoxContainer(
             column.Id,
             contentStartPosition,
@@ -12786,7 +13308,7 @@ public class ColumnRenderer
 
         Vortice.Mathematics.Rect columnBoundsForDropTarget = new(columnPhysicalPosition.X, columnPhysicalPosition.Y, logicalColumnWidth * scale, columnPhysicalHeight);
         int finalTaskIndex = column.Tasks.Count;
-        
+
         _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
 
         DrawAddTaskButton(column, innerContentLogicalWidth);
@@ -12798,13 +13320,13 @@ public class ColumnRenderer
     private static void DrawColumnBackground(Vector2 position, Vector2 size)
     {
         Color columnBgColor = new(30, 30, 30, 255);
-        
+
         BoxStyle columnStyle = new()
-        { 
-            FillColor = 
-            columnBgColor, 
-            Roundness = 0.1f, 
-            BorderLength = 0 
+        {
+            FillColor =
+            columnBgColor,
+            Roundness = 0.1f,
+            BorderLength = 0
         };
 
         UI.Context.Renderer.DrawBox(
@@ -12814,11 +13336,11 @@ public class ColumnRenderer
 
     private static void DrawColumnHeader(KanbanColumn column, float innerContentLogicalWidth)
     {
-        ButtonStyle titleStyle = new() 
-        { 
-            FontColor = new(224, 224, 224, 255), 
-            FontSize = 18, 
-            FontWeight = Vortice.DirectWrite.FontWeight.SemiBold 
+        ButtonStyle titleStyle = new()
+        {
+            FontColor = new(224, 224, 224, 255),
+            FontSize = 18,
+            FontWeight = Vortice.DirectWrite.FontWeight.SemiBold
         };
 
         UI.Text(
@@ -12838,11 +13360,11 @@ public class ColumnRenderer
     private void DrawColumnTasks(KanbanColumn column, float innerContentLogicalWidth)
     {
         int currentTaskIndex = 0;
-        
+
         foreach (Task task in column.Tasks)
         {
             _taskRenderer.DrawDropIndicator(column, currentTaskIndex, innerContentLogicalWidth);
-            
+
             if (task != _dragDropHandler.DraggedTask)
             {
                 _taskRenderer.DrawTaskWidget(column, task, currentTaskIndex, innerContentLogicalWidth);
@@ -12865,31 +13387,42 @@ public class ColumnRenderer
             return;
         }
 
-        ButtonStylePack addTaskTheme = new()
-        {
-            Normal =
-            {
-                FillColor = Colors.Transparent,
-                BorderColor = new(51, 51, 51, 255)
-            },
-            Hover =
-            {
-                FillColor = DefaultTheme.Accent,
-                BorderColor = DefaultTheme.Accent,
-                Scale = new(0.95f, 0.95f)
-            },
-            Pressed =
-            {
-                Scale = new(0.9f, 0.9f)
-            }
-        };
+        // --- DEMONSTRATION OF BOTH STYLING METHODS ---
 
+        // Method 1: Data-Driven (from styles.yaml)
+        // This is the recommended approach for styles that are shared or need easy tweaking.
+        var addTaskTheme = StyleManager.Get<ButtonStylePack>("addTaskButton");
+
+        
+        // Method 2: Code-Driven (defined directly here)
+        // This is useful for one-off styles or for developers who prefer to keep everything in C#.
+        // To use this, just uncomment this block and comment out the StyleManager line above.
+        //ButtonStylePack addTaskTheme = new()
+        //{
+        //    Animation = new(2.5f), // Fallback animation
+        //    Normal =
+        //    {
+        //        FillColor = Colors.Transparent,
+        //        BorderColor = new(51, 51, 51, 255)
+        //    },
+        //    Hover =
+        //    {
+        //        FillColor = DefaultTheme.Accent,
+        //        BorderColor = DefaultTheme.Accent,
+        //        Scale = new(0.95f, 0.95f),
+        //        Animation = new(0.25f) // Faster animation TO this state
+        //    },
+        //    Pressed =
+        //    {
+        //        Scale = new(0.9f, 0.9f)
+        //    }
+        //};
+        
         bool clicked = UI.Button(
             id: column.Id + "_add_task",
             text: "+ Add Task",
             size: new(innerContentLogicalWidth, 40),
-            theme: addTaskTheme,
-            animation: new());
+            theme: addTaskTheme);
 
         if (clicked)
         {

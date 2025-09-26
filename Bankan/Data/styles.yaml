@@ -2,7 +2,7 @@ addTaskButton:
   # This is the fallback animation for any state that doesn't define its own.
   # This will be used when transitioning from Hover back TO the Normal state.
   Animation:
-    Duration: 2.5
+    Duration: 0.25
     Easing: EaseOutQuad
   Normal:
     FillColor: "#00000000"

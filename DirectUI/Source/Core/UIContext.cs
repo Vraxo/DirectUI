@@ -1,4 +1,5 @@
 ﻿// Core/UIContext.cs
+using System;
 using System.Collections.Generic;
 using DirectUI.Core;
 using DirectUI.Drawing;
@@ -8,7 +9,8 @@ namespace DirectUI;
 public class UIContext
 {
     // Per-frame services and state
-    public IRenderer Renderer { get; }
+    private readonly Stack<IRenderer> _rendererStack = new();
+    public IRenderer Renderer => _rendererStack.Peek();
     public ITextService TextService { get; }
     public InputState InputState { get; }
     public float DeltaTime { get; }
@@ -24,7 +26,7 @@ public class UIContext
 
     public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime, float uiScale)
     {
-        Renderer = renderer;
+        _rendererStack.Push(renderer);
         TextService = textService;
         InputState = inputState;
         DeltaTime = deltaTime;
@@ -32,4 +34,7 @@ public class UIContext
         UIScale = uiScale;
         Layout = new UILayoutManager(uiScale);
     }
+
+    public void PushRenderer(IRenderer renderer) => _rendererStack.Push(renderer);
+    public void PopRenderer() { if (_rendererStack.Count > 1) _rendererStack.Pop(); }
 }
