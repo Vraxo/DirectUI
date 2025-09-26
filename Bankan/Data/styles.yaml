@@ -1,7 +1,7 @@
 addTaskButton:
   Normal:
     FillColor: "#00000000"
-    BorderColor: "#333333FF"
+    BorderColor: [51, 51, 51, 255]
   Hover:
     FillColor: "#3366CCFF"
     BorderColor: "#3366CCFF"

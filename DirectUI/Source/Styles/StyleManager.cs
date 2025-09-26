@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Numerics;
 using DirectUI.Drawing;
 using YamlDotNet.Serialization;
@@ -111,34 +112,69 @@ public static class StyleManager
         if (source.Scale != null && source.Scale.Count == 2) target.Scale = new Vector2(source.Scale[0], source.Scale[1]);
     }
 
-    private static Color ParseColor(string colorStr)
+    private static Color ParseColor(object? colorObj)
     {
-        if (string.IsNullOrEmpty(colorStr) || !colorStr.StartsWith("#"))
+        if (colorObj == null)
         {
-            Console.WriteLine($"[StyleManager] Warning: Invalid color format '{colorStr}'. Defaulting to transparent.");
+            Console.WriteLine($"[StyleManager] Warning: Null color value provided. Defaulting to transparent.");
             return Colors.Transparent;
         }
 
-        try
+        // Case 1: Hex string like "#RRGGBB" or "#RRGGBBAA"
+        if (colorObj is string colorStr)
         {
-            // #RRGGBB or #RRGGBBAA
-            if (colorStr.Length != 7 && colorStr.Length != 9)
-                throw new FormatException("Hex color must be in #RRGGBB or #RRGGBBAA format.");
-
-            byte r = Convert.ToByte(colorStr.Substring(1, 2), 16);
-            byte g = Convert.ToByte(colorStr.Substring(3, 2), 16);
-            byte b = Convert.ToByte(colorStr.Substring(5, 2), 16);
-            byte a = 255;
-            if (colorStr.Length == 9)
+            if (string.IsNullOrEmpty(colorStr) || !colorStr.StartsWith("#"))
             {
-                a = Convert.ToByte(colorStr.Substring(7, 2), 16);
+                Console.WriteLine($"[StyleManager] Warning: Invalid hex color format '{colorStr}'. Defaulting to transparent.");
+                return Colors.Transparent;
             }
-            return new Color(r, g, b, a);
+
+            try
+            {
+                if (colorStr.Length != 7 && colorStr.Length != 9)
+                    throw new FormatException("Hex color must be in #RRGGBB or #RRGGBBAA format.");
+
+                byte r = Convert.ToByte(colorStr.Substring(1, 2), 16);
+                byte g = Convert.ToByte(colorStr.Substring(3, 2), 16);
+                byte b = Convert.ToByte(colorStr.Substring(5, 2), 16);
+                byte a = 255;
+                if (colorStr.Length == 9)
+                {
+                    a = Convert.ToByte(colorStr.Substring(7, 2), 16);
+                }
+                return new Color(r, g, b, a);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[StyleManager] Warning: Could not parse hex color '{colorStr}'. Error: {ex.Message}. Defaulting to transparent.");
+                return Colors.Transparent;
+            }
         }
-        catch (Exception ex)
+
+        // Case 2: List of numbers like [R, G, B] or [R, G, B, A]
+        if (colorObj is List<object> colorList)
         {
-            Console.WriteLine($"[StyleManager] Warning: Could not parse color '{colorStr}'. Error: {ex.Message}. Defaulting to transparent.");
-            return Colors.Transparent;
+            try
+            {
+                var byteValues = colorList.Select(o => Convert.ToByte(o)).ToList();
+                if (byteValues.Count == 3)
+                {
+                    return new Color(byteValues[0], byteValues[1], byteValues[2], 255);
+                }
+                if (byteValues.Count == 4)
+                {
+                    return new Color(byteValues[0], byteValues[1], byteValues[2], byteValues[3]);
+                }
+                throw new FormatException($"Color list must contain 3 (RGB) or 4 (RGBA) values. Found {byteValues.Count}.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[StyleManager] Warning: Could not parse color from list. Error: {ex.Message}. Defaulting to transparent.");
+                return Colors.Transparent;
+            }
         }
+
+        Console.WriteLine($"[StyleManager] Warning: Unrecognized color format type '{colorObj.GetType().Name}'. Defaulting to transparent.");
+        return Colors.Transparent;
     }
 }

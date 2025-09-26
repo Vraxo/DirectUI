@@ -12,8 +12,8 @@ internal class YamlButtonStyle
 {
     // BoxStyle properties
     public float? Roundness { get; set; }
-    public string? FillColor { get; set; }
-    public string? BorderColor { get; set; }
+    public object? FillColor { get; set; }
+    public object? BorderColor { get; set; }
     public float? BorderLength { get; set; }
     public float? BorderLengthTop { get; set; }
     public float? BorderLengthRight { get; set; }
@@ -21,7 +21,7 @@ internal class YamlButtonStyle
     public float? BorderLengthLeft { get; set; }
 
     // ButtonStyle properties
-    public string? FontColor { get; set; }
+    public object? FontColor { get; set; }
     public string? FontName { get; set; }
     public float? FontSize { get; set; }
     public FontWeight? FontWeight { get; set; }
