@@ -17,15 +17,17 @@ public class DragDropHandler
     private KanbanColumn? _sourceColumn;
     private Vector2 _dragOffset;
     private readonly KanbanBoard _board;
+    private readonly KanbanSettings _settings;
 
     // State being calculated THIS frame for use in the NEXT frame
     private KanbanColumn? _nextFrameDropTargetColumn;
     private int _nextFrameDropIndex = -1;
     private bool _dropTargetFoundThisFrame;
 
-    public DragDropHandler(KanbanBoard board)
+    public DragDropHandler(KanbanBoard board, KanbanSettings settings)
     {
         _board = board;
+        _settings = settings;
     }
 
     public bool IsDragging() => DraggedTask is not null;
@@ -147,7 +149,30 @@ public class DragDropHandler
         UI.Context.Renderer.DrawBox(bounds, style);
 
         var textBounds = new Vortice.Mathematics.Rect(bounds.X + (15 * scale), bounds.Y, bounds.Width - (30 * scale), bounds.Height);
-        var renderTextStyle = new ButtonStyle { FontName = "Segoe UI", FontSize = 14, FontColor = new Color(18, 18, 18, 255) };
-        UI.DrawTextPrimitive(textBounds, DraggedTask.Text, renderTextStyle, new Alignment(HAlignment.Left, VAlignment.Center), Vector2.Zero);
+
+        // --- FIXES ---
+        // Determine font color based on settings, just like TaskRenderer
+        Color fontColor = _settings.ColorStyle == TaskColorStyle.Background
+            ? new Color(18, 18, 18, 255)
+            : DefaultTheme.Text;
+
+        var renderTextStyle = new ButtonStyle
+        {
+            FontName = "Segoe UI",
+            FontSize = 14 * scale, // Correctly scaled font size
+            FontColor = fontColor  // Correct font color
+        };
+
+        // Get correct alignment from settings
+        Alignment textAlign = GetTextAlignment();
+
+        UI.DrawTextPrimitive(textBounds, DraggedTask.Text, renderTextStyle, textAlign, Vector2.Zero);
+    }
+
+    private Alignment GetTextAlignment()
+    {
+        return _settings.TextAlign == TaskTextAlign.Left
+            ? new(HAlignment.Left, VAlignment.Center)
+            : new(HAlignment.Center, VAlignment.Center);
     }
 }

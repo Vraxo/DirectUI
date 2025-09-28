@@ -27,76 +27,32 @@ public class ColumnRenderer
 
     public void DrawColumnContent(KanbanColumn column, float logicalColumnWidth)
     {
-        var scale = UI.Context.UIScale;
         var contentPadding = 15f;
         var gap = 10f;
-        var innerContentLogicalWidth = logicalColumnWidth - contentPadding * 2;
 
-        // --- 1. Calculation Pass ---
-        // Use the built-in layout calculation feature to determine the content's size
-        // by running the shared drawing logic in a "dry run" mode.
-        var contentSize = UI.CalculateLayout(() =>
-        {
-            UI.BeginVBoxContainer(
-                column.Id + "_calc",
-                Vector2.Zero,
-                gap: gap);
-
-            DrawColumnInterior(column, innerContentLogicalWidth);
-
-            UI.EndVBoxContainer();
-        });
-
-        // The total size of the column includes its internal padding.
-        var columnLogicalHeight = contentSize.Y + contentPadding * 2;
-        var columnLogicalSize = new Vector2(logicalColumnWidth, columnLogicalHeight);
-
-        // --- 2. Drawing Pass ---
-        var columnLogicalPosition = UI.Context.Layout.GetCurrentPosition();
-        var columnPhysicalPosition = columnLogicalPosition * scale;
-
-        DrawColumnBackground(
-            columnPhysicalPosition,
-            new Vector2(columnLogicalSize.X * scale, columnLogicalSize.Y * scale));
-
-        var contentStartPosition = columnLogicalPosition + new Vector2(contentPadding, contentPadding);
-
-        // Begin a VBox for arranging the content. It will NOT advance the parent layout itself.
-        UI.BeginVBoxContainer(
-            column.Id,
-            contentStartPosition,
-            gap: gap);
-
-        // Call the shared logic again, this time for actual rendering.
-        DrawColumnInterior(column, innerContentLogicalWidth);
-
-        // Update the drop target for the entire column area, now that we know its final physical size.
-        var columnBoundsForDropTarget = new Vortice.Mathematics.Rect(columnPhysicalPosition.X, columnPhysicalPosition.Y, columnLogicalSize.X * scale, columnLogicalSize.Y * scale);
-        int finalTaskIndex = column.Tasks.Count;
-        _dragDropHandler.UpdateDropTargetForColumn(column, columnBoundsForDropTarget, finalTaskIndex);
-
-        // End the container without advancing the parent (the HBox).
-        UI.EndVBoxContainer(advanceParentLayout: false);
-
-        // Manually advance the parent HBox layout by the full calculated size of this column widget.
-        UI.Context.Layout.AdvanceLayout(columnLogicalSize);
-    }
-
-    private static void DrawColumnBackground(Vector2 position, Vector2 size)
-    {
-        Color columnBgColor = new(30, 30, 30, 255);
-
+        // The style for the column background, previously in a separate method.
         BoxStyle columnStyle = new()
         {
-            FillColor =
-            columnBgColor,
+            FillColor = new Color(30, 30, 30, 255),
             Roundness = 0.1f,
             BorderLength = 0
         };
 
-        UI.Context.Renderer.DrawBox(
-            new(position.X, position.Y, size.X, size.Y),
-            columnStyle);
+        // Use the new AutoPanel widget. It handles the two-pass layout, background drawing,
+        // content layout setup, and advancing the parent layout automatically.
+        var columnBounds = UI.AutoPanel(
+            id: column.Id,
+            logicalWidth: logicalColumnWidth,
+            drawContent: (innerWidth) => DrawColumnInterior(column, innerWidth),
+            style: columnStyle,
+            padding: new Vector2(contentPadding, contentPadding),
+            gap: gap
+        );
+
+        // After the panel is fully drawn and its final bounds are known,
+        // update the drop target for the entire column area.
+        int finalTaskIndex = column.Tasks.Count;
+        _dragDropHandler.UpdateDropTargetForColumn(column, columnBounds, finalTaskIndex);
     }
 
     private static void DrawColumnHeader(KanbanColumn column, float innerContentLogicalWidth)

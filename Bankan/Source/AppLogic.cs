@@ -24,7 +24,7 @@ public class AppLogic : IAppLogic
         LoadState();
         StyleManager.LoadStylesFromFile("Data/styles.yaml");
 
-        _dragDropHandler = new DragDropHandler(_board);
+        _dragDropHandler = new DragDropHandler(_board, _settings);
         _modalManager = new ModalManager(windowHost, _board, SaveState);
         _boardRenderer = new BoardRenderer(_board, _settings, _modalManager, _dragDropHandler);
     }
@@ -43,7 +43,7 @@ public class AppLogic : IAppLogic
         {
             Id = "todo",
             Title = "To Do",
-            Tasks = 
+            Tasks =
             [
                 new()
                 {
@@ -62,7 +62,7 @@ public class AppLogic : IAppLogic
         {
             Id = "inprogress",
             Title = "In Progress",
-            Tasks = 
+            Tasks =
             [
                 new()
                 {
@@ -76,7 +76,7 @@ public class AppLogic : IAppLogic
         {
             Id = "done",
             Title = "Done",
-            Tasks = 
+            Tasks =
             [
                 new()
                 {
