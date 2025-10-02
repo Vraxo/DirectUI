@@ -73,7 +73,7 @@ public class App : IAppLogic
                 Host.ModalWindowService.OpenModalWindow(
                     "Confirm Deletion",
                     300, 120,
-                    (modalContext) => _uiManager.DrawDeleteConfirmationModal(tagToDelete),
+                    (modalContext) => ModalDialogs.DrawDeleteConfirmation(Host, tagToDelete),
                     (result) => {
                         if (result == 0) // 'Yes' was clicked
                         {

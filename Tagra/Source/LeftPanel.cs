@@ -1,0 +1,76 @@
+﻿using DirectUI;
+using System.Numerics;
+
+namespace Tagra;
+
+public class LeftPanel
+{
+    private readonly App _app;
+
+    public LeftPanel(App app)
+    {
+        _app = app;
+    }
+
+    public void Draw()
+    {
+        var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
+        UI.BeginResizableVPanel("main_layout", ref _app.LeftPanelWidth, HAlignment.Left, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
+
+        var clipRect = UI.Context.Layout.GetCurrentClipRect();
+        var innerWidth = clipRect.Width / UI.Context.UIScale;
+        var availableHeight = clipRect.Height / UI.Context.UIScale;
+        var currentY = UI.Context.Layout.GetCurrentPosition().Y;
+
+        UI.BeginVBoxContainer("left_panel_vbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
+
+        UI.Text("search_label", "Search by Tags");
+        if (UI.InputText("search_bar", ref _app.SearchText, new Vector2(innerWidth, 28f), placeholderText: "e.g., cat vacation").EnterPressed)
+        {
+            _app.HandleSearch(); // Trigger search explicitly on Enter
+        }
+
+        UI.Separator(innerWidth);
+
+        // --- New Tag Creation ---
+        UI.BeginHBoxContainer("new_tag_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
+        UI.InputText("new_tag_input", ref _app.NewTagName, new Vector2(innerWidth - 55, 28f), placeholderText: "New Tag Name");
+        if (UI.Button("create_tag_btn", "Add", new Vector2(50, 28)))
+        {
+            if (!string.IsNullOrWhiteSpace(_app.NewTagName))
+            {
+                _app.DbManager.AddTag(_app.NewTagName);
+                _app.NewTagName = "";
+                _app.RefreshAllData();
+            }
+        }
+        UI.EndHBoxContainer();
+        // --- End New Tag Creation ---
+
+        UI.Separator(innerWidth);
+        UI.Text("tags_label", "All Tags");
+
+        var scrollHeight = availableHeight - (UI.Context.Layout.GetCurrentPosition().Y - currentY);
+        UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
+        foreach (var tag in _app.AllTags)
+        {
+            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+            if (UI.Button($"tag_btn_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth - 30, 24)))
+            {
+                _app.SearchText = tag.Name; // Click a tag to search for it
+            }
+            if (UI.Button($"delete_tag_btn_{tag.Id}", "x", new Vector2(24, 24)))
+            {
+                if (!_app.TagIdToDelete.HasValue) // Prevent opening multiple dialogs
+                {
+                    _app.TagIdToDelete = tag.Id;
+                }
+            }
+            UI.EndHBoxContainer();
+        }
+        UI.EndScrollableRegion();
+
+        UI.EndVBoxContainer();
+        UI.EndResizableVPanel();
+    }
+}
