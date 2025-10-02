@@ -26,6 +26,7 @@ public class App : IAppLogic
     internal string NewTagName = "";
     internal long? TagIdToDelete = null;
     internal bool ManageTagsRequested = false;
+    internal long? ActiveColorPickerTagId = null; // State for the color picker
 
     public App(IWindowHost host)
     {
@@ -79,6 +80,7 @@ public class App : IAppLogic
                     ManageTagsRequested = false; // Reset the request
                     NewTagName = ""; // Clear any leftover input
                     TagIdToDelete = null; // Clear any leftover state from the modal
+                    ActiveColorPickerTagId = null; // Clear color picker state
                     RefreshAllData(); // Refresh data in main window after modal closes
                 }
             );

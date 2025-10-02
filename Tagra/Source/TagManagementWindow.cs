@@ -1,5 +1,7 @@
 ﻿using DirectUI;
 using DirectUI.Drawing;
+using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
 
@@ -7,6 +9,14 @@ namespace Tagra;
 
 public static class TagManagementWindow
 {
+    private static readonly IReadOnlyList<string> ColorPalette = new List<string>
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
+        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
+        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
+        "#546e7a", "#FFFFFF", "#000000"
+    }.AsReadOnly();
+
     public static void Draw(App app)
     {
         var host = app.Host;
@@ -68,9 +78,24 @@ public static class TagManagementWindow
             UI.BeginScrollableRegion("tags_manage_scroll", new Vector2(innerWidth, 250), out var scrollInnerWidth);
             foreach (var tag in app.AllTags)
             {
+                UI.BeginVBoxContainer($"tag_vbox_wrapper_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
+
                 UI.BeginHBoxContainer($"tag_manage_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
-                // Placeholder for color swatch
-                UI.Box($"tag_color_{tag.Id}", new Vector2(24, 24), new BoxStyle { FillColor = Colors.White, Roundness = 0.5f });
+
+                // Color Swatch Button
+                var color = ParseColorHex(tag.ColorHex);
+                var swatchTheme = new ButtonStylePack { Roundness = 0.5f, BorderLength = 1f };
+                swatchTheme.Normal.FillColor = color;
+                swatchTheme.Hover.FillColor = color;
+                swatchTheme.Pressed.FillColor = color;
+                swatchTheme.Normal.BorderColor = new Color(0, 0, 0, 50);
+                swatchTheme.Hover.BorderColor = Colors.White;
+
+                if (UI.Button($"color_swatch_{tag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
+                {
+                    app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == tag.Id ? null : tag.Id;
+                }
+
                 UI.Text($"tag_name_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth - 120, 24));
 
                 // Rename button (placeholder)
@@ -84,6 +109,22 @@ public static class TagManagementWindow
                     app.TagIdToDelete = tag.Id;
                 }
                 UI.EndHBoxContainer();
+
+                // Conditionally draw the color picker below the item
+                if (app.ActiveColorPickerTagId == tag.Id)
+                {
+                    string tempColor = tag.ColorHex;
+                    UI.AutoPanel($"color_picker_panel_{tag.Id}", scrollInnerWidth, (innerWidth) =>
+                    {
+                        if (UI.ColorSelector($"picker_{tag.Id}", ref tempColor, ColorPalette, new Vector2(20, 20), gap: 5f))
+                        {
+                            app.DbManager.UpdateTagColor(tag.Id, tempColor);
+                            app.RefreshAllData();
+                            app.ActiveColorPickerTagId = null; // Close picker on selection
+                        }
+                    });
+                }
+                UI.EndVBoxContainer();
             }
             UI.EndScrollableRegion();
 
@@ -96,5 +137,24 @@ public static class TagManagementWindow
         }
 
         UI.EndVBoxContainer();
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                return DefaultTheme.Accent;
+            }
+        }
+        return DefaultTheme.Accent;
     }
 }

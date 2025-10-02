@@ -7,6 +7,7 @@ public class Tag
     public long Id { get; set; }
     public required string Name { get; set; }
     public int FileCount { get; set; }
+    public string ColorHex { get; set; } = "#FFFFFF";
 
     public override string ToString() => Name;
 }

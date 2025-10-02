@@ -11,6 +11,16 @@ public class DatabaseManager
     private readonly string _databasePath;
     private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
 
+    // A palette of default colors for new tags
+    private static readonly List<string> _defaultTagColors = new()
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab",
+        "#1e88e5", "#039be5", "#00acc1", "#00897b", "#43a047",
+        "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00",
+        "#f4511e", "#6d4c41", "#757575", "#546e7a"
+    };
+    private static int _nextColorIndex = 0;
+
     public DatabaseManager()
     {
         _databasePath = Path.Combine(AppContext.BaseDirectory, "tagra.db");
@@ -29,7 +39,8 @@ public class DatabaseManager
         @"
             CREATE TABLE IF NOT EXISTS Tags (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Name TEXT NOT NULL UNIQUE
+                Name TEXT NOT NULL UNIQUE,
+                ColorHex TEXT NOT NULL DEFAULT '#757575'
             );
 
             CREATE TABLE IF NOT EXISTS Files (
@@ -48,15 +59,51 @@ public class DatabaseManager
         ";
         command.ExecuteNonQuery();
 
-        // For testing: add some default tags if none exist
-        command.CommandText = "SELECT COUNT(*) FROM Tags";
-        if (Convert.ToInt32(command.ExecuteScalar()) == 0)
+        // --- Simple Migration: Add ColorHex column if it doesn't exist ---
+        command.CommandText = "PRAGMA table_info(Tags);";
+        bool colorHexColumnExists = false;
+        using (var reader = command.ExecuteReader())
         {
-            AddTag("work");
-            AddTag("personal");
-            AddTag("photos");
-            AddTag("documents");
+            while (reader.Read())
+            {
+                if (reader.GetString(1).Equals("ColorHex", StringComparison.OrdinalIgnoreCase))
+                {
+                    colorHexColumnExists = true;
+                    break;
+                }
+            }
         }
+
+        if (!colorHexColumnExists)
+        {
+            Console.WriteLine("[Database] Old schema detected. Upgrading 'Tags' table...");
+            command.CommandText = "ALTER TABLE Tags ADD COLUMN ColorHex TEXT NOT NULL DEFAULT '#757575';";
+            command.ExecuteNonQuery();
+
+            // Assign colors to existing tags so they aren't all the default gray.
+            var updateCommand = connection.CreateCommand();
+            updateCommand.CommandText = "SELECT Id FROM Tags ORDER BY Id";
+            var tagIds = new List<long>();
+            using (var reader = updateCommand.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    tagIds.Add(reader.GetInt64(0));
+                }
+            }
+
+            for (int i = 0; i < tagIds.Count; i++)
+            {
+                var color = _defaultTagColors[i % _defaultTagColors.Count];
+                var colorUpdateCmd = connection.CreateCommand();
+                colorUpdateCmd.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
+                colorUpdateCmd.Parameters.AddWithValue("@ColorHex", color);
+                colorUpdateCmd.Parameters.AddWithValue("@Id", tagIds[i]);
+                colorUpdateCmd.ExecuteNonQuery();
+            }
+            Console.WriteLine("[Database] Upgrade complete.");
+        }
+        // --- End of Migration ---
     }
 
     public List<Tag> GetAllTags()
@@ -67,7 +114,7 @@ public class DatabaseManager
 
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, COUNT(FT.FileId)
+            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id, T.Name
@@ -80,7 +127,8 @@ public class DatabaseManager
             {
                 Id = reader.GetInt64(0),
                 Name = reader.GetString(1),
-                FileCount = reader.GetInt32(2)
+                FileCount = reader.GetInt32(2),
+                ColorHex = reader.GetString(3)
             });
         }
         return tags;
@@ -93,9 +141,16 @@ public class DatabaseManager
         using var connection = GetConnection();
         connection.Open();
 
+        // Get the current number of tags to pick a color
+        var countCommand = connection.CreateCommand();
+        countCommand.CommandText = "SELECT COUNT(*) FROM Tags";
+        var tagCount = Convert.ToInt32(countCommand.ExecuteScalar());
+        var color = _defaultTagColors[tagCount % _defaultTagColors.Count];
+
         var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO Tags (Name) VALUES (@Name)";
+        command.CommandText = "INSERT INTO Tags (Name, ColorHex) VALUES (@Name, @ColorHex)";
         command.Parameters.AddWithValue("@Name", name.Trim().ToLower());
+        command.Parameters.AddWithValue("@ColorHex", color);
 
         try
         {
@@ -106,6 +161,17 @@ public class DatabaseManager
             Console.WriteLine($"Tag '{name}' already exists.");
             return false;
         }
+    }
+
+    public void UpdateTagColor(long tagId, string newColorHex)
+    {
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", tagId);
+        command.Parameters.AddWithValue("@ColorHex", newColorHex);
+        command.ExecuteNonQuery();
     }
 
     public FileEntry? AddFile(string path)
@@ -186,7 +252,7 @@ public class DatabaseManager
         connection.Open();
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id)
+            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex
             FROM Tags T
             INNER JOIN FileTags FT ON T.Id = FT.TagId
             WHERE FT.FileId = @FileId
@@ -195,7 +261,7 @@ public class DatabaseManager
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2) });
+            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3) });
         }
         return tags;
     }
