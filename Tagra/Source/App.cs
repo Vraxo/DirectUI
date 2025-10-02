@@ -118,7 +118,7 @@ public class App : IAppLogic
         UI.BeginVBoxContainer("left_panel_vbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
 
         UI.Text("search_label", "Search by Tags");
-        if (UI.InputText("search_bar", ref _searchText, new Vector2(innerWidth, 28f), placeholderText: "e.g., cat AND vacation").EnterPressed)
+        if (UI.InputText("search_bar", ref _searchText, new Vector2(innerWidth, 28f), placeholderText: "e.g., cat vacation").EnterPressed)
         {
             HandleSearch(); // Trigger search explicitly on Enter
         }

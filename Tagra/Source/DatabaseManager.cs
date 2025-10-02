@@ -9,6 +9,7 @@ namespace Tagra.Data;
 public class DatabaseManager
 {
     private readonly string _databasePath;
+    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
 
     public DatabaseManager()
     {
@@ -223,7 +224,9 @@ public class DatabaseManager
 
     public List<FileEntry> GetFilesByTags(string searchText)
     {
-        var searchTags = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
+        var searchTokens = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        var searchTags = searchTokens.Where(token => !_searchStopWords.Contains(token)).Distinct().ToList();
+
         if (searchTags.Count == 0)
         {
             return GetAllFiles();
