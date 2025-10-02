@@ -21,6 +21,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Sonorize", "Sonorize\Sonori
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Bankan", "Bankan\Bankan.csproj", "{8A96DD6A-9940-4971-91AA-AB57187B8833}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Tagra", "Tagra\Tagra.csproj", "{EC4C38F8-DAA7-4AEB-B6FA-422DFBFC06E8}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -51,6 +53,10 @@ Global
 		{8A96DD6A-9940-4971-91AA-AB57187B8833}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{8A96DD6A-9940-4971-91AA-AB57187B8833}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{8A96DD6A-9940-4971-91AA-AB57187B8833}.Release|Any CPU.Build.0 = Release|Any CPU
+		{EC4C38F8-DAA7-4AEB-B6FA-422DFBFC06E8}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{EC4C38F8-DAA7-4AEB-B6FA-422DFBFC06E8}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{EC4C38F8-DAA7-4AEB-B6FA-422DFBFC06E8}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{EC4C38F8-DAA7-4AEB-B6FA-422DFBFC06E8}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

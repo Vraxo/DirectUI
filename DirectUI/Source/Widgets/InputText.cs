@@ -15,7 +15,7 @@ namespace DirectUI;
 internal class InputText
 {
     // === MAIN UPDATE && DRAW METHOD ===
-    public bool UpdateAndDraw(
+    public InputTextResult UpdateAndDraw(
         int intId,
         ref string text,
         InputTextState state, // The state is now passed in
@@ -64,6 +64,7 @@ internal class InputText
 
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
         bool textChanged = false;
+        bool enterPressed = false;
 
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         if (isHovering)
@@ -119,7 +120,7 @@ internal class InputText
         // --- Keyboard Input Processing ---
         if (isFocused && !disabled)
         {
-            textChanged = ProcessInput(ref text, state, size, maxLength, textMargin, input);
+            (textChanged, enterPressed) = ProcessInput(ref text, state, size, maxLength, textMargin, input);
         }
 
         // --- Drawing ---
@@ -161,7 +162,7 @@ internal class InputText
 
         renderer.PopClipRect();
 
-        return textChanged;
+        return new InputTextResult(textChanged, enterPressed);
     }
 
     private int GetCaretPositionFromMouse(Vector2 mousePos, string text, InputTextState state, bool isPassword, char passwordChar, ButtonStyle style, Rect widgetBounds, Vector2 textMargin, ITextService textService)
@@ -186,9 +187,10 @@ internal class InputText
         return Math.Clamp(newCaretPos, 0, text.Length);
     }
 
-    private bool ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
+    private (bool textChanged, bool enterPressed) ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
     {
         bool textChanged = false;
+        bool enterPressed = false;
 
         state.BlinkTimer += UI.Context.DeltaTime;
 
@@ -232,6 +234,9 @@ internal class InputText
             PushUndoState(text, state); // Push on first key press
             switch (key)
             {
+                case Keys.Enter:
+                    enterPressed = true;
+                    break;
                 case Keys.A when isCtrlHeld:
                     state.SelectionAnchor = 0;
                     state.CaretPosition = text.Length;
@@ -320,7 +325,7 @@ internal class InputText
             state.BlinkTimer = 0;
         }
 
-        return textChanged;
+        return (textChanged, enterPressed);
     }
 
     private static int FindPreviousWordStart(string text, int currentPos)

@@ -5,7 +5,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool InputText(
+    public static InputTextResult InputText(
         string id,
         ref string text,
         Vector2 size,
@@ -20,7 +20,7 @@ public static partial class UI
     {
         if (!IsContextValid())
         {
-            return false;
+            return new InputTextResult(false, false);
         }
 
         int intId = id.GetHashCode();
@@ -31,13 +31,13 @@ public static partial class UI
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
             Context.Layout.AdvanceLayout(size);
-            return false;
+            return new InputTextResult(false, false);
         }
 
         InputText lineEditInstance = State.GetOrCreateElement<InputText>(intId);
         var lineEditState = State.GetOrCreateElement<InputTextState>(HashCode.Combine(intId, "state"));
 
-        bool textChanged = lineEditInstance.UpdateAndDraw(
+        var result = lineEditInstance.UpdateAndDraw(
             intId,
             ref text,
             lineEditState,
@@ -52,6 +52,6 @@ public static partial class UI
             finalMargin);
 
         Context.Layout.AdvanceLayout(size);
-        return textChanged;
+        return result;
     }
 }

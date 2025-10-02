@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="NativeFileDialogs.Net" Version="1.2.1" />
     <PackageReference Include="Raylib-cs" Version="7.0.1" />
     <PackageReference Include="SDL3-CS" Version="3.2.16.7" />
     <PackageReference Include="SDL3-CS.Native" Version="3.2.16" />
