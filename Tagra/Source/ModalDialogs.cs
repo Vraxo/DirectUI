@@ -27,4 +27,26 @@ public static class ModalDialogs
         UI.EndHBoxContainer();
         UI.EndVBoxContainer();
     }
+
+    public static void DrawSettingsWindow(App app)
+    {
+        UI.BeginVBoxContainer("settings_vbox", new Vector2(10, 10), gap: 10f);
+
+        UI.Text("tag_display_label", "Tag Display Style:");
+
+        int displayMode = (int)app.Settings.TagDisplay;
+        if (UI.RadioButtons("tag_display_mode", new[] { "Color Circle", "Emoji" }, ref displayMode))
+        {
+            app.Settings.TagDisplay = (TagDisplayMode)displayMode;
+        }
+
+        UI.Separator(280);
+
+        if (UI.Button("close_settings_btn", "Close", new Vector2(80, 32)))
+        {
+            app.Host.ModalWindowService.CloseModalWindow(0);
+        }
+
+        UI.EndVBoxContainer();
+    }
 }

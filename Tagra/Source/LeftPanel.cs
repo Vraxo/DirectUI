@@ -91,32 +91,46 @@ public class LeftPanel
         );
 
         // 3. Draw custom content (circle and text) inside the animated renderBounds
-        float circleDiameter = 10f * scale;
         float padding = 5f * scale;
-        var circleCenterY = renderBounds.Y + renderBounds.Height / 2f;
 
-        // Draw circle
-        var circleRect = new Rect(renderBounds.X + padding, circleCenterY - circleDiameter / 2f, circleDiameter, circleDiameter);
-        var circleColor = ParseColorHex(tag.ColorHex);
-        var circleStyle = new BoxStyle { FillColor = circleColor, Roundness = 1.0f, BorderLength = 0f };
-        context.Renderer.DrawBox(circleRect, circleStyle);
+        if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+        {
+            var textRenderBounds = new Rect(renderBounds.X + padding, renderBounds.Y, renderBounds.Width - padding * 2, renderBounds.Height);
+            UI.DrawTextPrimitive(
+                textRenderBounds,
+                $"{tag.Emoji} {tag.Name} ({tag.FileCount})",
+                animatedStyle,
+                new Alignment(HAlignment.Left, VAlignment.Center),
+                Vector2.Zero
+            );
+        }
+        else
+        {
+            // Draw circle
+            float circleDiameter = 10f * scale;
+            var circleCenterY = renderBounds.Y + renderBounds.Height / 2f;
+            var circleRect = new Rect(renderBounds.X + padding, circleCenterY - circleDiameter / 2f, circleDiameter, circleDiameter);
+            var circleColor = ParseColorHex(tag.ColorHex);
+            var circleStyle = new BoxStyle { FillColor = circleColor, Roundness = 1.0f, BorderLength = 0f };
+            context.Renderer.DrawBox(circleRect, circleStyle);
 
-        // Draw text
-        var textStartX = circleRect.Right + padding;
-        var textRenderBounds = new Rect(
-            textStartX,
-            renderBounds.Y,
-            renderBounds.Width - (textStartX - renderBounds.X) - padding, // Add padding on the right
-            renderBounds.Height
-        );
+            // Draw text
+            var textStartX = circleRect.Right + padding;
+            var textRenderBounds = new Rect(
+                textStartX,
+                renderBounds.Y,
+                renderBounds.Width - (textStartX - renderBounds.X) - padding, // Add padding on the right
+                renderBounds.Height
+            );
 
-        UI.DrawTextPrimitive(
-            textRenderBounds,
-            $"{tag.Name} ({tag.FileCount})",
-            animatedStyle, // Use the animated style for correct color, etc.
-            new Alignment(HAlignment.Left, VAlignment.Center),
-            Vector2.Zero
-        );
+            UI.DrawTextPrimitive(
+                textRenderBounds,
+                $"{tag.Name} ({tag.FileCount})",
+                animatedStyle, // Use the animated style for correct color, etc.
+                new Alignment(HAlignment.Left, VAlignment.Center),
+                Vector2.Zero
+            );
+        }
 
         // 4. Advance the layout manually
         context.Layout.AdvanceLayout(logicalSize);

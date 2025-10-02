@@ -8,6 +8,7 @@ public class Tag
     public required string Name { get; set; }
     public int FileCount { get; set; }
     public string ColorHex { get; set; } = "#FFFFFF";
+    public string? Emoji { get; set; }
 
     public override string ToString() => Name;
 }

@@ -96,7 +96,7 @@ public static class TagManagementWindow
 
                 UI.BeginVBoxContainer($"tag_vbox_wrapper_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
 
-                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
 
                 var color = ParseColorHex(currentTag.ColorHex);
                 var swatchTheme = StyleManager.Get<ButtonStylePack>("ColorSwatch");
@@ -107,7 +107,18 @@ public static class TagManagementWindow
                     app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == currentTag.Id ? null : currentTag.Id;
                 }
 
-                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 120, 24));
+                string emoji = currentTag.Emoji ?? "";
+                var emojiInputResult = UI.InputText($"emoji_input_{currentTag.Id}", ref emoji, new Vector2(30, 24), maxLength: 4);
+                if (emojiInputResult.ValueChanged)
+                {
+                    deferredAction = () =>
+                    {
+                        app.DbManager.UpdateTagEmoji(currentTag.Id, emoji);
+                        app.RefreshAllData();
+                    };
+                }
+
+                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 160, 24));
 
                 if (UI.Button($"rename_tag_btn_{currentTag.Id}", "Rename", new Vector2(60, 24), disabled: true)) { /* TODO */ }
 

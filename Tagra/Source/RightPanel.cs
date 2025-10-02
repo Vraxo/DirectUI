@@ -44,9 +44,18 @@ public class RightPanel
                     _app.DbManager.RemoveTagFromFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
                 }
-                var color = ParseColorHex(tag.ColorHex);
-                UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
-                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 40, 20));
+
+                if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+                {
+                    UI.Text($"assigned_tag_emoji_{tag.Id}", tag.Emoji, new Vector2(15, 20));
+                }
+                else
+                {
+                    var color = ParseColorHex(tag.ColorHex);
+                    UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+                }
+
+                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 45, 20));
                 UI.EndHBoxContainer();
             }
 
@@ -65,12 +74,21 @@ public class RightPanel
             foreach (var tag in availableTags)
             {
                 UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
-                var color = ParseColorHex(tag.ColorHex);
-                UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+
+                string buttonText = tag.Name;
+                if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+                {
+                    buttonText = $"{tag.Emoji} {tag.Name}";
+                }
+                else
+                {
+                    var color = ParseColorHex(tag.ColorHex);
+                    UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+                }
 
                 if (UI.Button(
                     id: $"add_tag_{tag.Id}",
-                    text: tag.Name,
+                    text: buttonText,
                     size: new Vector2(scrollInnerWidth - 15, 24),
                     theme: tagButtonStyle,
                     textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))

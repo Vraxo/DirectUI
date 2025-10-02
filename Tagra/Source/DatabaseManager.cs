@@ -103,7 +103,31 @@ public class DatabaseManager
             }
             Console.WriteLine("[Database] Upgrade complete.");
         }
-        // --- End of Migration ---
+        // --- End of ColorHex Migration ---
+
+        // --- Simple Migration: Add Emoji column if it doesn't exist ---
+        command.CommandText = "PRAGMA table_info(Tags);";
+        bool emojiColumnExists = false;
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                if (reader.GetString(1).Equals("Emoji", StringComparison.OrdinalIgnoreCase))
+                {
+                    emojiColumnExists = true;
+                    break;
+                }
+            }
+        }
+
+        if (!emojiColumnExists)
+        {
+            Console.WriteLine("[Database] Old schema detected. Upgrading 'Tags' table with Emoji column...");
+            command.CommandText = "ALTER TABLE Tags ADD COLUMN Emoji TEXT NULL;";
+            command.ExecuteNonQuery();
+            Console.WriteLine("[Database] Upgrade complete.");
+        }
+        // --- End of Emoji Migration ---
     }
 
     public List<Tag> GetAllTags()
@@ -114,7 +138,7 @@ public class DatabaseManager
 
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex
+            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex, T.Emoji
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id, T.Name
@@ -128,7 +152,8 @@ public class DatabaseManager
                 Id = reader.GetInt64(0),
                 Name = reader.GetString(1),
                 FileCount = reader.GetInt32(2),
-                ColorHex = reader.GetString(3)
+                ColorHex = reader.GetString(3),
+                Emoji = reader.IsDBNull(4) ? null : reader.GetString(4)
             });
         }
         return tags;
@@ -171,6 +196,22 @@ public class DatabaseManager
         command.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", tagId);
         command.Parameters.AddWithValue("@ColorHex", newColorHex);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTagEmoji(long tagId, string? emoji)
+    {
+        if (string.IsNullOrWhiteSpace(emoji))
+        {
+            emoji = null;
+        }
+
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Tags SET Emoji = @Emoji WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", tagId);
+        command.Parameters.AddWithValue("@Emoji", (object)emoji ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
 
@@ -252,7 +293,7 @@ public class DatabaseManager
         connection.Open();
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex
+            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex, T.Emoji
             FROM Tags T
             INNER JOIN FileTags FT ON T.Id = FT.TagId
             WHERE FT.FileId = @FileId
@@ -261,7 +302,7 @@ public class DatabaseManager
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3) });
+            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3), Emoji = reader.IsDBNull(4) ? null : reader.GetString(4) });
         }
         return tags;
     }

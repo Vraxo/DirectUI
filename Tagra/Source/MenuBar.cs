@@ -55,7 +55,7 @@ public class MenuBar
 
                 // Define popup properties (using logical units)
                 var popupPos = new Vector2(editButtonPos.X, editButtonPos.Y + MenuBarHeight);
-                var popupSize = new Vector2(150, 30);
+                var popupSize = new Vector2(150, 60);
                 // The bounds for click-away detection must be in physical units.
                 var popupBoundsPhysical = new Rect(popupPos.X * context.UIScale, popupPos.Y * context.UIScale, popupSize.X * context.UIScale, popupSize.Y * context.UIScale);
 
@@ -73,10 +73,19 @@ public class MenuBar
                     itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
                     itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
-                    int itemId = "manage_tags_item".GetHashCode();
-                    if (UI.DrawButtonPrimitive(itemId, scaledPopupBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
+                    var itemHeight = 30 * ctx.UIScale;
+
+                    var manageTagsBounds = new Rect(scaledPopupBounds.X, scaledPopupBounds.Y, scaledPopupBounds.Width, itemHeight);
+                    if (UI.DrawButtonPrimitive("manage_tags_item".GetHashCode(), manageTagsBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
                     {
                         _app.ManageTagsRequested = true;
+                        state.ClearActivePopup();
+                    }
+
+                    var settingsBounds = new Rect(scaledPopupBounds.X, scaledPopupBounds.Y + itemHeight, scaledPopupBounds.Width, itemHeight);
+                    if (UI.DrawButtonPrimitive("settings_item".GetHashCode(), settingsBounds, "Settings...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
+                    {
+                        _app.SettingsRequested = true;
                         state.ClearActivePopup();
                     }
                 };
