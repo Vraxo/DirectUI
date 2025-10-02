@@ -299,7 +299,7 @@ public class App : IAppLogic
                 if (UI.Button($"remove_tag_{tag.Id}", "x", new Vector2(20, 20)))
                 {
                     _dbManager.RemoveTagFromFile(_selectedFile.Id, tag.Id);
-                    RefreshDataForSelectedFile();
+                    RefreshAllData();
                 }
                 UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 30, 20));
                 UI.EndHBoxContainer();
@@ -313,7 +313,7 @@ public class App : IAppLogic
                 if (UI.Button($"add_tag_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth, 24)))
                 {
                     _dbManager.AddTagToFile(_selectedFile.Id, tag.Id);
-                    RefreshDataForSelectedFile();
+                    RefreshAllData();
                 }
             }
 
