@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Globalization;
 using System.Numerics;
 using DirectUI.Core;
 using SkiaSharp;
@@ -35,31 +36,36 @@ internal class SilkNetTextLayout : ITextLayout
     {
         if (string.IsNullOrEmpty(Text) && textPosition == 0)
         {
-            return new TextHitTestMetrics(Vector2.Zero, new Vector2(1, Size.Y)); // Default caret for empty string
+            return new TextHitTestMetrics(Vector2.Zero, new Vector2(1, Size.Y));
         }
         textPosition = Math.Clamp(textPosition, 0, Text.Length);
 
         using var font = new SKFont(_typeface, _style.FontSize);
-        using var paint = new SKPaint(font) { IsAntialias = true };
+        using var paint = new SKPaint(font);
+        using var shaper = new SKShaper(_typeface);
 
-        // Measure the substring up to the caret position to get the X coordinate.
+        // Shape the substring up to the character position to get its width, which is the caret's X coordinate.
         string sub = Text[..textPosition];
-        float x = MeasureTextWithTrailingWhitespace(paint, sub);
+        float x = shaper.Shape(sub, paint).Width;
 
-        // Measure the width of the character at the caret position to determine its size.
-        float charWidth;
+        // The width of the caret itself can be 1 pixel. For selection highlighting, we need the grapheme width.
+        float graphemeWidth = paint.MeasureText(" ");
+
         if (textPosition < Text.Length)
         {
-            // Use the robust measurement here as well in case the character is a space
-            charWidth = MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString());
-        }
-        else // Caret is at the end of the string.
-        {
-            // Use the width of a space as a sensible default for the caret after the last character.
-            charWidth = paint.MeasureText(" ");
+            // Find the grapheme at the current position to get a more accurate width.
+            var enumerator = StringInfo.GetTextElementEnumerator(Text, textPosition);
+            if (enumerator.MoveNext())
+            {
+                string grapheme = enumerator.GetTextElement();
+                if (!string.IsNullOrEmpty(grapheme))
+                {
+                    graphemeWidth = shaper.Shape(grapheme, paint).Width;
+                }
+            }
         }
 
-        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(charWidth, Size.Y));
+        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(graphemeWidth, Size.Y));
     }
 
     public TextHitTestResult HitTestPoint(Vector2 point)
@@ -70,48 +76,36 @@ internal class SilkNetTextLayout : ITextLayout
         }
 
         using var font = new SKFont(_typeface, _style.FontSize);
-        using var paint = new SKPaint(font) { IsAntialias = true };
+        using var paint = new SKPaint(font);
+        using var shaper = new SKShaper(_typeface);
 
         bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
 
-        // Use BreakText to find the character index that corresponds to the click's X coordinate.
-        // This is still a good starting point.
-        int textPosition = (int)paint.BreakText(Text, point.X);
-        textPosition = Math.Clamp(textPosition, 0, Text.Length);
+        var enumerator = StringInfo.GetTextElementEnumerator(Text);
+        float currentX = 0;
 
-        // Determine if it's a "trailing hit" by checking which side of the character's midpoint the click landed on.
-        float charStartPos = MeasureTextWithTrailingWhitespace(paint, Text[..textPosition]);
-        float charEndPos = (textPosition < Text.Length)
-            ? charStartPos + MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString())
-            : charStartPos;
-
-        bool isTrailingHit = (point.X - charStartPos) > ((charEndPos - charStartPos) / 2f);
-
-        // Get metrics for the hit character.
-        var metrics = HitTestTextPosition(textPosition, false);
-
-        return new TextHitTestResult(textPosition, isTrailingHit, isInside, metrics);
-    }
-
-    /// <summary>
-    /// Measures text width while reliably including trailing whitespace, which SKPaint.MeasureText often trims.
-    /// </summary>
-    private static float MeasureTextWithTrailingWhitespace(SKPaint paint, string text)
-    {
-        if (string.IsNullOrEmpty(text)) return 0;
-
-        string trimmedText = text.TrimEnd(' ');
-        float width = paint.MeasureText(trimmedText);
-
-        int trailingSpaceCount = text.Length - trimmedText.Length;
-        if (trailingSpaceCount > 0)
+        while (enumerator.MoveNext())
         {
-            // Measure a single space to get its width accurately for the current font.
-            float spaceWidth = paint.MeasureText(" ");
-            width += trailingSpaceCount * spaceWidth;
+            string grapheme = enumerator.GetTextElement();
+            float graphemeWidth = shaper.Shape(grapheme, paint).Width;
+            float graphemeMidPoint = currentX + graphemeWidth / 2f;
+
+            // Check if the click is within the current grapheme's horizontal space
+            if (point.X < currentX + graphemeWidth)
+            {
+                bool isTrailingHit = point.X > graphemeMidPoint;
+                int charIndex = isTrailingHit ? enumerator.ElementIndex + grapheme.Length : enumerator.ElementIndex;
+
+                var metrics = HitTestTextPosition(enumerator.ElementIndex, false); // Metrics of the grapheme itself
+
+                return new TextHitTestResult(charIndex, isTrailingHit, isInside, metrics);
+            }
+
+            currentX += graphemeWidth;
         }
 
-        return width;
+        // If the click is past all graphemes, place the caret at the end.
+        return new TextHitTestResult(Text.Length, false, isInside, HitTestTextPosition(Text.Length, false));
     }
 
     public void Dispose()
