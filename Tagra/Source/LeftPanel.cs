@@ -52,12 +52,39 @@ public class LeftPanel
 
         var scrollHeight = availableHeight - (UI.Context.Layout.GetCurrentPosition().Y - currentY);
         UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
+
+        // Define the custom style for tag buttons
+        var tagButtonStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 0f };
+        tagButtonStyle.Normal.FillColor = Colors.Transparent;
+        tagButtonStyle.Normal.BorderColor = Colors.Transparent;
+        tagButtonStyle.Hover.FillColor = new Color(255, 255, 255, 20); // Subtle hover
+        tagButtonStyle.Hover.BorderColor = Colors.Transparent;
+        tagButtonStyle.Pressed.FontColor = Colors.White;
+        tagButtonStyle.Active.FontColor = Colors.White;
+        tagButtonStyle.Active.FillColor = DefaultTheme.Accent; // Use accent color for the active/selected tag
+        tagButtonStyle.Active.BorderColor = DefaultTheme.AccentBorder;
+        tagButtonStyle.ActiveHover.FontColor = Colors.White; // Keep active style on hover
+        tagButtonStyle.ActiveHover.FillColor = DefaultTheme.Accent;
+        tagButtonStyle.ActiveHover.BorderColor = DefaultTheme.AccentBorder;
+
         foreach (var tag in _app.AllTags)
         {
             UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
-            if (UI.Button($"tag_btn_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth - 30, 24)))
+            if (UI.Button(
+                id: $"tag_btn_{tag.Id}",
+                text: $"{tag.Name} ({tag.FileCount})",
+                size: new Vector2(scrollInnerWidth - 30, 24),
+                theme: tagButtonStyle,
+                isActive: _app.SearchText == tag.Name))
             {
-                _app.SearchText = tag.Name; // Click a tag to search for it
+                if (_app.SearchText == tag.Name)
+                {
+                    _app.SearchText = ""; // Clicking the active tag deselects it
+                }
+                else
+                {
+                    _app.SearchText = tag.Name; // Click a tag to search for it
+                }
             }
             if (UI.Button($"delete_tag_btn_{tag.Id}", "x", new Vector2(24, 24)))
             {

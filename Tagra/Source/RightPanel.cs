@@ -50,10 +50,23 @@ public class RightPanel
 
             UI.Separator(scrollInnerWidth);
             UI.Text("available_tags_label", "Available Tags to Add:");
+
+            // Define the custom style for tag buttons
+            var tagButtonStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 0f };
+            tagButtonStyle.Normal.FillColor = Colors.Transparent;
+            tagButtonStyle.Normal.BorderColor = Colors.Transparent;
+            tagButtonStyle.Hover.FillColor = new Color(255, 255, 255, 20); // Subtle hover
+            tagButtonStyle.Hover.BorderColor = Colors.Transparent;
+            tagButtonStyle.Pressed.FontColor = Colors.White;
+
             var availableTags = _app.AllTags.Except(_app.SelectedFile.Tags, new TagComparer());
             foreach (var tag in availableTags)
             {
-                if (UI.Button($"add_tag_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth, 24)))
+                if (UI.Button(
+                    id: $"add_tag_{tag.Id}",
+                    text: tag.Name,
+                    size: new Vector2(scrollInnerWidth, 24),
+                    theme: tagButtonStyle))
                 {
                     _app.DbManager.AddTagToFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
