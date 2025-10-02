@@ -52,7 +52,7 @@ public class LeftPanel
 
         foreach (var tag in _app.AllTags)
         {
-            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
+            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
 
             var color = ParseColorHex(tag.ColorHex);
             UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });

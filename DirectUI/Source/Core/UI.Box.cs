@@ -21,6 +21,26 @@ public static partial class UI
         var logicalSize = size;
         var physicalSize = logicalSize * scale;
         var drawPos = context.Layout.ApplyLayout(Vector2.Zero);
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset * scale;
+            }
+        }
+
         var bounds = new Rect(drawPos.X, drawPos.Y, physicalSize.X, physicalSize.Y);
 
         if (!context.Layout.IsRectVisible(bounds))

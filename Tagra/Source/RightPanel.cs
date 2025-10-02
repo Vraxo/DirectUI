@@ -38,7 +38,7 @@ public class RightPanel
 
             foreach (var tag in _app.SelectedFile.Tags)
             {
-                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
+                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 20f);
                 if (UI.Button($"remove_tag_{tag.Id}", "x", new Vector2(20, 20)))
                 {
                     _app.DbManager.RemoveTagFromFile(_app.SelectedFile.Id, tag.Id);
@@ -64,7 +64,7 @@ public class RightPanel
             var availableTags = _app.AllTags.Except(_app.SelectedFile.Tags, new TagComparer());
             foreach (var tag in availableTags)
             {
-                UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
+                UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
                 var color = ParseColorHex(tag.ColorHex);
                 UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
 
