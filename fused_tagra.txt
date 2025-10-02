@@ -138,6 +138,9 @@ using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
 using SDL3;
 using GraphicsBackend = DirectUI.GraphicsBackend;
+using System.IO;
+using DirectUI.Styling;
+using System;
 
 namespace DirectUI;
 
@@ -152,6 +155,9 @@ public static class ApplicationRunner
 
         // Load settings at the very beginning of the application run.
         var settings = SettingsManager.LoadSettings();
+
+        // Load styles from YAML file.
+        StyleManager.LoadStylesFromFile(Path.Combine(AppContext.BaseDirectory, "Data", "styles.yaml"));
 
         // Define a guarded save action to prevent saving more than once on exit.
         Action? saveAction = null;
@@ -1637,6 +1643,8 @@ public static partial class UI
             clickMode,
             clickBehavior,
             (textOffset ?? Vector2.Zero) * scale,
+            out _,
+            out _,
             isActive: isActive,
             layer: layer,
             animation: animation
@@ -2186,7 +2194,7 @@ public static partial class UI
 
                     int itemId = HashCode.Combine(intId, "item", i);
 
-                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0), isActive: false, layer: 100) != ClickResult.None)
+                    if (DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, new Vector2(5, 0), out _, out _, isActive: false, layer: 100) != ClickResult.None)
                     {
                         state.SetPopupResult(intId, i);
                         state.ClearActivePopup();
@@ -2515,6 +2523,8 @@ public static partial class UI
                 clickMode: DirectUI.Button.ActionMode.Press, // Use Press mode for fair arbitration
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
                 textOffset: new Vector2(5, 0),
+                renderBounds: out _,
+                animatedStyle: out _,
                 isActive: false,
                 layer: 5 // High layer to win against grid rows
             ) != ClickResult.None;
@@ -2613,7 +2623,7 @@ public static partial class UI
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
-            var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected);
+            var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, out _, out _, isSelected);
 
             if (clickResult != ClickResult.None)
             {
@@ -3925,6 +3935,8 @@ public static partial class UI
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
         Vector2 textOffset,
+        out Rect renderBounds,
+        out ButtonStyle animatedStyle,
         bool isActive = false,
         int layer = 1,
         AnimationInfo? animation = null)
@@ -3937,6 +3949,7 @@ public static partial class UI
         var input = context.InputState;
 
         ClickResult clickResult = ClickResult.None;
+        renderBounds = bounds; // Initialize out parameter
 
         // --- State Calculation ---
         bool isFocused = !disabled && state.FocusedElementId == id;
@@ -4007,7 +4020,6 @@ public static partial class UI
         // Re-check `isPressed` for correct visual state, as it might have changed above.
         isPressed = state.ActivelyPressedElementId == id;
         ButtonStyle targetStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
-        ButtonStyle animatedStyle;
         Vector2 animatedScale = targetStyle.Scale;
 
         // --- Animation Resolution ---
@@ -4059,7 +4071,7 @@ public static partial class UI
             Vector2 center = new Vector2(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f);
             float renderWidth = bounds.Width * animatedScale.X;
             float renderHeight = bounds.Height * animatedScale.Y;
-            Rect renderBounds = new Rect(
+            renderBounds = new Rect(
                 center.X - renderWidth / 2f,
                 center.Y - renderHeight / 2f,
                 renderWidth,
@@ -4331,6 +4343,8 @@ public static partial class UI
                 clickMode: DirectUI.Button.ActionMode.Release,
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
                 textOffset: Vector2.Zero,
+                out _,
+                out _,
                 isActive: i == activeIndex
             );
 
@@ -4409,7 +4423,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false) != ClickResult.None)
+            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, out _, out _, false) != ClickResult.None)
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -4425,7 +4439,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false) != ClickResult.None)
+        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, out _, out _, false) != ClickResult.None)
         {
             clickedNode = node;
         }
@@ -5988,7 +6002,7 @@ public class ButtonStyle : BoxStyle
     public Color FontColor { get; set; } = DefaultTheme.Text;
 
     // Properties needed for creating IDWriteTextFormat
-    public string FontName { get; set; } = "Segoe UI";
+    public string FontName { get; set; } = "Segoe UI Emoji";
     public float FontSize { get; set; } = 14.0f;
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
@@ -7438,7 +7452,9 @@ internal class InternalComboboxLogic
             new Alignment(HAlignment.Left, VAlignment.Center),
             Button.ActionMode.Release,
             Button.ClickBehavior.Left,
-            new Vector2(5, 0)
+            new Vector2(5, 0),
+            out _,
+            out _
         ) != ClickResult.None;
 
         if (clicked && !disabled)
@@ -7479,7 +7495,7 @@ internal class InternalComboboxLogic
 
                         int itemId = HashCode.Combine(id, "item", i);
 
-                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0)) != ClickResult.None)
+                        if (UI.DrawButtonPrimitive(itemId, itemBounds, items[i], itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5, 0), out _, out _) != ClickResult.None)
                         {
                             // A selection was made. Post the result to be picked up next frame.
                             state.SetPopupResult(id, i);
@@ -13653,8 +13669,12 @@ public interface IWindowHost : IDisposable
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\App.cs">
+using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
+using System.Text.Json;
+using System.Text.Json.Serialization;
 using DirectUI;
 using DirectUI.Core;
 using Tagra.Data;
@@ -13681,11 +13701,16 @@ public class App : IAppLogic
     internal string NewTagName = "";
     internal long? TagIdToDelete = null;
     internal bool ManageTagsRequested = false;
+    internal bool SettingsRequested = false;
     internal long? ActiveColorPickerTagId = null; // State for the color picker
+
+    // --- App Settings ---
+    internal TagraSettings Settings;
 
     public App(IWindowHost host)
     {
         Host = host;
+        Settings = TagraSettingsManager.Load();
         DbManager = new DatabaseManager();
         ThumbnailService = new ThumbnailService();
         _uiManager = new UIManager(this);
@@ -13741,6 +13766,21 @@ public class App : IAppLogic
             );
         }
 
+        // Handle opening the settings window
+        if (SettingsRequested && !Host.ModalWindowService.IsModalWindowOpen)
+        {
+            Host.ModalWindowService.OpenModalWindow(
+                "Settings",
+                300, 200,
+                (modalContext) => ModalDialogs.DrawSettingsWindow(this),
+                (result) =>
+                {
+                    SettingsRequested = false;
+                    TagraSettingsManager.Save(Settings); // Save settings when window closes
+                }
+            );
+        }
+
         HandleSearch();
         _uiManager.DrawMainLayout();
     }
@@ -13759,7 +13799,62 @@ public class App : IAppLogic
 
     public void SaveState()
     {
-        // This would be used to save app settings, like window size or search history.
+        // Save application-specific settings
+        TagraSettingsManager.Save(Settings);
+    }
+}
+
+
+public enum TagDisplayMode { ColorCircle, Emoji }
+
+public class TagraSettings
+{
+    public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
+}
+
+public static class TagraSettingsManager
+{
+    private static readonly string SettingsDirectory = Path.Combine(AppContext.BaseDirectory, "Data");
+    private static readonly string SettingsFilePath = Path.Combine(SettingsDirectory, "tagra_settings.json");
+
+    private static readonly JsonSerializerOptions SerializerOptions = new()
+    {
+        WriteIndented = true,
+        PropertyNameCaseInsensitive = true,
+        Converters = { new JsonStringEnumConverter() }
+    };
+
+    public static void Save(TagraSettings settings)
+    {
+        try
+        {
+            Directory.CreateDirectory(SettingsDirectory);
+            string json = JsonSerializer.Serialize(settings, SerializerOptions);
+            File.WriteAllText(SettingsFilePath, json);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Tagra] Error saving settings: {ex.Message}");
+        }
+    }
+
+    public static TagraSettings Load()
+    {
+        if (!File.Exists(SettingsFilePath))
+        {
+            return new TagraSettings();
+        }
+
+        try
+        {
+            string json = File.ReadAllText(SettingsFilePath);
+            return JsonSerializer.Deserialize<TagraSettings>(json, SerializerOptions) ?? new TagraSettings();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Tagra] Error loading settings. Using defaults. Error: {ex.Message}");
+            return new TagraSettings();
+        }
     }
 }
 </file>
@@ -13786,7 +13881,15 @@ public class DatabaseManager
         "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00",
         "#f4511e", "#6d4c41", "#757575", "#546e7a"
     };
-    private static int _nextColorIndex = 0;
+
+    // A list of default emojis for new tags
+    private static readonly List<string> _defaultTagEmojis = new()
+    {
+        "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫️", "⚪️",
+        "❤️", "🧡", "💛", "💚", "💙", "💜", "💔", "❗️", "❓",
+        "👍", "👎", "🔥", "✨", "⭐️", "🎉", "💀", "✅", "❌",
+        "😀", "😎", "😍", "😢", "😠", "🤯", "🤖", "👻", "👽"
+    };
 
     public DatabaseManager()
     {
@@ -13870,7 +13973,31 @@ public class DatabaseManager
             }
             Console.WriteLine("[Database] Upgrade complete.");
         }
-        // --- End of Migration ---
+        // --- End of ColorHex Migration ---
+
+        // --- Simple Migration: Add Emoji column if it doesn't exist ---
+        command.CommandText = "PRAGMA table_info(Tags);";
+        bool emojiColumnExists = false;
+        using (var reader = command.ExecuteReader())
+        {
+            while (reader.Read())
+            {
+                if (reader.GetString(1).Equals("Emoji", StringComparison.OrdinalIgnoreCase))
+                {
+                    emojiColumnExists = true;
+                    break;
+                }
+            }
+        }
+
+        if (!emojiColumnExists)
+        {
+            Console.WriteLine("[Database] Old schema detected. Upgrading 'Tags' table with Emoji column...");
+            command.CommandText = "ALTER TABLE Tags ADD COLUMN Emoji TEXT NULL;";
+            command.ExecuteNonQuery();
+            Console.WriteLine("[Database] Upgrade complete.");
+        }
+        // --- End of Emoji Migration ---
     }
 
     public List<Tag> GetAllTags()
@@ -13881,7 +14008,7 @@ public class DatabaseManager
 
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex
+            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex, T.Emoji
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id, T.Name
@@ -13895,7 +14022,8 @@ public class DatabaseManager
                 Id = reader.GetInt64(0),
                 Name = reader.GetString(1),
                 FileCount = reader.GetInt32(2),
-                ColorHex = reader.GetString(3)
+                ColorHex = reader.GetString(3),
+                Emoji = reader.IsDBNull(4) ? null : reader.GetString(4)
             });
         }
         return tags;
@@ -13908,16 +14036,18 @@ public class DatabaseManager
         using var connection = GetConnection();
         connection.Open();
 
-        // Get the current number of tags to pick a color
+        // Get the current number of tags to pick a color and emoji
         var countCommand = connection.CreateCommand();
         countCommand.CommandText = "SELECT COUNT(*) FROM Tags";
         var tagCount = Convert.ToInt32(countCommand.ExecuteScalar());
         var color = _defaultTagColors[tagCount % _defaultTagColors.Count];
+        var emoji = _defaultTagEmojis[tagCount % _defaultTagEmojis.Count];
 
         var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO Tags (Name, ColorHex) VALUES (@Name, @ColorHex)";
+        command.CommandText = "INSERT INTO Tags (Name, ColorHex, Emoji) VALUES (@Name, @ColorHex, @Emoji)";
         command.Parameters.AddWithValue("@Name", name.Trim().ToLower());
         command.Parameters.AddWithValue("@ColorHex", color);
+        command.Parameters.AddWithValue("@Emoji", emoji);
 
         try
         {
@@ -13938,6 +14068,22 @@ public class DatabaseManager
         command.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
         command.Parameters.AddWithValue("@Id", tagId);
         command.Parameters.AddWithValue("@ColorHex", newColorHex);
+        command.ExecuteNonQuery();
+    }
+
+    public void UpdateTagEmoji(long tagId, string? emoji)
+    {
+        if (string.IsNullOrWhiteSpace(emoji))
+        {
+            emoji = null;
+        }
+
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Tags SET Emoji = @Emoji WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", tagId);
+        command.Parameters.AddWithValue("@Emoji", (object)emoji ?? DBNull.Value);
         command.ExecuteNonQuery();
     }
 
@@ -14019,7 +14165,7 @@ public class DatabaseManager
         connection.Open();
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex
+            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex, T.Emoji
             FROM Tags T
             INNER JOIN FileTags FT ON T.Id = FT.TagId
             WHERE FT.FileId = @FileId
@@ -14028,7 +14174,7 @@ public class DatabaseManager
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3) });
+            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3), Emoji = reader.IsDBNull(4) ? null : reader.GetString(4) });
         }
         return tags;
     }
@@ -14127,6 +14273,11 @@ global using DirectUI.Drawing;
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\LeftPanel.cs">
 using DirectUI;
 using System.Numerics;
+using DirectUI.Styling;
+using Tagra.Data;
+using System.IO;
+using Vortice.Mathematics;
+using Color = DirectUI.Drawing.Color;
 
 namespace Tagra;
 
@@ -14163,34 +14314,12 @@ public class LeftPanel
         var scrollHeight = availableHeight - (UI.Context.Layout.GetCurrentPosition().Y - currentY);
         UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
 
-        // Define the custom style for tag buttons
-        var tagButtonStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 0f };
-        tagButtonStyle.Normal.FillColor = Colors.Transparent;
-        tagButtonStyle.Normal.BorderColor = Colors.Transparent;
-        tagButtonStyle.Hover.FillColor = new Color(255, 255, 255, 20); // Subtle hover
-        tagButtonStyle.Hover.BorderColor = Colors.Transparent;
-        tagButtonStyle.Pressed.FontColor = Colors.White;
-        tagButtonStyle.Active.FontColor = Colors.White;
-        tagButtonStyle.Active.FillColor = DefaultTheme.Accent; // Use accent color for the active/selected tag
-        tagButtonStyle.Active.BorderColor = DefaultTheme.AccentBorder;
-        tagButtonStyle.ActiveHover.FontColor = Colors.White; // Keep active style on hover
-        tagButtonStyle.ActiveHover.FillColor = DefaultTheme.Accent;
-        tagButtonStyle.ActiveHover.BorderColor = DefaultTheme.AccentBorder;
+        // Load tag button style from StyleManager
+        var tagButtonStyle = StyleManager.Get<ButtonStylePack>("TagButton");
 
         foreach (var tag in _app.AllTags)
         {
-            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
-
-            var color = ParseColorHex(tag.ColorHex);
-            UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
-
-            if (UI.Button(
-                id: $"tag_btn_{tag.Id}",
-                text: $"{tag.Name} ({tag.FileCount})",
-                size: new Vector2(scrollInnerWidth - 15, 24),
-                theme: tagButtonStyle,
-                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
-                isActive: _app.SearchText == tag.Name))
+            if (DrawTagButton(tag, scrollInnerWidth, _app.SearchText == tag.Name, tagButtonStyle))
             {
                 if (_app.SearchText == tag.Name)
                 {
@@ -14201,14 +14330,87 @@ public class LeftPanel
                     _app.SearchText = tag.Name; // Click a tag to search for it
                 }
             }
-
-            UI.EndHBoxContainer();
         }
         UI.EndScrollableRegion();
 
         UI.EndVBoxContainer();
         UI.EndResizableVPanel();
     }
+
+    private bool DrawTagButton(Tag tag, float width, bool isActive, ButtonStylePack theme)
+    {
+        var context = UI.Context;
+        var scale = context.UIScale;
+
+        // 1. Define bounds and get style for the entire widget
+        var logicalSize = new Vector2(width, 24f);
+        var startPos = context.Layout.GetCurrentPosition();
+        var physicalBounds = new Rect(startPos.X * scale, startPos.Y * scale, logicalSize.X * scale, logicalSize.Y * scale);
+
+        // 2. Use DrawButtonPrimitive for interaction and background. It returns the animated state.
+        var clickResult = UI.DrawButtonPrimitive(
+            $"tag_btn_{tag.Id}".GetHashCode(),
+            physicalBounds,
+            "", // No text, we draw content ourselves
+            theme,
+            disabled: false,
+            textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
+            clickMode: Button.ActionMode.Release,
+            clickBehavior: Button.ClickBehavior.Left,
+            textOffset: Vector2.Zero,
+            out var renderBounds,
+            out var animatedStyle,
+            isActive: isActive
+        );
+
+        // 3. Draw custom content (circle and text) inside the animated renderBounds
+        float padding = 5f * scale;
+
+        if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+        {
+            var textRenderBounds = new Rect(renderBounds.X + padding, renderBounds.Y, renderBounds.Width - padding * 2, renderBounds.Height);
+            UI.DrawTextPrimitive(
+                textRenderBounds,
+                $"{tag.Emoji} {tag.Name} ({tag.FileCount})",
+                animatedStyle,
+                new Alignment(HAlignment.Left, VAlignment.Center),
+                Vector2.Zero
+            );
+        }
+        else
+        {
+            // Draw circle
+            float circleDiameter = 10f * scale;
+            var circleCenterY = renderBounds.Y + renderBounds.Height / 2f;
+            var circleRect = new Rect(renderBounds.X + padding, circleCenterY - circleDiameter / 2f, circleDiameter, circleDiameter);
+            var circleColor = ParseColorHex(tag.ColorHex);
+            var circleStyle = new BoxStyle { FillColor = circleColor, Roundness = 1.0f, BorderLength = 0f };
+            context.Renderer.DrawBox(circleRect, circleStyle);
+
+            // Draw text
+            var textStartX = circleRect.Right + padding;
+            var textRenderBounds = new Rect(
+                textStartX,
+                renderBounds.Y,
+                renderBounds.Width - (textStartX - renderBounds.X) - padding, // Add padding on the right
+                renderBounds.Height
+            );
+
+            UI.DrawTextPrimitive(
+                textRenderBounds,
+                $"{tag.Name} ({tag.FileCount})",
+                animatedStyle, // Use the animated style for correct color, etc.
+                new Alignment(HAlignment.Left, VAlignment.Center),
+                Vector2.Zero
+            );
+        }
+
+        // 4. Advance the layout manually
+        context.Layout.AdvanceLayout(logicalSize);
+
+        return clickResult != ClickResult.None;
+    }
+
 
     private static Color ParseColorHex(string hex)
     {
@@ -14415,7 +14617,7 @@ public class MenuBar
 
                 // Define popup properties (using logical units)
                 var popupPos = new Vector2(editButtonPos.X, editButtonPos.Y + MenuBarHeight);
-                var popupSize = new Vector2(150, 30);
+                var popupSize = new Vector2(150, 60);
                 // The bounds for click-away detection must be in physical units.
                 var popupBoundsPhysical = new Rect(popupPos.X * context.UIScale, popupPos.Y * context.UIScale, popupSize.X * context.UIScale, popupSize.Y * context.UIScale);
 
@@ -14433,10 +14635,19 @@ public class MenuBar
                     itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
                     itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
-                    int itemId = "manage_tags_item".GetHashCode();
-                    if (UI.DrawButtonPrimitive(itemId, scaledPopupBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0)) != ClickResult.None)
+                    var itemHeight = 30 * ctx.UIScale;
+
+                    var manageTagsBounds = new Rect(scaledPopupBounds.X, scaledPopupBounds.Y, scaledPopupBounds.Width, itemHeight);
+                    if (UI.DrawButtonPrimitive("manage_tags_item".GetHashCode(), manageTagsBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
                     {
                         _app.ManageTagsRequested = true;
+                        state.ClearActivePopup();
+                    }
+
+                    var settingsBounds = new Rect(scaledPopupBounds.X, scaledPopupBounds.Y + itemHeight, scaledPopupBounds.Width, itemHeight);
+                    if (UI.DrawButtonPrimitive("settings_item".GetHashCode(), settingsBounds, "Settings...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
+                    {
+                        _app.SettingsRequested = true;
                         state.ClearActivePopup();
                     }
                 };
@@ -14479,6 +14690,28 @@ public static class ModalDialogs
         UI.EndHBoxContainer();
         UI.EndVBoxContainer();
     }
+
+    public static void DrawSettingsWindow(App app)
+    {
+        UI.BeginVBoxContainer("settings_vbox", new Vector2(10, 10), gap: 10f);
+
+        UI.Text("tag_display_label", "Tag Display Style:");
+
+        int displayMode = (int)app.Settings.TagDisplay;
+        if (UI.RadioButtons("tag_display_mode", new[] { "Color Circle", "Emoji" }, ref displayMode))
+        {
+            app.Settings.TagDisplay = (TagDisplayMode)displayMode;
+        }
+
+        UI.Separator(280);
+
+        if (UI.Button("close_settings_btn", "Close", new Vector2(80, 32)))
+        {
+            app.Host.ModalWindowService.CloseModalWindow(0);
+        }
+
+        UI.EndVBoxContainer();
+    }
 }
 </file>
 
@@ -14493,6 +14726,7 @@ public class Tag
     public required string Name { get; set; }
     public int FileCount { get; set; }
     public string ColorHex { get; set; } = "#FFFFFF";
+    public string? Emoji { get; set; }
 
     public override string ToString() => Name;
 }
@@ -14578,9 +14812,18 @@ public class RightPanel
                     _app.DbManager.RemoveTagFromFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
                 }
-                var color = ParseColorHex(tag.ColorHex);
-                UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
-                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 40, 20));
+
+                if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+                {
+                    UI.Text($"assigned_tag_emoji_{tag.Id}", tag.Emoji, new Vector2(15, 20));
+                }
+                else
+                {
+                    var color = ParseColorHex(tag.ColorHex);
+                    UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+                }
+
+                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 45, 20));
                 UI.EndHBoxContainer();
             }
 
@@ -14599,12 +14842,21 @@ public class RightPanel
             foreach (var tag in availableTags)
             {
                 UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
-                var color = ParseColorHex(tag.ColorHex);
-                UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+
+                string buttonText = tag.Name;
+                if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+                {
+                    buttonText = $"{tag.Emoji} {tag.Name}";
+                }
+                else
+                {
+                    var color = ParseColorHex(tag.ColorHex);
+                    UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+                }
 
                 if (UI.Button(
                     id: $"add_tag_{tag.Id}",
-                    text: tag.Name,
+                    text: buttonText,
                     size: new Vector2(scrollInnerWidth - 15, 24),
                     theme: tagButtonStyle,
                     textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
@@ -14650,6 +14902,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using DirectUI.Styling;
 
 namespace Tagra;
 
@@ -14741,23 +14994,29 @@ public static class TagManagementWindow
 
                 UI.BeginVBoxContainer($"tag_vbox_wrapper_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
 
-                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
 
                 var color = ParseColorHex(currentTag.ColorHex);
-                var swatchTheme = new ButtonStylePack { Roundness = 1.0f, BorderLength = 0f };
-                swatchTheme.Animation = new DirectUI.Animation.AnimationInfo(0.1f);
-                swatchTheme.Normal.FillColor = color;
-                swatchTheme.Hover.FillColor = color;
-                swatchTheme.Hover.Scale = new Vector2(1.1f, 1.1f);
-                swatchTheme.Pressed.FillColor = color;
-                swatchTheme.Pressed.Scale = new Vector2(0.9f, 0.9f);
+                var swatchTheme = StyleManager.Get<ButtonStylePack>("ColorSwatch");
+                swatchTheme.FillColor = color;
 
                 if (UI.Button($"color_swatch_{currentTag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
                 {
                     app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == currentTag.Id ? null : currentTag.Id;
                 }
 
-                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 120, 24));
+                string emoji = currentTag.Emoji ?? "";
+                var emojiInputResult = UI.InputText($"emoji_input_{currentTag.Id}", ref emoji, new Vector2(30, 24), maxLength: 4);
+                if (emojiInputResult.ValueChanged)
+                {
+                    deferredAction = () =>
+                    {
+                        app.DbManager.UpdateTagEmoji(currentTag.Id, emoji);
+                        app.RefreshAllData();
+                    };
+                }
+
+                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 160, 24));
 
                 if (UI.Button($"rename_tag_btn_{currentTag.Id}", "Rename", new Vector2(60, 24), disabled: true)) { /* TODO */ }
 

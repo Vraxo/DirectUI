@@ -1,6 +1,7 @@
 ﻿// Widgets/LineEdit.cs
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Numerics;
 using DirectUI.Core;
@@ -214,11 +215,21 @@ internal class InputText
                 textChanged = true;
             }
 
-            foreach (char c in input.TypedCharacters)
+            // Reconstruct the full string from the sequence of chars to correctly handle surrogate pairs.
+            string typedString = new string(input.TypedCharacters.ToArray());
+
+            var enumerator = StringInfo.GetTextElementEnumerator(typedString);
+            while (enumerator.MoveNext())
             {
-                if (text.Length >= maxLength) continue;
-                text = text.Insert(state.CaretPosition, c.ToString());
-                state.CaretPosition++;
+                string textElement = enumerator.GetTextElement();
+                if (text.Length + textElement.Length > maxLength)
+                {
+                    // No more space for this or subsequent text elements.
+                    break;
+                }
+
+                text = text.Insert(state.CaretPosition, textElement);
+                state.CaretPosition += textElement.Length; // Length is number of chars, which is correct
                 textChanged = true;
             }
 
@@ -246,59 +257,72 @@ internal class InputText
                     {
                         text = text.Remove(state.SelectionStart, state.SelectionEnd - state.SelectionStart);
                         state.CaretPosition = state.SelectionStart;
-                        state.SelectionAnchor = state.CaretPosition;
                         hasTextChangedThisKey = true;
                     }
                     else if (state.CaretPosition > 0)
                     {
-                        int removeCount = 1;
-                        if (isCtrlHeld) removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
-                        text = text.Remove(state.CaretPosition - removeCount, removeCount);
-                        state.CaretPosition -= removeCount;
-                        state.SelectionAnchor = state.CaretPosition;
+                        if (isCtrlHeld)
+                        {
+                            int removeCount = state.CaretPosition - FindPreviousWordStart(text, state.CaretPosition);
+                            text = text.Remove(state.CaretPosition - removeCount, removeCount);
+                            state.CaretPosition -= removeCount;
+                        }
+                        else
+                        {
+                            int prevBoundary = FindPreviousGraphemeBoundary(text, state.CaretPosition);
+                            text = text.Remove(prevBoundary, state.CaretPosition - prevBoundary);
+                            state.CaretPosition = prevBoundary;
+                        }
                         hasTextChangedThisKey = true;
                     }
+                    if (hasTextChangedThisKey) state.SelectionAnchor = state.CaretPosition;
                     break;
                 case Keys.Delete:
                     if (state.HasSelection)
                     {
                         text = text.Remove(state.SelectionStart, state.SelectionEnd - state.SelectionStart);
                         state.CaretPosition = state.SelectionStart;
-                        state.SelectionAnchor = state.CaretPosition;
                         hasTextChangedThisKey = true;
                     }
                     else if (state.CaretPosition < text.Length)
                     {
-                        int removeCount = 1;
-                        if (isCtrlHeld) removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
-                        text = text.Remove(state.CaretPosition, removeCount);
-                        state.SelectionAnchor = state.CaretPosition;
+                        if (isCtrlHeld)
+                        {
+                            int removeCount = FindNextWordEnd(text, state.CaretPosition) - state.CaretPosition;
+                            text = text.Remove(state.CaretPosition, removeCount);
+                        }
+                        else
+                        {
+                            int nextBoundary = FindNextGraphemeBoundary(text, state.CaretPosition);
+                            text = text.Remove(state.CaretPosition, nextBoundary - state.CaretPosition);
+                        }
                         hasTextChangedThisKey = true;
                     }
+                    if (hasTextChangedThisKey) state.SelectionAnchor = state.CaretPosition;
                     break;
                 case Keys.LeftArrow:
                     if (isShiftHeld)
                     {
-                        var newPos = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1;
-                        state.CaretPosition = Math.Max(0, newPos);
+                        var newPos = isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : FindPreviousGraphemeBoundary(text, state.CaretPosition);
+                        state.CaretPosition = newPos;
                     }
                     else
                     {
-                        var newPos = state.HasSelection ? state.SelectionStart : (isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : state.CaretPosition - 1);
-                        state.CaretPosition = Math.Max(0, newPos);
+                        var newPos = state.HasSelection ? state.SelectionStart : (isCtrlHeld ? FindPreviousWordStart(text, state.CaretPosition) : FindPreviousGraphemeBoundary(text, state.CaretPosition));
+                        state.CaretPosition = newPos;
                         state.SelectionAnchor = state.CaretPosition;
                     }
                     break;
                 case Keys.RightArrow:
                     if (isShiftHeld)
                     {
-                        var newPos = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1;
-                        state.CaretPosition = Math.Min(text.Length, newPos);
+                        var newPos = isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : FindNextGraphemeBoundary(text, state.CaretPosition);
+                        state.CaretPosition = newPos;
                     }
                     else
                     {
-                        var newPos = state.HasSelection ? state.SelectionEnd : (isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : state.CaretPosition + 1);
-                        state.CaretPosition = Math.Min(text.Length, newPos);
+                        var newPos = state.HasSelection ? state.SelectionEnd : (isCtrlHeld ? FindNextWordEnd(text, state.CaretPosition) : FindNextGraphemeBoundary(text, state.CaretPosition));
+                        state.CaretPosition = newPos;
                         state.SelectionAnchor = state.CaretPosition;
                     }
                     break;
@@ -345,6 +369,27 @@ internal class InputText
         while (pos < text.Length && !char.IsWhiteSpace(text[pos])) pos++;
         while (pos < text.Length && char.IsWhiteSpace(text[pos])) pos++;
         return pos;
+    }
+
+    private static int FindNextGraphemeBoundary(string text, int currentPosition)
+    {
+        if (currentPosition >= text.Length) return text.Length;
+        var enumerator = StringInfo.GetTextElementEnumerator(text, currentPosition);
+        if (enumerator.MoveNext())
+        {
+            return enumerator.ElementIndex + enumerator.GetTextElement().Length;
+        }
+        return text.Length;
+    }
+
+    private static int FindPreviousGraphemeBoundary(string text, int currentPosition)
+    {
+        if (currentPosition <= 0) return 0;
+        string sub = text.Substring(0, currentPosition);
+        var si = new StringInfo(sub);
+        if (si.LengthInTextElements == 0) return 0;
+        string lastElement = si.SubstringByTextElements(si.LengthInTextElements - 1);
+        return currentPosition - lastElement.Length;
     }
 
     private void DrawSelectionHighlight(string text, InputTextState state, ButtonStyle style, Rect contentRect)
