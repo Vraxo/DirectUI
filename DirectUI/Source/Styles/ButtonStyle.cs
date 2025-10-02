@@ -15,7 +15,7 @@ public class ButtonStyle : BoxStyle
     public Color FontColor { get; set; } = DefaultTheme.Text;
 
     // Properties needed for creating IDWriteTextFormat
-    public string FontName { get; set; } = "Segoe UI";
+    public string FontName { get; set; } = "Segoe UI Emoji";
     public float FontSize { get; set; } = 14.0f;
     public FontWeight FontWeight { get; set; } = FontWeight.Normal;
     public FontStyle FontStyle { get; set; } = FontStyle.Normal;
