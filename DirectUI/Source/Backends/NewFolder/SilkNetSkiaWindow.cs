@@ -15,6 +15,8 @@ namespace DirectUI.Backends.SkiaSharp;
 
 public class SilkNetSkiaWindow : IDisposable
 {
+    private char _highSurrogate = '\0'; // For handling UTF-16 surrogate pairs
+
     private readonly SilkNetWindowHost _owner;
     private readonly bool _isModal;
     private readonly Vector2D<int>? _initialPosition;
@@ -267,7 +269,33 @@ public class SilkNetSkiaWindow : IDisposable
         if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = false;
         Input.AddKeyReleased(MapKey(k));
     }
-    private void OnKeyChar(IKeyboard kb, char c) => Input.AddCharacterInput(c);
+    private void OnKeyChar(IKeyboard kb, char c)
+    {
+        // Handle UTF-16 surrogate pairs for emojis outside BMP
+        if (char.IsHighSurrogate(c))
+        {
+            _highSurrogate = c;
+            return; // Wait for the low surrogate
+        }
+        else if (char.IsLowSurrogate(c) && _highSurrogate != '\0')
+        {
+            // We have a complete surrogate pair - use the STRING version
+            string emoji = new string(new[] { _highSurrogate, c });
+            Input.AddCharacterInput(emoji); // This will call your string version
+            _highSurrogate = '\0';
+            return;
+        }
+        else if (_highSurrogate != '\0')
+        {
+            // We had a high surrogate but didn't get a low surrogate - something went wrong
+            // Add the high surrogate as a regular character and reset
+            Input.AddCharacterInput(_highSurrogate); // This will call your char version
+            _highSurrogate = '\0';
+        }
+
+        // Regular character (not part of a surrogate pair)
+        Input.AddCharacterInput(c); // This will call your char version
+    }
 
     private void OnMouseDown(IMouse m, Silk.NET.Input.MouseButton b)
         => Input.SetMouseDown(MapMouseButton(b));

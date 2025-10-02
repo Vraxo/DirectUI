@@ -4,22 +4,20 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using System.Numerics;
+using System.Text;
 using DirectUI.Core;
 using Vortice.Mathematics;
-using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
-using Vortice.DirectWrite; // Still used for WordWrapping, TextAlignment, ParagraphAlignment
+using D2D = Vortice.Direct2D1;
+using Vortice.DirectWrite;
 
 namespace DirectUI;
 
-// Logic and drawing for an immediate-mode LineEdit control. This class is STATELESS.
-// All persistent state is managed in a separate LineEditState object.
 internal class InputText
 {
-    // === MAIN UPDATE && DRAW METHOD ===
     public InputTextResult UpdateAndDraw(
         int intId,
         ref string text,
-        InputTextState state, // The state is now passed in
+        InputTextState state,
         Vector2 position,
         Vector2 size,
         ButtonStylePack? theme,
@@ -39,26 +37,16 @@ internal class InputText
         var themeId = HashCode.Combine(intId, "theme");
         var finalTheme = theme ?? uiState.GetOrCreateElement<ButtonStylePack>(themeId);
 
-        // If no specific theme was provided, configure the default one for a LineEdit look.
         if (theme is null)
         {
-            // This setup runs once per widget instance and is then cached.
-            finalTheme.Roundness = 0.2f; // Softer corners
+            finalTheme.Roundness = 0.2f;
             finalTheme.BorderLength = 1f;
-
-            // Normal state (dark, inset look)
-            finalTheme.Normal.FillColor = new Color4(30 / 255f, 30 / 255f, 30 / 255f, 1.0f); // Even darker than controls
+            finalTheme.Normal.FillColor = new Color4(30 / 255f, 30 / 255f, 30 / 255f, 1.0f);
             finalTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
-
-            // Hover state (subtle border highlight)
             finalTheme.Hover.FillColor = finalTheme.Normal.FillColor;
             finalTheme.Hover.BorderColor = DefaultTheme.HoverBorder;
-
-            // Focused state (bright border)
             finalTheme.Focused.FillColor = finalTheme.Normal.FillColor;
             finalTheme.Focused.BorderColor = DefaultTheme.FocusBorder;
-
-            // Disabled state
             finalTheme.Disabled.FillColor = finalTheme.Normal.FillColor;
             finalTheme.Disabled.BorderColor = DefaultTheme.DisabledBorder;
         }
@@ -80,7 +68,6 @@ internal class InputText
         var currentStyle = finalTheme.Current;
 
         // --- Mouse Input for Selection and Caret ---
-        // Handle mouse dragging to select text
         if (isPressed && input.IsLeftMouseDown && input.MousePosition != input.PreviousMousePosition)
         {
             int newCaretPos = GetCaretPositionFromMouse(input.MousePosition, text, state, isPassword, passwordChar, currentStyle, bounds, textMargin, textService);
@@ -90,7 +77,6 @@ internal class InputText
                 UpdateView(text, state, size, textMargin);
             }
         }
-        // Handle initial mouse press
         else if (input.WasLeftMousePressedThisFrame && isHovering && !disabled && uiState.PotentialInputTargetId == intId)
         {
             if (uiState.TrySetActivePress(intId, 1))
@@ -117,7 +103,6 @@ internal class InputText
             uiState.ClearActivePress(intId);
         }
 
-
         // --- Keyboard Input Processing ---
         if (isFocused && !disabled)
         {
@@ -127,7 +112,6 @@ internal class InputText
         // --- Drawing ---
         renderer.DrawBox(bounds, finalTheme.Current);
 
-        // Define content area and clip to it
         Rect contentRect = new Rect(
             bounds.X + textMargin.X,
             bounds.Y + textMargin.Y,
@@ -144,13 +128,19 @@ internal class InputText
             textToDraw = placeholderText;
             styleToDraw = new ButtonStyle(finalTheme.Disabled)
             {
-                FontColor = new Color4(100 / 255f, 100 / 255f, 100 / 255f, 1.0f) // Custom placeholder color
+                FontColor = new Color4(100 / 255f, 100 / 255f, 100 / 255f, 1.0f)
             };
         }
         else
         {
             textToDraw = isPassword ? new string(passwordChar, text.Length) : text;
             styleToDraw = finalTheme.Current;
+
+            // DEBUG: Log what we're about to draw
+            if (input.TypedCharacters.Any() && !isPassword)
+            {
+                DebugStringInfo("Text to draw: " + textToDraw);
+            }
         }
 
         DrawSelectionHighlight(textToDraw, state, styleToDraw, contentRect);
@@ -164,6 +154,38 @@ internal class InputText
         renderer.PopClipRect();
 
         return new InputTextResult(textChanged, enterPressed);
+    }
+
+    private void DebugStringInfo(string text)
+    {
+        StringInfo si = new StringInfo(text);
+        StringBuilder debug = new StringBuilder();
+        debug.AppendLine($"=== STRING DEBUG ===");
+        debug.AppendLine($"Text: '{text}'");
+        debug.AppendLine($"Length (chars): {text.Length}");
+        debug.AppendLine($"Graphemes: {si.LengthInTextElements}");
+        debug.AppendLine($"Codepoints: {text.EnumerateRunes().Count()}");
+
+        for (int i = 0; i < si.LengthInTextElements; i++)
+        {
+            string grapheme = si.SubstringByTextElements(i, 1);
+            debug.AppendLine($"  Grapheme {i}: '{grapheme}' (Char length: {grapheme.Length})");
+
+            // Show individual codepoints
+            var runes = grapheme.EnumerateRunes();
+            int runeIndex = 0;
+            foreach (Rune rune in runes)
+            {
+                debug.AppendLine($"    Rune {runeIndex}: U+{rune.Value:X4} '{rune}'");
+                runeIndex++;
+            }
+        }
+
+        // Also show raw bytes for debugging
+        byte[] utf8Bytes = Encoding.UTF8.GetBytes(text);
+        debug.AppendLine($"UTF-8 Bytes: {BitConverter.ToString(utf8Bytes)}");
+
+        System.Diagnostics.Debug.WriteLine(debug.ToString());
     }
 
     private int GetCaretPositionFromMouse(Vector2 mousePos, string text, InputTextState state, bool isPassword, char passwordChar, ButtonStyle style, Rect widgetBounds, Vector2 textMargin, ITextService textService)
@@ -215,22 +237,27 @@ internal class InputText
                 textChanged = true;
             }
 
-            // Reconstruct the full string from the sequence of chars to correctly handle surrogate pairs.
-            string typedString = new string(input.TypedCharacters.ToArray());
+            var chars = input.TypedCharacters.ToArray();
 
-            var enumerator = StringInfo.GetTextElementEnumerator(typedString);
-            while (enumerator.MoveNext())
+            // Apply PUA correction to each character
+            string typedString = string.Concat(chars.Select(c => CorrectPuaCharacter(c)));
+
+            System.Diagnostics.Debug.WriteLine($"After PUA correction: '{typedString}' (Length: {typedString.Length})");
+
+            // Now process this as graphemes
+            StringInfo si = new StringInfo(typedString);
+            for (int i = 0; i < si.LengthInTextElements; i++)
             {
-                string textElement = enumerator.GetTextElement();
-                if (text.Length + textElement.Length > maxLength)
-                {
-                    // No more space for this or subsequent text elements.
-                    break;
-                }
+                string grapheme = si.SubstringByTextElements(i, 1);
 
-                text = text.Insert(state.CaretPosition, textElement);
-                state.CaretPosition += textElement.Length; // Length is number of chars, which is correct
+                if (text.Length + grapheme.Length > maxLength)
+                    break;
+
+                text = text.Insert(state.CaretPosition, grapheme);
+                state.CaretPosition += grapheme.Length;
                 textChanged = true;
+
+                System.Diagnostics.Debug.WriteLine($"Inserted corrected grapheme: '{grapheme}' (Length: {grapheme.Length})");
             }
 
             if (textChanged)
@@ -242,7 +269,7 @@ internal class InputText
         foreach (var key in input.PressedKeys)
         {
             bool hasTextChangedThisKey = false;
-            PushUndoState(text, state); // Push on first key press
+            PushUndoState(text, state);
             switch (key)
             {
                 case Keys.Enter:
@@ -270,7 +297,8 @@ internal class InputText
                         else
                         {
                             int prevBoundary = FindPreviousGraphemeBoundary(text, state.CaretPosition);
-                            text = text.Remove(prevBoundary, state.CaretPosition - prevBoundary);
+                            int graphemeLength = state.CaretPosition - prevBoundary;
+                            text = text.Remove(prevBoundary, graphemeLength);
                             state.CaretPosition = prevBoundary;
                         }
                         hasTextChangedThisKey = true;
@@ -294,7 +322,8 @@ internal class InputText
                         else
                         {
                             int nextBoundary = FindNextGraphemeBoundary(text, state.CaretPosition);
-                            text = text.Remove(state.CaretPosition, nextBoundary - state.CaretPosition);
+                            int graphemeLength = nextBoundary - state.CaretPosition;
+                            text = text.Remove(state.CaretPosition, graphemeLength);
                         }
                         hasTextChangedThisKey = true;
                     }
@@ -352,6 +381,28 @@ internal class InputText
         return (textChanged, enterPressed);
     }
 
+    private void DebugTypedCharacters(IEnumerable<char> typedChars)
+    {
+        var chars = typedChars.ToArray();
+        StringBuilder debug = new StringBuilder();
+        debug.AppendLine($"=== TYPED CHARACTERS DEBUG ===");
+        debug.AppendLine($"Count: {chars.Length}");
+
+        for (int i = 0; i < chars.Length; i++)
+        {
+            char c = chars[i];
+            debug.AppendLine($"  Char {i}: '{c}' (U+{(ushort)c:X4}) - High surrogate: {char.IsHighSurrogate(c)}, Low surrogate: {char.IsLowSurrogate(c)}");
+        }
+
+        string asString = new string(chars);
+        debug.AppendLine($"As string: '{asString}'");
+
+        StringInfo si = new StringInfo(asString);
+        debug.AppendLine($"Graphemes in typed: {si.LengthInTextElements}");
+
+        System.Diagnostics.Debug.WriteLine(debug.ToString());
+    }
+
     private static int FindPreviousWordStart(string text, int currentPos)
     {
         if (currentPos == 0) return 0;
@@ -374,22 +425,48 @@ internal class InputText
     private static int FindNextGraphemeBoundary(string text, int currentPosition)
     {
         if (currentPosition >= text.Length) return text.Length;
-        var enumerator = StringInfo.GetTextElementEnumerator(text, currentPosition);
-        if (enumerator.MoveNext())
+
+        StringInfo si = new StringInfo(text);
+        int textElementIndex = 0;
+        int charIndex = 0;
+
+        while (charIndex <= currentPosition && textElementIndex < si.LengthInTextElements)
         {
-            return enumerator.ElementIndex + enumerator.GetTextElement().Length;
+            string element = si.SubstringByTextElements(textElementIndex, 1);
+            if (charIndex + element.Length > currentPosition)
+            {
+                return charIndex + element.Length;
+            }
+            charIndex += element.Length;
+            textElementIndex++;
         }
+
         return text.Length;
     }
 
     private static int FindPreviousGraphemeBoundary(string text, int currentPosition)
     {
         if (currentPosition <= 0) return 0;
-        string sub = text.Substring(0, currentPosition);
-        var si = new StringInfo(sub);
-        if (si.LengthInTextElements == 0) return 0;
-        string lastElement = si.SubstringByTextElements(si.LengthInTextElements - 1);
-        return currentPosition - lastElement.Length;
+
+        StringInfo si = new StringInfo(text);
+        int textElementIndex = 0;
+        int charIndex = 0;
+
+        while (charIndex < currentPosition && textElementIndex < si.LengthInTextElements)
+        {
+            string element = si.SubstringByTextElements(textElementIndex, 1);
+            int nextCharIndex = charIndex + element.Length;
+
+            if (nextCharIndex >= currentPosition)
+            {
+                return charIndex;
+            }
+
+            charIndex = nextCharIndex;
+            textElementIndex++;
+        }
+
+        return currentPosition;
     }
 
     private void DrawSelectionHighlight(string text, InputTextState state, ButtonStyle style, Rect contentRect)
@@ -414,7 +491,7 @@ internal class InputText
         Rect highlightRect = new(startX, contentRect.Top, width, contentRect.Height);
 
         var selectionColor = DefaultTheme.Accent;
-        selectionColor.A = 100; // ~40% opacity
+        selectionColor.A = 100;
         var selectionStyle = new BoxStyle { FillColor = selectionColor, Roundness = 0f, BorderLength = 0f };
 
         renderer.DrawBox(highlightRect, selectionStyle);
@@ -428,12 +505,22 @@ internal class InputText
         var renderer = context.Renderer;
         var textService = context.TextService;
 
-        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
+        // Create a modified style with emoji font support
+        var emojiStyle = new ButtonStyle(style);
+        emojiStyle.FontName = "Segoe UI Emoji, Noto Color Emoji, Apple Color Emoji, sans-serif";
+        emojiStyle.FontSize = style.FontSize * 1.2f; // Slightly larger for better emoji rendering
+
+        var textLayout = textService.GetTextLayout(fullText, emojiStyle, new(float.MaxValue, size.Y),
+            new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout is null) return;
 
         const float yOffsetCorrection = -1.5f;
         Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
-        renderer.DrawText(drawOrigin, fullText, style, new Alignment(HAlignment.Left, VAlignment.Center), new Vector2(float.MaxValue, size.Y), style.FontColor);
+
+        // Use the emoji style for rendering
+        renderer.DrawText(drawOrigin, fullText, emojiStyle,
+            new Alignment(HAlignment.Left, VAlignment.Center),
+            new Vector2(float.MaxValue, size.Y), emojiStyle.FontColor);
     }
 
     private void DrawCaret(string text, InputTextState state, Vector2 size, ButtonStyle style, Rect contentRect)
@@ -453,7 +540,7 @@ internal class InputText
     private void UpdateView(string text, InputTextState state, Vector2 size, Vector2 textMargin)
     {
         float availableWidth = size.X - textMargin.X * 2;
-        var style = new ButtonStyle(); // A default style is fine for measuring
+        var style = new ButtonStyle();
 
         var textLayout = UI.Context.TextService.GetTextLayout(text, style, new(float.MaxValue, size.Y), new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout is null) return;
@@ -509,5 +596,96 @@ internal class InputText
         state.CaretPosition = nextState.CaretPosition;
         state.SelectionAnchor = nextState.SelectionAnchor;
         state.ScrollPixelOffset = nextState.ScrollPixelOffset;
+    }
+
+    private void DebugSurrogateHandling(IEnumerable<char> typedChars)
+    {
+        var chars = typedChars.ToArray();
+        StringBuilder debug = new StringBuilder();
+        debug.AppendLine($"=== SURROGATE PAIR DEBUG ===");
+
+        for (int i = 0; i < chars.Length; i++)
+        {
+            char c = chars[i];
+            bool isHigh = char.IsHighSurrogate(c);
+            bool isLow = char.IsLowSurrogate(c);
+
+            debug.AppendLine($"Char {i}: '{c}' (U+{(ushort)c:X4}) - High: {isHigh}, Low: {isLow}");
+
+            // Check for complete surrogate pair
+            if (isHigh && i + 1 < chars.Length && char.IsLowSurrogate(chars[i + 1]))
+            {
+                int codePoint = char.ConvertToUtf32(c, chars[i + 1]);
+                debug.AppendLine($"  >>> SURROGATE PAIR: U+{codePoint:X4} '{char.ConvertFromUtf32(codePoint)}'");
+                i++; // Skip low surrogate
+            }
+            else if (isHigh || isLow)
+            {
+                debug.AppendLine($"  >>> INCOMPLETE SURROGATE PAIR!");
+            }
+        }
+
+        System.Diagnostics.Debug.WriteLine(debug.ToString());
+    }
+
+
+
+    private string CorrectPuaCharacter(char c)
+    {
+        // Map common PUA characters back to their real emoji equivalents
+        // This is a workaround for the input system corruption
+        return c switch
+        {
+            '\uF600' => "\U0001F600", // 😀
+            '\uF601' => "\U0001F601", // 😁
+            '\uF602' => "\U0001F602", // 😂
+            '\uF603' => "\U0001F603", // 😃
+            '\uF604' => "\U0001F604", // 😄
+            '\uF605' => "\U0001F605", // 😅
+            '\uF606' => "\U0001F606", // 😆
+            '\uF607' => "\U0001F607", // 😇
+            '\uF608' => "\U0001F608", // 😈
+            '\uF609' => "\U0001F609", // 😉
+            '\uF60A' => "\U0001F60A", // 😊
+            '\uF60B' => "\U0001F60B", // 😋
+            '\uF60C' => "\U0001F60C", // 😌
+            '\uF60D' => "\U0001F60D", // 😍
+            '\uF60E' => "\U0001F60E", // 😎
+            '\uF60F' => "\U0001F60F", // 😏
+            '\uF389' => "\U0001F389", // 🎉
+            '\uF9E0' => "\U0001F9E0", // 🧠
+            '\uF9E1' => "\U0001F9E1", // 🧡
+            '\uF9E2' => "\U0001F9E2", // 🧢
+            '\uF9E3' => "\U0001F9E3", // 🧣
+            '\uF9E4' => "\U0001F9E4", // 🧤
+            '\uF9E5' => "\U0001F9E5", // 🧥
+            '\uF9E6' => "\U0001F9E6", // 🧦
+            '\uF9E7' => "\U0001F9E7", // 🧧
+            '\uF9E8' => "\U0001F9E8", // 🧨
+            '\uF9E9' => "\U0001F9E9", // 🧩
+            '\uF9EA' => "\U0001F9EA", // 🧪
+            '\uF9EB' => "\U0001F9EB", // 🧫
+            '\uF9EC' => "\U0001F9EC", // 🧬
+            '\uF9ED' => "\U0001F9ED", // 🧭
+            '\uF9EE' => "\U0001F9EE", // 🧮
+            '\uF9EF' => "\U0001F9EF", // 🧯
+            '\uF9F0' => "\U0001F9F0", // 🧰
+            '\uF9F1' => "\U0001F9F1", // 🧱
+            '\uF9F2' => "\U0001F9F2", // 🧲
+            '\uF9F3' => "\U0001F9F3", // 🧳
+            '\uF9F4' => "\U0001F9F4", // 🧴
+            '\uF9F5' => "\U0001F9F5", // 🧵
+            '\uF9F6' => "\U0001F9F6", // 🧶
+            '\uF9F7' => "\U0001F9F7", // 🧷
+            '\uF9F8' => "\U0001F9F8", // 🧸
+            '\uF9F9' => "\U0001F9F9", // 🧹
+            '\uF9FA' => "\U0001F9FA", // 🧺
+            '\uF9FB' => "\U0001F9FB", // 🧻
+            '\uF9FC' => "\U0001F9FC", // 🧼
+            '\uF9FD' => "\U0001F9FD", // 🧽
+            '\uF9FE' => "\U0001F9FE", // 🧾
+            '\uF9FF' => "\U0001F9FF", // 🧿
+            _ => c.ToString()
+        };
     }
 }

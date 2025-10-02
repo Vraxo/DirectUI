@@ -540,6 +540,6 @@ float4 PS(PS_Input input) : SV_TARGET
 
     public void DrawImage(byte[] imageData, string imageKey, Rect destination)
     {
-        throw new NotImplementedException();
+        //throw new NotImplementedException();
     }
 }

@@ -106,6 +106,22 @@ public class InputManager
         }
     }
 
+    public void AddCharacterInput(string text)
+    {
+        // Instead of breaking into individual chars, store the complete string
+        // or at least mark surrogate pairs
+        foreach (char c in text)
+        {
+            _typedCharsThisFrame.Enqueue(c);
+        }
+
+        // If it was a surrogate pair, add a marker
+        if (text.Length == 2 && char.IsSurrogatePair(text[0], text[1]))
+        {
+            // We could add a special marker, but let's try a different approach
+        }
+    }
+
     public void AddCharacterInput(char c)
     {
         // Filter out control characters except for tab and newline which might be useful in text boxes.
