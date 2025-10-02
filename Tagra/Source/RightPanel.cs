@@ -17,7 +17,7 @@ public class RightPanel
     public void Draw()
     {
         var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
-        UI.BeginResizableVPanel("details_panel", ref _app.RightPanelWidth, HAlignment.Right, minWidth: 200, maxWidth: 500, panelStyle: panelStyle);
+        UI.BeginResizableVPanel("details_panel", ref _app.RightPanelWidth, HAlignment.Right, topOffset: MenuBar.MenuBarHeight, minWidth: 200, maxWidth: 500, panelStyle: panelStyle);
 
         var clipRect = UI.Context.Layout.GetCurrentClipRect();
         var innerWidth = clipRect.Width / UI.Context.UIScale;

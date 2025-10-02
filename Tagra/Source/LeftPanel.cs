@@ -15,7 +15,7 @@ public class LeftPanel
     public void Draw()
     {
         var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
-        UI.BeginResizableVPanel("main_layout", ref _app.LeftPanelWidth, HAlignment.Left, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
+        UI.BeginResizableVPanel("main_layout", ref _app.LeftPanelWidth, HAlignment.Left, topOffset: MenuBar.MenuBarHeight, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
 
         var clipRect = UI.Context.Layout.GetCurrentClipRect();
         var innerWidth = clipRect.Width / UI.Context.UIScale;
@@ -29,23 +29,6 @@ public class LeftPanel
         {
             _app.HandleSearch(); // Trigger search explicitly on Enter
         }
-
-        UI.Separator(innerWidth);
-
-        // --- New Tag Creation ---
-        UI.BeginHBoxContainer("new_tag_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
-        UI.InputText("new_tag_input", ref _app.NewTagName, new Vector2(innerWidth - 55, 28f), placeholderText: "New Tag Name");
-        if (UI.Button("create_tag_btn", "Add", new Vector2(50, 28)))
-        {
-            if (!string.IsNullOrWhiteSpace(_app.NewTagName))
-            {
-                _app.DbManager.AddTag(_app.NewTagName);
-                _app.NewTagName = "";
-                _app.RefreshAllData();
-            }
-        }
-        UI.EndHBoxContainer();
-        // --- End New Tag Creation ---
 
         UI.Separator(innerWidth);
         UI.Text("tags_label", "All Tags");
@@ -86,13 +69,9 @@ public class LeftPanel
                     _app.SearchText = tag.Name; // Click a tag to search for it
                 }
             }
-            if (UI.Button($"delete_tag_btn_{tag.Id}", "x", new Vector2(24, 24)))
-            {
-                if (!_app.TagIdToDelete.HasValue) // Prevent opening multiple dialogs
-                {
-                    _app.TagIdToDelete = tag.Id;
-                }
-            }
+            // The delete button is now in the Manage Tags window.
+            UI.Box("delete_placeholder", new Vector2(24, 24), new BoxStyle { FillColor = Colors.Transparent, BorderLength = 0f });
+
             UI.EndHBoxContainer();
         }
         UI.EndScrollableRegion();

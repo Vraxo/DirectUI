@@ -25,6 +25,7 @@ public class App : IAppLogic
     internal float RightPanelWidth = 250f;
     internal string NewTagName = "";
     internal long? TagIdToDelete = null;
+    internal bool ManageTagsRequested = false;
 
     public App(IWindowHost host)
     {
@@ -64,34 +65,27 @@ public class App : IAppLogic
 
     public void DrawUI(UIContext context)
     {
-        // Handle modal window logic at the top level
-        if (TagIdToDelete.HasValue && !Host.ModalWindowService.IsModalWindowOpen)
+        // Draw the menu bar first. It might set ManageTagsRequested = true.
+        _uiManager.DrawMenuBar();
+
+        // Handle opening the modal window for tag management
+        if (ManageTagsRequested && !Host.ModalWindowService.IsModalWindowOpen)
         {
-            var tagToDelete = AllTags.FirstOrDefault(t => t.Id == TagIdToDelete.Value);
-            if (tagToDelete != null)
-            {
-                Host.ModalWindowService.OpenModalWindow(
-                    "Confirm Deletion",
-                    300, 120,
-                    (modalContext) => ModalDialogs.DrawDeleteConfirmation(Host, tagToDelete),
-                    (result) => {
-                        if (result == 0) // 'Yes' was clicked
-                        {
-                            DbManager.DeleteTag(TagIdToDelete.Value);
-                            RefreshAllData();
-                        }
-                        TagIdToDelete = null;
-                    }
-                );
-            }
-            else
-            {
-                TagIdToDelete = null; // Tag not found
-            }
+            Host.ModalWindowService.OpenModalWindow(
+                "Manage Tags",
+                400, 480,
+                (modalContext) => TagManagementWindow.Draw(this),
+                (result) => {
+                    ManageTagsRequested = false; // Reset the request
+                    NewTagName = ""; // Clear any leftover input
+                    TagIdToDelete = null; // Clear any leftover state from the modal
+                    RefreshAllData(); // Refresh data in main window after modal closes
+                }
+            );
         }
 
         HandleSearch();
-        _uiManager.DrawLayout();
+        _uiManager.DrawMainLayout();
     }
 
     internal void HandleSearch()

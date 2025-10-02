@@ -26,7 +26,7 @@ public class MainContentPanel
 
         var mainPanelX = _app.LeftPanelWidth + 1;
         var mainPanelWidth = (windowWidth / scale) - mainPanelX - _app.RightPanelWidth;
-        var mainPanelPos = new Vector2(mainPanelX, 0);
+        var mainPanelPos = new Vector2(mainPanelX, MenuBar.MenuBarHeight);
 
         UI.BeginVBoxContainer("main_content_vbox", mainPanelPos, gap: 10);
 

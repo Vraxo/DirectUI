@@ -16,7 +16,7 @@ public static partial class UI
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    internal static ClickResult DrawButtonPrimitive(
+    public static ClickResult DrawButtonPrimitive(
         int id,
         Vortice.Mathematics.Rect bounds,
         string text,
