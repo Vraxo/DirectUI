@@ -1,0 +1,40 @@
+# DirectUI styles for Tagra application
+
+TagButton:
+  Roundness: 0.2
+  BorderLength: 0
+  Animation:
+    Duration: 0.12
+    Easing: EaseOutQuad
+  Normal:
+    FillColor: "#00000000"
+    BorderColor: "#00000000"
+    Scale: [1.0, 1.0]
+  Hover:
+    FillColor: "#FFFFFF14" # Transparent white
+    BorderColor: "#00000000"
+    Scale: [1.02, 1.02] # Slight zoom on hover
+  Pressed:
+    FontColor: "#FFFFFFFF"
+    Scale: [0.98, 0.98] # Slight shrink on press
+  Active:
+    FontColor: "#FFFFFFFF"
+    FillColor: "#3366CCFF" # DefaultTheme.Accent
+    BorderColor: "#4D80E6FF" # DefaultTheme.AccentBorder
+  ActiveHover:
+    FontColor: "#FFFFFFFF"
+    FillColor: "#3366CCFF"
+    BorderColor: "#4D80E6FF"
+
+ColorSwatch:
+  Roundness: 1.0 # Circle
+  BorderLength: 0
+  Animation:
+    Duration: 0.1
+    Easing: EaseOutQuad
+  Normal:
+    Scale: [1.0, 1.0]
+  Hover:
+    Scale: [1.1, 1.1]
+  Pressed:
+    Scale: [0.9, 0.9]

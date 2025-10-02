@@ -1299,6 +1299,7 @@ public class ClickCaptureServer
 
     public void RequestCapture(int id, int layer)
     {
+        if (UI.Context.IsLayoutPass) return;
         _requests.Add(new ClickCaptureRequest(id, layer));
         Console.WriteLine($"[CAPTURE-REQUEST] ID: {id}, Layer: {layer}");
     }
@@ -1499,6 +1500,26 @@ public static partial class UI
         var logicalSize = size;
         var physicalSize = logicalSize * scale;
         var drawPos = context.Layout.ApplyLayout(Vector2.Zero);
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset * scale;
+            }
+        }
+
         var bounds = new Rect(drawPos.X, drawPos.Y, physicalSize.X, physicalSize.Y);
 
         if (!context.Layout.IsRectVisible(bounds))
@@ -1787,16 +1808,19 @@ public static partial class UI
 {
     public static bool ColorSelector(
         string id,
-        ref string selectedColorHex,
+        string selectedColorHex,
         IReadOnlyList<string> availableColors,
         Vector2 swatchSize,
+        out string? newSelectedColor,
         float gap = 10f)
     {
         if (!IsContextValid() || availableColors is null || availableColors.Count == 0)
         {
+            newSelectedColor = null;
             return false;
         }
 
+        newSelectedColor = null;
         bool selectionChanged = false;
 
         // This theme is created once per call and configured to use the Button's `isActive` state.
@@ -1832,7 +1856,7 @@ public static partial class UI
             {
                 if (!isSelected)
                 {
-                    selectedColorHex = colorHex;
+                    newSelectedColor = colorHex;
                     selectionChanged = true;
                 }
             }
@@ -1952,8 +1976,13 @@ public static partial class UI
         public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth) { }
         public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color) { }
         public void Flush() { }
-        public void PopClipRect() { }
+        public void PopClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
         public void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
+
+        public void PopClipRect()
+        {
+            throw new NotImplementedException();
+        }
     }
 
     /// <summary>
@@ -1969,6 +1998,7 @@ public static partial class UI
 
         var originalLayout = Context.Layout;
         var originalRenderer = Context.Renderer;
+        var originalIsLayoutPass = Context.IsLayoutPass;
 
         // Create a new layout manager for this calculation to keep it isolated.
         var calculationLayout = new UILayoutManager(Context.UIScale);
@@ -1978,26 +2008,28 @@ public static partial class UI
         // Swap context properties for the calculation pass
         Context.Layout = calculationLayout;
         Context.Renderer = new NullRenderer(originalRenderer.RenderTargetSize);
+        Context.IsLayoutPass = true; // SET FLAG
 
-        // Run user's UI code. It will only perform layout actions.
-        layoutCode();
+        try
+        {
+            // Run user's UI code. It will only perform layout actions and will not modify persistent state.
+            layoutCode();
+        }
+        finally
+        {
+            // Restore original context state
+            Context.Layout = originalLayout;
+            Context.Renderer = originalRenderer;
+            Context.IsLayoutPass = originalIsLayoutPass; // RESTORE FLAG
+        }
 
         // Pop the root container to get its final calculated state.
         if (calculationLayout.ContainerStackCount > 0)
         {
             var measuredVBox = (VBoxContainerState)calculationLayout.PopContainer();
-            var size = measuredVBox.GetAccumulatedSize();
-
-            // Restore original context state
-            Context.Layout = originalLayout;
-            Context.Renderer = originalRenderer;
-
-            return size;
+            return measuredVBox.GetAccumulatedSize();
         }
 
-        // Restore context state even if the container stack was mismatched.
-        Context.Layout = originalLayout;
-        Context.Renderer = originalRenderer;
         return Vector2.Zero;
     }
 
@@ -3883,7 +3915,7 @@ public static partial class UI
     /// The core, stateless primitive for drawing and interacting with a button.
     /// This is the single source of truth for all button-like controls.
     /// </summary>
-    internal static ClickResult DrawButtonPrimitive(
+    public static ClickResult DrawButtonPrimitive(
         int id,
         Vortice.Mathematics.Rect bounds,
         string text,
@@ -4465,6 +4497,7 @@ public class UIContext
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
+    public bool IsLayoutPass { get; internal set; } = false;
 
     public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime, float uiScale)
     {
@@ -4760,6 +4793,7 @@ public class UIPersistentState
 
     public void SetActivePopup(int ownerId, Action<UIContext> drawCallback, Rect bounds)
     {
+        if (UI.Context.IsLayoutPass) return;
         _activePopupId = ownerId;
         _popupDrawCallback = drawCallback;
         _popupBounds = bounds;
@@ -4768,6 +4802,7 @@ public class UIPersistentState
 
     public void SetPopupResult(int ownerId, int result)
     {
+        if (UI.Context.IsLayoutPass) return;
         // This sets the data that will become available at the start of the *next* frame.
         _nextFramePopupResultOwnerId = ownerId;
         _nextFramePopupResult = result;
@@ -4776,6 +4811,7 @@ public class UIPersistentState
 
     public void ClearActivePopup()
     {
+        if (UI.Context.IsLayoutPass) return;
         _activePopupId = 0;
         _popupDrawCallback = null;
         _popupBounds = default;
@@ -4804,6 +4840,7 @@ public class UIPersistentState
     // Used for immediate visual feedback (which element is currently held down)
     public bool TrySetActivePress(int id, int layer)
     {
+        if (UI.Context.IsLayoutPass) return false;
         if (layer >= _inputCaptorLayer)
         {
             _inputCaptorLayer = layer;
@@ -4817,6 +4854,7 @@ public class UIPersistentState
     // Called at the end of the frame to set the winner for the next frame's Press actions
     public void SetNextFramePressWinner(int id)
     {
+        if (UI.Context.IsLayoutPass) return;
         _nextFramePressWinnerId = id;
     }
 
@@ -4825,6 +4863,7 @@ public class UIPersistentState
     /// </summary>
     public void ClearAllActivePressState()
     {
+        if (UI.Context.IsLayoutPass) return;
         ActivelyPressedElementId = 0;
         InputCaptorId = 0;
         _inputCaptorLayer = -1;
@@ -4832,6 +4871,7 @@ public class UIPersistentState
 
     public void ClearActivePress(int id)
     {
+        if (UI.Context.IsLayoutPass) return;
         // When a control that initiated a press is done with it (e.g., on mouse up),
         // it clears the global state.
         if (ActivelyPressedElementId == id)
@@ -4843,12 +4883,14 @@ public class UIPersistentState
     // --- Focus Management ---
     public void SetFocus(int id)
     {
+        if (UI.Context.IsLayoutPass) return;
         FocusedElementId = id;
     }
 
     // --- Click Management ---
     public ClickResult RegisterClick(int id)
     {
+        if (UI.Context.IsLayoutPass) return ClickResult.None;
         float currentTime = UI.Context.TotalTime;
         if (LastClickedElementId == id && (currentTime - LastClickTime) < DoubleClickThreshold)
         {
@@ -13638,6 +13680,8 @@ public class App : IAppLogic
     internal float RightPanelWidth = 250f;
     internal string NewTagName = "";
     internal long? TagIdToDelete = null;
+    internal bool ManageTagsRequested = false;
+    internal long? ActiveColorPickerTagId = null; // State for the color picker
 
     public App(IWindowHost host)
     {
@@ -13677,34 +13721,28 @@ public class App : IAppLogic
 
     public void DrawUI(UIContext context)
     {
-        // Handle modal window logic at the top level
-        if (TagIdToDelete.HasValue && !Host.ModalWindowService.IsModalWindowOpen)
+        // Draw the menu bar first. It might set ManageTagsRequested = true.
+        _uiManager.DrawMenuBar();
+
+        // Handle opening the modal window for tag management
+        if (ManageTagsRequested && !Host.ModalWindowService.IsModalWindowOpen)
         {
-            var tagToDelete = AllTags.FirstOrDefault(t => t.Id == TagIdToDelete.Value);
-            if (tagToDelete != null)
-            {
-                Host.ModalWindowService.OpenModalWindow(
-                    "Confirm Deletion",
-                    300, 120,
-                    (modalContext) => ModalDialogs.DrawDeleteConfirmation(Host, tagToDelete),
-                    (result) => {
-                        if (result == 0) // 'Yes' was clicked
-                        {
-                            DbManager.DeleteTag(TagIdToDelete.Value);
-                            RefreshAllData();
-                        }
-                        TagIdToDelete = null;
-                    }
-                );
-            }
-            else
-            {
-                TagIdToDelete = null; // Tag not found
-            }
+            Host.ModalWindowService.OpenModalWindow(
+                "Manage Tags",
+                400, 480,
+                (modalContext) => TagManagementWindow.Draw(this),
+                (result) => {
+                    ManageTagsRequested = false; // Reset the request
+                    NewTagName = ""; // Clear any leftover input
+                    TagIdToDelete = null; // Clear any leftover state from the modal
+                    ActiveColorPickerTagId = null; // Clear color picker state
+                    RefreshAllData(); // Refresh data in main window after modal closes
+                }
+            );
         }
 
         HandleSearch();
-        _uiManager.DrawLayout();
+        _uiManager.DrawMainLayout();
     }
 
     internal void HandleSearch()
@@ -13740,6 +13778,16 @@ public class DatabaseManager
     private readonly string _databasePath;
     private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
 
+    // A palette of default colors for new tags
+    private static readonly List<string> _defaultTagColors = new()
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab",
+        "#1e88e5", "#039be5", "#00acc1", "#00897b", "#43a047",
+        "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00",
+        "#f4511e", "#6d4c41", "#757575", "#546e7a"
+    };
+    private static int _nextColorIndex = 0;
+
     public DatabaseManager()
     {
         _databasePath = Path.Combine(AppContext.BaseDirectory, "tagra.db");
@@ -13758,7 +13806,8 @@ public class DatabaseManager
         @"
             CREATE TABLE IF NOT EXISTS Tags (
                 Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Name TEXT NOT NULL UNIQUE
+                Name TEXT NOT NULL UNIQUE,
+                ColorHex TEXT NOT NULL DEFAULT '#757575'
             );
 
             CREATE TABLE IF NOT EXISTS Files (
@@ -13777,15 +13826,51 @@ public class DatabaseManager
         ";
         command.ExecuteNonQuery();
 
-        // For testing: add some default tags if none exist
-        command.CommandText = "SELECT COUNT(*) FROM Tags";
-        if (Convert.ToInt32(command.ExecuteScalar()) == 0)
+        // --- Simple Migration: Add ColorHex column if it doesn't exist ---
+        command.CommandText = "PRAGMA table_info(Tags);";
+        bool colorHexColumnExists = false;
+        using (var reader = command.ExecuteReader())
         {
-            AddTag("work");
-            AddTag("personal");
-            AddTag("photos");
-            AddTag("documents");
+            while (reader.Read())
+            {
+                if (reader.GetString(1).Equals("ColorHex", StringComparison.OrdinalIgnoreCase))
+                {
+                    colorHexColumnExists = true;
+                    break;
+                }
+            }
         }
+
+        if (!colorHexColumnExists)
+        {
+            Console.WriteLine("[Database] Old schema detected. Upgrading 'Tags' table...");
+            command.CommandText = "ALTER TABLE Tags ADD COLUMN ColorHex TEXT NOT NULL DEFAULT '#757575';";
+            command.ExecuteNonQuery();
+
+            // Assign colors to existing tags so they aren't all the default gray.
+            var updateCommand = connection.CreateCommand();
+            updateCommand.CommandText = "SELECT Id FROM Tags ORDER BY Id";
+            var tagIds = new List<long>();
+            using (var reader = updateCommand.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    tagIds.Add(reader.GetInt64(0));
+                }
+            }
+
+            for (int i = 0; i < tagIds.Count; i++)
+            {
+                var color = _defaultTagColors[i % _defaultTagColors.Count];
+                var colorUpdateCmd = connection.CreateCommand();
+                colorUpdateCmd.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
+                colorUpdateCmd.Parameters.AddWithValue("@ColorHex", color);
+                colorUpdateCmd.Parameters.AddWithValue("@Id", tagIds[i]);
+                colorUpdateCmd.ExecuteNonQuery();
+            }
+            Console.WriteLine("[Database] Upgrade complete.");
+        }
+        // --- End of Migration ---
     }
 
     public List<Tag> GetAllTags()
@@ -13796,7 +13881,7 @@ public class DatabaseManager
 
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, COUNT(FT.FileId)
+            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex
             FROM Tags T
             LEFT JOIN FileTags FT ON T.Id = FT.TagId
             GROUP BY T.Id, T.Name
@@ -13809,7 +13894,8 @@ public class DatabaseManager
             {
                 Id = reader.GetInt64(0),
                 Name = reader.GetString(1),
-                FileCount = reader.GetInt32(2)
+                FileCount = reader.GetInt32(2),
+                ColorHex = reader.GetString(3)
             });
         }
         return tags;
@@ -13822,9 +13908,16 @@ public class DatabaseManager
         using var connection = GetConnection();
         connection.Open();
 
+        // Get the current number of tags to pick a color
+        var countCommand = connection.CreateCommand();
+        countCommand.CommandText = "SELECT COUNT(*) FROM Tags";
+        var tagCount = Convert.ToInt32(countCommand.ExecuteScalar());
+        var color = _defaultTagColors[tagCount % _defaultTagColors.Count];
+
         var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO Tags (Name) VALUES (@Name)";
+        command.CommandText = "INSERT INTO Tags (Name, ColorHex) VALUES (@Name, @ColorHex)";
         command.Parameters.AddWithValue("@Name", name.Trim().ToLower());
+        command.Parameters.AddWithValue("@ColorHex", color);
 
         try
         {
@@ -13835,6 +13928,17 @@ public class DatabaseManager
             Console.WriteLine($"Tag '{name}' already exists.");
             return false;
         }
+    }
+
+    public void UpdateTagColor(long tagId, string newColorHex)
+    {
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", tagId);
+        command.Parameters.AddWithValue("@ColorHex", newColorHex);
+        command.ExecuteNonQuery();
     }
 
     public FileEntry? AddFile(string path)
@@ -13915,7 +14019,7 @@ public class DatabaseManager
         connection.Open();
         var command = connection.CreateCommand();
         command.CommandText = @"
-            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id)
+            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex
             FROM Tags T
             INNER JOIN FileTags FT ON T.Id = FT.TagId
             WHERE FT.FileId = @FileId
@@ -13924,7 +14028,7 @@ public class DatabaseManager
         using var reader = command.ExecuteReader();
         while (reader.Read())
         {
-            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2) });
+            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3) });
         }
         return tags;
     }
@@ -14038,7 +14142,7 @@ public class LeftPanel
     public void Draw()
     {
         var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
-        UI.BeginResizableVPanel("main_layout", ref _app.LeftPanelWidth, HAlignment.Left, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
+        UI.BeginResizableVPanel("main_layout", ref _app.LeftPanelWidth, HAlignment.Left, topOffset: MenuBar.MenuBarHeight, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
 
         var clipRect = UI.Context.Layout.GetCurrentClipRect();
         var innerWidth = clipRect.Width / UI.Context.UIScale;
@@ -14054,47 +14158,75 @@ public class LeftPanel
         }
 
         UI.Separator(innerWidth);
-
-        // --- New Tag Creation ---
-        UI.BeginHBoxContainer("new_tag_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
-        UI.InputText("new_tag_input", ref _app.NewTagName, new Vector2(innerWidth - 55, 28f), placeholderText: "New Tag Name");
-        if (UI.Button("create_tag_btn", "Add", new Vector2(50, 28)))
-        {
-            if (!string.IsNullOrWhiteSpace(_app.NewTagName))
-            {
-                _app.DbManager.AddTag(_app.NewTagName);
-                _app.NewTagName = "";
-                _app.RefreshAllData();
-            }
-        }
-        UI.EndHBoxContainer();
-        // --- End New Tag Creation ---
-
-        UI.Separator(innerWidth);
         UI.Text("tags_label", "All Tags");
 
         var scrollHeight = availableHeight - (UI.Context.Layout.GetCurrentPosition().Y - currentY);
         UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
+
+        // Define the custom style for tag buttons
+        var tagButtonStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 0f };
+        tagButtonStyle.Normal.FillColor = Colors.Transparent;
+        tagButtonStyle.Normal.BorderColor = Colors.Transparent;
+        tagButtonStyle.Hover.FillColor = new Color(255, 255, 255, 20); // Subtle hover
+        tagButtonStyle.Hover.BorderColor = Colors.Transparent;
+        tagButtonStyle.Pressed.FontColor = Colors.White;
+        tagButtonStyle.Active.FontColor = Colors.White;
+        tagButtonStyle.Active.FillColor = DefaultTheme.Accent; // Use accent color for the active/selected tag
+        tagButtonStyle.Active.BorderColor = DefaultTheme.AccentBorder;
+        tagButtonStyle.ActiveHover.FontColor = Colors.White; // Keep active style on hover
+        tagButtonStyle.ActiveHover.FillColor = DefaultTheme.Accent;
+        tagButtonStyle.ActiveHover.BorderColor = DefaultTheme.AccentBorder;
+
         foreach (var tag in _app.AllTags)
         {
-            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
-            if (UI.Button($"tag_btn_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth - 30, 24)))
+            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
+
+            var color = ParseColorHex(tag.ColorHex);
+            UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+
+            if (UI.Button(
+                id: $"tag_btn_{tag.Id}",
+                text: $"{tag.Name} ({tag.FileCount})",
+                size: new Vector2(scrollInnerWidth - 15, 24),
+                theme: tagButtonStyle,
+                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
+                isActive: _app.SearchText == tag.Name))
             {
-                _app.SearchText = tag.Name; // Click a tag to search for it
-            }
-            if (UI.Button($"delete_tag_btn_{tag.Id}", "x", new Vector2(24, 24)))
-            {
-                if (!_app.TagIdToDelete.HasValue) // Prevent opening multiple dialogs
+                if (_app.SearchText == tag.Name)
                 {
-                    _app.TagIdToDelete = tag.Id;
+                    _app.SearchText = ""; // Clicking the active tag deselects it
+                }
+                else
+                {
+                    _app.SearchText = tag.Name; // Click a tag to search for it
                 }
             }
+
             UI.EndHBoxContainer();
         }
         UI.EndScrollableRegion();
 
         UI.EndVBoxContainer();
         UI.EndResizableVPanel();
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = System.Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = System.Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = System.Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                return DefaultTheme.Accent;
+            }
+        }
+        return DefaultTheme.Accent;
     }
 }
 </file>
@@ -14128,7 +14260,7 @@ public class MainContentPanel
 
         var mainPanelX = _app.LeftPanelWidth + 1;
         var mainPanelWidth = (windowWidth / scale) - mainPanelX - _app.RightPanelWidth;
-        var mainPanelPos = new Vector2(mainPanelX, 0);
+        var mainPanelPos = new Vector2(mainPanelX, MenuBar.MenuBarHeight);
 
         UI.BeginVBoxContainer("main_content_vbox", mainPanelPos, gap: 10);
 
@@ -14225,6 +14357,98 @@ public class MainContentPanel
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\MenuBar.cs">
+using DirectUI;
+using DirectUI.Drawing;
+using System;
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace Tagra;
+
+public class MenuBar
+{
+    private readonly App _app;
+
+    public const float MenuBarHeight = 30f;
+
+    public MenuBar(App app)
+    {
+        _app = app;
+    }
+
+    public void Draw()
+    {
+        var context = UI.Context;
+        var state = UI.State;
+        var windowWidth = context.Renderer.RenderTargetSize.X / context.UIScale;
+
+        var menuBarStyle = new BoxStyle { FillColor = new(50, 50, 50, 255), BorderLength = 0 };
+        UI.Box("menu_bar_bg", new Vector2(windowWidth, MenuBarHeight), menuBarStyle);
+
+        UI.BeginHBoxContainer("menu_bar_hbox", Vector2.Zero, gap: 0);
+
+        var menuButtonTheme = new ButtonStylePack { Roundness = 0, BorderLength = 0 };
+        menuButtonTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
+        menuButtonTheme.Hover.FillColor = new DirectUI.Drawing.Color(255, 255, 255, 30);
+        menuButtonTheme.Pressed.FillColor = new DirectUI.Drawing.Color(255, 255, 255, 50);
+
+        if (UI.Button("menu_file", "File", new Vector2(50, MenuBarHeight), theme: menuButtonTheme))
+        {
+            // TODO: Open File Menu
+        }
+
+        // --- Edit Button & Dropdown Logic ---
+        int editMenuButtonId = "menu_edit".GetHashCode();
+        var editButtonPos = UI.Context.Layout.GetCurrentPosition();
+
+        if (UI.Button("menu_edit", "Edit", new Vector2(50, MenuBarHeight), theme: menuButtonTheme))
+        {
+            // If the popup is already open for this button, clicking again closes it.
+            if (state.IsPopupOpen && state.ActivePopupId == editMenuButtonId)
+            {
+                state.ClearActivePopup();
+            }
+            else
+            {
+                state.ClearActivePopup(); // Close any other popups first
+
+                // Define popup properties (using logical units)
+                var popupPos = new Vector2(editButtonPos.X, editButtonPos.Y + MenuBarHeight);
+                var popupSize = new Vector2(150, 30);
+                // The bounds for click-away detection must be in physical units.
+                var popupBoundsPhysical = new Rect(popupPos.X * context.UIScale, popupPos.Y * context.UIScale, popupSize.X * context.UIScale, popupSize.Y * context.UIScale);
+
+                // Define the drawing logic for the popup
+                Action<UIContext> drawCallback = (ctx) =>
+                {
+                    // Calculate physical bounds inside the callback to use the correct context
+                    var scaledPopupBounds = new Rect(popupPos.X * ctx.UIScale, popupPos.Y * ctx.UIScale, popupSize.X * ctx.UIScale, popupSize.Y * ctx.UIScale);
+
+                    var popupStyle = new BoxStyle { FillColor = new(60, 60, 60, 255), BorderColor = new(80, 80, 80, 255), BorderLength = 1f, Roundness = 0f };
+                    ctx.Renderer.DrawBox(scaledPopupBounds, popupStyle);
+
+                    var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+                    itemTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
+                    itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+                    itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+                    int itemId = "manage_tags_item".GetHashCode();
+                    if (UI.DrawButtonPrimitive(itemId, scaledPopupBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0)) != ClickResult.None)
+                    {
+                        _app.ManageTagsRequested = true;
+                        state.ClearActivePopup();
+                    }
+                };
+
+                state.SetActivePopup(editMenuButtonId, drawCallback, popupBoundsPhysical);
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\ModalDialogs.cs">
 using DirectUI;
 using DirectUI.Core;
@@ -14268,6 +14492,7 @@ public class Tag
     public long Id { get; set; }
     public required string Name { get; set; }
     public int FileCount { get; set; }
+    public string ColorHex { get; set; } = "#FFFFFF";
 
     public override string ToString() => Name;
 }
@@ -14326,7 +14551,7 @@ public class RightPanel
     public void Draw()
     {
         var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
-        UI.BeginResizableVPanel("details_panel", ref _app.RightPanelWidth, HAlignment.Right, minWidth: 200, maxWidth: 500, panelStyle: panelStyle);
+        UI.BeginResizableVPanel("details_panel", ref _app.RightPanelWidth, HAlignment.Right, topOffset: MenuBar.MenuBarHeight, minWidth: 200, maxWidth: 500, panelStyle: panelStyle);
 
         var clipRect = UI.Context.Layout.GetCurrentClipRect();
         var innerWidth = clipRect.Width / UI.Context.UIScale;
@@ -14347,26 +14572,47 @@ public class RightPanel
 
             foreach (var tag in _app.SelectedFile.Tags)
             {
-                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 20f);
                 if (UI.Button($"remove_tag_{tag.Id}", "x", new Vector2(20, 20)))
                 {
                     _app.DbManager.RemoveTagFromFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
                 }
-                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 30, 20));
+                var color = ParseColorHex(tag.ColorHex);
+                UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 40, 20));
                 UI.EndHBoxContainer();
             }
 
             UI.Separator(scrollInnerWidth);
             UI.Text("available_tags_label", "Available Tags to Add:");
+
+            // Define the custom style for tag buttons
+            var tagButtonStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 0f };
+            tagButtonStyle.Normal.FillColor = Colors.Transparent;
+            tagButtonStyle.Normal.BorderColor = Colors.Transparent;
+            tagButtonStyle.Hover.FillColor = new Color(255, 255, 255, 20); // Subtle hover
+            tagButtonStyle.Hover.BorderColor = Colors.Transparent;
+            tagButtonStyle.Pressed.FontColor = Colors.White;
+
             var availableTags = _app.AllTags.Except(_app.SelectedFile.Tags, new TagComparer());
             foreach (var tag in availableTags)
             {
-                if (UI.Button($"add_tag_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth, 24)))
+                UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
+                var color = ParseColorHex(tag.ColorHex);
+                UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
+
+                if (UI.Button(
+                    id: $"add_tag_{tag.Id}",
+                    text: tag.Name,
+                    size: new Vector2(scrollInnerWidth - 15, 24),
+                    theme: tagButtonStyle,
+                    textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
                 {
                     _app.DbManager.AddTagToFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
                 }
+                UI.EndHBoxContainer();
             }
 
             UI.EndVBoxContainer();
@@ -14374,6 +14620,209 @@ public class RightPanel
         }
 
         UI.EndResizableVPanel();
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = System.Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = System.Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = System.Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                return DefaultTheme.Accent;
+            }
+        }
+        return DefaultTheme.Accent;
+    }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\TagManagementWindow.cs">
+using DirectUI;
+using DirectUI.Drawing;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+
+namespace Tagra;
+
+public static class TagManagementWindow
+{
+    private static readonly IReadOnlyList<string> ColorPalette = new List<string>
+    {
+        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
+        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
+        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
+        "#546e7a", "#FFFFFF", "#000000"
+    }.AsReadOnly();
+
+    public static void Draw(App app)
+    {
+        var host = app.Host;
+        var innerWidth = 380f; // Modal content width
+
+        // This action will hold our state-changing logic so it can be executed
+        // after the entire UI has been drawn for this frame.
+        Action? deferredAction = null;
+
+        UI.BeginVBoxContainer("tag_manage_vbox", new Vector2(10, 10), gap: 10f);
+
+        // If a delete is pending, show confirmation UI instead of the main UI
+        if (app.TagIdToDelete.HasValue)
+        {
+            var tagToDelete = app.AllTags.FirstOrDefault(t => t.Id == app.TagIdToDelete.Value);
+            if (tagToDelete != null)
+            {
+                UI.Text("delete_header", "Confirm Deletion");
+                UI.Separator(innerWidth);
+                UI.WrappedText("delete_confirm_text", $"Are you sure you want to delete the tag '{tagToDelete.Name}'? This will remove it from {tagToDelete.FileCount} file(s) and cannot be undone.", new Vector2(innerWidth, 0));
+
+                UI.BeginHBoxContainer("delete_confirm_buttons", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
+                if (UI.Button("delete_yes", "Yes, Delete"))
+                {
+                    // Defer the database action
+                    deferredAction = () => {
+                        app.DbManager.DeleteTag(app.TagIdToDelete.Value);
+                        app.TagIdToDelete = null;
+                        app.RefreshAllData();
+                    };
+                }
+                if (UI.Button("delete_no", "Cancel"))
+                {
+                    app.TagIdToDelete = null; // This is safe to do immediately
+                }
+                UI.EndHBoxContainer();
+            }
+            else
+            {
+                app.TagIdToDelete = null; // Tag was not found, clear request
+            }
+        }
+        else // Show the main tag management UI
+        {
+            UI.Text("manage_tags_header", "Manage Tags");
+            UI.Separator(innerWidth);
+
+            // --- New Tag Creation ---
+            UI.BeginHBoxContainer("new_tag_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
+            UI.InputText("new_tag_input", ref app.NewTagName, new Vector2(innerWidth - 85, 28f), placeholderText: "New Tag Name");
+            if (UI.Button("create_tag_btn", "Add Tag", new Vector2(80, 28)))
+            {
+                if (!string.IsNullOrWhiteSpace(app.NewTagName))
+                {
+                    // Defer the database action
+                    deferredAction = () => {
+                        app.DbManager.AddTag(app.NewTagName);
+                        app.NewTagName = "";
+                        app.RefreshAllData();
+                    };
+                }
+            }
+            UI.EndHBoxContainer();
+            // --- End New Tag Creation ---
+
+            UI.Separator(innerWidth);
+
+            // --- Tag List ---
+            UI.BeginScrollableRegion("tags_manage_scroll", new Vector2(innerWidth, 250), out var scrollInnerWidth);
+            foreach (var tag in app.AllTags)
+            {
+                // *** THE FIX ***
+                // Create a local copy of the loop variable. The closure for the deferred action
+                // will capture this copy, not the loop variable itself.
+                var currentTag = tag;
+
+                UI.BeginVBoxContainer($"tag_vbox_wrapper_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
+
+                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+
+                var color = ParseColorHex(currentTag.ColorHex);
+                var swatchTheme = new ButtonStylePack { Roundness = 1.0f, BorderLength = 0f };
+                swatchTheme.Animation = new DirectUI.Animation.AnimationInfo(0.1f);
+                swatchTheme.Normal.FillColor = color;
+                swatchTheme.Hover.FillColor = color;
+                swatchTheme.Hover.Scale = new Vector2(1.1f, 1.1f);
+                swatchTheme.Pressed.FillColor = color;
+                swatchTheme.Pressed.Scale = new Vector2(0.9f, 0.9f);
+
+                if (UI.Button($"color_swatch_{currentTag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
+                {
+                    app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == currentTag.Id ? null : currentTag.Id;
+                }
+
+                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 120, 24));
+
+                if (UI.Button($"rename_tag_btn_{currentTag.Id}", "Rename", new Vector2(60, 24), disabled: true)) { /* TODO */ }
+
+                if (UI.Button($"delete_tag_btn_{currentTag.Id}", "X", new Vector2(24, 24)))
+                {
+                    app.TagIdToDelete = currentTag.Id;
+                }
+                UI.EndHBoxContainer();
+
+                if (app.ActiveColorPickerTagId == currentTag.Id)
+                {
+                    string? newlySelectedColor = null;
+                    UI.AutoPanel($"color_picker_panel_{currentTag.Id}", scrollInnerWidth, (innerWidth) =>
+                    {
+                        if (UI.ColorSelector($"picker_{currentTag.Id}", currentTag.ColorHex, ColorPalette, new Vector2(20, 20), out var tempNewColor, gap: 5f))
+                        {
+                            newlySelectedColor = tempNewColor;
+                        }
+                    });
+
+                    if (newlySelectedColor is not null)
+                    {
+                        // Schedule the state change, using the captured `currentTag` variable.
+                        deferredAction = () => {
+                            app.DbManager.UpdateTagColor(currentTag.Id, newlySelectedColor);
+                            app.RefreshAllData();
+                            app.ActiveColorPickerTagId = null;
+                        };
+                    }
+                }
+                UI.EndVBoxContainer();
+            }
+            UI.EndScrollableRegion();
+
+            UI.Separator(innerWidth);
+
+            if (UI.Button("close_tags_modal_btn", "Close", new Vector2(80, 32)))
+            {
+                host.ModalWindowService.CloseModalWindow(0);
+            }
+        }
+
+        UI.EndVBoxContainer();
+
+        // Now that the entire UI for this frame has been processed, execute any pending action.
+        deferredAction?.Invoke();
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                return DefaultTheme.Accent;
+            }
+        }
+        return DefaultTheme.Accent;
     }
 }
 </file>
@@ -14452,18 +14901,25 @@ namespace Tagra;
 
 public class UIManager
 {
+    private readonly MenuBar _menuBar;
     private readonly LeftPanel _leftPanel;
     private readonly MainContentPanel _mainContentPanel;
     private readonly RightPanel _rightPanel;
 
     public UIManager(App app)
     {
+        _menuBar = new MenuBar(app);
         _leftPanel = new LeftPanel(app);
         _mainContentPanel = new MainContentPanel(app);
         _rightPanel = new RightPanel(app);
     }
 
-    public void DrawLayout()
+    public void DrawMenuBar()
+    {
+        _menuBar.Draw();
+    }
+
+    public void DrawMainLayout()
     {
         _leftPanel.Draw();
         _mainContentPanel.Draw();

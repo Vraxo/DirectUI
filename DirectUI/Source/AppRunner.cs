@@ -4,6 +4,9 @@ using DirectUI.Core; // Added for IWindowHost
 using Raylib_cs;
 using SDL3;
 using GraphicsBackend = DirectUI.GraphicsBackend;
+using System.IO;
+using DirectUI.Styling;
+using System;
 
 namespace DirectUI;
 
@@ -18,6 +21,9 @@ public static class ApplicationRunner
 
         // Load settings at the very beginning of the application run.
         var settings = SettingsManager.LoadSettings();
+
+        // Load styles from YAML file.
+        StyleManager.LoadStylesFromFile(Path.Combine(AppContext.BaseDirectory, "Data", "styles.yaml"));
 
         // Define a guarded save action to prevent saving more than once on exit.
         Action? saveAction = null;

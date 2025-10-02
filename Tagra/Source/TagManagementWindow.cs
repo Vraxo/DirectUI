@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Numerics;
+using DirectUI.Styling;
 
 namespace Tagra;
 
@@ -98,13 +99,8 @@ public static class TagManagementWindow
                 UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
 
                 var color = ParseColorHex(currentTag.ColorHex);
-                var swatchTheme = new ButtonStylePack { Roundness = 1.0f, BorderLength = 0f };
-                swatchTheme.Animation = new DirectUI.Animation.AnimationInfo(0.1f);
-                swatchTheme.Normal.FillColor = color;
-                swatchTheme.Hover.FillColor = color;
-                swatchTheme.Hover.Scale = new Vector2(1.1f, 1.1f);
-                swatchTheme.Pressed.FillColor = color;
-                swatchTheme.Pressed.Scale = new Vector2(0.9f, 0.9f);
+                var swatchTheme = StyleManager.Get<ButtonStylePack>("ColorSwatch");
+                swatchTheme.FillColor = color;
 
                 if (UI.Button($"color_swatch_{currentTag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
                 {
