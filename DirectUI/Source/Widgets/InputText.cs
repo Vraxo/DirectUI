@@ -228,6 +228,8 @@ internal class InputText
 
         if (input.TypedCharacters.Any())
         {
+
+
             PushUndoState(text, state);
 
             if (state.HasSelection)
@@ -238,6 +240,25 @@ internal class InputText
             }
 
             var chars = input.TypedCharacters.ToArray();
+
+            StringBuilder debug = new StringBuilder();
+            debug.AppendLine("=== RAW INPUT DEBUG ===");
+            debug.AppendLine($"Character count: {chars.Length}");
+
+            for (int i = 0; i < chars.Length; i++)
+            {
+                char c = chars[i];
+                debug.AppendLine($"Char {i}: '{c}' (U+{(ushort)c:X4}) - High: {char.IsHighSurrogate(c)}, Low: {char.IsLowSurrogate(c)}");
+
+                // Check if this could be a corrupted emoji
+                if (c >= '\uE000' && c <= '\uF8FF')
+                {
+                    int possibleEmojiCode = c + 0x1000;
+                    debug.AppendLine($"  PUA character - possible emoji: U+{possibleEmojiCode:X4}");
+                }
+            }
+
+            System.Diagnostics.Debug.WriteLine(debug.ToString());
 
             // Apply PUA correction to each character
             string typedString = string.Concat(chars.Select(c => CorrectPuaCharacter(c)));
@@ -633,9 +654,9 @@ internal class InputText
     private string CorrectPuaCharacter(char c)
     {
         // Map common PUA characters back to their real emoji equivalents
-        // This is a workaround for the input system corruption
         return c switch
         {
+            // Faces
             '\uF600' => "\U0001F600", // 😀
             '\uF601' => "\U0001F601", // 😁
             '\uF602' => "\U0001F602", // 😂
@@ -643,49 +664,69 @@ internal class InputText
             '\uF604' => "\U0001F604", // 😄
             '\uF605' => "\U0001F605", // 😅
             '\uF606' => "\U0001F606", // 😆
-            '\uF607' => "\U0001F607", // 😇
-            '\uF608' => "\U0001F608", // 😈
             '\uF609' => "\U0001F609", // 😉
             '\uF60A' => "\U0001F60A", // 😊
             '\uF60B' => "\U0001F60B", // 😋
             '\uF60C' => "\U0001F60C", // 😌
             '\uF60D' => "\U0001F60D", // 😍
-            '\uF60E' => "\U0001F60E", // 😎
             '\uF60F' => "\U0001F60F", // 😏
+
+            // Objects
             '\uF389' => "\U0001F389", // 🎉
+
+            // Body parts
+            '\uF4AA' => "\U0001F4AA", // 💪
+            '\uF44C' => "\U0001F44C", // 👌
+            '\uF44D' => "\U0001F44D", // 👍
+            '\uF44E' => "\U0001F44E", // 👎
+            '\uF44A' => "\U0001F44A", // 👊
+            '\uF44B' => "\U0001F44B", // 👋
+
+            // People
+            '\uF464' => "\U0001F464", // 👤
+            '\uF465' => "\U0001F465", // 👥
+            '\uF466' => "\U0001F466", // 👦
+            '\uF467' => "\U0001F467", // 👧
+            '\uF468' => "\U0001F468", // 👨
+            '\uF469' => "\U0001F469", // 👩
+
+            // Brain and related
             '\uF9E0' => "\U0001F9E0", // 🧠
             '\uF9E1' => "\U0001F9E1", // 🧡
             '\uF9E2' => "\U0001F9E2", // 🧢
-            '\uF9E3' => "\U0001F9E3", // 🧣
-            '\uF9E4' => "\U0001F9E4", // 🧤
-            '\uF9E5' => "\U0001F9E5", // 🧥
-            '\uF9E6' => "\U0001F9E6", // 🧦
-            '\uF9E7' => "\U0001F9E7", // 🧧
-            '\uF9E8' => "\U0001F9E8", // 🧨
-            '\uF9E9' => "\U0001F9E9", // 🧩
-            '\uF9EA' => "\U0001F9EA", // 🧪
-            '\uF9EB' => "\U0001F9EB", // 🧫
-            '\uF9EC' => "\U0001F9EC", // 🧬
-            '\uF9ED' => "\U0001F9ED", // 🧭
-            '\uF9EE' => "\U0001F9EE", // 🧮
-            '\uF9EF' => "\U0001F9EF", // 🧯
-            '\uF9F0' => "\U0001F9F0", // 🧰
-            '\uF9F1' => "\U0001F9F1", // 🧱
-            '\uF9F2' => "\U0001F9F2", // 🧲
-            '\uF9F3' => "\U0001F9F3", // 🧳
-            '\uF9F4' => "\U0001F9F4", // 🧴
-            '\uF9F5' => "\U0001F9F5", // 🧵
-            '\uF9F6' => "\U0001F9F6", // 🧶
-            '\uF9F7' => "\U0001F9F7", // 🧷
-            '\uF9F8' => "\U0001F9F8", // 🧸
-            '\uF9F9' => "\U0001F9F9", // 🧹
-            '\uF9FA' => "\U0001F9FA", // 🧺
-            '\uF9FB' => "\U0001F9FB", // 🧻
-            '\uF9FC' => "\U0001F9FC", // 🧼
-            '\uF9FD' => "\U0001F9FD", // 🧽
-            '\uF9FE' => "\U0001F9FE", // 🧾
-            '\uF9FF' => "\U0001F9FF", // 🧿
-            _ => c.ToString()
+
+            // Writing
+            '\u270D' => "\u270D\uFE0F", // ✍️ (note: this one might be different)
+
+            _ => c >= '\uE000' && c <= '\uF8FF' ? AttemptAutoCorrection(c) : c.ToString()
         };
+    }
+
+    private string AttemptAutoCorrection(char c)
+    {
+        // Try multiple common patterns for PUA to emoji mapping
+        int[] offsetsToTry = { 0x1000, 0x10000, 0xF000 };
+
+        foreach (int offset in offsetsToTry)
+        {
+            int possibleEmojiCode = c + offset;
+            if (possibleEmojiCode >= 0x1F000 && possibleEmojiCode <= 0x1FFFF)
+            {
+                try
+                {
+                    string emoji = char.ConvertFromUtf32(possibleEmojiCode);
+                    System.Diagnostics.Debug.WriteLine($"Auto-corrected PUA: U+{(ushort)c:X4} -> U+{possibleEmojiCode:X4} {emoji} (offset: 0x{offset:X4})");
+                    return emoji;
+                }
+                catch
+                {
+                    // Continue to next offset
+                }
+            }
+        }
+
+        // If no pattern worked, return the original character
+        System.Diagnostics.Debug.WriteLine($"No correction found for PUA: U+{(ushort)c:X4}");
+        return c.ToString();
     }
 }
