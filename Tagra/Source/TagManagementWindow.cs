@@ -84,12 +84,13 @@ public static class TagManagementWindow
 
                 // Color Swatch Button
                 var color = ParseColorHex(tag.ColorHex);
-                var swatchTheme = new ButtonStylePack { Roundness = 0.5f, BorderLength = 1f };
+                var swatchTheme = new ButtonStylePack { Roundness = 1.0f, BorderLength = 0f };
+                swatchTheme.Animation = new DirectUI.Animation.AnimationInfo(0.1f);
                 swatchTheme.Normal.FillColor = color;
                 swatchTheme.Hover.FillColor = color;
+                swatchTheme.Hover.Scale = new Vector2(1.1f, 1.1f);
                 swatchTheme.Pressed.FillColor = color;
-                swatchTheme.Normal.BorderColor = new Color(0, 0, 0, 50);
-                swatchTheme.Hover.BorderColor = Colors.White;
+                swatchTheme.Pressed.Scale = new Vector2(0.9f, 0.9f);
 
                 if (UI.Button($"color_swatch_{tag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
                 {
