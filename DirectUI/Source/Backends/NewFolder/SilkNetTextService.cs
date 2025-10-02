@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Numerics;
 using DirectUI.Core;
 using SkiaSharp;
+using SkiaSharp.HarfBuzz;
 using Typography.OpenFont;
 using Vortice.DirectWrite; // For FontWeight, etc.
 
@@ -79,10 +80,17 @@ public class SilkNetTextService : ITextService
         var typeface = GetOrCreateTypeface(style);
         using var font = new SKFont(typeface, style.FontSize);
         using var paint = new SKPaint(font);
-        var rect = new SKRect();
-        paint.MeasureText(text, ref rect);
 
-        var measuredSize = new Vector2(rect.Width, rect.Height);
+        // Use shaper for measurement
+        using var shaper = new SKShaper(typeface);
+        var shapeResult = shaper.Shape(text, paint);
+        var width = shapeResult.Width;
+
+        var fontMetrics = paint.FontMetrics;
+        var height = fontMetrics.Descent - fontMetrics.Ascent;
+
+        var measuredSize = new Vector2(width, height);
+
         _textSizeCache[cacheKey] = measuredSize; // Store in cache
         return measuredSize;
     }

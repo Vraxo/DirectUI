@@ -2,6 +2,7 @@
 using System.Numerics;
 using DirectUI.Core;
 using SkiaSharp;
+using SkiaSharp.HarfBuzz;
 using Typography.OpenFont;
 
 namespace DirectUI.Backends.SkiaSharp;
@@ -20,13 +21,15 @@ internal class SilkNetTextLayout : ITextLayout
         _style = style;
         using var font = new SKFont(typeface, style.FontSize);
         using var paint = new SKPaint(font) { IsAntialias = true };
+        using var shaper = new SKShaper(typeface);
 
-        // Use a robust measurement that includes trailing spaces
-        float width = MeasureTextWithTrailingWhitespace(paint, text);
-        var rect = new SKRect();
-        // Measure normally to get an accurate height
-        paint.MeasureText("Gg", ref rect); // Use characters with ascenders/descenders for stable height
-        Size = new Vector2(width, rect.Height);
+        var shapeResult = shaper.Shape(text, paint);
+        var width = shapeResult.Width;
+
+        var fontMetrics = paint.FontMetrics;
+        var height = fontMetrics.Descent - fontMetrics.Ascent;
+
+        Size = new Vector2(width, height);
     }
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
     {

@@ -4,6 +4,7 @@ using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
 using SkiaSharp;
+using SkiaSharp.HarfBuzz;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
@@ -90,34 +91,31 @@ public class SilkNetRenderer : IRenderer
             IsAntialias = true
         };
 
-        var textBounds = new SKRect();
-        paint.MeasureText(text, ref textBounds);
+        // --- NEW: Use SKShaper to handle complex glyphs ---
+        using var shaper = new SKShaper(typeface);
+
+        // Measure for alignment purposes first
+        var shapeResult = shaper.Shape(text, paint);
+        var textWidth = shapeResult.Width;
+
+        var fontMetrics = paint.FontMetrics;
         var textDrawPos = origin;
 
-        // --- Horizontal alignment (based on actual measured text width) ---
+        // --- Horizontal alignment (based on SHAPED text width) ---
         if (maxSize.X > 0)
         {
             switch (alignment.Horizontal)
             {
                 case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - textBounds.Width) / 2f - textBounds.Left;
+                    textDrawPos.X += (maxSize.X - textWidth) / 2f;
                     break;
                 case HAlignment.Right:
-                    textDrawPos.X += maxSize.X - textBounds.Width - textBounds.Left;
-                    break;
-                default: // Left
-                    textDrawPos.X -= textBounds.Left;
+                    textDrawPos.X += maxSize.X - textWidth;
                     break;
             }
         }
-        else
-        {
-            textDrawPos.X -= textBounds.Left;
-        }
-
 
         // --- Vertical alignment (based on stable font metrics to prevent jiggling) ---
-        var fontMetrics = paint.FontMetrics;
         var baselineY = origin.Y;
 
         if (maxSize.Y > 0)
@@ -150,11 +148,10 @@ public class SilkNetRenderer : IRenderer
             baselineY -= fontMetrics.Ascent;
         }
 
-        // The Y position for DrawText is the baseline, not the top.
         textDrawPos.Y = baselineY;
 
-
-        _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
+        // Draw using the shaper extension method on canvas
+        _canvas.DrawShapedText(shaper, text, textDrawPos.X, textDrawPos.Y, paint);
     }
 
     public void DrawImage(byte[] imageData, string imageKey, Rect destination)
