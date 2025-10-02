@@ -127,6 +127,7 @@ public class UIPersistentState
 
     public void SetActivePopup(int ownerId, Action<UIContext> drawCallback, Rect bounds)
     {
+        if (UI.Context.IsLayoutPass) return;
         _activePopupId = ownerId;
         _popupDrawCallback = drawCallback;
         _popupBounds = bounds;
@@ -135,6 +136,7 @@ public class UIPersistentState
 
     public void SetPopupResult(int ownerId, int result)
     {
+        if (UI.Context.IsLayoutPass) return;
         // This sets the data that will become available at the start of the *next* frame.
         _nextFramePopupResultOwnerId = ownerId;
         _nextFramePopupResult = result;
@@ -143,6 +145,7 @@ public class UIPersistentState
 
     public void ClearActivePopup()
     {
+        if (UI.Context.IsLayoutPass) return;
         _activePopupId = 0;
         _popupDrawCallback = null;
         _popupBounds = default;
@@ -171,6 +174,7 @@ public class UIPersistentState
     // Used for immediate visual feedback (which element is currently held down)
     public bool TrySetActivePress(int id, int layer)
     {
+        if (UI.Context.IsLayoutPass) return false;
         if (layer >= _inputCaptorLayer)
         {
             _inputCaptorLayer = layer;
@@ -184,6 +188,7 @@ public class UIPersistentState
     // Called at the end of the frame to set the winner for the next frame's Press actions
     public void SetNextFramePressWinner(int id)
     {
+        if (UI.Context.IsLayoutPass) return;
         _nextFramePressWinnerId = id;
     }
 
@@ -192,6 +197,7 @@ public class UIPersistentState
     /// </summary>
     public void ClearAllActivePressState()
     {
+        if (UI.Context.IsLayoutPass) return;
         ActivelyPressedElementId = 0;
         InputCaptorId = 0;
         _inputCaptorLayer = -1;
@@ -199,6 +205,7 @@ public class UIPersistentState
 
     public void ClearActivePress(int id)
     {
+        if (UI.Context.IsLayoutPass) return;
         // When a control that initiated a press is done with it (e.g., on mouse up),
         // it clears the global state.
         if (ActivelyPressedElementId == id)
@@ -210,12 +217,14 @@ public class UIPersistentState
     // --- Focus Management ---
     public void SetFocus(int id)
     {
+        if (UI.Context.IsLayoutPass) return;
         FocusedElementId = id;
     }
 
     // --- Click Management ---
     public ClickResult RegisterClick(int id)
     {
+        if (UI.Context.IsLayoutPass) return ClickResult.None;
         float currentTime = UI.Context.TotalTime;
         if (LastClickedElementId == id && (currentTime - LastClickTime) < DoubleClickThreshold)
         {

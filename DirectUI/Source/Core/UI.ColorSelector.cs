@@ -9,16 +9,19 @@ public static partial class UI
 {
     public static bool ColorSelector(
         string id,
-        ref string selectedColorHex,
+        string selectedColorHex,
         IReadOnlyList<string> availableColors,
         Vector2 swatchSize,
+        out string? newSelectedColor,
         float gap = 10f)
     {
         if (!IsContextValid() || availableColors is null || availableColors.Count == 0)
         {
+            newSelectedColor = null;
             return false;
         }
 
+        newSelectedColor = null;
         bool selectionChanged = false;
 
         // This theme is created once per call and configured to use the Button's `isActive` state.
@@ -54,7 +57,7 @@ public static partial class UI
             {
                 if (!isSelected)
                 {
-                    selectedColorHex = colorHex;
+                    newSelectedColor = colorHex;
                     selectionChanged = true;
                 }
             }

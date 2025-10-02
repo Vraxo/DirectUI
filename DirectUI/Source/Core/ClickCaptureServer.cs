@@ -13,6 +13,7 @@ public class ClickCaptureServer
 
     public void RequestCapture(int id, int layer)
     {
+        if (UI.Context.IsLayoutPass) return;
         _requests.Add(new ClickCaptureRequest(id, layer));
         Console.WriteLine($"[CAPTURE-REQUEST] ID: {id}, Layer: {layer}");
     }

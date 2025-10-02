@@ -22,6 +22,10 @@ public static class TagManagementWindow
         var host = app.Host;
         var innerWidth = 380f; // Modal content width
 
+        // This action will hold our state-changing logic so it can be executed
+        // after the entire UI has been drawn for this frame.
+        Action? deferredAction = null;
+
         UI.BeginVBoxContainer("tag_manage_vbox", new Vector2(10, 10), gap: 10f);
 
         // If a delete is pending, show confirmation UI instead of the main UI
@@ -37,13 +41,16 @@ public static class TagManagementWindow
                 UI.BeginHBoxContainer("delete_confirm_buttons", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
                 if (UI.Button("delete_yes", "Yes, Delete"))
                 {
-                    app.DbManager.DeleteTag(app.TagIdToDelete.Value);
-                    app.TagIdToDelete = null; // Clear the delete request
-                    app.RefreshAllData(); // Refresh list
+                    // Defer the database action
+                    deferredAction = () => {
+                        app.DbManager.DeleteTag(app.TagIdToDelete.Value);
+                        app.TagIdToDelete = null;
+                        app.RefreshAllData();
+                    };
                 }
                 if (UI.Button("delete_no", "Cancel"))
                 {
-                    app.TagIdToDelete = null; // Clear the delete request
+                    app.TagIdToDelete = null; // This is safe to do immediately
                 }
                 UI.EndHBoxContainer();
             }
@@ -64,9 +71,12 @@ public static class TagManagementWindow
             {
                 if (!string.IsNullOrWhiteSpace(app.NewTagName))
                 {
-                    app.DbManager.AddTag(app.NewTagName);
-                    app.NewTagName = "";
-                    app.RefreshAllData();
+                    // Defer the database action
+                    deferredAction = () => {
+                        app.DbManager.AddTag(app.NewTagName);
+                        app.NewTagName = "";
+                        app.RefreshAllData();
+                    };
                 }
             }
             UI.EndHBoxContainer();
@@ -78,12 +88,16 @@ public static class TagManagementWindow
             UI.BeginScrollableRegion("tags_manage_scroll", new Vector2(innerWidth, 250), out var scrollInnerWidth);
             foreach (var tag in app.AllTags)
             {
-                UI.BeginVBoxContainer($"tag_vbox_wrapper_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
+                // *** THE FIX ***
+                // Create a local copy of the loop variable. The closure for the deferred action
+                // will capture this copy, not the loop variable itself.
+                var currentTag = tag;
 
-                UI.BeginHBoxContainer($"tag_manage_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+                UI.BeginVBoxContainer($"tag_vbox_wrapper_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
 
-                // Color Swatch Button
-                var color = ParseColorHex(tag.ColorHex);
+                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+
+                var color = ParseColorHex(currentTag.ColorHex);
                 var swatchTheme = new ButtonStylePack { Roundness = 1.0f, BorderLength = 0f };
                 swatchTheme.Animation = new DirectUI.Animation.AnimationInfo(0.1f);
                 swatchTheme.Normal.FillColor = color;
@@ -92,38 +106,41 @@ public static class TagManagementWindow
                 swatchTheme.Pressed.FillColor = color;
                 swatchTheme.Pressed.Scale = new Vector2(0.9f, 0.9f);
 
-                if (UI.Button($"color_swatch_{tag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
+                if (UI.Button($"color_swatch_{currentTag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
                 {
-                    app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == tag.Id ? null : tag.Id;
+                    app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == currentTag.Id ? null : currentTag.Id;
                 }
 
-                UI.Text($"tag_name_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth - 120, 24));
+                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 120, 24));
 
-                // Rename button (placeholder)
-                if (UI.Button($"rename_tag_btn_{tag.Id}", "Rename", new Vector2(60, 24), disabled: true))
-                {
-                    // TODO: Implement renaming logic
-                }
+                if (UI.Button($"rename_tag_btn_{currentTag.Id}", "Rename", new Vector2(60, 24), disabled: true)) { /* TODO */ }
 
-                if (UI.Button($"delete_tag_btn_{tag.Id}", "X", new Vector2(24, 24)))
+                if (UI.Button($"delete_tag_btn_{currentTag.Id}", "X", new Vector2(24, 24)))
                 {
-                    app.TagIdToDelete = tag.Id;
+                    app.TagIdToDelete = currentTag.Id;
                 }
                 UI.EndHBoxContainer();
 
-                // Conditionally draw the color picker below the item
-                if (app.ActiveColorPickerTagId == tag.Id)
+                if (app.ActiveColorPickerTagId == currentTag.Id)
                 {
-                    string tempColor = tag.ColorHex;
-                    UI.AutoPanel($"color_picker_panel_{tag.Id}", scrollInnerWidth, (innerWidth) =>
+                    string? newlySelectedColor = null;
+                    UI.AutoPanel($"color_picker_panel_{currentTag.Id}", scrollInnerWidth, (innerWidth) =>
                     {
-                        if (UI.ColorSelector($"picker_{tag.Id}", ref tempColor, ColorPalette, new Vector2(20, 20), gap: 5f))
+                        if (UI.ColorSelector($"picker_{currentTag.Id}", currentTag.ColorHex, ColorPalette, new Vector2(20, 20), out var tempNewColor, gap: 5f))
                         {
-                            app.DbManager.UpdateTagColor(tag.Id, tempColor);
-                            app.RefreshAllData();
-                            app.ActiveColorPickerTagId = null; // Close picker on selection
+                            newlySelectedColor = tempNewColor;
                         }
                     });
+
+                    if (newlySelectedColor is not null)
+                    {
+                        // Schedule the state change, using the captured `currentTag` variable.
+                        deferredAction = () => {
+                            app.DbManager.UpdateTagColor(currentTag.Id, newlySelectedColor);
+                            app.RefreshAllData();
+                            app.ActiveColorPickerTagId = null;
+                        };
+                    }
                 }
                 UI.EndVBoxContainer();
             }
@@ -138,6 +155,9 @@ public static class TagManagementWindow
         }
 
         UI.EndVBoxContainer();
+
+        // Now that the entire UI for this frame has been processed, execute any pending action.
+        deferredAction?.Invoke();
     }
 
     private static Color ParseColorHex(string hex)

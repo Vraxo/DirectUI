@@ -37,8 +37,13 @@ public static partial class UI
         public void DrawLine(Vector2 p1, Vector2 p2, Color color, float strokeWidth) { }
         public void DrawText(Vector2 origin, string text, ButtonStyle style, Alignment alignment, Vector2 maxSize, Color color) { }
         public void Flush() { }
-        public void PopClipRect() { }
+        public void PopClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
         public void PushClipRect(Rect rect, AntialiasMode antialiasMode = AntialiasMode.PerPrimitive) { }
+
+        public void PopClipRect()
+        {
+            throw new NotImplementedException();
+        }
     }
 
     /// <summary>
@@ -54,6 +59,7 @@ public static partial class UI
 
         var originalLayout = Context.Layout;
         var originalRenderer = Context.Renderer;
+        var originalIsLayoutPass = Context.IsLayoutPass;
 
         // Create a new layout manager for this calculation to keep it isolated.
         var calculationLayout = new UILayoutManager(Context.UIScale);
@@ -63,26 +69,28 @@ public static partial class UI
         // Swap context properties for the calculation pass
         Context.Layout = calculationLayout;
         Context.Renderer = new NullRenderer(originalRenderer.RenderTargetSize);
+        Context.IsLayoutPass = true; // SET FLAG
 
-        // Run user's UI code. It will only perform layout actions.
-        layoutCode();
+        try
+        {
+            // Run user's UI code. It will only perform layout actions and will not modify persistent state.
+            layoutCode();
+        }
+        finally
+        {
+            // Restore original context state
+            Context.Layout = originalLayout;
+            Context.Renderer = originalRenderer;
+            Context.IsLayoutPass = originalIsLayoutPass; // RESTORE FLAG
+        }
 
         // Pop the root container to get its final calculated state.
         if (calculationLayout.ContainerStackCount > 0)
         {
             var measuredVBox = (VBoxContainerState)calculationLayout.PopContainer();
-            var size = measuredVBox.GetAccumulatedSize();
-
-            // Restore original context state
-            Context.Layout = originalLayout;
-            Context.Renderer = originalRenderer;
-
-            return size;
+            return measuredVBox.GetAccumulatedSize();
         }
 
-        // Restore context state even if the container stack was mismatched.
-        Context.Layout = originalLayout;
-        Context.Renderer = originalRenderer;
         return Vector2.Zero;
     }
 
