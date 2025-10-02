@@ -1,6 +1,10 @@
 ﻿using DirectUI;
 using System.Numerics;
 using DirectUI.Styling;
+using Tagra.Data;
+using System.IO;
+using Vortice.Mathematics;
+using Color = DirectUI.Drawing.Color;
 
 namespace Tagra;
 
@@ -42,18 +46,7 @@ public class LeftPanel
 
         foreach (var tag in _app.AllTags)
         {
-            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
-
-            var color = ParseColorHex(tag.ColorHex);
-            UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
-
-            if (UI.Button(
-                id: $"tag_btn_{tag.Id}",
-                text: $"{tag.Name} ({tag.FileCount})",
-                size: new Vector2(scrollInnerWidth - 15, 24),
-                theme: tagButtonStyle,
-                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
-                isActive: _app.SearchText == tag.Name))
+            if (DrawTagButton(tag, scrollInnerWidth, _app.SearchText == tag.Name, tagButtonStyle))
             {
                 if (_app.SearchText == tag.Name)
                 {
@@ -64,14 +57,73 @@ public class LeftPanel
                     _app.SearchText = tag.Name; // Click a tag to search for it
                 }
             }
-
-            UI.EndHBoxContainer();
         }
         UI.EndScrollableRegion();
 
         UI.EndVBoxContainer();
         UI.EndResizableVPanel();
     }
+
+    private bool DrawTagButton(Tag tag, float width, bool isActive, ButtonStylePack theme)
+    {
+        var context = UI.Context;
+        var scale = context.UIScale;
+
+        // 1. Define bounds and get style for the entire widget
+        var logicalSize = new Vector2(width, 24f);
+        var startPos = context.Layout.GetCurrentPosition();
+        var physicalBounds = new Rect(startPos.X * scale, startPos.Y * scale, logicalSize.X * scale, logicalSize.Y * scale);
+
+        // 2. Use DrawButtonPrimitive for interaction and background. It returns the animated state.
+        var clickResult = UI.DrawButtonPrimitive(
+            $"tag_btn_{tag.Id}".GetHashCode(),
+            physicalBounds,
+            "", // No text, we draw content ourselves
+            theme,
+            disabled: false,
+            textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
+            clickMode: Button.ActionMode.Release,
+            clickBehavior: Button.ClickBehavior.Left,
+            textOffset: Vector2.Zero,
+            out var renderBounds,
+            out var animatedStyle,
+            isActive: isActive
+        );
+
+        // 3. Draw custom content (circle and text) inside the animated renderBounds
+        float circleDiameter = 10f * scale;
+        float padding = 5f * scale;
+        var circleCenterY = renderBounds.Y + renderBounds.Height / 2f;
+
+        // Draw circle
+        var circleRect = new Rect(renderBounds.X + padding, circleCenterY - circleDiameter / 2f, circleDiameter, circleDiameter);
+        var circleColor = ParseColorHex(tag.ColorHex);
+        var circleStyle = new BoxStyle { FillColor = circleColor, Roundness = 1.0f, BorderLength = 0f };
+        context.Renderer.DrawBox(circleRect, circleStyle);
+
+        // Draw text
+        var textStartX = circleRect.Right + padding;
+        var textRenderBounds = new Rect(
+            textStartX,
+            renderBounds.Y,
+            renderBounds.Width - (textStartX - renderBounds.X) - padding, // Add padding on the right
+            renderBounds.Height
+        );
+
+        UI.DrawTextPrimitive(
+            textRenderBounds,
+            $"{tag.Name} ({tag.FileCount})",
+            animatedStyle, // Use the animated style for correct color, etc.
+            new Alignment(HAlignment.Left, VAlignment.Center),
+            Vector2.Zero
+        );
+
+        // 4. Advance the layout manually
+        context.Layout.AdvanceLayout(logicalSize);
+
+        return clickResult != ClickResult.None;
+    }
+
 
     private static Color ParseColorHex(string hex)
     {

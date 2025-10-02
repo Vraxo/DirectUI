@@ -98,6 +98,8 @@ public static partial class UI
             clickMode,
             clickBehavior,
             (textOffset ?? Vector2.Zero) * scale,
+            out _,
+            out _,
             isActive: isActive,
             layer: layer,
             animation: animation

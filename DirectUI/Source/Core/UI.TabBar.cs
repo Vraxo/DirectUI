@@ -59,6 +59,8 @@ public static partial class UI
                 clickMode: DirectUI.Button.ActionMode.Release,
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
                 textOffset: Vector2.Zero,
+                out _,
+                out _,
                 isActive: i == activeIndex
             );
 

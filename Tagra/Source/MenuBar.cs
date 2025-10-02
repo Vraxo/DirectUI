@@ -74,7 +74,7 @@ public class MenuBar
                     itemTheme.Pressed.FillColor = DefaultTheme.Accent;
 
                     int itemId = "manage_tags_item".GetHashCode();
-                    if (UI.DrawButtonPrimitive(itemId, scaledPopupBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0)) != ClickResult.None)
+                    if (UI.DrawButtonPrimitive(itemId, scaledPopupBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
                     {
                         _app.ManageTagsRequested = true;
                         state.ClearActivePopup();

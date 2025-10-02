@@ -298,6 +298,8 @@ public static partial class UI
                 clickMode: DirectUI.Button.ActionMode.Press, // Use Press mode for fair arbitration
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
                 textOffset: new Vector2(5, 0),
+                renderBounds: out _,
+                animatedStyle: out _,
                 isActive: false,
                 layer: 5 // High layer to win against grid rows
             ) != ClickResult.None;
@@ -396,7 +398,7 @@ public static partial class UI
             bool isSelected = i == selectedIndex;
 
             int rowId = HashCode.Combine(id, "row", i);
-            var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, isSelected);
+            var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, out _, out _, isSelected);
 
             if (clickResult != ClickResult.None)
             {

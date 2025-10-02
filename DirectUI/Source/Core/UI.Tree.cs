@@ -61,7 +61,7 @@ public static partial class UI
         if (node.Children.Count > 0)
         {
             var bounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, toggleWidth, style.RowHeight);
-            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, false) != ClickResult.None)
+            if (DrawButtonPrimitive(toggleId, bounds, node.IsExpanded ? "-" : "+", style.ToggleStyle, false, new Alignment(HAlignment.Center, VAlignment.Center), DirectUI.Button.ActionMode.Release, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, out _, out _, false) != ClickResult.None)
             {
                 node.IsExpanded = !node.IsExpanded;
             }
@@ -77,7 +77,7 @@ public static partial class UI
         float labelWidth = labelSize.X + labelMargin * 2;
         var labelOffset = new Vector2(labelMargin, 0);
         var labelBounds = new Vortice.Mathematics.Rect(currentX, nodeRowStartPos.Y, labelWidth, style.RowHeight);
-        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, false) != ClickResult.None)
+        if (DrawButtonPrimitive(labelId, labelBounds, node.Text, labelStyle, false, labelTextAlignment, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, labelOffset, out _, out _, false) != ClickResult.None)
         {
             clickedNode = node;
         }

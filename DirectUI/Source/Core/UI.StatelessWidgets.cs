@@ -26,6 +26,8 @@ public static partial class UI
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
         Vector2 textOffset,
+        out Rect renderBounds,
+        out ButtonStyle animatedStyle,
         bool isActive = false,
         int layer = 1,
         AnimationInfo? animation = null)
@@ -38,6 +40,7 @@ public static partial class UI
         var input = context.InputState;
 
         ClickResult clickResult = ClickResult.None;
+        renderBounds = bounds; // Initialize out parameter
 
         // --- State Calculation ---
         bool isFocused = !disabled && state.FocusedElementId == id;
@@ -108,7 +111,6 @@ public static partial class UI
         // Re-check `isPressed` for correct visual state, as it might have changed above.
         isPressed = state.ActivelyPressedElementId == id;
         ButtonStyle targetStyle = ResolveButtonStylePrimitive(theme, isHovering, isPressed, disabled, isFocused, isActive);
-        ButtonStyle animatedStyle;
         Vector2 animatedScale = targetStyle.Scale;
 
         // --- Animation Resolution ---
@@ -160,7 +162,7 @@ public static partial class UI
             Vector2 center = new Vector2(bounds.X + bounds.Width / 2f, bounds.Y + bounds.Height / 2f);
             float renderWidth = bounds.Width * animatedScale.X;
             float renderHeight = bounds.Height * animatedScale.Y;
-            Rect renderBounds = new Rect(
+            renderBounds = new Rect(
                 center.X - renderWidth / 2f,
                 center.Y - renderHeight / 2f,
                 renderWidth,
