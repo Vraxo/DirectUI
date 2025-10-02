@@ -4,6 +4,7 @@ using System.Linq;
 using DirectUI;
 using DirectUI.Core;
 using Tagra.Data;
+using Vortice.Mathematics;
 
 namespace Tagra;
 
@@ -11,6 +12,7 @@ public class App : IAppLogic
 {
     private readonly IWindowHost _host;
     private readonly DatabaseManager _dbManager;
+    private readonly ThumbnailService _thumbnailService;
 
     // UI State
     private string _searchText = string.Empty;
@@ -26,6 +28,7 @@ public class App : IAppLogic
     {
         _host = host;
         _dbManager = new DatabaseManager();
+        _thumbnailService = new ThumbnailService();
         LoadInitialData();
     }
 
@@ -131,42 +134,106 @@ public class App : IAppLogic
 
     private void DrawMainContentPanel()
     {
-        var scale = UI.Context.UIScale;
-        var windowWidth = UI.Context.Renderer.RenderTargetSize.X;
-        var windowHeight = UI.Context.Renderer.RenderTargetSize.Y;
+        var context = UI.Context;
+        var scale = context.UIScale;
+        var windowWidth = context.Renderer.RenderTargetSize.X;
+        var windowHeight = context.Renderer.RenderTargetSize.Y;
 
         var mainPanelX = _leftPanelWidth + 1;
-        var mainPanelWidth = windowWidth / scale - mainPanelX - _rightPanelWidth;
+        var mainPanelWidth = (windowWidth / scale) - mainPanelX - _rightPanelWidth;
         var mainPanelPos = new Vector2(mainPanelX, 0);
 
-        UI.BeginVBoxContainer("main_content", mainPanelPos, gap: 10, minSize: new Vector2(mainPanelWidth, windowHeight / scale));
+        UI.BeginVBoxContainer("main_content_vbox", mainPanelPos, gap: 10);
 
         if (UI.Button("add_file_btn", "Add File...", new Vector2(120, 28)))
         {
-            string? path = FileDialogs.OpenFile();
+            var filters = new Dictionary<string, string>
+            {
+                { "Image Files", "jpg,jpeg,png,bmp,gif" },
+                { "Document Files", "txt,pdf,doc,docx" }
+            };
+            string? path = FileDialogs.OpenFile(filters);
             if (!string.IsNullOrWhiteSpace(path))
             {
                 _dbManager.AddFile(path);
-                RefreshAllData(); // Refresh the file list to show the new file
+                RefreshAllData();
             }
         }
 
         UI.Separator(mainPanelWidth);
 
-        var scrollHeight = windowHeight / scale - (UI.Context.Layout.GetCurrentPosition().Y - mainPanelPos.Y);
-        UI.BeginScrollableRegion("files_scroll", new Vector2(mainPanelWidth, scrollHeight), out var innerWidth);
+        var scrollPos = context.Layout.GetCurrentPosition();
+        var scrollHeight = (windowHeight / scale) - scrollPos.Y;
+        UI.BeginScrollArea("files_scroll_area", new Vector2(mainPanelWidth, scrollHeight));
+
+        const float itemWidth = 120;
+        const float itemHeight = 150;
+        const float gridGap = 10;
+        int numColumns = Math.Max(1, (int)((mainPanelWidth - gridGap) / (itemWidth + gridGap)));
+
+        UI.BeginGridContainer("files_grid", Vector2.Zero, new Vector2(mainPanelWidth - 20, 10000), numColumns, new Vector2(gridGap, gridGap));
+
         foreach (var file in _displayedFiles)
         {
-            bool isSelected = _selectedFile?.Id == file.Id;
-            if (UI.Button($"file_{file.Id}", Path.GetFileName(file.Path), new Vector2(innerWidth, 24), isActive: isSelected))
-            {
-                _selectedFile = file;
-                RefreshDataForSelectedFile();
-            }
+            DrawFileGridItem(file, new Vector2(itemWidth, itemHeight));
         }
-        UI.EndScrollableRegion();
 
+        UI.EndGridContainer();
+        UI.EndScrollArea();
         UI.EndVBoxContainer(advanceParentLayout: false);
+    }
+
+    private void DrawFileGridItem(FileEntry file, Vector2 logicalSize)
+    {
+        var context = UI.Context;
+        var scale = context.UIScale;
+        var startPos = context.Layout.GetCurrentPosition();
+        var isSelected = _selectedFile?.Id == file.Id;
+
+        var itemBounds = new Rect(startPos.X * scale, startPos.Y * scale, logicalSize.X * scale, logicalSize.Y * scale);
+
+        // Manual Hit-testing for selection
+        if (itemBounds.Contains(context.InputState.MousePosition) && context.InputState.WasLeftMousePressedThisFrame)
+        {
+            _selectedFile = file;
+            RefreshDataForSelectedFile();
+        }
+
+        // --- Visuals ---
+        UI.BeginVBoxContainer($"file_item_{file.Id}", startPos, gap: 4);
+
+        // Thumbnail or placeholder
+        byte[]? thumbData = _thumbnailService.GetThumbnail(file.Path, 100);
+        if (thumbData != null)
+        {
+            UI.Image($"thumb_{file.Id}", thumbData, new Vector2(logicalSize.X, 100));
+        }
+        else
+        {
+            var boxStyle = new BoxStyle { FillColor = new(60, 60, 60, 255), Roundness = 0.1f };
+            UI.Box($"placeholder_{file.Id}", new Vector2(logicalSize.X, 100), boxStyle);
+        }
+
+        // Filename
+        UI.WrappedText($"filename_{file.Id}", Path.GetFileName(file.Path), new Vector2(logicalSize.X, logicalSize.Y - 104));
+
+        UI.EndVBoxContainer(advanceParentLayout: false); // We are doing custom layout advancement
+
+        // Draw selection highlight manually
+        if (isSelected)
+        {
+            var highlightStyle = new BoxStyle
+            {
+                FillColor = DirectUI.Drawing.Colors.Transparent,
+                BorderColor = DefaultTheme.Accent,
+                BorderLength = 2,
+                Roundness = 0.1f
+            };
+            context.Renderer.DrawBox(itemBounds, highlightStyle);
+        }
+
+        // Manually advance the parent grid container
+        context.Layout.AdvanceLayout(logicalSize);
     }
 
     private void DrawRightPanel()
