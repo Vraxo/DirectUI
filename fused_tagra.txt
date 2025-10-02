@@ -1475,6 +1475,46 @@ public static partial class UI
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Box.cs">
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    /// <summary>
+    /// Draws a simple styled box.
+    /// </summary>
+    /// <param name="id">A unique identifier for the box.</param>
+    /// <param name="size">The logical size of the box.</param>
+    /// <param name="style">The style to apply to the box.</param>
+    public static void Box(string id, Vector2 size, BoxStyle? style = null)
+    {
+        if (!IsContextValid()) return;
+
+        var context = Context;
+        var scale = context.UIScale;
+
+        var logicalSize = size;
+        var physicalSize = logicalSize * scale;
+        var drawPos = context.Layout.ApplyLayout(Vector2.Zero);
+        var bounds = new Rect(drawPos.X, drawPos.Y, physicalSize.X, physicalSize.Y);
+
+        if (!context.Layout.IsRectVisible(bounds))
+        {
+            context.Layout.AdvanceLayout(logicalSize);
+            return;
+        }
+
+        var finalStyle = style ?? new BoxStyle();
+        context.Renderer.DrawBox(bounds, finalStyle);
+
+        context.Layout.AdvanceLayout(logicalSize);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Button.cs">
 using System.Numerics;
 using DirectUI.Animation;
@@ -2683,6 +2723,50 @@ public static partial class UI
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Image.cs">
+using System.Numerics;
+using Vortice.Mathematics;
+
+namespace DirectUI;
+
+public static partial class UI
+{
+    /// <summary>
+    /// Draws an image from a byte array. The renderer caches the image based on the ID.
+    /// </summary>
+    /// <param name="id">A unique identifier for this image instance, used for caching.</param>
+    /// <param name="imageData">The raw byte data of the image (e.g., JPEG, PNG).</param>
+    /// <param name="size">The logical size to draw the image.</param>
+    public static void Image(string id, byte[] imageData, Vector2 size)
+    {
+        if (!IsContextValid() || imageData is null || imageData.Length == 0)
+        {
+            // Advance layout even if there's no image data to maintain layout flow
+            Context.Layout.AdvanceLayout(size);
+            return;
+        }
+
+        var context = Context;
+        var scale = context.UIScale;
+        var logicalSize = size;
+        var physicalSize = logicalSize * scale;
+        var drawPos = context.Layout.ApplyLayout(Vector2.Zero);
+        var bounds = new Rect(drawPos.X, drawPos.Y, physicalSize.X, physicalSize.Y);
+
+        if (!context.Layout.IsRectVisible(bounds))
+        {
+            context.Layout.AdvanceLayout(logicalSize);
+            return;
+        }
+
+        // The image key for the renderer's cache is derived from the widget ID.
+        context.Renderer.DrawImage(imageData, id, bounds);
+
+        context.Layout.AdvanceLayout(logicalSize);
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.InputText.cs">
 using System.Numerics;
 using Vortice.Mathematics;
@@ -2691,7 +2775,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static bool InputText(
+    public static InputTextResult InputText(
         string id,
         ref string text,
         Vector2 size,
@@ -2706,7 +2790,7 @@ public static partial class UI
     {
         if (!IsContextValid())
         {
-            return false;
+            return new InputTextResult(false, false);
         }
 
         int intId = id.GetHashCode();
@@ -2717,13 +2801,13 @@ public static partial class UI
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
             Context.Layout.AdvanceLayout(size);
-            return false;
+            return new InputTextResult(false, false);
         }
 
         InputText lineEditInstance = State.GetOrCreateElement<InputText>(intId);
         var lineEditState = State.GetOrCreateElement<InputTextState>(HashCode.Combine(intId, "state"));
 
-        bool textChanged = lineEditInstance.UpdateAndDraw(
+        var result = lineEditInstance.UpdateAndDraw(
             intId,
             ref text,
             lineEditState,
@@ -2738,7 +2822,7 @@ public static partial class UI
             finalMargin);
 
         Context.Layout.AdvanceLayout(size);
-        return textChanged;
+        return result;
     }
 }
 </file>
@@ -6686,6 +6770,49 @@ public class DataGridColumn
 }
 </file>
 
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\FileDialogs.cs">
+using System;
+using System.Collections.Generic;
+using NativeFileDialogs.Net;
+
+namespace DirectUI;
+
+/// <summary>
+/// Provides cross-platform native file dialogs using NativeFileDialog.NET.
+/// </summary>
+public static class FileDialogs
+{
+    /// <summary>
+    /// Opens a native dialog for selecting a single file.
+    /// </summary>
+    /// <param name="filters">A dictionary of filters, where the key is the description (e.g., "Image Files") and the value is a comma-separated list of extensions (e.g., "png,jpg").</param>
+    /// <param name="defaultPath">The default path to open the dialog in.</param>
+    /// <returns>The path of the selected file, or null if the dialog was canceled or an error occurred.</returns>
+    public static string? OpenFile(IDictionary<string, string>? filters = null, string? defaultPath = null)
+    {
+        try
+        {
+            NfdStatus result = Nfd.OpenDialog(out string? outPath, filters, defaultPath);
+
+            switch (result)
+            {
+                case NfdStatus.Ok:
+                    return outPath;
+                case NfdStatus.Cancelled:
+                    return null;
+                default:
+                    return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[NativeFileDialog] An exception occurred: {ex.Message}");
+            return null;
+        }
+    }
+}
+</file>
+
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputText.cs">
 // Widgets/LineEdit.cs
 using System;
@@ -6704,7 +6831,7 @@ namespace DirectUI;
 internal class InputText
 {
     // === MAIN UPDATE && DRAW METHOD ===
-    public bool UpdateAndDraw(
+    public InputTextResult UpdateAndDraw(
         int intId,
         ref string text,
         InputTextState state, // The state is now passed in
@@ -6753,6 +6880,7 @@ internal class InputText
 
         Rect bounds = new(position.X, position.Y, size.X, size.Y);
         bool textChanged = false;
+        bool enterPressed = false;
 
         bool isHovering = bounds.Contains(input.MousePosition.X, input.MousePosition.Y);
         if (isHovering)
@@ -6808,7 +6936,7 @@ internal class InputText
         // --- Keyboard Input Processing ---
         if (isFocused && !disabled)
         {
-            textChanged = ProcessInput(ref text, state, size, maxLength, textMargin, input);
+            (textChanged, enterPressed) = ProcessInput(ref text, state, size, maxLength, textMargin, input);
         }
 
         // --- Drawing ---
@@ -6850,7 +6978,7 @@ internal class InputText
 
         renderer.PopClipRect();
 
-        return textChanged;
+        return new InputTextResult(textChanged, enterPressed);
     }
 
     private int GetCaretPositionFromMouse(Vector2 mousePos, string text, InputTextState state, bool isPassword, char passwordChar, ButtonStyle style, Rect widgetBounds, Vector2 textMargin, ITextService textService)
@@ -6875,9 +7003,10 @@ internal class InputText
         return Math.Clamp(newCaretPos, 0, text.Length);
     }
 
-    private bool ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
+    private (bool textChanged, bool enterPressed) ProcessInput(ref string text, InputTextState state, Vector2 size, int maxLength, Vector2 textMargin, InputState input)
     {
         bool textChanged = false;
+        bool enterPressed = false;
 
         state.BlinkTimer += UI.Context.DeltaTime;
 
@@ -6921,6 +7050,9 @@ internal class InputText
             PushUndoState(text, state); // Push on first key press
             switch (key)
             {
+                case Keys.Enter:
+                    enterPressed = true;
+                    break;
                 case Keys.A when isCtrlHeld:
                     state.SelectionAnchor = 0;
                     state.CaretPosition = text.Length;
@@ -7009,7 +7141,7 @@ internal class InputText
             state.BlinkTimer = 0;
         }
 
-        return textChanged;
+        return (textChanged, enterPressed);
     }
 
     private static int FindPreviousWordStart(string text, int currentPos)
@@ -7149,6 +7281,24 @@ internal class InputText
         state.SelectionAnchor = nextState.SelectionAnchor;
         state.ScrollPixelOffset = nextState.ScrollPixelOffset;
     }
+}
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputTextResult.cs">
+namespace DirectUI;
+
+public readonly struct InputTextResult
+{
+    public bool ValueChanged { get; }
+    public bool EnterPressed { get; }
+
+    public InputTextResult(bool valueChanged, bool enterPressed)
+    {
+        ValueChanged = valueChanged;
+        EnterPressed = enterPressed;
+    }
+
+    public static implicit operator bool(InputTextResult result) => result.ValueChanged;
 }
 </file>
 
@@ -13461,11 +13611,12 @@ public interface IWindowHost : IDisposable
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\App.cs">
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
-using DirectUI.Core;
 using DirectUI;
-using System.Numerics;
+using DirectUI.Core;
 using Tagra.Data;
+using Vortice.Mathematics;
 
 namespace Tagra;
 
@@ -13473,71 +13624,281 @@ public class App : IAppLogic
 {
     private readonly IWindowHost _host;
     private readonly DatabaseManager _dbManager;
+    private readonly ThumbnailService _thumbnailService;
 
     // UI State
     private string _searchText = string.Empty;
+    private string _lastSearchText = string.Empty;
     private List<Tag> _allTags = new();
+    private List<FileEntry> _displayedFiles = new();
+    private FileEntry? _selectedFile;
     private float _leftPanelWidth = 200f;
+    private float _rightPanelWidth = 250f;
+    private string _newTagName = "";
 
     public App(IWindowHost host)
     {
         _host = host;
         _dbManager = new DatabaseManager();
+        _thumbnailService = new ThumbnailService();
         LoadInitialData();
     }
 
     private void LoadInitialData()
     {
+        RefreshAllData();
+    }
+
+    private void RefreshDataForSelectedFile()
+    {
+        if (_selectedFile != null)
+        {
+            _selectedFile.Tags = _dbManager.GetTagsForFile(_selectedFile.Id);
+        }
+    }
+
+    private void RefreshAllData()
+    {
         _allTags = _dbManager.GetAllTags();
+        _displayedFiles = string.IsNullOrWhiteSpace(_searchText)
+            ? _dbManager.GetAllFiles()
+            : _dbManager.GetFilesByTags(_searchText);
+
+        if (_selectedFile != null)
+        {
+            _selectedFile = _displayedFiles.FirstOrDefault(f => f.Id == _selectedFile.Id);
+            RefreshDataForSelectedFile();
+        }
     }
 
     public void DrawUI(UIContext context)
     {
-        // For now, we will use a simple resizable vertical panel for the layout.
-        UI.BeginResizableVPanel("main_layout", ref _leftPanelWidth, HAlignment.Left, minWidth: 150, maxWidth: 400, panelStyle: new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f });
+        HandleSearch();
+        DrawLeftPanel();
+        DrawMainContentPanel();
+        DrawRightPanel();
+    }
 
-        // --- Left Panel Content ---
+    private void HandleSearch()
+    {
+        if (_searchText != _lastSearchText)
+        {
+            _lastSearchText = _searchText;
+            _selectedFile = null; // Clear selection on new search
+            _displayedFiles = string.IsNullOrWhiteSpace(_searchText)
+                ? _dbManager.GetAllFiles()
+                : _dbManager.GetFilesByTags(_searchText);
+        }
+    }
+
+    private void DrawLeftPanel()
+    {
+        var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
+        UI.BeginResizableVPanel("main_layout", ref _leftPanelWidth, HAlignment.Left, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
+
+        var clipRect = UI.Context.Layout.GetCurrentClipRect();
+        var innerWidth = clipRect.Width / UI.Context.UIScale;
+        var availableHeight = clipRect.Height / UI.Context.UIScale;
+        var currentY = UI.Context.Layout.GetCurrentPosition().Y;
+
         UI.BeginVBoxContainer("left_panel_vbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
 
         UI.Text("search_label", "Search by Tags");
-        UI.InputText("search_bar", ref _searchText, new Vector2(UI.Context.Layout.GetCurrentClipRect().Width / UI.Context.UIScale, 28f), placeholderText: "e.g., cat AND vacation");
+        if (UI.InputText("search_bar", ref _searchText, new Vector2(innerWidth, 28f), placeholderText: "e.g., cat AND vacation").EnterPressed)
+        {
+            HandleSearch(); // Trigger search explicitly on Enter
+        }
 
-        UI.Separator(UI.Context.Layout.GetCurrentClipRect().Width / UI.Context.UIScale);
+        UI.Separator(innerWidth);
 
+        // --- New Tag Creation ---
+        UI.BeginHBoxContainer("new_tag_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
+        UI.InputText("new_tag_input", ref _newTagName, new Vector2(innerWidth - 55, 28f), placeholderText: "New Tag Name");
+        if (UI.Button("create_tag_btn", "Add", new Vector2(50, 28)))
+        {
+            if (!string.IsNullOrWhiteSpace(_newTagName))
+            {
+                _dbManager.AddTag(_newTagName);
+                _newTagName = "";
+                RefreshAllData();
+            }
+        }
+        UI.EndHBoxContainer();
+        // --- End New Tag Creation ---
+
+        UI.Separator(innerWidth);
         UI.Text("tags_label", "All Tags");
 
-        // Display all tags in a scrollable region
-        float availableHeight = UI.Context.Layout.GetCurrentClipRect().Height / UI.Context.UIScale - UI.Context.Layout.GetCurrentPosition().Y;
-        UI.BeginScrollableRegion("tags_scroll", new Vector2(UI.Context.Layout.GetCurrentClipRect().Width / UI.Context.UIScale, availableHeight), out var innerWidth);
+        var scrollHeight = availableHeight - (UI.Context.Layout.GetCurrentPosition().Y - currentY);
+        UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
         foreach (var tag in _allTags)
         {
-            UI.Text($"tag_{tag.Id}", tag.Name);
+            if (UI.Button($"tag_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth, 24)))
+            {
+                _searchText = tag.Name; // Click a tag to search for it
+            }
         }
         UI.EndScrollableRegion();
 
-
         UI.EndVBoxContainer();
         UI.EndResizableVPanel();
+    }
 
-        // --- Main Content Panel (to the right of the resizable panel) ---
-        var layout = UI.Context.Layout;
-        var scale = UI.Context.UIScale;
-        var mainPanelX = (_leftPanelWidth * scale) + 1; // Start 1 pixel after the panel
-        var mainPanelWidth = layout.GetCurrentClipRect().Width - mainPanelX;
-        var mainPanelHeight = layout.GetCurrentClipRect().Height;
-        var mainPanelPos = new Vector2(mainPanelX / scale, 0);
+    private void DrawMainContentPanel()
+    {
+        var context = UI.Context;
+        var scale = context.UIScale;
+        var windowWidth = context.Renderer.RenderTargetSize.X;
+        var windowHeight = context.Renderer.RenderTargetSize.Y;
 
-        UI.BeginVBoxContainer("main_content", mainPanelPos, gap: 10, minSize: new Vector2(mainPanelWidth / scale, mainPanelHeight / scale));
+        var mainPanelX = _leftPanelWidth + 1;
+        var mainPanelWidth = (windowWidth / scale) - mainPanelX - _rightPanelWidth;
+        var mainPanelPos = new Vector2(mainPanelX, 0);
+
+        UI.BeginVBoxContainer("main_content_vbox", mainPanelPos, gap: 10);
 
         if (UI.Button("add_file_btn", "Add File...", new Vector2(120, 28)))
         {
-            // In the next level, this will open a native file dialog.
-            Console.WriteLine("TODO: Open file dialog.");
+            var filters = new Dictionary<string, string>
+            {
+                { "Image Files", "jpg,jpeg,png,bmp,gif" },
+                { "Document Files", "txt,pdf,doc,docx" }
+            };
+            string? path = FileDialogs.OpenFile(filters);
+            if (!string.IsNullOrWhiteSpace(path))
+            {
+                _dbManager.AddFile(path);
+                RefreshAllData();
+            }
         }
 
-        UI.Text("results_label", "Search Results will appear here.");
+        UI.Separator(mainPanelWidth);
 
-        UI.EndVBoxContainer();
+        var scrollPos = context.Layout.GetCurrentPosition();
+        var scrollHeight = (windowHeight / scale) - scrollPos.Y;
+        UI.BeginScrollArea("files_scroll_area", new Vector2(mainPanelWidth, scrollHeight));
+
+        const float itemWidth = 120;
+        const float itemHeight = 150;
+        const float gridGap = 10;
+        int numColumns = Math.Max(1, (int)((mainPanelWidth - gridGap) / (itemWidth + gridGap)));
+
+        UI.BeginGridContainer("files_grid", Vector2.Zero, new Vector2(mainPanelWidth - 20, 10000), numColumns, new Vector2(gridGap, gridGap));
+
+        foreach (var file in _displayedFiles)
+        {
+            DrawFileGridItem(file, new Vector2(itemWidth, itemHeight));
+        }
+
+        UI.EndGridContainer();
+        UI.EndScrollArea();
+        UI.EndVBoxContainer(advanceParentLayout: false);
+    }
+
+    private void DrawFileGridItem(FileEntry file, Vector2 logicalSize)
+    {
+        var context = UI.Context;
+        var scale = context.UIScale;
+        var startPos = context.Layout.GetCurrentPosition();
+        var isSelected = _selectedFile?.Id == file.Id;
+
+        var itemBounds = new Rect(startPos.X * scale, startPos.Y * scale, logicalSize.X * scale, logicalSize.Y * scale);
+
+        // Manual Hit-testing for selection
+        if (itemBounds.Contains(context.InputState.MousePosition) && context.InputState.WasLeftMousePressedThisFrame)
+        {
+            _selectedFile = file;
+            RefreshDataForSelectedFile();
+        }
+
+        // --- Visuals ---
+        UI.BeginVBoxContainer($"file_item_{file.Id}", startPos, gap: 4);
+
+        // Thumbnail or placeholder
+        byte[]? thumbData = _thumbnailService.GetThumbnail(file.Path, 100);
+        if (thumbData != null)
+        {
+            UI.Image($"thumb_{file.Id}", thumbData, new Vector2(logicalSize.X, 100));
+        }
+        else
+        {
+            var boxStyle = new BoxStyle { FillColor = new(60, 60, 60, 255), Roundness = 0.1f };
+            UI.Box($"placeholder_{file.Id}", new Vector2(logicalSize.X, 100), boxStyle);
+        }
+
+        // Filename
+        UI.WrappedText($"filename_{file.Id}", Path.GetFileName(file.Path), new Vector2(logicalSize.X, logicalSize.Y - 104));
+
+        UI.EndVBoxContainer(advanceParentLayout: false); // We are doing custom layout advancement
+
+        // Draw selection highlight manually
+        if (isSelected)
+        {
+            var highlightStyle = new BoxStyle
+            {
+                FillColor = DirectUI.Drawing.Colors.Transparent,
+                BorderColor = DefaultTheme.Accent,
+                BorderLength = 2,
+                Roundness = 0.1f
+            };
+            context.Renderer.DrawBox(itemBounds, highlightStyle);
+        }
+
+        // Manually advance the parent grid container
+        context.Layout.AdvanceLayout(logicalSize);
+    }
+
+    private void DrawRightPanel()
+    {
+        var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
+        UI.BeginResizableVPanel("details_panel", ref _rightPanelWidth, HAlignment.Right, minWidth: 200, maxWidth: 500, panelStyle: panelStyle);
+
+        var clipRect = UI.Context.Layout.GetCurrentClipRect();
+        var innerWidth = clipRect.Width / UI.Context.UIScale;
+
+        if (_selectedFile is null)
+        {
+            UI.Text("no_selection_label", "Select a file to see details.", new Vector2(innerWidth, 40));
+        }
+        else
+        {
+            var availableHeight = clipRect.Height / UI.Context.UIScale;
+            UI.BeginScrollableRegion("details_scroll", new Vector2(innerWidth, availableHeight), out var scrollInnerWidth);
+            UI.BeginVBoxContainer("details_vbox", Vector2.Zero, gap: 5f);
+
+            UI.WrappedText("selected_path", _selectedFile.Path, new Vector2(scrollInnerWidth, 0));
+            UI.Separator(scrollInnerWidth);
+            UI.Text("assigned_tags_label", "Assigned Tags:");
+
+            foreach (var tag in _selectedFile.Tags)
+            {
+                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+                if (UI.Button($"remove_tag_{tag.Id}", "x", new Vector2(20, 20)))
+                {
+                    _dbManager.RemoveTagFromFile(_selectedFile.Id, tag.Id);
+                    RefreshDataForSelectedFile();
+                }
+                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 30, 20));
+                UI.EndHBoxContainer();
+            }
+
+            UI.Separator(scrollInnerWidth);
+            UI.Text("available_tags_label", "Available Tags to Add:");
+            var availableTags = _allTags.Except(_selectedFile.Tags, new TagComparer());
+            foreach (var tag in availableTags)
+            {
+                if (UI.Button($"add_tag_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth, 24)))
+                {
+                    _dbManager.AddTagToFile(_selectedFile.Id, tag.Id);
+                    RefreshDataForSelectedFile();
+                }
+            }
+
+            UI.EndVBoxContainer();
+            UI.EndScrollableRegion();
+        }
+
+        UI.EndResizableVPanel();
     }
 
     public void SaveState()
@@ -13552,6 +13913,7 @@ using Microsoft.Data.Sqlite;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace Tagra.Data;
 
@@ -13614,7 +13976,12 @@ public class DatabaseManager
         connection.Open();
 
         var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Name FROM Tags ORDER BY Name";
+        command.CommandText = @"
+            SELECT T.Id, T.Name, COUNT(FT.FileId)
+            FROM Tags T
+            LEFT JOIN FileTags FT ON T.Id = FT.TagId
+            GROUP BY T.Id, T.Name
+            ORDER BY T.Name";
 
         using var reader = command.ExecuteReader();
         while (reader.Read())
@@ -13622,7 +13989,8 @@ public class DatabaseManager
             tags.Add(new Tag
             {
                 Id = reader.GetInt64(0),
-                Name = reader.GetString(1)
+                Name = reader.GetString(1),
+                FileCount = reader.GetInt32(2)
             });
         }
         return tags;
@@ -13650,12 +14018,167 @@ public class DatabaseManager
         }
     }
 
+    public FileEntry? AddFile(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) return null;
+
+        using var connection = GetConnection();
+        connection.Open();
+        using var transaction = connection.BeginTransaction();
+        try
+        {
+            var command = connection.CreateCommand();
+            command.Transaction = transaction;
+            command.CommandText = "SELECT Id FROM Files WHERE Path = @Path";
+            command.Parameters.AddWithValue("@Path", path);
+            var existingId = command.ExecuteScalar();
+            if (existingId != null)
+            {
+                return GetFileById(Convert.ToInt64(existingId));
+            }
+            command.CommandText = "INSERT INTO Files (Path) VALUES (@Path); SELECT last_insert_rowid();";
+            long newId = Convert.ToInt64(command.ExecuteScalar());
+            transaction.Commit();
+            return new FileEntry { Id = newId, Path = path };
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error adding file: {ex.Message}");
+            transaction.Rollback();
+            return null;
+        }
+    }
+
+    public FileEntry? GetFileById(long fileId)
+    {
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id, Path, Hash FROM Files WHERE Id = @Id";
+        command.Parameters.AddWithValue("@Id", fileId);
+        using var reader = command.ExecuteReader();
+        if (reader.Read())
+        {
+            return new FileEntry
+            {
+                Id = reader.GetInt64(0),
+                Path = reader.GetString(1),
+                Hash = reader.IsDBNull(2) ? null : reader.GetString(2)
+            };
+        }
+        return null;
+    }
+
+    public List<FileEntry> GetAllFiles()
+    {
+        var files = new List<FileEntry>();
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "SELECT Id, Path, Hash FROM Files ORDER BY Path";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            files.Add(new FileEntry
+            {
+                Id = reader.GetInt64(0),
+                Path = reader.GetString(1),
+                Hash = reader.IsDBNull(2) ? null : reader.GetString(2)
+            });
+        }
+        return files;
+    }
+
+    public List<Tag> GetTagsForFile(long fileId)
+    {
+        var tags = new List<Tag>();
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = @"
+            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id)
+            FROM Tags T
+            INNER JOIN FileTags FT ON T.Id = FT.TagId
+            WHERE FT.FileId = @FileId
+            ORDER BY T.Name";
+        command.Parameters.AddWithValue("@FileId", fileId);
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2) });
+        }
+        return tags;
+    }
+
+    public void AddTagToFile(long fileId, long tagId)
+    {
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
+        command.Parameters.AddWithValue("@FileId", fileId);
+        command.Parameters.AddWithValue("@TagId", tagId);
+        command.ExecuteNonQuery();
+    }
+
+    public void RemoveTagFromFile(long fileId, long tagId)
+    {
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        command.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
+        command.Parameters.AddWithValue("@FileId", fileId);
+        command.Parameters.AddWithValue("@TagId", tagId);
+        command.ExecuteNonQuery();
+    }
+
+    public List<FileEntry> GetFilesByTags(string searchText)
+    {
+        var searchTags = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Distinct().ToList();
+        if (searchTags.Count == 0)
+        {
+            return GetAllFiles();
+        }
+
+        var files = new List<FileEntry>();
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+
+        var parameterNames = new List<string>();
+        for (int i = 0; i < searchTags.Count; i++)
+        {
+            string paramName = $"@tag{i}";
+            parameterNames.Add(paramName);
+            command.Parameters.AddWithValue(paramName, searchTags[i]);
+        }
+
+        command.CommandText = $@"
+            SELECT F.Id, F.Path, F.Hash
+            FROM Files F
+            INNER JOIN FileTags FT ON F.Id = FT.FileId
+            INNER JOIN Tags T ON FT.TagId = T.Id
+            WHERE T.Name IN ({string.Join(",", parameterNames)})
+            GROUP BY F.Id
+            HAVING COUNT(DISTINCT T.Id) = {searchTags.Count}
+            ORDER BY F.Path";
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            files.Add(new FileEntry
+            {
+                Id = reader.GetInt64(0),
+                Path = reader.GetString(1),
+                Hash = reader.IsDBNull(2) ? null : reader.GetString(2)
+            });
+        }
+        return files;
+    }
+
     // Placeholder methods for future implementation
     public void DeleteTag(long tagId) { /* ... */ }
-    public FileEntry AddFile(string path) { /* ... */ return null!; }
-    public List<Tag> GetTagsForFile(long fileId) { /* ... */ return new(); }
     public void UpdateTagsForFile(long fileId, IEnumerable<long> tagIds) { /* ... */ }
-    public List<FileEntry> GetFilesByTags(IEnumerable<string> tags) { /* ... */ return new(); }
 }
 </file>
 
@@ -13675,6 +14198,7 @@ public class Tag
 {
     public long Id { get; set; }
     public required string Name { get; set; }
+    public int FileCount { get; set; }
 
     public override string ToString() => Name;
 }
@@ -13686,6 +14210,21 @@ public class FileEntry
     public string? Hash { get; set; }
     public List<Tag> Tags { get; set; } = new();
 }
+
+public class TagComparer : IEqualityComparer<Tag>
+{
+    public bool Equals(Tag? x, Tag? y)
+    {
+        if (ReferenceEquals(x, y)) return true;
+        if (x is null || y is null) return false;
+        return x.Id == y.Id;
+    }
+
+    public int GetHashCode(Tag obj)
+    {
+        return obj.Id.GetHashCode();
+    }
+}
 </file>
 
 <file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\Program.cs">
@@ -13695,6 +14234,75 @@ using Tagra;
 
 // Run the Tagra application using the Direct2D backend.
 // The ApplicationRunner will create a window host and pass it to our App logic.
-ApplicationRunner.Run(GraphicsBackend.Direct2D, (host) => new App(host));
+ApplicationRunner.Run(GraphicsBackend.SkiaSharp, (host) => new App(host));
+</file>
+
+<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\ThumbnailService.cs">
+using System.Collections.Generic;
+using System.IO;
+using SkiaSharp;
+
+namespace Tagra;
+
+public class ThumbnailService : IDisposable
+{
+    private readonly Dictionary<string, byte[]?> _thumbnailCache = new();
+    private readonly HashSet<string> _supportedExtensions = new(System.StringComparer.OrdinalIgnoreCase)
+    {
+        ".jpg", ".jpeg", ".png", ".bmp", ".gif"
+    };
+
+    public byte[]? GetThumbnail(string filePath, int size = 128)
+    {
+        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
+        {
+            return null;
+        }
+
+        if (_thumbnailCache.TryGetValue(filePath, out var cachedData))
+        {
+            return cachedData;
+        }
+
+        var extension = Path.GetExtension(filePath);
+        if (!_supportedExtensions.Contains(extension))
+        {
+            _thumbnailCache[filePath] = null;
+            return null;
+        }
+
+        try
+        {
+            using var inputStream = new SKFileStream(filePath);
+            using var original = SKBitmap.Decode(inputStream);
+            if (original is null)
+            {
+                _thumbnailCache[filePath] = null;
+                return null;
+            }
+
+            var info = new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
+            using var resized = original.Resize(info, SKFilterQuality.Medium);
+            using var image = SKImage.FromBitmap(resized);
+            // Encode to PNG as it supports transparency and is widely compatible.
+            using var data = image.Encode(SKEncodedImageFormat.Png, 90);
+
+            var bytes = data.ToArray();
+            _thumbnailCache[filePath] = bytes;
+            return bytes;
+
+        }
+        catch
+        {
+            _thumbnailCache[filePath] = null; // Cache failure so we don't retry
+            return null;
+        }
+    }
+
+    public void Dispose()
+    {
+        _thumbnailCache.Clear();
+    }
+}
 </file>
 

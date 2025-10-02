@@ -6,7 +6,8 @@ public static partial class UI
 {
     public static void BeginGridContainer(string id, Vector2 position, Vector2 availableSize, int numColumns, Vector2 gap)
     {
-        Context.Layout.PushContainer(new GridContainerState(id.GetHashCode(), position, availableSize, numColumns, gap));
+        var startPos = Context.Layout.GetCurrentPosition() + position;
+        Context.Layout.PushContainer(new GridContainerState(id.GetHashCode(), startPos, availableSize, numColumns, gap));
     }
 
     public static void EndGridContainer()
@@ -18,7 +19,7 @@ public static partial class UI
         }
 
         Context.Layout.PopContainer();
-        
+
         if (!Context.Layout.IsInLayoutContainer())
         {
             return;
