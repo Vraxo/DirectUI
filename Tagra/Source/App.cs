@@ -23,6 +23,7 @@ public class App : IAppLogic
     private float _leftPanelWidth = 200f;
     private float _rightPanelWidth = 250f;
     private string _newTagName = "";
+    private long? _tagIdToDelete = null;
 
     public App(IWindowHost host)
     {
@@ -61,6 +62,31 @@ public class App : IAppLogic
 
     public void DrawUI(UIContext context)
     {
+        if (_tagIdToDelete.HasValue && !_host.ModalWindowService.IsModalWindowOpen)
+        {
+            var tagToDelete = _allTags.FirstOrDefault(t => t.Id == _tagIdToDelete.Value);
+            if (tagToDelete != null)
+            {
+                _host.ModalWindowService.OpenModalWindow(
+                    "Confirm Deletion",
+                    300, 120,
+                    (modalContext) => DrawDeleteConfirmationModal(tagToDelete),
+                    (result) => {
+                        if (result == 0) // 'Yes' was clicked
+                        {
+                            _dbManager.DeleteTag(_tagIdToDelete.Value);
+                            RefreshAllData();
+                        }
+                        _tagIdToDelete = null;
+                    }
+                );
+            }
+            else
+            {
+                _tagIdToDelete = null; // Tag not found, maybe already deleted
+            }
+        }
+
         HandleSearch();
         DrawLeftPanel();
         DrawMainContentPanel();
@@ -121,10 +147,19 @@ public class App : IAppLogic
         UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
         foreach (var tag in _allTags)
         {
-            if (UI.Button($"tag_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth, 24)))
+            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+            if (UI.Button($"tag_btn_{tag.Id}", $"{tag.Name} ({tag.FileCount})", new Vector2(scrollInnerWidth - 30, 24)))
             {
                 _searchText = tag.Name; // Click a tag to search for it
             }
+            if (UI.Button($"delete_tag_btn_{tag.Id}", "x", new Vector2(24, 24)))
+            {
+                if (!_tagIdToDelete.HasValue) // Prevent opening multiple dialogs
+                {
+                    _tagIdToDelete = tag.Id;
+                }
+            }
+            UI.EndHBoxContainer();
         }
         UI.EndScrollableRegion();
 
@@ -287,6 +322,27 @@ public class App : IAppLogic
         }
 
         UI.EndResizableVPanel();
+    }
+
+    private void DrawDeleteConfirmationModal(Tag tagToDelete)
+    {
+        UI.BeginVBoxContainer("delete_modal_vbox", new Vector2(10, 10), gap: 15f);
+
+        UI.WrappedText("delete_confirm_text", $"Are you sure you want to delete the tag '{tagToDelete.Name}'? This will remove it from {tagToDelete.FileCount} file(s) and cannot be undone.", new Vector2(280, 0));
+
+        UI.BeginHBoxContainer("delete_modal_buttons", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
+
+        if (UI.Button("delete_yes", "Yes, Delete", new Vector2(120, 32)))
+        {
+            _host.ModalWindowService.CloseModalWindow(0); // 0 for 'Yes'
+        }
+        if (UI.Button("delete_no", "Cancel", new Vector2(100, 32)))
+        {
+            _host.ModalWindowService.CloseModalWindow(1); // 1 for 'Cancel'
+        }
+
+        UI.EndHBoxContainer();
+        UI.EndVBoxContainer();
     }
 
     public void SaveState()

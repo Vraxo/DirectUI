@@ -265,7 +265,17 @@ public class DatabaseManager
         return files;
     }
 
+    public void DeleteTag(long tagId)
+    {
+        using var connection = GetConnection();
+        connection.Open();
+        var command = connection.CreateCommand();
+        // Thanks to "ON DELETE CASCADE", entries in FileTags will be removed automatically.
+        command.CommandText = "DELETE FROM Tags WHERE Id = @TagId";
+        command.Parameters.AddWithValue("@TagId", tagId);
+        command.ExecuteNonQuery();
+    }
+
     // Placeholder methods for future implementation
-    public void DeleteTag(long tagId) { /* ... */ }
     public void UpdateTagsForFile(long fileId, IEnumerable<long> tagIds) { /* ... */ }
 }
