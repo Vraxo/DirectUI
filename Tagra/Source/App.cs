@@ -287,7 +287,7 @@ public class App : IAppLogic
         {
             var availableHeight = clipRect.Height / UI.Context.UIScale;
             UI.BeginScrollableRegion("details_scroll", new Vector2(innerWidth, availableHeight), out var scrollInnerWidth);
-            UI.BeginVBoxContainer("details_vbox", Vector2.Zero, gap: 5f);
+            UI.BeginVBoxContainer("details_vbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
 
             UI.WrappedText("selected_path", _selectedFile.Path, new Vector2(scrollInnerWidth, 0));
             UI.Separator(scrollInnerWidth);
