@@ -55,7 +55,7 @@ public class LeftPanel
             UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
 
             var color = ParseColorHex(tag.ColorHex);
-            UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 0.5f });
+            UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f });
 
             if (UI.Button(
                 id: $"tag_btn_{tag.Id}",

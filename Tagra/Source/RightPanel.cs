@@ -45,7 +45,7 @@ public class RightPanel
                     _app.RefreshAllData();
                 }
                 var color = ParseColorHex(tag.ColorHex);
-                UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 0.5f });
+                UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f });
                 UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 40, 20));
                 UI.EndHBoxContainer();
             }
@@ -66,7 +66,7 @@ public class RightPanel
             {
                 UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
                 var color = ParseColorHex(tag.ColorHex);
-                UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 0.5f });
+                UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f });
 
                 if (UI.Button(
                     id: $"add_tag_{tag.Id}",
