@@ -52,12 +52,17 @@ public class LeftPanel
 
         foreach (var tag in _app.AllTags)
         {
-            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+            UI.BeginHBoxContainer($"tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
+
+            var color = ParseColorHex(tag.ColorHex);
+            UI.Box($"tag_color_swatch_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 0.5f });
+
             if (UI.Button(
                 id: $"tag_btn_{tag.Id}",
                 text: $"{tag.Name} ({tag.FileCount})",
-                size: new Vector2(scrollInnerWidth - 30, 24),
+                size: new Vector2(scrollInnerWidth - 15, 24),
                 theme: tagButtonStyle,
+                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
                 isActive: _app.SearchText == tag.Name))
             {
                 if (_app.SearchText == tag.Name)
@@ -69,8 +74,6 @@ public class LeftPanel
                     _app.SearchText = tag.Name; // Click a tag to search for it
                 }
             }
-            // The delete button is now in the Manage Tags window.
-            UI.Box("delete_placeholder", new Vector2(24, 24), new BoxStyle { FillColor = Colors.Transparent, BorderLength = 0f });
 
             UI.EndHBoxContainer();
         }
@@ -78,5 +81,24 @@ public class LeftPanel
 
         UI.EndVBoxContainer();
         UI.EndResizableVPanel();
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = System.Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = System.Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = System.Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                return DefaultTheme.Accent;
+            }
+        }
+        return DefaultTheme.Accent;
     }
 }

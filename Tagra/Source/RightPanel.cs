@@ -38,13 +38,15 @@ public class RightPanel
 
             foreach (var tag in _app.SelectedFile.Tags)
             {
-                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5);
+                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
                 if (UI.Button($"remove_tag_{tag.Id}", "x", new Vector2(20, 20)))
                 {
                     _app.DbManager.RemoveTagFromFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
                 }
-                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 30, 20));
+                var color = ParseColorHex(tag.ColorHex);
+                UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 0.5f });
+                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 40, 20));
                 UI.EndHBoxContainer();
             }
 
@@ -62,15 +64,21 @@ public class RightPanel
             var availableTags = _app.AllTags.Except(_app.SelectedFile.Tags, new TagComparer());
             foreach (var tag in availableTags)
             {
+                UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center);
+                var color = ParseColorHex(tag.ColorHex);
+                UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 0.5f });
+
                 if (UI.Button(
                     id: $"add_tag_{tag.Id}",
                     text: tag.Name,
-                    size: new Vector2(scrollInnerWidth, 24),
-                    theme: tagButtonStyle))
+                    size: new Vector2(scrollInnerWidth - 15, 24),
+                    theme: tagButtonStyle,
+                    textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
                 {
                     _app.DbManager.AddTagToFile(_app.SelectedFile.Id, tag.Id);
                     _app.RefreshAllData();
                 }
+                UI.EndHBoxContainer();
             }
 
             UI.EndVBoxContainer();
@@ -78,5 +86,24 @@ public class RightPanel
         }
 
         UI.EndResizableVPanel();
+    }
+
+    private static Color ParseColorHex(string hex)
+    {
+        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        {
+            try
+            {
+                byte r = System.Convert.ToByte(hex.Substring(1, 2), 16);
+                byte g = System.Convert.ToByte(hex.Substring(3, 2), 16);
+                byte b = System.Convert.ToByte(hex.Substring(5, 2), 16);
+                return new Color(r, g, b, 255);
+            }
+            catch
+            {
+                return DefaultTheme.Accent;
+            }
+        }
+        return DefaultTheme.Accent;
     }
 }
