@@ -526,22 +526,17 @@ internal class InputText
         var renderer = context.Renderer;
         var textService = context.TextService;
 
-        // Create a modified style with emoji font support
-        var emojiStyle = new ButtonStyle(style);
-        emojiStyle.FontName = "Segoe UI Emoji, Noto Color Emoji, Apple Color Emoji, sans-serif";
-        emojiStyle.FontSize = style.FontSize * 1.2f; // Slightly larger for better emoji rendering
-
-        var textLayout = textService.GetTextLayout(fullText, emojiStyle, new(float.MaxValue, size.Y),
+        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y),
             new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout is null) return;
 
         const float yOffsetCorrection = -1.5f;
         Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
 
-        // Use the emoji style for rendering
-        renderer.DrawText(drawOrigin, fullText, emojiStyle,
+        // Use the original style for rendering
+        renderer.DrawText(drawOrigin, fullText, style,
             new Alignment(HAlignment.Left, VAlignment.Center),
-            new Vector2(float.MaxValue, size.Y), emojiStyle.FontColor);
+            new Vector2(float.MaxValue, size.Y), style.FontColor);
     }
 
     private void DrawCaret(string text, InputTextState state, Vector2 size, ButtonStyle style, Rect contentRect)
