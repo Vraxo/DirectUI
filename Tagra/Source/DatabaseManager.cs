@@ -19,7 +19,15 @@ public class DatabaseManager
         "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00",
         "#f4511e", "#6d4c41", "#757575", "#546e7a"
     };
-    private static int _nextColorIndex = 0;
+
+    // A list of default emojis for new tags
+    private static readonly List<string> _defaultTagEmojis = new()
+    {
+        "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫️", "⚪️",
+        "❤️", "🧡", "💛", "💚", "💙", "💜", "💔", "❗️", "❓",
+        "👍", "👎", "🔥", "✨", "⭐️", "🎉", "💀", "✅", "❌",
+        "😀", "😎", "😍", "😢", "😠", "🤯", "🤖", "👻", "👽"
+    };
 
     public DatabaseManager()
     {
@@ -166,16 +174,18 @@ public class DatabaseManager
         using var connection = GetConnection();
         connection.Open();
 
-        // Get the current number of tags to pick a color
+        // Get the current number of tags to pick a color and emoji
         var countCommand = connection.CreateCommand();
         countCommand.CommandText = "SELECT COUNT(*) FROM Tags";
         var tagCount = Convert.ToInt32(countCommand.ExecuteScalar());
         var color = _defaultTagColors[tagCount % _defaultTagColors.Count];
+        var emoji = _defaultTagEmojis[tagCount % _defaultTagEmojis.Count];
 
         var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO Tags (Name, ColorHex) VALUES (@Name, @ColorHex)";
+        command.CommandText = "INSERT INTO Tags (Name, ColorHex, Emoji) VALUES (@Name, @ColorHex, @Emoji)";
         command.Parameters.AddWithValue("@Name", name.Trim().ToLower());
         command.Parameters.AddWithValue("@ColorHex", color);
+        command.Parameters.AddWithValue("@Emoji", emoji);
 
         try
         {
