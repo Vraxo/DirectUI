@@ -653,53 +653,76 @@ internal class InputText
 
     private string CorrectPuaCharacter(char c)
     {
-        // Map common PUA characters back to their real emoji equivalents
+        // If it's in the Private Use Area (U+E000 to U+F8FF)
+        if (c >= '\uE000' && c <= '\uF8FF')
+        {
+            // Try all common offsets that might map PUA to emoji
+            int[] offsetsToTry = {
+            0x1000,    // Pattern we saw with 😀, 🧠
+            0x1F000 - 0xF000, // Pattern for 💪 (0xF4AA -> 0x1F4AA)
+            0x10000,   // Some might need larger offset
+            0x11000,   // Try various offsets
+            0xE000     // Another common offset
+        };
+
+            foreach (int offset in offsetsToTry)
+            {
+                int possibleEmojiCode = c + offset;
+                if (IsValidEmojiCodePoint(possibleEmojiCode))
+                {
+                    try
+                    {
+                        string emoji = char.ConvertFromUtf32(possibleEmojiCode);
+                        System.Diagnostics.Debug.WriteLine($"Corrected PUA: U+{(ushort)c:X4} -> U+{possibleEmojiCode:X4} {emoji} (offset: 0x{offset:X4})");
+                        return emoji;
+                    }
+                    catch
+                    {
+                        // Continue to next offset
+                    }
+                }
+            }
+
+            System.Diagnostics.Debug.WriteLine($"No emoji correction found for PUA: U+{(ushort)c:X4}");
+        }
+
+        // Keep variation selectors and other special characters
         return c switch
         {
-            // Faces
-            '\uF600' => "\U0001F600", // 😀
-            '\uF601' => "\U0001F601", // 😁
-            '\uF602' => "\U0001F602", // 😂
-            '\uF603' => "\U0001F603", // 😃
-            '\uF604' => "\U0001F604", // 😄
-            '\uF605' => "\U0001F605", // 😅
-            '\uF606' => "\U0001F606", // 😆
-            '\uF609' => "\U0001F609", // 😉
-            '\uF60A' => "\U0001F60A", // 😊
-            '\uF60B' => "\U0001F60B", // 😋
-            '\uF60C' => "\U0001F60C", // 😌
-            '\uF60D' => "\U0001F60D", // 😍
-            '\uF60F' => "\U0001F60F", // 😏
-
-            // Objects
-            '\uF389' => "\U0001F389", // 🎉
-
-            // Body parts
-            '\uF4AA' => "\U0001F4AA", // 💪
-            '\uF44C' => "\U0001F44C", // 👌
-            '\uF44D' => "\U0001F44D", // 👍
-            '\uF44E' => "\U0001F44E", // 👎
-            '\uF44A' => "\U0001F44A", // 👊
-            '\uF44B' => "\U0001F44B", // 👋
-
-            // People
-            '\uF464' => "\U0001F464", // 👤
-            '\uF465' => "\U0001F465", // 👥
-            '\uF466' => "\U0001F466", // 👦
-            '\uF467' => "\U0001F467", // 👧
-            '\uF468' => "\U0001F468", // 👨
-            '\uF469' => "\U0001F469", // 👩
-
-            // Brain and related
-            '\uF9E0' => "\U0001F9E0", // 🧠
-            '\uF9E1' => "\U0001F9E1", // 🧡
-            '\uF9E2' => "\U0001F9E2", // 🧢
-
-            // Writing
-            '\u270D' => "\u270D\uFE0F", // ✍️ (note: this one might be different)
-
-            _ => c >= '\uE000' && c <= '\uF8FF' ? AttemptAutoCorrection(c) : c.ToString()
+            '\uFE0F' => "\uFE0F", // Variation Selector-16
+            '\uFE0E' => "\uFE0E", // Variation Selector-15
+            _ => c.ToString()
         };
+    }
+
+    private bool IsValidEmojiCodePoint(int codePoint)
+    {
+        // Check if this code point falls within known emoji blocks
+        return (codePoint >= 0x1F000 && codePoint <= 0x1FFFF) ||    // Supplemental Symbols and Pictographs
+               (codePoint >= 0x1F600 && codePoint <= 0x1F64F) ||    // Emoticons
+               (codePoint >= 0x1F300 && codePoint <= 0x1F5FF) ||    // Miscellaneous Symbols and Pictographs
+               (codePoint >= 0x1F680 && codePoint <= 0x1F6FF) ||    // Transport and Map Symbols
+               (codePoint >= 0x1F900 && codePoint <= 0x1F9FF) ||    // Supplemental Symbols and Pictographs
+               (codePoint >= 0x1FA70 && codePoint <= 0x1FAFF) ||    // Symbols and Pictographs Extended-A
+               (codePoint >= 0x2600 && codePoint <= 0x26FF) ||      // Miscellaneous Symbols
+               (codePoint >= 0x2700 && codePoint <= 0x27BF) ||      // Dingbats
+               (codePoint >= 0x2300 && codePoint <= 0x23FF);        // Miscellaneous Technical
+    }
+
+    private bool IsLikelyCorruptedEmoji(char puaChar, int possibleEmojiCode)
+    {
+        // Only convert if the PUA character is in the range we've actually seen corrupted
+        // This is based on our debugging - we've seen F600-F9FF range get corrupted
+        bool isInCorruptedRange = puaChar >= '\uF300' && puaChar <= '\uF9FF';
+
+        // And the result should be in emoji ranges
+        bool isInEmojiRange = (possibleEmojiCode >= 0x1F300 && possibleEmojiCode <= 0x1F5FF) ||  // Misc Symbols & Pictographs
+                              (possibleEmojiCode >= 0x1F600 && possibleEmojiCode <= 0x1F64F) ||  // Emoticons
+                              (possibleEmojiCode >= 0x1F680 && possibleEmojiCode <= 0x1F6FF) ||  // Transport & Map
+                              (possibleEmojiCode >= 0x1F900 && possibleEmojiCode <= 0x1F9FF) ||  // Supplemental Symbols
+                              (possibleEmojiCode >= 0x1FA70 && possibleEmojiCode <= 0x1FAFF);    // Extended-A
+
+        return isInCorruptedRange && isInEmojiRange;
     }
 
     private string AttemptAutoCorrection(char c)
