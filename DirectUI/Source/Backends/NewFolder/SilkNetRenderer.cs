@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
@@ -83,39 +84,28 @@ public class SilkNetRenderer : IRenderer
     {
         if (_canvas is null || string.IsNullOrEmpty(text)) return;
 
-        var typeface = _textService.GetOrCreateTypeface(style);
-        using var font = new SKFont(typeface, style.FontSize);
-        using var paint = new SKPaint(font)
-        {
-            Color = new SKColor(color.R, color.G, color.B, color.A),
-            IsAntialias = true
-        };
+        var layout = _textService.GetTextLayout(text, style, maxSize, alignment) as SilkNetTextLayout;
+        if (layout is null || !layout.Runs.Any()) return;
 
-        // --- NEW: Use SKShaper to handle complex glyphs ---
-        using var shaper = new SKShaper(typeface);
-
-        // Measure for alignment purposes first
-        var shapeResult = shaper.Shape(text, paint);
-        var textWidth = shapeResult.Width;
-
-        var fontMetrics = paint.FontMetrics;
+        var totalSize = layout.Size;
         var textDrawPos = origin;
 
-        // --- Horizontal alignment (based on SHAPED text width) ---
+        // --- Horizontal alignment ---
         if (maxSize.X > 0)
         {
             switch (alignment.Horizontal)
             {
                 case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - textWidth) / 2f;
+                    textDrawPos.X += (maxSize.X - totalSize.X) / 2f;
                     break;
                 case HAlignment.Right:
-                    textDrawPos.X += maxSize.X - textWidth;
+                    textDrawPos.X += maxSize.X - totalSize.X;
                     break;
             }
         }
 
-        // --- Vertical alignment (based on stable font metrics to prevent jiggling) ---
+        // Use the metrics of the first (primary) font for vertical alignment to ensure consistency.
+        var primaryMetrics = layout.Runs.First().FontMetrics;
         var baselineY = origin.Y;
 
         if (maxSize.Y > 0)
@@ -123,35 +113,35 @@ public class SilkNetRenderer : IRenderer
             switch (alignment.Vertical)
             {
                 case VAlignment.Top:
-                    // Align the top of the text (ascent) with the top of the layout box.
-                    // Since Ascent is negative, we subtract it.
-                    baselineY -= fontMetrics.Ascent;
+                    baselineY -= primaryMetrics.Ascent;
                     break;
                 case VAlignment.Center:
-                    // Center the line of text within the layout box.
-                    float fontHeight = fontMetrics.Descent - fontMetrics.Ascent;
-                    baselineY += (maxSize.Y - fontHeight) / 2f - fontMetrics.Ascent;
-
-                    // Add a small correction for better visual centering, similar to the D2D backend.
-                    // The metric center is often lower than the perceived visual center, so we move it up slightly.
-                    baselineY -= 1.5f;
+                    float fontHeight = primaryMetrics.Descent - primaryMetrics.Ascent;
+                    baselineY += (maxSize.Y - fontHeight) / 2f - primaryMetrics.Ascent;
+                    baselineY -= 1.5f; // Visual centering correction
                     break;
                 case VAlignment.Bottom:
-                    // Align the bottom of the text (descent) with the bottom of the layout box.
-                    baselineY += maxSize.Y - fontMetrics.Descent;
+                    baselineY += maxSize.Y - primaryMetrics.Descent;
                     break;
             }
         }
         else
         {
-            // If no max size, just align to top as a default
-            baselineY -= fontMetrics.Ascent;
+            baselineY -= primaryMetrics.Ascent;
         }
 
-        textDrawPos.Y = baselineY;
+        var currentX = textDrawPos.X;
+        var skColor = new SKColor(color.R, color.G, color.B, color.A);
 
-        // Draw using the shaper extension method on canvas
-        _canvas.DrawShapedText(shaper, text, textDrawPos.X, textDrawPos.Y, paint);
+        foreach (var run in layout.Runs)
+        {
+            using var font = new SKFont(run.Typeface, style.FontSize);
+            using var paint = new SKPaint(font) { Color = skColor, IsAntialias = true };
+            using var shaper = new SKShaper(run.Typeface);
+
+            _canvas.DrawShapedText(shaper, run.Text, currentX, baselineY, paint);
+            currentX += run.Size.X;
+        }
     }
 
     public void DrawImage(byte[] imageData, string imageKey, Rect destination)
