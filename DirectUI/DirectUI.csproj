@@ -10,21 +10,21 @@
 
   <ItemGroup>
     <PackageReference Include="NativeFileDialogs.Net" Version="1.2.1" />
-    <PackageReference Include="Raylib-cs" Version="7.0.1" />
-    <PackageReference Include="SDL3-CS" Version="3.2.16.7" />
-    <PackageReference Include="SDL3-CS.Native" Version="3.2.16" />
+    <PackageReference Include="Raylib-cs" Version="7.0.2" />
+    <PackageReference Include="SDL3-CS" Version="3.2.24.1" />
+    <PackageReference Include="SDL3-CS.Native" Version="3.2.24" />
     <PackageReference Include="SharpText.Veldrid" Version="0.3.1" />
     <PackageReference Include="Silk.NET" Version="2.22.0" />
-    <PackageReference Include="SkiaSharp" Version="3.119.0" />
-    <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.119.0" />
-    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2-preview.1" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.119.2-preview.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.2-preview.1" />
     <PackageReference Include="TagLibSharp" Version="2.3.0" />
     <PackageReference Include="TinyDialogsNet" Version="2.0.0" />
     <PackageReference Include="Veldrid" Version="4.9.0" />
     <PackageReference Include="Veldrid.SDL2" Version="4.9.0" />
     <PackageReference Include="Veldrid.StartupUtilities" Version="4.9.0" />
-    <PackageReference Include="Vortice.Direct2D1" Version="3.6.2" />
-    <PackageReference Include="Vortice.DXGI" Version="3.6.2" />
+    <PackageReference Include="Vortice.Direct2D1" Version="3.7.6-beta" />
+    <PackageReference Include="Vortice.DXGI" Version="3.7.6-beta" />
     <PackageReference Include="Vortice.Mathematics" Version="1.9.3" />
     <PackageReference Include="YamlDotNet" Version="16.3.0" />
   </ItemGroup>

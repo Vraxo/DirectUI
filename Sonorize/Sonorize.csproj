@@ -9,8 +9,8 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="FFMpegCore" Version="5.2.0" />
-    <PackageReference Include="ManagedBass" Version="4.0.0" />
+    <PackageReference Include="FFMpegCore" Version="5.3.0" />
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
     <PackageReference Include="Miniaudio-CS" Version="1.0.4" />
   </ItemGroup>
 

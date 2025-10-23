@@ -1,6 +1,6 @@
-﻿using System.Numerics;
-using DirectUI.Core;
+﻿using DirectUI.Core;
 using SharpGen.Runtime;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;

@@ -1,4 +1,5 @@
-﻿using System;
+﻿// DirectUI/Backends/Raylib/RaylibTextLayout.cs
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
@@ -68,13 +69,14 @@ internal class SilkNetTextLayout : ITextLayout
 
                 // --- THE FIX ---
                 // 1. First, specifically request a font that supports the character as an EMOJI.
+                //    The 'und-Zsye' tag is the robust way to request an emoji font fallback.
                 var emojiFallback = fontManager.MatchCharacter(null, SKFontStyle.Normal, new[] { "und-Zsye" }, firstRune.Value);
 
-                // 2. If that fails, fall back to the generic search (which might find symbols, etc.).
-                var genericFallback = fontManager.MatchCharacter(firstRune.Value);
-
-                // 3. Use the best available option, defaulting to the primary typeface.
-                currentTypeface = emojiFallback ?? genericFallback ?? primaryTypeface;
+                // 2. ONLY use the explicit emoji fallback if found. We deliberately avoid the generic
+                //    SKFontManager.MatchCharacter(rune) fallback, which is often configured on Windows
+                //    to select a CJK font (like SimSun) as the default for any missing Unicode char,
+                //    resulting in an incorrect Chinese character glyph for the emoji.
+                currentTypeface = emojiFallback ?? primaryTypeface;
                 // --- END FIX ---
 
                 currentRunText.Append(grapheme);
