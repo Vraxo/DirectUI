@@ -300,7 +300,7 @@ public static partial class UI
                 textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
                 clickMode: DirectUI.Button.ActionMode.Press, // Use Press mode for fair arbitration
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
-                textOffset: new Vector2(5, 0),
+                textMargin: new Vector2(5, 0),
                 renderBounds: out _,
                 animatedStyle: out _,
                 isActive: false,

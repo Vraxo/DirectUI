@@ -22,7 +22,7 @@ public static partial class UI
         Alignment textAlignment,
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
-        Vector2 textOffset,
+        Vector2 textMargin,
         out Rect renderBounds,
         out ButtonStyle animatedStyle,
         bool isActive = false,
@@ -170,7 +170,7 @@ public static partial class UI
             renderer.DrawBox(renderBounds, renderStyle);
 
             // Draw Text using the style with scaled font size and the animated render bounds.
-            DrawTextPrimitive(renderBounds, text, renderStyle, textAlignment, textOffset);
+            DrawTextPrimitive(renderBounds, text, renderStyle, textAlignment, textMargin);
         }
 
         return clickResult;
@@ -251,17 +251,48 @@ public static partial class UI
         string text,
         ButtonStyle style,
         Alignment textAlignment,
-        Vector2 textOffset)
+        Vector2 textMargin)
     {
         if (string.IsNullOrEmpty(text)) return;
 
         var renderer = UI.Context.Renderer;
 
-        // Calculate a clean drawing origin without backend-specific corrections.
-        Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y);
+        Vector2 drawOrigin = bounds.TopLeft;
+        Vector2 maxSize = new Vector2(bounds.Width, bounds.Height);
 
-        // Call the backend-agnostic DrawText method on the renderer.
-        // The renderer is now responsible for any specific positional adjustments.
-        renderer.DrawText(drawOrigin, text, style, textAlignment, new Vector2(bounds.Width, bounds.Height), style.FontColor);
+        // Adjust the layout box based on alignment to respect the margin.
+        // This creates an inner padded rectangle for the text to be aligned within.
+        switch (textAlignment.Horizontal)
+        {
+            case HAlignment.Left:
+                drawOrigin.X += textMargin.X;
+                maxSize.X = Math.Max(0, maxSize.X - textMargin.X);
+                break;
+            case HAlignment.Right:
+                maxSize.X = Math.Max(0, maxSize.X - textMargin.X);
+                break;
+            case HAlignment.Center:
+                drawOrigin.X += textMargin.X;
+                maxSize.X = Math.Max(0, maxSize.X - textMargin.X * 2);
+                break;
+        }
+
+        switch (textAlignment.Vertical)
+        {
+            case VAlignment.Top:
+                drawOrigin.Y += textMargin.Y;
+                maxSize.Y = Math.Max(0, maxSize.Y - textMargin.Y);
+                break;
+            case VAlignment.Bottom:
+                maxSize.Y = Math.Max(0, maxSize.Y - textMargin.Y);
+                break;
+            case VAlignment.Center:
+                drawOrigin.Y += textMargin.Y;
+                maxSize.Y = Math.Max(0, maxSize.Y - textMargin.Y * 2);
+                break;
+        }
+
+        // The renderer receives the adjusted origin and max size to perform alignment within the padded area.
+        renderer.DrawText(drawOrigin, text, style, textAlignment, maxSize, style.FontColor);
     }
 }

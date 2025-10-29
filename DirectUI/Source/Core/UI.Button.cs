@@ -88,6 +88,9 @@ public static partial class UI
             }
         }
 
+        // Prioritize textOffset for backwards compatibility, but use textMargin if it's not provided.
+        Vector2 finalMargin = textOffset ?? textMargin ?? Vector2.Zero;
+
         ClickResult clickResult = DrawButtonPrimitive(
             intId,
             widgetBounds,
@@ -97,7 +100,7 @@ public static partial class UI
             textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
             clickMode,
             clickBehavior,
-            (textOffset ?? Vector2.Zero) * scale,
+            finalMargin * scale, // Pass the final margin, scaled to physical units
             out _,
             out _,
             isActive: isActive,

@@ -58,7 +58,7 @@ public static partial class UI
                 textAlignment: new Alignment(HAlignment.Center, VAlignment.Center),
                 clickMode: DirectUI.Button.ActionMode.Release,
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
-                textOffset: Vector2.Zero,
+                textMargin: Vector2.Zero,
                 out _,
                 out _,
                 isActive: i == activeIndex
