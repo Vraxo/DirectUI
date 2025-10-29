@@ -20,7 +20,8 @@ public static partial class UI
 
         bool valueChanged = false;
 
-        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), gap);
+        // The HBox should start at the current layout position, so its relative position is Zero.
+        BeginHBoxContainer(id + "_hbox", Vector2.Zero, gap);
 
         for (int i = 0; i < labels.Length; i++)
         {

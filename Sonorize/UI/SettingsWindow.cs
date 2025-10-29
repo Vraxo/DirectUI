@@ -1,7 +1,6 @@
 ﻿using DirectUI;
 using DirectUI.Core;
 using System.Numerics;
-using TinyDialogsNet;
 
 namespace Sonorize;
 
@@ -21,48 +20,59 @@ public class SettingsWindow
 
     public void Draw(UIContext context)
     {
-        float contentWidth = 480;
-        UI.BeginVBoxContainer("settingsVBox", new Vector2(10, 10), 15);
+        float padding = 10;
+        var scrollAreaSize = new Vector2(context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y);
 
-        // --- Appearance Section ---
-        UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
-
-        bool zebraStriping = _settings.EnableZebraStriping;
-        if (UI.Checkbox("zebraStriping", "Enable Zebra Striping", ref zebraStriping))
+        // The entire modal content is now inside one scrollable region.
+        UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, out float innerWidth);
         {
-            _settings.EnableZebraStriping = zebraStriping;
+            // A single VBox provides padding and vertical layout for all content.
+            float contentWidth = innerWidth - (padding * 2);
+            UI.BeginVBoxContainer("settingsVBox", new Vector2(padding, padding), 15);
+            {
+                // --- Appearance Section ---
+                UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
+
+                bool zebraStriping = _settings.EnableZebraStriping;
+                if (UI.Checkbox("zebraStriping", "Enable Zebra Striping", ref zebraStriping))
+                {
+                    _settings.EnableZebraStriping = zebraStriping;
+                }
+
+                UI.Text("compactnessLabel", "Compactness");
+                float compactness = _settings.CompactnessLevel;
+                float newCompactness = UI.HSlider("compactnessSlider", compactness, 1, 3, new Vector2(150, 20), step: 1);
+                if (newCompactness != compactness)
+                {
+                    _settings.CompactnessLevel = (int)Math.Round(newCompactness);
+                }
+
+                UI.Text("overflowLabel", "Track List Text Overflow");
+                int overflowIndex = (int)_settings.TrackListOverflow;
+                if (UI.RadioButtons("overflowRadio", ["Wrap", "Truncate"], ref overflowIndex, size: new Vector2(100, 24)))
+                {
+                    _settings.TrackListOverflow = (TextOverflowMode)overflowIndex;
+                }
+
+                // --- Library Section ---
+                UI.Separator(contentWidth);
+                UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
+                DrawDirectoriesList(contentWidth);
+                DrawActionButtons();
+
+                // --- OK/Cancel Buttons ---
+                UI.Separator(contentWidth);
+                DrawOkCancelButtons(contentWidth);
+            }
+            UI.EndVBoxContainer();
         }
-
-        UI.Text("compactnessLabel", "Compactness");
-        float compactness = _settings.CompactnessLevel;
-        float newCompactness = UI.HSlider("compactnessSlider", compactness, 1, 3, new Vector2(150, 20), step: 1);
-        if (newCompactness != compactness)
-        {
-            _settings.CompactnessLevel = (int)Math.Round(newCompactness);
-        }
-
-
-        UI.Text("overflowLabel", "Track List Text Overflow");
-        int overflowIndex = (int)_settings.TrackListOverflow;
-        if (UI.RadioButtons("overflowRadio", ["Wrap", "Truncate"], ref overflowIndex, size: new Vector2(100, 24)))
-        {
-            _settings.TrackListOverflow = (TextOverflowMode)overflowIndex;
-        }
-
-
-        // --- Library Section ---
-        UI.Separator(contentWidth);
-        UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
-        DrawDirectoriesList(contentWidth);
-        DrawActionButtons();
-        DrawOkCancelButtons(contentWidth);
-
-        UI.EndVBoxContainer();
+        UI.EndScrollableRegion();
     }
 
     private void DrawDirectoriesList(float width)
     {
-        UI.BeginScrollableRegion("dirsScroll", new Vector2(width, 140), out float innerWidth);
+        // Restore a reasonable height now that the whole panel is scrollable.
+        UI.BeginScrollableRegion("dirsScrollInner", new Vector2(width, 140), out float innerWidth);
         {
             var selectedStyle = new ButtonStylePack();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
@@ -84,14 +94,14 @@ public class SettingsWindow
 
     private void DrawActionButtons()
     {
-        UI.BeginHBoxContainer("dirsButtons", UI.Context.Layout.GetCurrentPosition(), 5);
+        UI.BeginHBoxContainer("dirsButtons", Vector2.Zero, 5);
         {
             if (UI.Button("addDir", "Add Folder...", new Vector2(120, 24)))
             {
-                var result = TinyDialogs.SelectFolderDialog("Select Music Folder");
-                if (!string.IsNullOrWhiteSpace(result.Path) && !_settings.Directories.Contains(result.Path))
+                var selectedPath = FileDialogs.PickFolder("Select Music Folder");
+                if (!string.IsNullOrWhiteSpace(selectedPath) && !_settings.Directories.Contains(selectedPath))
                 {
-                    _settings.Directories.Add(result.Path);
+                    _settings.Directories.Add(selectedPath);
                 }
             }
             if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
@@ -108,25 +118,27 @@ public class SettingsWindow
 
     private void DrawOkCancelButtons(float width)
     {
-        float modalHeight = 400;
-        float buttonY = modalHeight - 24 - 10;
-        float okButtonX = width - 80;
-        float cancelButtonX = okButtonX - 80 - 5;
-
-        // Use manual positioning for buttons at the bottom of the modal
-        UI.BeginVBoxContainer("okButtonContainer", new Vector2(okButtonX, buttonY));
-        if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
+        // The HBox should start at the current layout position, so its relative position is Zero.
+        UI.BeginHBoxContainer("okCancelButtonsHBox", Vector2.Zero, 5);
         {
-            _onSave();
-            _host.ModalWindowService.CloseModalWindow(0);
-        }
-        UI.EndVBoxContainer();
+            // Spacer to push buttons to the right
+            float buttonsTotalWidth = 80 + 5 + 80; // cancel + gap + ok
+            float spacerWidth = width - buttonsTotalWidth;
+            if (spacerWidth > 0)
+            {
+                UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+            }
 
-        UI.BeginVBoxContainer("cancelButtonContainer", new Vector2(cancelButtonX, buttonY));
-        if (UI.Button("cancelSettings", "Cancel", new Vector2(80, 24)))
-        {
-            _host.ModalWindowService.CloseModalWindow(1);
+            if (UI.Button("cancelSettings", "Cancel", new Vector2(80, 24)))
+            {
+                _host.ModalWindowService.CloseModalWindow(1); // 1 indicates cancel
+            }
+            if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
+            {
+                _onSave();
+                _host.ModalWindowService.CloseModalWindow(0); // 0 indicates success
+            }
         }
-        UI.EndVBoxContainer();
+        UI.EndHBoxContainer();
     }
 }

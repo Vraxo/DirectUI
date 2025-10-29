@@ -79,13 +79,17 @@ public class UILayoutManager
         return vboxState;
     }
 
-    public void BeginHBox(int id, Vector2 startPosition, float gap)
+    public void BeginHBox(int id, Vector2 relativePosition, float gap)
     {
         var hboxState = GetOrCreateHBoxState(id);
 
-        // Reset per-frame properties
-        hboxState.StartPosition = startPosition;
-        hboxState.CurrentPosition = startPosition;
+        // Calculate the actual starting position by inheriting from the parent container.
+        var parentStartPosition = IsInLayoutContainer() ? GetCurrentPosition() : Vector2.Zero;
+        var actualStartPosition = parentStartPosition + relativePosition;
+
+        // Reset per-frame properties with the correct starting position.
+        hboxState.StartPosition = actualStartPosition;
+        hboxState.CurrentPosition = actualStartPosition;
         hboxState.Gap = gap;
         hboxState.MaxElementHeight = 0f;
         hboxState.AccumulatedWidth = 0f;
@@ -94,13 +98,17 @@ public class UILayoutManager
         PushContainer(hboxState);
     }
 
-    public void BeginVBox(int id, Vector2 startPosition, float gap, Vector2 minSize = default)
+    public void BeginVBox(int id, Vector2 relativePosition, float gap, Vector2 minSize = default)
     {
         VBoxContainerState vboxState = GetOrCreateVBoxState(id);
 
-        // Reset per-frame properties
-        vboxState.StartPosition = startPosition;
-        vboxState.CurrentPosition = startPosition;
+        // Calculate the actual starting position by inheriting from the parent container.
+        var parentStartPosition = IsInLayoutContainer() ? GetCurrentPosition() : Vector2.Zero;
+        var actualStartPosition = parentStartPosition + relativePosition;
+
+        // Reset per-frame properties with the correct starting position.
+        vboxState.StartPosition = actualStartPosition;
+        vboxState.CurrentPosition = actualStartPosition;
         vboxState.Gap = gap;
         vboxState.MaxElementWidth = 0f;
         vboxState.AccumulatedHeight = 0f;

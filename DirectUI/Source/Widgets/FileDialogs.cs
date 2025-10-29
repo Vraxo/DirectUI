@@ -25,7 +25,37 @@ public static class FileDialogs
                     return outPath;
                 case NfdStatus.Cancelled:
                     return null;
-                default:
+                default: // NfdStatus.Error
+                    Console.WriteLine($"[NativeFileDialog] Dialog error.");
+                    return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[NativeFileDialog] An exception occurred: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Opens a native dialog for selecting a single folder.
+    /// </summary>
+    /// <param name="defaultPath">The default path to open the dialog in.</param>
+    /// <returns>The path of the selected folder, or null if canceled or an error occurred.</returns>
+    public static string? PickFolder(string? defaultPath = null)
+    {
+        try
+        {
+            NfdStatus result = Nfd.PickFolder(out string? outPath, defaultPath);
+
+            switch (result)
+            {
+                case NfdStatus.Ok:
+                    return outPath;
+                case NfdStatus.Cancelled:
+                    return null;
+                default: // NfdStatus.Error
+                    Console.WriteLine($"[NativeFileDialog] Dialog error.");
                     return null;
             }
         }
