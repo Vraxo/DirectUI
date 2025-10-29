@@ -6,7 +6,7 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth)
+    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth, Vector2 padding = default)
     {
         if (!IsContextValid())
         {
@@ -23,35 +23,31 @@ public static partial class UI
         scrollState.Position = position;
         scrollState.VisibleSize = size;
         scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
-        scrollState.CalculatedContentSize = Vector2.Zero; // Reset for this frame's measurement pass.
+        scrollState.CalculatedContentSize = Vector2.Zero;
+        scrollState.Padding = padding;
 
-        // Predict if a scrollbar will be needed based on the previous frame's content size.
         const float scrollbarThickness = 12f;
         const float scrollbarGap = 4f;
         bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
-        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness - scrollbarGap : size.X;
+        availableInnerWidth = size.X - (padding.X * 2) - (scrollbarWillBeVisible ? scrollbarThickness + scrollbarGap : 0);
 
-        // Handle scroll input
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
         {
             var offset = scrollState.CurrentScrollOffset;
-            offset.Y -= Context.InputState.ScrollDelta * 20; // Apply scroll wheel input
+            offset.Y -= Context.InputState.ScrollDelta * 20;
             scrollState.CurrentScrollOffset = offset;
         }
 
-        // Clamp the offset *before* using it for layout, using content size from the *previous* frame.
         float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
         var clampedOffset = scrollState.CurrentScrollOffset;
         clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
         scrollState.CurrentScrollOffset = clampedOffset;
 
-        // Set the starting position for the content inside, offset by the scroll amount.
-        var contentStartPosition = position - scrollState.CurrentScrollOffset;
+        var contentStartPosition = position + padding - scrollState.CurrentScrollOffset;
         scrollState.SetContentStartPosition(contentStartPosition);
 
         Context.Layout.PushClipRect(regionBounds);
         Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
-
         Context.Layout.PushContainer(scrollState);
     }
 
@@ -60,43 +56,35 @@ public static partial class UI
         if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
         { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
 
-        // The child container (e.g., a VBox) has called `Advance` on our state, so
-        // `CalculatedContentSize` now holds the measured size of the content from this frame.
-        // We store this for the *next* frame's layout prediction and clamping.
-        scrollState.ContentSize = scrollState.CalculatedContentSize;
+        var totalContentSize = scrollState.CalculatedContentSize + scrollState.Padding * 2;
+        scrollState.ContentSize = totalContentSize;
 
-        // Pop the container and clip rects so the scrollbar can be drawn outside the content's clipped area.
         Context.Layout.PopContainer();
         Context.Renderer.PopClipRect();
         Context.Layout.PopClipRect();
 
-        // Draw scrollbar if needed, based on this frame's measurements.
         if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
         {
             string scrollBarIdString = scrollState.Id + "_scrollbar";
             float scrollbarThickness = 12f;
             var scrollBarPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - scrollbarThickness, scrollState.Position.Y);
 
-            // The VScrollBar handles all its own logic and returns a new validated scroll offset.
             float newScrollY = VScrollBar(
                 id: scrollBarIdString,
                 currentScrollOffset: scrollState.CurrentScrollOffset.Y,
                 position: scrollBarPos,
                 trackHeight: scrollState.VisibleSize.Y,
-                contentHeight: scrollState.ContentSize.Y,
+                contentHeight: scrollState.ContentSize.Y, // Use the full size including padding
                 visibleHeight: scrollState.VisibleSize.Y,
                 thickness: scrollbarThickness);
 
-            // Update the state with the value from the scrollbar for the next frame.
             scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, newScrollY);
         }
         else
         {
-            // If no scrollbar is needed, ensure the offset is zero.
             scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, 0);
         }
 
-        // Advance the main layout cursor by the size of the scroll region itself.
         Context.Layout.AdvanceLayout(scrollState.VisibleSize);
     }
 }

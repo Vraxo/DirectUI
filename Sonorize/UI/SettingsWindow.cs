@@ -23,12 +23,11 @@ public class SettingsWindow
         float padding = 10;
         var scrollAreaSize = new Vector2(context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y);
 
-        // The entire modal content is now inside one scrollable region.
-        UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, out float innerWidth);
+        // The entire modal content is now inside one scrollable region with internal padding.
+        UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, out float innerWidth, new Vector2(padding, padding));
         {
-            // A single VBox provides padding and vertical layout for all content.
-            float contentWidth = innerWidth - (padding * 2);
-            UI.BeginVBoxContainer("settingsVBox", new Vector2(padding, padding), 15);
+            // This VBox now starts at (0,0) relative to the padded scroll area.
+            UI.BeginVBoxContainer("settingsVBox", Vector2.Zero, 15);
             {
                 // --- Appearance Section ---
                 UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
@@ -55,14 +54,14 @@ public class SettingsWindow
                 }
 
                 // --- Library Section ---
-                UI.Separator(contentWidth);
+                UI.Separator(innerWidth);
                 UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
-                DrawDirectoriesList(contentWidth);
+                DrawDirectoriesList(innerWidth);
                 DrawActionButtons();
 
                 // --- OK/Cancel Buttons ---
-                UI.Separator(contentWidth);
-                DrawOkCancelButtons(contentWidth);
+                UI.Separator(innerWidth);
+                DrawOkCancelButtons(innerWidth);
             }
             UI.EndVBoxContainer();
         }
@@ -118,7 +117,7 @@ public class SettingsWindow
 
     private void DrawOkCancelButtons(float width)
     {
-        // The HBox should start at the current layout position, so its relative position is Zero.
+        // Buttons are now part of the main VBox flow, positioned with an HBox.
         UI.BeginHBoxContainer("okCancelButtonsHBox", Vector2.Zero, 5);
         {
             // Spacer to push buttons to the right

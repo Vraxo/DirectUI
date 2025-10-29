@@ -6,16 +6,17 @@ public class ScrollContainerState : ILayoutContainer
 {
     // State managed by the UI system
     internal Vector2 CurrentScrollOffset { get; set; }
+    internal Vector2 Padding { get; set; }
 
     // Per-frame calculated values
     internal int Id { get; set; }
     internal Vector2 Position { get; set; }
     internal Vector2 VisibleSize { get; set; }
-    internal Vector2 ContentSize { get; set; } // Content size from *previous* frame
+    internal Vector2 ContentSize { get; set; } // Content size from *previous* frame (includes padding)
     internal bool IsHovered { get; set; }
 
     // State for the current frame's layout pass
-    internal Vector2 CalculatedContentSize { get; set; } // Content size measured *this* frame
+    internal Vector2 CalculatedContentSize { get; set; } // Content size measured *this* frame (inner content only)
     private Vector2 ContentStartPosition { get; set; }
 
     public ScrollContainerState() { }
