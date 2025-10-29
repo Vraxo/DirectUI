@@ -3,6 +3,7 @@ using System.Text.Json;
 using DirectUI;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core;
+using DirectUI.Drawing;
 using Sonorize.Audio;
 
 namespace Sonorize;
@@ -118,17 +119,13 @@ public class SonorizeLogic : IAppLogic
 
         float menuBarHeight = 0f; // No menubar in this design
         float playerBarHeight = 90f;
-        float mainContentPadding = 0f;
 
-        // Main layout using HBox
+        // Main layout using manual positioning for the two main panels
         var mainAreaPosition = new Vector2(0, menuBarHeight);
         var mainAreaSize = new Vector2(context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y - menuBarHeight - playerBarHeight);
-        UI.BeginHBoxContainer("mainLayout", mainAreaPosition, 0);
-        {
-            DrawSidebar(context, mainAreaSize.Y);
-            DrawMainContent(context, mainAreaSize);
-        }
-        UI.EndHBoxContainer();
+
+        DrawSidebar(context, mainAreaSize.Y);
+        DrawMainContent(context, mainAreaSize);
 
         _playerBarView.Draw(context);
 
@@ -211,11 +208,52 @@ public class SonorizeLogic : IAppLogic
         var contentHeight = mainAreaSize.Y;
         var contentPos = new Vector2(_sidebarWidth, 0);
 
+        // Draw background
         var contentBg = new BoxStyle { FillColor = new(18 / 255f, 18 / 255f, 18 / 255f, 1.0f), Roundness = 0, BorderLength = 0 };
         context.Renderer.DrawBox(new Vortice.Mathematics.Rect(contentPos.X, contentPos.Y, contentWidth, contentHeight), contentBg);
 
-        var gridPos = new Vector2(contentPos.X + 10, contentPos.Y + 10);
-        var gridSize = new Vector2(contentWidth - 20, contentHeight - 20);
+        // --- Header Section ---
+        float headerHeight = 40f;
+        var headerPos = contentPos + new Vector2(20, 10);
+        var headerWidth = contentWidth - 40;
+
+        UI.BeginHBoxContainer("mainHeader", headerPos, 5, VAlignment.Center, headerHeight);
+        {
+            // Title
+            string title = "Your Library";
+            if (_activeSidebarIndex > 0 && _activeSidebarIndex - 1 < _settings.Playlists.Count)
+            {
+                title = _settings.Playlists[_activeSidebarIndex - 1].Name;
+            }
+            UI.Text("mainContentTitle", title, style: new ButtonStyle { FontSize = 24 });
+
+            // Spacer to push button to the right
+            var titleSize = context.TextService.MeasureText(title, new ButtonStyle { FontSize = 24 });
+            var settingsButtonSize = new Vector2(30, 30);
+            float spacerWidth = headerWidth - titleSize.X - settingsButtonSize.X;
+            if (spacerWidth > 0)
+            {
+                UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+            }
+
+            // Settings Button
+            var theme = new ButtonStylePack { FontSize = 16, FontName = "Segoe UI Emoji", Roundness = 1f };
+            theme.Normal.FillColor = Colors.Transparent;
+            theme.Hover.FillColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+            if (UI.Button("settingsButton", "⚙️", settingsButtonSize, theme: theme, layer: 10))
+            {
+                OpenSettingsModal();
+            }
+        }
+        UI.EndHBoxContainer();
+        // --- End Header Section ---
+
+        // Adjust grid position to be below the header
+        var gridPos = new Vector2(contentPos.X + 10, headerPos.Y + headerHeight);
+        var gridSize = new Vector2(
+            contentWidth - 20,
+            contentHeight - headerHeight - 20 // 10px top padding (from header) + 10px bottom
+        );
 
         _libraryView.Draw(context, gridPos, gridSize, _activeSidebarIndex, _settings, _searchText);
     }
