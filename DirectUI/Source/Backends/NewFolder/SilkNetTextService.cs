@@ -10,6 +10,19 @@ public class SilkNetTextService : ITextService
     private readonly Dictionary<TypefaceKey, SKTypeface> _typefaceCache = new();
     private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
     private readonly Dictionary<(string, MeasurementKey), Vector2> _textSizeCache = new();
+    private static readonly Dictionary<string, string> _registeredFonts = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void RegisterFont(string familyName, string filePath)
+    {
+        if (File.Exists(filePath))
+        {
+            _registeredFonts[familyName] = filePath;
+        }
+        else
+        {
+            Console.WriteLine($"[SilkNetTextService] Font file not found: {filePath}");
+        }
+    }
 
     // Key for size-INDEPENDENT SKTypeface objects
     internal readonly struct TypefaceKey : IEquatable<TypefaceKey>
@@ -73,10 +86,18 @@ public class SilkNetTextService : ITextService
             return typeface;
         }
 
-        SKFontStyleWeight weight = (SKFontStyleWeight)style.FontWeight;
-        SKFontStyleSlant slant = style.FontStyle == FontStyle.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
+        // Check registered fonts first
+        if (_registeredFonts.TryGetValue(style.FontName, out var filePath))
+        {
+            typeface = SKTypeface.FromFile(filePath);
+        }
+        else // Fallback to system fonts
+        {
+            SKFontStyleWeight weight = (SKFontStyleWeight)style.FontWeight;
+            SKFontStyleSlant slant = style.FontStyle == FontStyle.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
+            typeface = SKTypeface.FromFamilyName(style.FontName, weight, SKFontStyleWidth.Normal, slant);
+        }
 
-        typeface = SKTypeface.FromFamilyName(style.FontName, weight, SKFontStyleWidth.Normal, slant);
         _typefaceCache[typefaceKey] = typeface;
         return typeface;
     }

@@ -126,10 +126,18 @@ public class PlayerBarView
     {
         var smallButtonSize = new Vector2(32, 32);
         var playButtonSize = new Vector2(36, 36);
-        var theme = new ButtonStylePack { FontSize = 14, FontName = "Segoe UI Emoji", Roundness = 1f };
+
+        // Theme for standard icon buttons
+        var theme = new ButtonStylePack { FontName = "FontAwesomeSolid", FontSize = 14, Roundness = 1f };
         theme.Normal.FillColor = Colors.Transparent;
+
+        // Theme for toggle buttons (shuffle, repeat)
         var toggleTheme = new ButtonStylePack(theme);
         toggleTheme.Active.FontColor = DefaultTheme.Accent;
+
+        // Theme for the larger play/pause button
+        var playTheme = new ButtonStylePack(theme) { FontSize = 22 };
+
 
         float gap = 16f;
         float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (gap * 4);
@@ -138,21 +146,19 @@ public class PlayerBarView
         UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, 0), gap, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
         {
             bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
-            if (UI.Button("shuffle", "🔀", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive))
+            if (UI.Button("shuffle", "\uF074", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive)) // fa-random
                 _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
 
-            if (UI.Button("prev", "⏮", smallButtonSize, theme: theme)) _playbackManager.Previous();
+            if (UI.Button("prev", "\uF048", smallButtonSize, theme: theme)) _playbackManager.Previous(); // fa-step-backward
 
-            string playIcon = _playbackManager.IsPlaying ? "⏸" : "▶";
-            if (UI.Button("play", playIcon, playButtonSize, theme: theme)) _playbackManager.TogglePlayPause();
+            string playIcon = _playbackManager.IsPlaying ? "\uF04C" : "\uF04B"; // fa-pause : fa-play
+            if (UI.Button("play", playIcon, playButtonSize, theme: playTheme)) _playbackManager.TogglePlayPause();
 
-            if (UI.Button("next", "⏭", smallButtonSize, theme: theme)) _playbackManager.Next();
+            if (UI.Button("next", "\uF051", smallButtonSize, theme: theme)) _playbackManager.Next(); // fa-step-forward
 
-            string repeatIcon = "🔁";
-            bool isRepeatOneActive = false;
-            if (_playbackManager.EndAction == PlaybackEndAction.RepeatSong) { repeatIcon = "🔂"; isRepeatOneActive = true; }
-            if (UI.Button("repeat", repeatIcon, smallButtonSize, theme: toggleTheme, isActive: isRepeatOneActive))
-                _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 2); // Simple toggle for now
+            bool isRepeatActive = _playbackManager.EndAction == PlaybackEndAction.RepeatSong;
+            if (UI.Button("repeat", "\uF363", smallButtonSize, theme: toggleTheme, isActive: isRepeatActive)) // fa-repeat
+                _playbackManager.EndAction = isRepeatActive ? PlaybackEndAction.NextInQueue : PlaybackEndAction.RepeatSong;
         }
         UI.EndHBoxContainer();
     }

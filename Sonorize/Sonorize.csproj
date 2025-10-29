@@ -18,4 +18,10 @@
     <ProjectReference Include="..\DirectUI\DirectUI.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Data\Fonts\Font Awesome 7 Free-Solid-900.otf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>

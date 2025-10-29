@@ -90,6 +90,11 @@ namespace DirectUI.Backends.SkiaSharp
             _mainWindow = new SilkNetSkiaWindow(
                 _title, _width, _height, this, isModal: false);
 
+            // Register fonts before initializing the window
+            string fontPath = Path.Combine(AppContext.BaseDirectory, "Data", "Fonts", "Font Awesome 7 Free-Solid-900.otf");
+            SilkNetTextService.RegisterFont("FontAwesomeSolid", fontPath);
+
+
             // Pass the initial scale down to the window, which will apply it when its AppEngine is created.
             return _mainWindow.Initialize(uiDrawCallback, backgroundColor, initialScale);
         }
