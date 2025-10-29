@@ -1,7 +1,6 @@
 ﻿// ButtonStyle.cs
-using System.Numerics;
 using DirectUI.Animation;
-using DirectUI.Drawing;
+using System.Numerics;
 using Vortice.DirectWrite; // For Font related enums eventually
 
 namespace DirectUI;

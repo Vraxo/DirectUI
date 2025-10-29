@@ -1,6 +1,4 @@
-﻿using System.Collections.Generic;
-
-namespace DirectUI;
+﻿namespace DirectUI;
 
 /// <summary>
 /// Represents a node in a generic tree structure.

@@ -1,10 +1,9 @@
 ﻿// DirectUI/Diagnostics/FpsCounter.cs
-using System;
-using System.Diagnostics;
 using DirectUI.Core;
-using Vortice.Mathematics;
-using Vortice.DirectWrite;
+using System.Diagnostics;
 using System.Numerics; // Still used for TextAlignment and ParagraphAlignment enums
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
 
 namespace DirectUI.Diagnostics;
 

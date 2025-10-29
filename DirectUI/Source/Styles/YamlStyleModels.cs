@@ -1,11 +1,4 @@
 ﻿// DirectUI/Source/Styling/YamlStyleModels.cs
-using System;
-using System.Collections.Generic;
-using DirectUI.Animation;
-using Silk.NET.OpenAL;
-using Silk.NET.Vulkan;
-using System.Threading.Channels;
-using Vortice.Direct2D1.Effects;
 using Vortice.DirectWrite;
 
 namespace DirectUI.Styling;

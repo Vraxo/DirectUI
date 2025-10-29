@@ -1,15 +1,9 @@
 ﻿// AppEngine.cs
-using System;
-using System.Diagnostics;
-using System.Numerics;
-using Vortice.Mathematics;
 using DirectUI.Core; // For IRenderer, ITextService
-using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
-using Silk.NET.OpenAL;
-using System.Reflection.Emit;
-using System.Security.Cryptography;
+using System.Diagnostics;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 

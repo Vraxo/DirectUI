@@ -1,6 +1,5 @@
 ﻿// DirectUI/Source/Animation/ValueInterpolators.cs
 using System.Numerics;
-using DirectUI.Drawing;
 
 namespace DirectUI.Animation;
 

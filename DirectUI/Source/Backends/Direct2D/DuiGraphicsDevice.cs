@@ -1,23 +1,11 @@
-﻿using DirectUI;
-using SharpGen.Runtime;
-using Vortice.Direct2D1;
-using Vortice.Direct3D;
-using Vortice.Direct3D11;
-using Vortice.DirectWrite;
-using Vortice.DXGI;
-using Vortice.Mathematics;
-
-using System;
-using Vortice.Direct2D1;
-using Vortice.Direct3D;
-using Vortice.Direct3D11;
-using Vortice.DirectWrite;
-using Vortice.DXGI;
-using SharpGen.Runtime;
-using Vortice.Mathematics;
+﻿using SharpGen.Runtime;
 using Vortice.DCommon;
+using Vortice.Direct2D1;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
+using Vortice.DirectWrite;
+using Vortice.DXGI;
 using D2D = Vortice.Direct2D1;
-using DW = Vortice.DirectWrite;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;

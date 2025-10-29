@@ -108,7 +108,7 @@ public class MusicLibrary
 
             // Now scan for playlists
             var foundPlaylists = new List<Playlist>();
-            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f);
+            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f, StringComparer.OrdinalIgnoreCase);
 
             foreach (var dir in dirsToScan)
             {

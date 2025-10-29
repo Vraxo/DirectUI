@@ -1,10 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Numerics;
-using DirectUI.Core;
-using DirectUI.Drawing;
+﻿using DirectUI.Core;
 using SDL3;
+using System.Numerics;
 using Vortice.DirectWrite; // For FontWeight, FontStyle, FontStretch
 
 namespace DirectUI.Backends.SDL3;

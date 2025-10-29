@@ -1,5 +1,4 @@
-﻿using System;
-using System.Numerics;
+﻿using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 

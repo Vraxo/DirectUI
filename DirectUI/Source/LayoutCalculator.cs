@@ -1,5 +1,5 @@
-﻿using System.Numerics;
-using DirectUI.Core;
+﻿using DirectUI.Core;
+using System.Numerics;
 
 namespace DirectUI;
 
@@ -30,9 +30,9 @@ public class LayoutCalculator
 
         ButtonStyle finalStyle = style ?? new();
 
-        ButtonStyle physicalStyle = new(finalStyle) 
-        { 
-            FontSize = finalStyle.FontSize * _context.UIScale 
+        ButtonStyle physicalStyle = new(finalStyle)
+        {
+            FontSize = finalStyle.FontSize * _context.UIScale
         };
 
         ITextLayout layout = _context.TextService.GetTextLayout(
@@ -43,14 +43,14 @@ public class LayoutCalculator
         );
 
         Vector2 logicalSize = new(logicalMaxWidth, layout.Size.Y / _context.UIScale);
-        
+
         _vbox.Advance(logicalSize);
     }
 
     public void AddSeparator(float logicalWidth, float thickness = 1f, float verticalPadding = 4f)
     {
         float logicalTotalHeight = thickness + (verticalPadding * 2);
-        
+
         _vbox.Advance(new(logicalWidth, logicalTotalHeight));
     }
 }

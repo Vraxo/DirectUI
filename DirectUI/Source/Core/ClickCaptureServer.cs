@@ -1,10 +1,3 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Raylib_cs;
-using Silk.NET.Input;
-using System.Text.RegularExpressions;
-
 namespace DirectUI;
 
 public class ClickCaptureServer

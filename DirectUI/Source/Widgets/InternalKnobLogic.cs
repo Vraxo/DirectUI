@@ -1,6 +1,4 @@
-using System;
 using System.Numerics;
-using DirectUI.Core;
 using Vortice.Mathematics;
 
 namespace DirectUI;

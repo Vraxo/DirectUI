@@ -1,12 +1,7 @@
 using DirectUI.Backends.SDL3;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core; // Added for IWindowHost
-using Raylib_cs;
-using SDL3;
-using GraphicsBackend = DirectUI.GraphicsBackend;
-using System.IO;
 using DirectUI.Styling;
-using System;
 
 namespace DirectUI;
 

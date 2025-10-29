@@ -1,7 +1,5 @@
 // DirectUI/Drawing/FontManager.cs
 using Raylib_cs;
-using System;
-using System.Collections.Generic;
 using Vortice.DirectWrite;
 
 namespace DirectUI.Drawing

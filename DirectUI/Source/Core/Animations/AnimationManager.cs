@@ -1,7 +1,4 @@
 ﻿// DirectUI/Source/Animation/AnimationManager.cs
-using System;
-using System.Collections.Generic;
-
 namespace DirectUI.Animation;
 
 public class AnimationManager

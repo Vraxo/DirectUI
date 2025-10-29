@@ -1,9 +1,6 @@
 ﻿// Entire file content here
-using System;
-using System.Numerics;
 using DirectUI.Animation;
-using DirectUI.Drawing;
-using Vortice.Direct2D1; // Still used for AntialiasMode enum
+using System.Numerics;
 using Vortice.Mathematics;
 
 namespace DirectUI;

@@ -1,13 +1,10 @@
 ﻿// DirectUI/Backends/Raylib/RaylibTextLayout.cs
-using System;
-using System.Collections.Generic;
-using System.Globalization;
-using System.Linq;
-using System.Numerics;
-using System.Text;
 using DirectUI.Core;
 using SkiaSharp;
 using SkiaSharp.HarfBuzz;
+using System.Globalization;
+using System.Numerics;
+using System.Text;
 
 namespace DirectUI.Backends.SkiaSharp;
 

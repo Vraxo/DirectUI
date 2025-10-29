@@ -1,8 +1,6 @@
-﻿using System.Collections.Generic;
-using System;
-using Vortice.Mathematics;
+﻿using DirectUI.Animation;
 using Vortice.DirectWrite;
-using DirectUI.Animation;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 

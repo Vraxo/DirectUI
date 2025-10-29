@@ -1,6 +1,4 @@
 ﻿// Entire file content here
-using System;
-using System.Collections.Generic;
 using DirectUI.Animation;
 using Vortice.Mathematics;
 

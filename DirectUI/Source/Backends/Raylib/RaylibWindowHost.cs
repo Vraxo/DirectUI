@@ -1,6 +1,4 @@
 // DirectUI/RaylibWindowHost.cs
-using System;
-using System.Numerics;
 using DirectUI.Core; // For IWindowHost, IModalWindowService
 using DirectUI.Drawing;
 using DirectUI.Input;

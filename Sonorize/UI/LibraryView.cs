@@ -10,16 +10,20 @@ public class LibraryView
     private readonly MusicLibrary _musicLibrary;
     private readonly PlaybackManager _playbackManager;
     private readonly Settings _settings;
+    private readonly Action<int> _onSongRightClicked;
 
     private int _selectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
     private IReadOnlyList<MusicFile> _currentViewFiles = new List<MusicFile>();
 
-    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings)
+    public IReadOnlyList<MusicFile> GetCurrentViewFiles() => _currentViewFiles;
+
+    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings, Action<int> onSongRightClicked)
     {
         _musicLibrary = musicLibrary;
         _playbackManager = playbackManager;
         _settings = settings;
+        _onSongRightClicked = onSongRightClicked;
 
         _columns =
         [
@@ -27,40 +31,37 @@ public class LibraryView
             new DataGridColumn("Artist", 250, nameof(MusicFile.Artist)),
             new DataGridColumn("Album", 250, nameof(MusicFile.Album)),
             new DataGridColumn("Duration", 100, nameof(MusicFile.Duration)),
-            new DataGridColumn("Genre", 150, nameof(MusicFile.Genre)),
-            new DataGridColumn("Year", 80, nameof(MusicFile.Year))
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, Playlist? playlistFilter, string? searchText)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, int activeSidebarIndex, Settings settings, string? searchText)
     {
-        IEnumerable<MusicFile> filesToDisplay;
-
-        // Highest priority filter is the playlist
-        if (playlistFilter is not null)
+        // Determine which list of files to show
+        if (activeSidebarIndex == 0) // "Your Library"
         {
-            filesToDisplay = playlistFilter.Tracks;
+            _currentViewFiles = _musicLibrary.Files;
         }
-        else if (albumFilter is not null)
+        else // A playlist is selected
         {
-            filesToDisplay = _musicLibrary.Files
-                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);
-        }
-        else
-        {
-            filesToDisplay = _musicLibrary.Files;
+            int playlistIndex = activeSidebarIndex - 1;
+            if (playlistIndex >= 0 && playlistIndex < settings.Playlists.Count)
+            {
+                _currentViewFiles = settings.Playlists[playlistIndex].Tracks;
+            }
+            else
+            {
+                _currentViewFiles = new List<MusicFile>(); // Should not happen
+            }
         }
 
         // Apply search text filter on top
         if (!string.IsNullOrWhiteSpace(searchText))
         {
-            filesToDisplay = filesToDisplay.Where(f =>
+            _currentViewFiles = _currentViewFiles.Where(f =>
                 f.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                 f.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
-                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase)).ToList();
         }
-
-        _currentViewFiles = filesToDisplay.ToList();
 
         // Keep the playback manager's tracklist in sync with the *currently viewed* list.
         _playbackManager.SetTracklist(_currentViewFiles);
@@ -79,7 +80,10 @@ public class LibraryView
                 out rowDoubleClicked,
                 position,
                 autoSizeColumns: true,
-                trimCellText: true
+                trimCellText: settings.TrackListOverflow == TextOverflowMode.Truncate,
+                rowVerticalPadding: settings.CompactnessLevel,
+                enableZebraStriping: settings.EnableZebraStriping,
+                onRowRightClick: _onSongRightClicked
             );
         }
 

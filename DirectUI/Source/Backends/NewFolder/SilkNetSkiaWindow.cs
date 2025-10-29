@@ -1,15 +1,13 @@
-﻿using System;
-using System.Numerics;
-using DirectUI.Input;
+﻿using DirectUI.Input;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
 using SkiaSharp;
+using System.Numerics;
 using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
 using Key = Silk.NET.Input.Key;
-using Silk.NET.GLFW;
+using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SkiaSharp;
 

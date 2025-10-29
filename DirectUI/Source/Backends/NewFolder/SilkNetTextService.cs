@@ -1,8 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Numerics;
-using DirectUI.Core;
+﻿using DirectUI.Core;
 using SkiaSharp;
+using System.Numerics;
 using Vortice.DirectWrite; // For FontWeight, etc.
 
 namespace DirectUI.Backends.SkiaSharp;

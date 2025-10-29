@@ -1,11 +1,7 @@
 ﻿// DirectUI/Source/Styling/StyleManager.cs
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Numerics;
 using DirectUI.Animation;
 using DirectUI.Drawing;
+using System.Numerics;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 

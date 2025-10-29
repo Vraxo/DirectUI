@@ -1,6 +1,6 @@
-﻿using System.Numerics;
-using DirectUI.Core;
+﻿using DirectUI.Core;
 using SDL3;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -41,11 +41,11 @@ public unsafe class SDL3Renderer : IRenderer
 
         public bool Equals(TextRenderCacheKey other)
         {
-            return Text == other.Text 
-                && FontSize.Equals(other.FontSize) 
-                && FontWeight == other.FontWeight 
-                && FontStyle == other.FontStyle 
-                && FontStretch == other.FontStretch 
+            return Text == other.Text
+                && FontSize.Equals(other.FontSize)
+                && FontWeight == other.FontWeight
+                && FontStyle == other.FontStyle
+                && FontStretch == other.FontStretch
                 && Color.Equals(other.Color);
         }
 
@@ -212,7 +212,7 @@ public unsafe class SDL3Renderer : IRenderer
         }
 
         TextRenderCacheKey cacheKey = new(text, style, color);
-        
+
         if (!_textTextureCache.TryGetValue(cacheKey, out nint textTexture))
         {
             SDL.Color sdlColor = new() { R = color.R, G = color.G, B = color.B, A = color.A };

@@ -1,8 +1,6 @@
 ﻿// Entire file content here
-using System;
-using System.Numerics;
 using DirectUI.Core;
-using DirectUI.Drawing;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 

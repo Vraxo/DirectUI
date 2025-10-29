@@ -1,14 +1,10 @@
 ﻿// Widgets/LineEdit.cs
-using System;
-using System.Collections.Generic;
+using DirectUI.Core;
 using System.Globalization;
-using System.Linq;
 using System.Numerics;
 using System.Text;
-using DirectUI.Core;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
-using Vortice.DirectWrite;
 
 namespace DirectUI;
 

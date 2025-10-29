@@ -1,7 +1,4 @@
 ﻿// DirectUI/Source/Animation/Easing.cs
-using System;
-using System.Collections.Generic;
-
 namespace DirectUI.Animation;
 
 public static class Easing

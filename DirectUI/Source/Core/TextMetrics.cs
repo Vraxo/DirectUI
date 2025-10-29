@@ -1,6 +1,5 @@
 ﻿// DirectUI/Core/TextMetrics.cs
 using System.Numerics;
-using Vortice.Mathematics;
 
 namespace DirectUI.Core;
 

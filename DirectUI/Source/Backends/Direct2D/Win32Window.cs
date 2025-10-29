@@ -1,9 +1,6 @@
 ﻿// Win32Window.cs
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using DirectUI.Core; // Added for IWindowHost
 
 namespace DirectUI;
 

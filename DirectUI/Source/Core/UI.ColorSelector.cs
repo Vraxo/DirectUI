@@ -1,7 +1,5 @@
-﻿using System;
-using System.Collections.Generic;
+﻿using DirectUI.Drawing;
 using System.Numerics;
-using DirectUI.Drawing;
 
 namespace DirectUI;
 

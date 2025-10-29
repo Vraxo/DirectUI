@@ -1,5 +1,4 @@
 ﻿// Core/UI.ScrollBar.cs
-using System;
 using System.Numerics;
 
 namespace DirectUI;

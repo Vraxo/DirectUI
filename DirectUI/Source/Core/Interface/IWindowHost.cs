@@ -1,5 +1,4 @@
 // DirectUI/Core/IWindowHost.cs
-using System;
 using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;

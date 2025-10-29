@@ -1,7 +1,4 @@
 // DirectUI/Core/IModalWindowService.cs
-using System;
-using Vortice.Mathematics;
-
 namespace DirectUI.Core;
 
 /// <summary>

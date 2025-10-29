@@ -1,5 +1,4 @@
 ﻿// DirectUI/Core/ITextLayout.cs
-using System;
 using System.Numerics;
 
 namespace DirectUI.Core;

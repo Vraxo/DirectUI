@@ -1,8 +1,6 @@
 ﻿// DirectUI/Core/IRenderer.cs
 using System.Numerics;
-using DirectUI.Drawing;
 using Vortice.Direct2D1; // Required for AntialiasMode
-using Vortice.Mathematics;
 
 namespace DirectUI.Core;
 

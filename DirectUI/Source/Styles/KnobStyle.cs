@@ -1,5 +1,3 @@
-using DirectUI.Drawing;
-
 namespace DirectUI;
 
 public class KnobStyle

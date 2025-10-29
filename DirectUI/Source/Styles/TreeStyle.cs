@@ -1,6 +1,4 @@
-﻿using DirectUI.Drawing;
-
-namespace DirectUI;
+﻿namespace DirectUI;
 
 public class TreeStyle
 {

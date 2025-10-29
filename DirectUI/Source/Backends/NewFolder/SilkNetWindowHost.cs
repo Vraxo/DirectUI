@@ -1,9 +1,8 @@
-﻿using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
-using DirectUI.Core;
+﻿using DirectUI.Core;
 using DirectUI.Input;
 using Silk.NET.Maths;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 

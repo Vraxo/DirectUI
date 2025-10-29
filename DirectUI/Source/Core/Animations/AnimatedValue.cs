@@ -1,6 +1,4 @@
 ﻿// DirectUI/Source/Animation/AnimatedValue.cs
-using System;
-
 namespace DirectUI.Animation;
 
 internal class AnimatedValue

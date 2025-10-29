@@ -1,7 +1,4 @@
-﻿using System;
-using System.Collections.Generic;
-
-namespace DirectUI;
+﻿namespace DirectUI;
 
 internal record struct LineEditUndoRecord(string Text, int CaretPosition, int SelectionAnchor, float ScrollPixelOffset);
 

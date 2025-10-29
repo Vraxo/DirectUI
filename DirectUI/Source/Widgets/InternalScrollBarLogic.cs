@@ -1,8 +1,7 @@
 ﻿// Widgets/InternalScrollBarLogic.cs
-using System;
+using DirectUI.Core; // Ensure this is present for IRenderer
 using System.Numerics;
 using Vortice.Mathematics;
-using DirectUI.Core; // Ensure this is present for IRenderer
 
 namespace DirectUI;
 

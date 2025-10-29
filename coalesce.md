@@ -1,8 +1,47 @@
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Alignment.cs">
-// Alignment.cs
-// Alignment.cs
-using DirectUI.Core; // Added using directive
+### `DirectUI\DirectUI.csproj`
 
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="NativeFileDialogs.Net" Version="1.2.1" />
+    <PackageReference Include="Raylib-cs" Version="7.0.2" />
+    <PackageReference Include="SDL3-CS" Version="3.2.24.1" />
+    <PackageReference Include="SDL3-CS.Native" Version="3.2.24" />
+    <PackageReference Include="SharpText.Veldrid" Version="0.3.1" />
+    <PackageReference Include="Silk.NET" Version="2.22.0" />
+    <PackageReference Include="SkiaSharp" Version="3.119.2-preview.1" />
+    <PackageReference Include="SkiaSharp.HarfBuzz" Version="3.119.2-preview.1" />
+    <PackageReference Include="SkiaSharp.NativeAssets.Win32" Version="3.119.2-preview.1" />
+    <PackageReference Include="TagLibSharp" Version="2.3.0" />
+    <PackageReference Include="TinyDialogsNet" Version="2.0.0" />
+    <PackageReference Include="Veldrid" Version="4.9.0" />
+    <PackageReference Include="Veldrid.SDL2" Version="4.9.0" />
+    <PackageReference Include="Veldrid.StartupUtilities" Version="4.9.0" />
+    <PackageReference Include="Vortice.Direct2D1" Version="3.7.6-beta" />
+    <PackageReference Include="Vortice.DXGI" Version="3.7.6-beta" />
+    <PackageReference Include="Vortice.Mathematics" Version="1.9.3" />
+    <PackageReference Include="YamlDotNet" Version="16.3.0" />
+  </ItemGroup>
+
+</Project>
+```
+
+---
+
+### `DirectUI\Source\Alignment.cs`
+
+```csharp
+// Alignment.cs
+// Alignment.cs
 namespace DirectUI;
 
 public enum HAlignment { Left, Center, Right }
@@ -13,21 +52,19 @@ public struct Alignment(HAlignment horizontal, VAlignment vertical)
     public HAlignment Horizontal { get; set; } = horizontal;
     public VAlignment Vertical { get; set; } = vertical;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppEngine.cs">
+---
+
+### `DirectUI\Source\AppEngine.cs`
+
+```csharp
 // AppEngine.cs
-using System;
-using System.Diagnostics;
-using System.Numerics;
-using Vortice.Mathematics;
 using DirectUI.Core; // For IRenderer, ITextService
-using DirectUI.Drawing;
 using DirectUI.Diagnostics;
 using DirectUI.Input;
-using Silk.NET.OpenAL;
-using System.Reflection.Emit;
-using System.Security.Cryptography;
+using System.Diagnostics;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -129,18 +166,17 @@ public class AppEngine
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppRunner.cs">
+---
+
+### `DirectUI\Source\AppRunner.cs`
+
+```csharp
 using DirectUI.Backends.SDL3;
 using DirectUI.Backends.SkiaSharp;
 using DirectUI.Core; // Added for IWindowHost
-using Raylib_cs;
-using SDL3;
-using GraphicsBackend = DirectUI.GraphicsBackend;
-using System.IO;
 using DirectUI.Styling;
-using System;
 
 namespace DirectUI;
 
@@ -230,9 +266,13 @@ public static class ApplicationRunner
     // Removed specific RunRaylib, RunDirect2D, RunSDL3 methods
     // as their logic is now encapsulated within their respective IWindowHost implementations.
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\AppServices.cs">
+---
+
+### `DirectUI\Source\AppServices.cs`
+
+```csharp
 using DirectUI.Core;
 
 namespace DirectUI;
@@ -252,9 +292,13 @@ public sealed class AppServices
         TextService = textService;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\DirectUISettings.cs">
+---
+
+### `DirectUI\Source\DirectUISettings.cs`
+
+```csharp
 namespace DirectUI;
 
 /// <summary>
@@ -267,13 +311,21 @@ public class DirectUISettings
     /// </summary>
     public float UIScale { get; set; } = 1.0f;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\GlobalUsings.cs">
+---
+
+### `DirectUI\Source\GlobalUsings.cs`
+
+```csharp
 global using Color = DirectUI.Drawing.Color;
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\GraphicsBackend.cs">
+---
+
+### `DirectUI\Source\GraphicsBackend.cs`
+
+```csharp
 namespace DirectUI;
 
 public enum GraphicsBackend
@@ -283,11 +335,15 @@ public enum GraphicsBackend
     SDL3,
     SkiaSharp
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\LayoutCalculator.cs">
-using System.Numerics;
+---
+
+### `DirectUI\Source\LayoutCalculator.cs`
+
+```csharp
 using DirectUI.Core;
+using System.Numerics;
 
 namespace DirectUI;
 
@@ -318,9 +374,9 @@ public class LayoutCalculator
 
         ButtonStyle finalStyle = style ?? new();
 
-        ButtonStyle physicalStyle = new(finalStyle) 
-        { 
-            FontSize = finalStyle.FontSize * _context.UIScale 
+        ButtonStyle physicalStyle = new(finalStyle)
+        {
+            FontSize = finalStyle.FontSize * _context.UIScale
         };
 
         ITextLayout layout = _context.TextService.GetTextLayout(
@@ -331,20 +387,24 @@ public class LayoutCalculator
         );
 
         Vector2 logicalSize = new(logicalMaxWidth, layout.Size.Y / _context.UIScale);
-        
+
         _vbox.Advance(logicalSize);
     }
 
     public void AddSeparator(float logicalWidth, float thickness = 1f, float verticalPadding = 4f)
     {
         float logicalTotalHeight = thickness + (verticalPadding * 2);
-        
+
         _vbox.Advance(new(logicalWidth, logicalTotalHeight));
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\ModalWindow.cs">
+---
+
+### `DirectUI\Source\ModalWindow.cs`
+
+```csharp
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
@@ -569,9 +629,13 @@ public class ModalWindow : Win32Window
         return new(baseWidth, baseHeight);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\MouseButton.cs">
+---
+
+### `DirectUI\Source\MouseButton.cs`
+
+```csharp
 namespace DirectUI;
 
 public enum MouseButton
@@ -582,11 +646,14 @@ public enum MouseButton
     XButton1,
     XButton2
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\NativeMethods.cs">
+---
+
+### `DirectUI\Source\NativeMethods.cs`
+
+```csharp
 // NativeMethods.cs
-using System;
 using System.Runtime.InteropServices;
 
 // No changes needed here if it was correct from the previous step.
@@ -784,11 +851,13 @@ public static class NativeMethods
     public static short LoWord(IntPtr val) => unchecked((short)(long)val);
     public static short HiWord(IntPtr val) => unchecked((short)((long)val >> 16));
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\SettingsManager.cs">
-using System;
-using System.IO;
+---
+
+### `DirectUI\Source\SettingsManager.cs`
+
+```csharp
 using System.Text.Json;
 
 namespace DirectUI;
@@ -847,14 +916,17 @@ internal static class SettingsManager
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\SharedGraphicsResources.cs">
+---
+
+### `DirectUI\Source\SharedGraphicsResources.cs`
+
+```csharp
 // SharedGraphicsResources.cs
-using System;
+using SharpGen.Runtime;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
-using SharpGen.Runtime;
 using D2D = Vortice.Direct2D1;
 using DW = Vortice.DirectWrite;
 
@@ -914,20 +986,27 @@ internal static class SharedGraphicsResources
         Console.WriteLine("Shared graphics factories cleaned up.");
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ComboboxState.cs">
+---
+
+### `DirectUI\Source\Containers\ComboboxState.cs`
+
+```csharp
 namespace DirectUI;
 
 internal class ComboboxState
 {
     public bool IsOpen;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\DataGridState.cs">
+---
+
+### `DirectUI\Source\Containers\DataGridState.cs`
+
+```csharp
 // DirectUI/Source/Containers/DataGridState.cs
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace DirectUI;
@@ -947,9 +1026,13 @@ internal class DataGridState
     public float ColumnResizeStartWidth { get; set; }
     public float DragStartMouseX { get; set; }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\GridContainerState.cs">
+---
+
+### `DirectUI\Source\Containers\GridContainerState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1046,9 +1129,13 @@ public class GridContainerState : ILayoutContainer
 
     public void Advance(Vector2 elementSize) => MoveToNextCell(elementSize);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\HBoxContainerState.cs">
+---
+
+### `DirectUI\Source\Containers\HBoxContainerState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1089,9 +1176,13 @@ public class HBoxContainerState : ILayoutContainer
         ElementCount++;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ResizableHPanelState.cs">
+---
+
+### `DirectUI\Source\Containers\ResizableHPanelState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1113,9 +1204,13 @@ internal class ResizableHPanelState : ILayoutContainer
 
     public void Advance(Vector2 elementSize) => InnerHBox.Advance(elementSize);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ResizablePanelState.cs">
+---
+
+### `DirectUI\Source\Containers\ResizablePanelState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1137,9 +1232,13 @@ internal class ResizablePanelState : ILayoutContainer
 
     public void Advance(Vector2 elementSize) => InnerVBox.Advance(elementSize);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ScrollAreaState.cs">
+---
+
+### `DirectUI\Source\Containers\ScrollAreaState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1183,9 +1282,13 @@ public class ScrollAreaState : ILayoutContainer
         ContentStartPosition = position;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\ScrollContainerState.cs">
+---
+
+### `DirectUI\Source\Containers\ScrollContainerState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1210,9 +1313,13 @@ public class ScrollContainerState : ILayoutContainer
 
     public void Advance(Vector2 elementSize) => ContentVBox.Advance(elementSize);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\TreeViewState.cs">
+---
+
+### `DirectUI\Source\Containers\TreeViewState.cs`
+
+```csharp
 namespace DirectUI;
 
 internal class TreeViewState
@@ -1227,9 +1334,13 @@ internal class TreeViewState
         Style = style;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Containers\VBoxContainerState.cs">
+---
+
+### `DirectUI\Source\Containers\VBoxContainerState.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1271,9 +1382,13 @@ public class VBoxContainerState : ILayoutContainer
 
     public Vector2 GetAccumulatedSize() => new(Math.Max(MinSize.X, MaxElementWidth), Math.Max(MinSize.Y, AccumulatedHeight));
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\ClickCaptureRequest.cs">
+---
+
+### `DirectUI\Source\Core\ClickCaptureRequest.cs`
+
+```csharp
 namespace DirectUI;
 
 public readonly struct ClickCaptureRequest
@@ -1287,16 +1402,13 @@ public readonly struct ClickCaptureRequest
         Layer = layer;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\ClickCaptureServer.cs">
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using Raylib_cs;
-using Silk.NET.Input;
-using System.Text.RegularExpressions;
+---
 
+### `DirectUI\Source\Core\ClickCaptureServer.cs`
+
+```csharp
 namespace DirectUI;
 
 public class ClickCaptureServer
@@ -1331,12 +1443,15 @@ public class ClickCaptureServer
         _requests.Clear();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\TextMetrics.cs">
+---
+
+### `DirectUI\Source\Core\TextMetrics.cs`
+
+```csharp
 // DirectUI/Core/TextMetrics.cs
 using System.Numerics;
-using Vortice.Mathematics;
 
 namespace DirectUI.Core;
 
@@ -1381,12 +1496,14 @@ public readonly record struct TextHitTestResult(
     /// </summary>
     TextHitTestMetrics Metrics
 );
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.AutoPanel.cs">
-using System;
+---
+
+### `DirectUI\Source\Core\UI.AutoPanel.cs`
+
+```csharp
 using System.Numerics;
-using DirectUI.Drawing;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -1480,9 +1597,13 @@ public static partial class UI
         return panelBounds;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Box.cs">
+---
+
+### `DirectUI\Source\Core\UI.Box.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -1540,11 +1661,15 @@ public static partial class UI
         context.Layout.AdvanceLayout(logicalSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Button.cs">
-using System.Numerics;
+---
+
+### `DirectUI\Source\Core\UI.Button.cs`
+
+```csharp
 using DirectUI.Animation;
+using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1; // Still used for AntialiasMode enum
 
@@ -1659,12 +1784,15 @@ public static partial class UI
         return clickResult != ClickResult.None;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Checkbox.cs">
+---
+
+### `DirectUI\Source\Core\UI.Checkbox.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
-using Vortice.Direct2D1; // Still needed for AntialiasMode enum
 
 namespace DirectUI;
 
@@ -1802,13 +1930,15 @@ public static partial class UI
         return clicked;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ColorSelector.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Core\UI.ColorSelector.cs`
+
+```csharp
 using DirectUI.Drawing;
+using System.Numerics;
 
 namespace DirectUI;
 
@@ -1896,9 +2026,13 @@ public static partial class UI
         return DefaultTheme.Accent;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ComboBox.cs">
+---
+
+### `DirectUI\Source\Core\UI.ComboBox.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -1942,14 +2076,16 @@ public static partial class UI
         return valueChanged;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.cs">
+---
+
+### `DirectUI\Source\Core\UI.cs`
+
+```csharp
 // Entire file content here
-using System;
-using System.Numerics;
 using DirectUI.Core;
-using DirectUI.Drawing;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
@@ -2220,16 +2356,16 @@ public static partial class UI
         return true;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.DataGrid.cs">
+---
+
+### `DirectUI\Source\Core\UI.DataGrid.cs`
+
+```csharp
 // DirectUI/Source/Core/UI.DataGrid.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using DirectUI.Drawing;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -2694,9 +2830,13 @@ public static partial class UI
         return propInfo?.GetValue(item);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.GridContainer.cs">
+---
+
+### `DirectUI\Source\Core\UI.GridContainer.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -2728,9 +2868,13 @@ public static partial class UI
         Context.Layout.AdvanceContainerLayout(containerSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.HBoxContainer.cs">
+---
+
+### `DirectUI\Source\Core\UI.HBoxContainer.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -2764,9 +2908,13 @@ public static partial class UI
         Context.Layout.AdvanceContainerLayout(new(state.AccumulatedWidth, state.MaxElementHeight));
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Image.cs">
+---
+
+### `DirectUI\Source\Core\UI.Image.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -2808,9 +2956,13 @@ public static partial class UI
         context.Layout.AdvanceLayout(logicalSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.InputText.cs">
+---
+
+### `DirectUI\Source\Core\UI.InputText.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -2868,9 +3020,13 @@ public static partial class UI
         return result;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Knob.cs">
+---
+
+### `DirectUI\Source\Core\UI.Knob.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -2950,15 +3106,15 @@ public static partial class UI
         return valueChanged;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Label.cs">
-using System.Net.NetworkInformation;
-using System;
+---
+
+### `DirectUI\Source\Core\UI.Label.cs`
+
+```csharp
 using System.Numerics;
-using SkiaSharp;
 using Vortice.Mathematics;
-using Vulkan.Xlib;
 
 namespace DirectUI;
 
@@ -3104,9 +3260,13 @@ public static partial class UI
         Context.Layout.AdvanceLayout(finalLogicalSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.RadioButton.cs">
+---
+
+### `DirectUI\Source\Core\UI.RadioButton.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -3156,11 +3316,14 @@ public static partial class UI
         return valueChanged;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ResizableHPanel.cs">
+---
+
+### `DirectUI\Source\Core\UI.ResizableHPanel.cs`
+
+```csharp
 // Core/UI.Containers.cs
-using System;
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -3266,10 +3429,13 @@ public static partial class UI
         Context.Layout.PopContainer();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ResizableVPanel.cs">
-using System;
+---
+
+### `DirectUI\Source\Core\UI.ResizableVPanel.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -3371,10 +3537,13 @@ public static partial class UI
         Context.Layout.PopContainer();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ScrollableRegion.cs">
-using System;
+---
+
+### `DirectUI\Source\Core\UI.ScrollableRegion.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -3485,10 +3654,13 @@ public static partial class UI
         Context.Layout.AdvanceLayout(scrollState.VisibleSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ScrollArea.cs">
-using System;
+---
+
+### `DirectUI\Source\Core\UI.ScrollArea.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -3637,11 +3809,14 @@ public static partial class UI
         Context.Layout.AdvanceLayout(state.VisibleSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.ScrollBar.cs">
+---
+
+### `DirectUI\Source\Core\UI.ScrollBar.cs`
+
+```csharp
 // Core/UI.ScrollBar.cs
-using System;
 using System.Numerics;
 
 namespace DirectUI;
@@ -3738,9 +3913,13 @@ public static partial class UI
         return newScrollOffset;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Separator.cs">
+---
+
+### `DirectUI\Source\Core\UI.Separator.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -3793,9 +3972,13 @@ public static partial class UI
         Context.Layout.AdvanceLayout(logicalSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Slider.cs">
+---
+
+### `DirectUI\Source\Core\UI.Slider.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -3904,15 +4087,16 @@ public static partial class UI
         return newValue;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.StatelessWidgets.cs">
+---
+
+### `DirectUI\Source\Core\UI.StatelessWidgets.cs`
+
+```csharp
 // Entire file content here
-using System;
-using System.Numerics;
 using DirectUI.Animation;
-using DirectUI.Drawing;
-using Vortice.Direct2D1; // Still used for AntialiasMode enum
+using System.Numerics;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -4177,13 +4361,14 @@ public static partial class UI
         renderer.DrawText(drawOrigin, text, style, textAlignment, new Vector2(bounds.Width, bounds.Height), style.FontColor);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Style.cs">
-using System;
-using System.Collections.Generic;
+---
+
+### `DirectUI\Source\Core\UI.Style.cs`
+
+```csharp
 using System.Numerics;
-using DirectUI.Drawing;
 
 namespace DirectUI;
 
@@ -4279,9 +4464,13 @@ public static partial class UI
         return defaultValue;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.TabBar.cs">
+---
+
+### `DirectUI\Source\Core\UI.TabBar.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -4357,12 +4546,14 @@ public static partial class UI
         EndHBoxContainer();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.Tree.cs">
-using System;
+---
+
+### `DirectUI\Source\Core\UI.Tree.cs`
+
+```csharp
 using System.Numerics;
-using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -4459,11 +4650,14 @@ public static partial class UI
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UI.VBoxContainer.cs">
+---
+
+### `DirectUI\Source\Core\UI.VBoxContainer.cs`
+
+```csharp
 using System.Numerics;
-using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -4490,9 +4684,13 @@ public static partial class UI
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UIContext.cs">
+---
+
+### `DirectUI\Source\Core\UIContext.cs`
+
+```csharp
 using DirectUI.Core;
 
 namespace DirectUI;
@@ -4524,12 +4722,15 @@ public class UIContext
         Layout = new(uiScale);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UILayoutManager.cs">
+---
+
+### `DirectUI\Source\Core\UILayoutManager.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
-using System;
 
 namespace DirectUI;
 
@@ -4675,12 +4876,14 @@ public class UILayoutManager
         _containerStack.Peek().Advance(elementSize);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\UIPersistentState.cs">
+---
+
+### `DirectUI\Source\Core\UIPersistentState.cs`
+
+```csharp
 // Entire file content here
-using System;
-using System.Collections.Generic;
 using DirectUI.Animation;
 using Vortice.Mathematics;
 
@@ -4922,16 +5125,19 @@ public class UIPersistentState
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Diagnostics\FpsCounter.cs">
+---
+
+### `DirectUI\Source\Diagnostics\FpsCounter.cs`
+
+```csharp
 // DirectUI/Diagnostics/FpsCounter.cs
-using System;
-using System.Diagnostics;
 using DirectUI.Core;
-using Vortice.Mathematics;
-using Vortice.DirectWrite;
+using System.Diagnostics;
 using System.Numerics; // Still used for TextAlignment and ParagraphAlignment enums
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
 
 namespace DirectUI.Diagnostics;
 
@@ -5044,9 +5250,13 @@ public class FpsCounter
         _renderer.DrawText(new Vector2(5f, 5f), fpsText, style, new Alignment(HAlignment.Left, VAlignment.Top), new Vector2(150f, 30f), _textColor);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\Color.cs">
+---
+
+### `DirectUI\Source\Drawing\Color.cs`
+
+```csharp
 using System.Runtime.InteropServices;
 
 namespace DirectUI.Drawing;
@@ -5090,9 +5300,13 @@ public struct Color
         return new Color((byte)(color.R * 255), (byte)(color.G * 255), (byte)(color.B * 255), (byte)(color.A * 255));
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\Colors.cs">
+---
+
+### `DirectUI\Source\Drawing\Colors.cs`
+
+```csharp
 namespace DirectUI.Drawing;
 
 public static class Colors
@@ -5105,13 +5319,15 @@ public static class Colors
     public static readonly Color Green = new(0, 255, 0, 255);
     public static readonly Color Blue = new(0, 0, 255, 255);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Drawing\FontManager.cs">
+---
+
+### `DirectUI\Source\Drawing\FontManager.cs`
+
+```csharp
 // DirectUI/Drawing/FontManager.cs
 using Raylib_cs;
-using System;
-using System.Collections.Generic;
 using Vortice.DirectWrite;
 
 namespace DirectUI.Drawing
@@ -5249,13 +5465,17 @@ namespace DirectUI.Drawing
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Input\InputManager.cs">
-using System.Numerics;
-using System.Runtime.InteropServices; // Added for Marshal
+---
+
+### `DirectUI\Source\Input\InputManager.cs`
+
+```csharp
 using Raylib_cs; // Added for Raylib backend
 using SDL3;
+using System.Numerics;
+using System.Runtime.InteropServices; // Added for Marshal
 using static SDL3.SDL; // Added for SDL3 backend
 
 namespace DirectUI.Input;
@@ -5728,11 +5948,14 @@ public class InputManager
         };
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Input\InputState.cs">
+---
+
+### `DirectUI\Source\Input\InputState.cs`
+
+```csharp
 // InputState.cs
-using System.Collections.Generic;
 using System.Numerics;
 
 namespace DirectUI;
@@ -5787,9 +6010,13 @@ public readonly struct InputState
         PressedMouseButtons = pressedMouseButtons;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Input\Keys.cs">
+---
+
+### `DirectUI\Source\Input\Keys.cs`
+
+```csharp
 namespace DirectUI;
 
 /// <summary>
@@ -5955,11 +6182,13 @@ public enum Keys
     /// <summary>The Application key (Microsoft Natural Keyboard).</summary>
     Menu = 0x5D,
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\BoxStyle.cs">
-using DirectUI.Drawing;
+---
 
+### `DirectUI\Source\Styles\BoxStyle.cs`
+
+```csharp
 namespace DirectUI;
 
 public class BoxStyle
@@ -5998,13 +6227,16 @@ public class BoxStyle
         this.BorderLengthLeft = other.BorderLengthLeft;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\ButtonStyle.cs">
+---
+
+### `DirectUI\Source\Styles\ButtonStyle.cs`
+
+```csharp
 // ButtonStyle.cs
-using System.Numerics;
 using DirectUI.Animation;
-using DirectUI.Drawing;
+using System.Numerics;
 using Vortice.DirectWrite; // For Font related enums eventually
 
 namespace DirectUI;
@@ -6044,14 +6276,16 @@ public class ButtonStyle : BoxStyle
         this.Animation = other.Animation;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\ButtonStylePack.cs">
-using System.Collections.Generic;
-using System;
-using Vortice.Mathematics;
-using Vortice.DirectWrite;
+---
+
+### `DirectUI\Source\Styles\ButtonStylePack.cs`
+
+```csharp
 using DirectUI.Animation;
+using Vortice.DirectWrite;
+using Vortice.Mathematics;
 
 namespace DirectUI;
 
@@ -6200,9 +6434,13 @@ public sealed class ButtonStylePack
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\DefaultTheme.cs">
+---
+
+### `DirectUI\Source\Styles\DefaultTheme.cs`
+
+```csharp
 // DefaultTheme.cs
 using DirectUI.Drawing;
 
@@ -6333,11 +6571,13 @@ public static class DefaultTheme
     public static readonly Color FocusBorder = new Color(135, 206, 250, 255); // LightSkyBlue
     public static readonly Color Text = OriginalColors.Text;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\KnobStyle.cs">
-using DirectUI.Drawing;
+---
 
+### `DirectUI\Source\Styles\KnobStyle.cs`
+
+```csharp
 namespace DirectUI;
 
 public class KnobStyle
@@ -6367,9 +6607,13 @@ public class KnobStyle
     /// </summary>
     public float AngleRangeDegrees { get; set; } = 270f;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\SliderStyle.cs">
+---
+
+### `DirectUI\Source\Styles\SliderStyle.cs`
+
+```csharp
 namespace DirectUI;
 
 public class SliderStyle
@@ -6390,17 +6634,17 @@ public class SliderStyle
         BorderLength = 0.0f
     };
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\StyleManager.cs">
+---
+
+### `DirectUI\Source\Styles\StyleManager.cs`
+
+```csharp
 // DirectUI/Source/Styling/StyleManager.cs
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Numerics;
 using DirectUI.Animation;
 using DirectUI.Drawing;
+using System.Numerics;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
@@ -6592,18 +6836,26 @@ public static class StyleManager
         return Colors.Transparent;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TabStyle.cs">
+---
+
+### `DirectUI\Source\Styles\TabStyle.cs`
+
+```csharp
 namespace DirectUI;
 
 public class TabStyle : ButtonStyle
 {
     // For now, this is a marker class. It can hold tab-specific style properties later.
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TabStylePack.cs">
+---
+
+### `DirectUI\Source\Styles\TabStylePack.cs`
+
+```csharp
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -6676,11 +6928,13 @@ public sealed class TabStylePack
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\TreeStyle.cs">
-using DirectUI.Drawing;
+---
 
+### `DirectUI\Source\Styles\TreeStyle.cs`
+
+```csharp
 namespace DirectUI;
 
 public class TreeStyle
@@ -6723,17 +6977,14 @@ public class TreeStyle
         NodeLabelStyle.Pressed.BorderColor = DefaultTheme.AccentBorder;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Styles\YamlStyleModels.cs">
+---
+
+### `DirectUI\Source\Styles\YamlStyleModels.cs`
+
+```csharp
 // DirectUI/Source/Styling/YamlStyleModels.cs
-using System;
-using System.Collections.Generic;
-using DirectUI.Animation;
-using Silk.NET.OpenAL;
-using Silk.NET.Vulkan;
-using System.Threading.Channels;
-using Vortice.Direct2D1.Effects;
 using Vortice.DirectWrite;
 
 namespace DirectUI.Styling;
@@ -6792,9 +7043,13 @@ internal class YamlButtonStylePack
     // Global/fallback animation properties for the pack
     public YamlAnimationInfo? Animation { get; set; }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\Button.cs">
+---
+
+### `DirectUI\Source\Widgets\Button.cs`
+
+```csharp
 namespace DirectUI;
 
 public static class Button
@@ -6802,9 +7057,13 @@ public static class Button
     public enum ActionMode { Release, Press }
     public enum ClickBehavior { Left, Right, Both }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\DataGridColumn.cs">
+---
+
+### `DirectUI\Source\Widgets\DataGridColumn.cs`
+
+```csharp
 // DirectUI/Source/Widgets/DataGridColumn.cs
 namespace DirectUI;
 
@@ -6841,11 +7100,13 @@ public class DataGridColumn
         DataPropertyName = dataPropertyName;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\FileDialogs.cs">
-using System;
-using System.Collections.Generic;
+---
+
+### `DirectUI\Source\Widgets\FileDialogs.cs`
+
+```csharp
 using NativeFileDialogs.Net;
 
 namespace DirectUI;
@@ -6884,20 +7145,20 @@ public static class FileDialogs
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputText.cs">
+---
+
+### `DirectUI\Source\Widgets\InputText.cs`
+
+```csharp
 // Widgets/LineEdit.cs
-using System;
-using System.Collections.Generic;
+using DirectUI.Core;
 using System.Globalization;
-using System.Linq;
 using System.Numerics;
 using System.Text;
-using DirectUI.Core;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
-using Vortice.DirectWrite;
 
 namespace DirectUI;
 
@@ -7415,22 +7676,17 @@ internal class InputText
         var renderer = context.Renderer;
         var textService = context.TextService;
 
-        // Create a modified style with emoji font support
-        var emojiStyle = new ButtonStyle(style);
-        emojiStyle.FontName = "Segoe UI Emoji, Noto Color Emoji, Apple Color Emoji, sans-serif";
-        emojiStyle.FontSize = style.FontSize * 1.2f; // Slightly larger for better emoji rendering
-
-        var textLayout = textService.GetTextLayout(fullText, emojiStyle, new(float.MaxValue, size.Y),
+        var textLayout = textService.GetTextLayout(fullText, style, new(float.MaxValue, size.Y),
             new Alignment(HAlignment.Left, VAlignment.Center));
         if (textLayout is null) return;
 
         const float yOffsetCorrection = -1.5f;
         Vector2 drawOrigin = new Vector2(contentTopLeft.X - state.ScrollPixelOffset, contentTopLeft.Y + yOffsetCorrection);
 
-        // Use the emoji style for rendering
-        renderer.DrawText(drawOrigin, fullText, emojiStyle,
+        // Use the original style for rendering
+        renderer.DrawText(drawOrigin, fullText, style,
             new Alignment(HAlignment.Left, VAlignment.Center),
-            new Vector2(float.MaxValue, size.Y), emojiStyle.FontColor);
+            new Vector2(float.MaxValue, size.Y), style.FontColor);
     }
 
     private void DrawCaret(string text, InputTextState state, Vector2 size, ButtonStyle style, Rect contentRect)
@@ -7642,9 +7898,13 @@ internal class InputText
         return c.ToString();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputTextResult.cs">
+---
+
+### `DirectUI\Source\Widgets\InputTextResult.cs`
+
+```csharp
 namespace DirectUI;
 
 public readonly struct InputTextResult
@@ -7660,12 +7920,13 @@ public readonly struct InputTextResult
 
     public static implicit operator bool(InputTextResult result) => result.ValueChanged;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InputTextState.cs">
-using System;
-using System.Collections.Generic;
+---
 
+### `DirectUI\Source\Widgets\InputTextState.cs`
+
+```csharp
 namespace DirectUI;
 
 internal record struct LineEditUndoRecord(string Text, int CaretPosition, int SelectionAnchor, float ScrollPixelOffset);
@@ -7693,10 +7954,13 @@ internal class InputTextState
     internal readonly Stack<LineEditUndoRecord> RedoStack = new();
     internal const int HistoryLimit = 50;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalComboboxLogic.cs">
-using System;
+---
+
+### `DirectUI\Source\Widgets\InternalComboboxLogic.cs`
+
+```csharp
 using System.Numerics;
 using Vortice.Mathematics;
 
@@ -7817,14 +8081,16 @@ internal class InternalComboboxLogic
         return newSelectedIndex;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalHSliderLogic.cs">
+---
+
+### `DirectUI\Source\Widgets\InternalHSliderLogic.cs`
+
+```csharp
 // Widgets/InternalHSliderLogic.cs
-using System;
-using System.Numerics;
-using System.Text.RegularExpressions;
 using DirectUI.Core;
+using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
 
@@ -7940,12 +8206,14 @@ internal class InternalHSliderLogic : InternalSliderLogic
         renderer.PopClipRect();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalKnobLogic.cs">
-using System;
+---
+
+### `DirectUI\Source\Widgets\InternalKnobLogic.cs`
+
+```csharp
 using System.Numerics;
-using DirectUI.Core;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -8051,14 +8319,17 @@ internal class InternalKnobLogic
         return valueChanged;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalScrollBarLogic.cs">
+---
+
+### `DirectUI\Source\Widgets\InternalScrollBarLogic.cs`
+
+```csharp
 // Widgets/InternalScrollBarLogic.cs
-using System;
+using DirectUI.Core; // Ensure this is present for IRenderer
 using System.Numerics;
 using Vortice.Mathematics;
-using DirectUI.Core; // Ensure this is present for IRenderer
 
 namespace DirectUI;
 
@@ -8237,13 +8508,16 @@ internal class InternalScrollBarLogic
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalSliderLogic.cs">
-using System;
+---
+
+### `DirectUI\Source\Widgets\InternalSliderLogic.cs`
+
+```csharp
+using DirectUI.Core;
 using System.Numerics;
 using Vortice.Mathematics;
-using DirectUI.Core;
 
 namespace DirectUI;
 
@@ -8391,13 +8665,16 @@ internal abstract class InternalSliderLogic
         renderer.DrawBox(new Rect(grabberPos.X, grabberPos.Y, GrabberSize.X, GrabberSize.Y), GrabberTheme.Current);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\InternalVSlider.cs">
-using System;
+---
+
+### `DirectUI\Source\Widgets\InternalVSlider.cs`
+
+```csharp
+using DirectUI.Core; // Added for IRenderer
 using System.Numerics;
 using Vortice.Mathematics;
-using DirectUI.Core; // Added for IRenderer
 using D2D = Vortice.Direct2D1; // Added this using directive
 
 namespace DirectUI;
@@ -8510,27 +8787,37 @@ internal class InternalVSliderLogic : InternalSliderLogic
         renderer.PopClipRect();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\SliderDirection.cs">
+---
+
+### `DirectUI\Source\Widgets\SliderDirection.cs`
+
+```csharp
 namespace DirectUI;
 
 public enum HSliderDirection { LeftToRight, RightToLeft }
 public enum VSliderDirection { TopToBottom, BottomToTop }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\TabBarState.cs">
+---
+
+### `DirectUI\Source\Widgets\TabBarState.cs`
+
+```csharp
 namespace DirectUI;
 
 internal class TabBarState
 {
     internal float CachedUniformWidth = -1f;
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Widgets\TreeNode.cs">
-using System.Collections.Generic;
+---
 
+### `DirectUI\Source\Widgets\TreeNode.cs`
+
+```csharp
 namespace DirectUI;
 
 /// <summary>
@@ -8576,12 +8863,16 @@ public class TreeNode<T>
         return child;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Direct2DRenderer.cs">
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\Direct2D\Direct2DRenderer.cs`
+
+```csharp
 using DirectUI.Core;
 using SharpGen.Runtime;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Direct3D;
 using Vortice.Direct3D11;
@@ -9124,15 +9415,18 @@ float4 PS(PS_Input input) : SV_TARGET
         //throw new NotImplementedException();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\DirectWriteTextLayout.cs">
+---
+
+### `DirectUI\Source\Backends\Direct2D\DirectWriteTextLayout.cs`
+
+```csharp
 // DirectUI/Backends/DirectWriteTextLayout.cs
-using System;
-using System.Numerics;
 using DirectUI.Core;
-using Vortice.DirectWrite;
 using SharpGen.Runtime;
+using System.Numerics;
+using Vortice.DirectWrite;
 
 namespace DirectUI.Backends;
 
@@ -9188,16 +9482,17 @@ internal class DirectWriteTextLayout : ITextLayout
         Dispose();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\DirectWriteTextService.cs">
+---
+
+### `DirectUI\Source\Backends\Direct2D\DirectWriteTextService.cs`
+
+```csharp
 // DirectUI/Backends/DirectWriteTextService.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
 using DirectUI.Core;
+using System.Numerics;
 using Vortice.DirectWrite;
-using Vortice.Mathematics;
 
 namespace DirectUI.Backends;
 
@@ -9331,29 +9626,21 @@ public class DirectWriteTextService : ITextService
         Console.WriteLine("DirectWriteTextService Cleanup finished.");
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\DuiGraphicsDevice.cs">
-using DirectUI;
-using SharpGen.Runtime;
-using Vortice.Direct2D1;
-using Vortice.Direct3D;
-using Vortice.Direct3D11;
-using Vortice.DirectWrite;
-using Vortice.DXGI;
-using Vortice.Mathematics;
+---
 
-using System;
-using Vortice.Direct2D1;
-using Vortice.Direct3D;
-using Vortice.Direct3D11;
-using Vortice.DirectWrite;
-using Vortice.DXGI;
+### `DirectUI\Source\Backends\Direct2D\DuiGraphicsDevice.cs`
+
+```csharp
 using SharpGen.Runtime;
-using Vortice.Mathematics;
 using Vortice.DCommon;
+using Vortice.Direct2D1;
+using Vortice.Direct3D;
+using Vortice.Direct3D11;
+using Vortice.DirectWrite;
+using Vortice.DXGI;
 using D2D = Vortice.Direct2D1;
-using DW = Vortice.DirectWrite;
 using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI;
@@ -9593,9 +9880,13 @@ public class DuiGraphicsDevice : IDisposable
         Dispose();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\ShaderCompiler.cs">
+---
+
+### `DirectUI\Source\Backends\Direct2D\ShaderCompiler.cs`
+
+```csharp
 using SharpGen.Runtime;
 using Vortice.D3DCompiler;
 using Vortice.Direct3D;
@@ -9659,9 +9950,13 @@ public static class ShaderCompiler
         return code;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Win32AppServicesInitializer.cs">
+---
+
+### `DirectUI\Source\Backends\Direct2D\Win32AppServicesInitializer.cs`
+
+```csharp
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -9694,15 +9989,16 @@ public static class Win32AppServicesInitializer
         return new AppServices(appEngine, graphicsDevice, renderer, textService);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Win32Window.cs">
+---
+
+### `DirectUI\Source\Backends\Direct2D\Win32Window.cs`
+
+```csharp
 // Win32Window.cs
-using System;
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
-using DirectUI.Core; // Added for IWindowHost
 
 namespace DirectUI;
 
@@ -10184,9 +10480,13 @@ public abstract class Win32Window : IDisposable
         Dispose(false);
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Direct2D\Win32WindowHost.cs">
+---
+
+### `DirectUI\Source\Backends\Direct2D\Win32WindowHost.cs`
+
+```csharp
 // Entire file content here
 using DirectUI.Core;
 using DirectUI.Input;
@@ -10612,10 +10912,13 @@ public class Win32WindowHost : Win32Window, IWindowHost, IModalWindowService
         throw new NotImplementedException();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\DwmApi.cs">
-using System;
+---
+
+### `DirectUI\Source\Backends\NewFolder\DwmApi.cs`
+
+```csharp
 using System.Runtime.InteropServices;
 
 namespace DirectUI.Backends.SkiaSharp;
@@ -10652,15 +10955,17 @@ internal static class DwmApi
         DWMSBT_TABBEDWINDOW = 4      // Tabbed
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetRenderer.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\NewFolder\SilkNetRenderer.cs`
+
+```csharp
 using DirectUI.Core;
-using DirectUI.Drawing;
 using SkiaSharp;
+using SkiaSharp.HarfBuzz;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 
@@ -10739,42 +11044,28 @@ public class SilkNetRenderer : IRenderer
     {
         if (_canvas is null || string.IsNullOrEmpty(text)) return;
 
-        var typeface = _textService.GetOrCreateTypeface(style);
-        using var font = new SKFont(typeface, style.FontSize);
-        using var paint = new SKPaint(font)
-        {
-            Color = new SKColor(color.R, color.G, color.B, color.A),
-            IsAntialias = true
-        };
+        var layout = _textService.GetTextLayout(text, style, maxSize, alignment) as SilkNetTextLayout;
+        if (layout is null || !layout.Runs.Any()) return;
 
-        var textBounds = new SKRect();
-        paint.MeasureText(text, ref textBounds);
+        var totalSize = layout.Size;
         var textDrawPos = origin;
 
-        // --- Horizontal alignment (based on actual measured text width) ---
+        // --- Horizontal alignment ---
         if (maxSize.X > 0)
         {
             switch (alignment.Horizontal)
             {
                 case HAlignment.Center:
-                    textDrawPos.X += (maxSize.X - textBounds.Width) / 2f - textBounds.Left;
+                    textDrawPos.X += (maxSize.X - totalSize.X) / 2f;
                     break;
                 case HAlignment.Right:
-                    textDrawPos.X += maxSize.X - textBounds.Width - textBounds.Left;
-                    break;
-                default: // Left
-                    textDrawPos.X -= textBounds.Left;
+                    textDrawPos.X += maxSize.X - totalSize.X;
                     break;
             }
         }
-        else
-        {
-            textDrawPos.X -= textBounds.Left;
-        }
 
-
-        // --- Vertical alignment (based on stable font metrics to prevent jiggling) ---
-        var fontMetrics = paint.FontMetrics;
+        // Use the metrics of the first (primary) font for vertical alignment to ensure consistency.
+        var primaryMetrics = layout.Runs.First().FontMetrics;
         var baselineY = origin.Y;
 
         if (maxSize.Y > 0)
@@ -10782,36 +11073,35 @@ public class SilkNetRenderer : IRenderer
             switch (alignment.Vertical)
             {
                 case VAlignment.Top:
-                    // Align the top of the text (ascent) with the top of the layout box.
-                    // Since Ascent is negative, we subtract it.
-                    baselineY -= fontMetrics.Ascent;
+                    baselineY -= primaryMetrics.Ascent;
                     break;
                 case VAlignment.Center:
-                    // Center the line of text within the layout box.
-                    float fontHeight = fontMetrics.Descent - fontMetrics.Ascent;
-                    baselineY += (maxSize.Y - fontHeight) / 2f - fontMetrics.Ascent;
-
-                    // Add a small correction for better visual centering, similar to the D2D backend.
-                    // The metric center is often lower than the perceived visual center, so we move it up slightly.
-                    baselineY -= 1.5f;
+                    float fontHeight = primaryMetrics.Descent - primaryMetrics.Ascent;
+                    baselineY += (maxSize.Y - fontHeight) / 2f - primaryMetrics.Ascent;
+                    baselineY -= 1.5f; // Visual centering correction
                     break;
                 case VAlignment.Bottom:
-                    // Align the bottom of the text (descent) with the bottom of the layout box.
-                    baselineY += maxSize.Y - fontMetrics.Descent;
+                    baselineY += maxSize.Y - primaryMetrics.Descent;
                     break;
             }
         }
         else
         {
-            // If no max size, just align to top as a default
-            baselineY -= fontMetrics.Ascent;
+            baselineY -= primaryMetrics.Ascent;
         }
 
-        // The Y position for DrawText is the baseline, not the top.
-        textDrawPos.Y = baselineY;
+        var currentX = textDrawPos.X;
+        var skColor = new SKColor(color.R, color.G, color.B, color.A);
 
+        foreach (var run in layout.Runs)
+        {
+            using var font = new SKFont(run.Typeface, style.FontSize);
+            using var paint = new SKPaint(font) { Color = skColor, IsAntialias = true };
+            using var shaper = new SKShaper(run.Typeface);
 
-        _canvas.DrawText(text, textDrawPos.X, textDrawPos.Y, paint);
+            _canvas.DrawShapedText(shaper, run.Text, currentX, baselineY, paint);
+            currentX += run.Size.X;
+        }
     }
 
     public void DrawImage(byte[] imageData, string imageKey, Rect destination)
@@ -10875,21 +11165,23 @@ public class SilkNetRenderer : IRenderer
         _bitmapCache.Clear();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetSkiaWindow.cs">
-using System;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\NewFolder\SilkNetSkiaWindow.cs`
+
+```csharp
 using DirectUI.Input;
 using Silk.NET.Input;
 using Silk.NET.Maths;
 using Silk.NET.OpenGL;
 using Silk.NET.Windowing;
 using SkiaSharp;
+using System.Numerics;
 using Vortice.Mathematics;
-using SizeI = Vortice.Mathematics.SizeI;
 using Key = Silk.NET.Input.Key;
-using Silk.NET.GLFW;
+using SizeI = Vortice.Mathematics.SizeI;
 
 namespace DirectUI.Backends.SkiaSharp;
 
@@ -11327,184 +11619,274 @@ public class SilkNetSkiaWindow : IDisposable
     };
 
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetTextLayout.cs">
-using System;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\NewFolder\SilkNetTextLayout.cs`
+
+```csharp
+// DirectUI/Backends/Raylib/RaylibTextLayout.cs
 using DirectUI.Core;
 using SkiaSharp;
-using Typography.OpenFont;
+using SkiaSharp.HarfBuzz;
+using System.Globalization;
+using System.Numerics;
+using System.Text;
 
 namespace DirectUI.Backends.SkiaSharp;
 
+internal record TextRun(string Text, SKTypeface Typeface, Vector2 Size, SKFontMetrics FontMetrics);
+
 internal class SilkNetTextLayout : ITextLayout
 {
+    private readonly List<TextRun> _runs = new();
+    public IReadOnlyList<TextRun> Runs => _runs;
+
     public Vector2 Size { get; }
     public string Text { get; }
-    private readonly SKTypeface _typeface;
-    private readonly ButtonStyle _style;
 
-    public SilkNetTextLayout(string text, SKTypeface typeface, ButtonStyle style)
+    public SilkNetTextLayout(string text, ButtonStyle style, SilkNetTextService textService)
     {
         Text = text;
-        _typeface = typeface;
-        _style = style;
-        using var font = new SKFont(typeface, style.FontSize);
-        using var paint = new SKPaint(font) { IsAntialias = true };
+        BuildRuns(text, style, textService);
 
-        // Use a robust measurement that includes trailing spaces
-        float width = MeasureTextWithTrailingWhitespace(paint, text);
-        var rect = new SKRect();
-        // Measure normally to get an accurate height
-        paint.MeasureText("Gg", ref rect); // Use characters with ascenders/descenders for stable height
-        Size = new Vector2(width, rect.Height);
+        float totalWidth = 0;
+        float maxHeight = 0;
+        foreach (var run in _runs)
+        {
+            totalWidth += run.Size.X;
+            if (run.Size.Y > maxHeight)
+            {
+                maxHeight = run.Size.Y;
+            }
+        }
+        Size = new Vector2(totalWidth, maxHeight);
     }
+
+    private void BuildRuns(string text, ButtonStyle style, SilkNetTextService textService)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+
+        var fontManager = SKFontManager.Default;
+        var primaryTypeface = textService.GetOrCreateTypeface(style);
+
+        var currentRunText = new StringBuilder();
+        var currentTypeface = primaryTypeface;
+
+        var enumerator = StringInfo.GetTextElementEnumerator(text);
+        while (enumerator.MoveNext())
+        {
+            var grapheme = enumerator.GetTextElement();
+            var firstRune = grapheme.EnumerateRunes().First();
+
+            if (currentTypeface.ContainsGlyph(firstRune.Value))
+            {
+                currentRunText.Append(grapheme);
+            }
+            else
+            {
+                if (currentRunText.Length > 0)
+                {
+                    AddRun(currentRunText.ToString(), currentTypeface, style.FontSize);
+                    currentRunText.Clear();
+                }
+
+                // --- THE FIX ---
+                // 1. First, specifically request a font that supports the character as an EMOJI.
+                //    The 'und-Zsye' tag is the robust way to request an emoji font fallback.
+                var emojiFallback = fontManager.MatchCharacter(null, SKFontStyle.Normal, new[] { "und-Zsye" }, firstRune.Value);
+
+                // 2. ONLY use the explicit emoji fallback if found. We deliberately avoid the generic
+                //    SKFontManager.MatchCharacter(rune) fallback, which is often configured on Windows
+                //    to select a CJK font (like SimSun) as the default for any missing Unicode char,
+                //    resulting in an incorrect Chinese character glyph for the emoji.
+                currentTypeface = emojiFallback ?? primaryTypeface;
+                // --- END FIX ---
+
+                currentRunText.Append(grapheme);
+            }
+        }
+
+        if (currentRunText.Length > 0)
+        {
+            AddRun(currentRunText.ToString(), currentTypeface, style.FontSize);
+        }
+    }
+
+    private void AddRun(string text, SKTypeface typeface, float fontSize)
+    {
+        using var font = new SKFont(typeface, fontSize);
+        using var paint = new SKPaint(font);
+        using var shaper = new SKShaper(typeface);
+
+        var shapeResult = shaper.Shape(text, paint);
+        var width = shapeResult.Width;
+        var fontMetrics = paint.FontMetrics;
+        var height = fontMetrics.Descent - fontMetrics.Ascent;
+
+        _runs.Add(new TextRun(text, typeface, new Vector2(width, height), fontMetrics));
+    }
+
+
     public TextHitTestMetrics HitTestTextPosition(int textPosition, bool isTrailingHit)
     {
-        if (string.IsNullOrEmpty(Text) && textPosition == 0)
-        {
-            return new TextHitTestMetrics(Vector2.Zero, new Vector2(1, Size.Y)); // Default caret for empty string
-        }
         textPosition = Math.Clamp(textPosition, 0, Text.Length);
+        float totalX = 0;
+        int charCount = 0;
 
-        using var font = new SKFont(_typeface, _style.FontSize);
-        using var paint = new SKPaint(font) { IsAntialias = true };
-
-        // Measure the substring up to the caret position to get the X coordinate.
-        string sub = Text[..textPosition];
-        float x = MeasureTextWithTrailingWhitespace(paint, sub);
-
-        // Measure the width of the character at the caret position to determine its size.
-        float charWidth;
-        if (textPosition < Text.Length)
+        foreach (var run in _runs)
         {
-            // Use the robust measurement here as well in case the character is a space
-            charWidth = MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString());
-        }
-        else // Caret is at the end of the string.
-        {
-            // Use the width of a space as a sensible default for the caret after the last character.
-            charWidth = paint.MeasureText(" ");
+            if (textPosition <= charCount + run.Text.Length)
+            {
+                int positionInRun = textPosition - charCount;
+                string sub = run.Text[..positionInRun];
+                using var font = new SKFont(run.Typeface, run.FontMetrics.XHeight * 2); // Size doesn't matter much for this
+                using var paint = new SKPaint(font);
+                using var shaper = new SKShaper(run.Typeface);
+
+                float xInRun = shaper.Shape(sub, paint).Width;
+
+                float graphemeWidth = 0;
+                if (positionInRun < run.Text.Length)
+                {
+                    var enumerator = StringInfo.GetTextElementEnumerator(run.Text, positionInRun);
+                    if (enumerator.MoveNext())
+                    {
+                        graphemeWidth = shaper.Shape(enumerator.GetTextElement(), paint).Width;
+                    }
+                }
+                return new TextHitTestMetrics(new Vector2(totalX + xInRun, 0), new Vector2(graphemeWidth, Size.Y));
+            }
+            totalX += run.Size.X;
+            charCount += run.Text.Length;
         }
 
-        return new TextHitTestMetrics(new Vector2(x, 0), new Vector2(charWidth, Size.Y));
+        return new TextHitTestMetrics(new Vector2(Size.X, 0), new Vector2(1, Size.Y));
     }
 
     public TextHitTestResult HitTestPoint(Vector2 point)
     {
         if (string.IsNullOrEmpty(Text))
-        {
             return new TextHitTestResult(0, false, false, new TextHitTestMetrics(Vector2.Zero, Vector2.Zero));
-        }
-
-        using var font = new SKFont(_typeface, _style.FontSize);
-        using var paint = new SKPaint(font) { IsAntialias = true };
 
         bool isInside = point.X >= 0 && point.X <= Size.X && point.Y >= 0 && point.Y <= Size.Y;
+        float currentRunX = 0;
+        int overallCharIndex = 0;
 
-        // Use BreakText to find the character index that corresponds to the click's X coordinate.
-        // This is still a good starting point.
-        int textPosition = (int)paint.BreakText(Text, point.X);
-        textPosition = Math.Clamp(textPosition, 0, Text.Length);
-
-        // Determine if it's a "trailing hit" by checking which side of the character's midpoint the click landed on.
-        float charStartPos = MeasureTextWithTrailingWhitespace(paint, Text[..textPosition]);
-        float charEndPos = (textPosition < Text.Length)
-            ? charStartPos + MeasureTextWithTrailingWhitespace(paint, Text[textPosition].ToString())
-            : charStartPos;
-
-        bool isTrailingHit = (point.X - charStartPos) > ((charEndPos - charStartPos) / 2f);
-
-        // Get metrics for the hit character.
-        var metrics = HitTestTextPosition(textPosition, false);
-
-        return new TextHitTestResult(textPosition, isTrailingHit, isInside, metrics);
-    }
-
-    /// <summary>
-    /// Measures text width while reliably including trailing whitespace, which SKPaint.MeasureText often trims.
-    /// </summary>
-    private static float MeasureTextWithTrailingWhitespace(SKPaint paint, string text)
-    {
-        if (string.IsNullOrEmpty(text)) return 0;
-
-        string trimmedText = text.TrimEnd(' ');
-        float width = paint.MeasureText(trimmedText);
-
-        int trailingSpaceCount = text.Length - trimmedText.Length;
-        if (trailingSpaceCount > 0)
+        foreach (var run in _runs)
         {
-            // Measure a single space to get its width accurately for the current font.
-            float spaceWidth = paint.MeasureText(" ");
-            width += trailingSpaceCount * spaceWidth;
+            if (point.X < currentRunX + run.Size.X || run == _runs.Last())
+            {
+                float xInRun = point.X - currentRunX;
+                using var font = new SKFont(run.Typeface, run.FontMetrics.XHeight * 2);
+                using var paint = new SKPaint(font);
+                using var shaper = new SKShaper(run.Typeface);
+
+                var enumerator = StringInfo.GetTextElementEnumerator(run.Text);
+                float currentGraphemeX = 0;
+
+                while (enumerator.MoveNext())
+                {
+                    string grapheme = enumerator.GetTextElement();
+                    float graphemeWidth = shaper.Shape(grapheme, paint).Width;
+                    if (xInRun < currentGraphemeX + graphemeWidth)
+                    {
+                        bool isTrailing = xInRun > currentGraphemeX + graphemeWidth / 2f;
+                        int hitCharIndex = overallCharIndex + enumerator.ElementIndex + (isTrailing ? grapheme.Length : 0);
+                        var metrics = new TextHitTestMetrics(new Vector2(currentRunX + currentGraphemeX, 0), new Vector2(graphemeWidth, run.Size.Y));
+                        return new TextHitTestResult(hitCharIndex, isTrailing, isInside, metrics);
+                    }
+                    currentGraphemeX += graphemeWidth;
+                }
+            }
+
+            currentRunX += run.Size.X;
+            overallCharIndex += run.Text.Length;
         }
 
-        return width;
+        return new TextHitTestResult(Text.Length, false, isInside, new TextHitTestMetrics(new Vector2(Size.X, 0), Vector2.Zero));
     }
 
-    public void Dispose()
-    {
-        // This class doesn't own unmanaged resources directly
-    }
+    public void Dispose() { }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetTextService.cs">
-using System;
-using System.Collections.Generic;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\NewFolder\SilkNetTextService.cs`
+
+```csharp
 using DirectUI.Core;
 using SkiaSharp;
-using Typography.OpenFont;
+using System.Numerics;
 using Vortice.DirectWrite; // For FontWeight, etc.
 
 namespace DirectUI.Backends.SkiaSharp;
 
 public class SilkNetTextService : ITextService
 {
-    private readonly Dictionary<FontKey, SKTypeface> _typefaceCache = new();
+    private readonly Dictionary<TypefaceKey, SKTypeface> _typefaceCache = new();
     private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
-    private readonly Dictionary<(string, FontKey), Vector2> _textSizeCache = new();
+    private readonly Dictionary<(string, MeasurementKey), Vector2> _textSizeCache = new();
 
-    private readonly struct FontKey : IEquatable<FontKey>
+    // Key for size-INDEPENDENT SKTypeface objects
+    internal readonly struct TypefaceKey : IEquatable<TypefaceKey>
     {
         private readonly string FontName;
         private readonly FontWeight FontWeight;
         private readonly FontStyle FontStyle;
-        private readonly float FontSize; // Added FontSize to the key for measurement
 
-        public FontKey(ButtonStyle style)
+        public TypefaceKey(ButtonStyle style)
         {
             FontName = style.FontName;
             FontWeight = style.FontWeight;
             FontStyle = style.FontStyle;
-            FontSize = style.FontSize; // Capture FontSize
         }
 
-        public bool Equals(FontKey other) => FontName == other.FontName && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontSize.Equals(other.FontSize);
-        public override bool Equals(object? obj) => obj is FontKey other && Equals(other);
+        public bool Equals(TypefaceKey other) => FontName == other.FontName && FontWeight == other.FontWeight && FontStyle == other.FontStyle;
+        public override bool Equals(object? obj) => obj is TypefaceKey other && Equals(other);
+        public override int GetHashCode() => HashCode.Combine(FontName, FontWeight, FontStyle);
+    }
+
+    // Key for size-DEPENDENT measurements
+    private readonly struct MeasurementKey : IEquatable<MeasurementKey>
+    {
+        private readonly string FontName;
+        private readonly FontWeight FontWeight;
+        private readonly FontStyle FontStyle;
+        private readonly float FontSize;
+
+        public MeasurementKey(ButtonStyle style)
+        {
+            FontName = style.FontName;
+            FontWeight = style.FontWeight;
+            FontStyle = style.FontStyle;
+            FontSize = style.FontSize;
+        }
+
+        public bool Equals(MeasurementKey other) => FontName == other.FontName && FontWeight == other.FontWeight && FontStyle == other.FontStyle && FontSize.Equals(other.FontSize);
+        public override bool Equals(object? obj) => obj is MeasurementKey other && Equals(other);
         public override int GetHashCode() => HashCode.Combine(FontName, FontWeight, FontStyle, FontSize);
     }
+
     private readonly struct TextLayoutCacheKey : IEquatable<TextLayoutCacheKey>
     {
         private readonly string Text;
-        private readonly FontKey FontKey;
-        private readonly float FontSize;
+        private readonly MeasurementKey FontKey; // Use the more detailed key
         public TextLayoutCacheKey(string text, ButtonStyle style)
         {
             Text = text;
-            FontKey = new FontKey(style);
-            FontSize = style.FontSize;
+            FontKey = new MeasurementKey(style);
         }
-        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && FontKey.Equals(other.FontKey) && FontSize.Equals(other.FontSize);
+        public bool Equals(TextLayoutCacheKey other) => Text == other.Text && FontKey.Equals(other.FontKey);
         public override bool Equals(object? obj) => obj is TextLayoutCacheKey other && Equals(other);
-        public override int GetHashCode() => HashCode.Combine(Text, FontKey, FontSize);
+        public override int GetHashCode() => HashCode.Combine(Text, FontKey);
     }
+
     public SKTypeface GetOrCreateTypeface(ButtonStyle style)
     {
-        // Re-create a key without FontSize for typeface caching, as a typeface is size-independent.
-        var typefaceKey = new FontKey(new ButtonStyle { FontName = style.FontName, FontWeight = style.FontWeight, FontStyle = style.FontStyle });
+        var typefaceKey = new TypefaceKey(style);
         if (_typefaceCache.TryGetValue(typefaceKey, out var typeface))
         {
             return typeface;
@@ -11517,39 +11899,37 @@ public class SilkNetTextService : ITextService
         _typefaceCache[typefaceKey] = typeface;
         return typeface;
     }
+
     public Vector2 MeasureText(string text, ButtonStyle style)
     {
         if (string.IsNullOrEmpty(text)) return Vector2.Zero;
 
-        // Use the full FontKey that includes size for measurement caching.
-        var measurementKey = new FontKey(style);
+        var measurementKey = new MeasurementKey(style);
         var cacheKey = (text, measurementKey);
         if (_textSizeCache.TryGetValue(cacheKey, out var cachedSize))
         {
             return cachedSize;
         }
 
-        var typeface = GetOrCreateTypeface(style);
-        using var font = new SKFont(typeface, style.FontSize);
-        using var paint = new SKPaint(font);
-        var rect = new SKRect();
-        paint.MeasureText(text, ref rect);
+        // Use the full layout logic for accurate measurement with fallbacks
+        var layout = GetTextLayout(text, style, new Vector2(float.MaxValue, float.MaxValue), new Alignment());
+        var measuredSize = layout.Size;
 
-        var measuredSize = new Vector2(rect.Width, rect.Height);
-        _textSizeCache[cacheKey] = measuredSize; // Store in cache
+        _textSizeCache[cacheKey] = measuredSize;
         return measuredSize;
     }
 
     public ITextLayout GetTextLayout(string text, ButtonStyle style, Vector2 maxSize, Alignment alignment)
     {
+        // Note: For simplicity, this implementation doesn't use maxSize/alignment in the layout
+        // creation itself, as breaking into runs makes wrapping complex. The renderer applies alignment.
         var key = new TextLayoutCacheKey(text, style);
         if (_textLayoutCache.TryGetValue(key, out var layout))
         {
             return layout;
         }
 
-        var typeface = GetOrCreateTypeface(style);
-        var newLayout = new SilkNetTextLayout(text, typeface, style);
+        var newLayout = new SilkNetTextLayout(text, style, this);
         _textLayoutCache[key] = newLayout;
         return newLayout;
     }
@@ -11565,15 +11945,18 @@ public class SilkNetTextService : ITextService
         _textSizeCache.Clear();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\NewFolder\SilkNetWindowHost.cs">
-using System;
-using System.Diagnostics;
-using System.Runtime.InteropServices;
+---
+
+### `DirectUI\Source\Backends\NewFolder\SilkNetWindowHost.cs`
+
+```csharp
 using DirectUI.Core;
 using DirectUI.Input;
 using Silk.NET.Maths;
+using System.Diagnostics;
+using System.Runtime.InteropServices;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -11836,17 +12219,19 @@ namespace DirectUI.Backends.SkiaSharp
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibRenderer.cs">
+---
+
+### `DirectUI\Source\Backends\Raylib\RaylibRenderer.cs`
+
+```csharp
 // DirectUI/Backends/Raylib/RaylibRenderer.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
-using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
 using Raylib_cs;
+using System.Numerics;
+using Vortice.Direct2D1; // For AntialiasMode enum, even if not used by Raylib
 using Vortice.Mathematics; // Raylib specific library
 
 namespace DirectUI.Backends;
@@ -12085,15 +12470,17 @@ public class RaylibRenderer : IRenderer
         throw new NotImplementedException();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibTextLayout.cs">
+---
+
+### `DirectUI\Source\Backends\Raylib\RaylibTextLayout.cs`
+
+```csharp
 // DirectUI/Backends/Raylib/RaylibTextLayout.cs
-using System;
-using System.Numerics;
 using DirectUI.Core;
-using Vortice.Mathematics; // For Color4, Rect
 using Raylib_cs; // Raylib specific library
+using System.Numerics;
 
 namespace DirectUI.Backends;
 
@@ -12178,17 +12565,18 @@ internal class RaylibTextLayout : ITextLayout
         // FontManager is responsible for unloading fonts.
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibTextService.cs">
+---
+
+### `DirectUI\Source\Backends\Raylib\RaylibTextService.cs`
+
+```csharp
 // DirectUI/Backends/Raylib/RaylibTextService.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
 using DirectUI.Core;
 using DirectUI.Drawing;
-using Vortice.Mathematics; // For Color4, Rect
 using Raylib_cs; // Raylib specific library
+using System.Numerics;
 
 namespace DirectUI.Backends;
 
@@ -12286,12 +12674,14 @@ public class RaylibTextService : ITextService
         Console.WriteLine("RaylibTextService Cleanup finished.");
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\Raylib\RaylibWindowHost.cs">
+---
+
+### `DirectUI\Source\Backends\Raylib\RaylibWindowHost.cs`
+
+```csharp
 // DirectUI/RaylibWindowHost.cs
-using System;
-using System.Numerics;
 using DirectUI.Core; // For IWindowHost, IModalWindowService
 using DirectUI.Drawing;
 using DirectUI.Input;
@@ -12463,12 +12853,16 @@ public class RaylibWindowHost : IWindowHost
         }
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3Renderer.cs">
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\SDL3\SDL3Renderer.cs`
+
+```csharp
 using DirectUI.Core;
 using SDL3;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
 using Vortice.Mathematics;
@@ -12509,11 +12903,11 @@ public unsafe class SDL3Renderer : IRenderer
 
         public bool Equals(TextRenderCacheKey other)
         {
-            return Text == other.Text 
-                && FontSize.Equals(other.FontSize) 
-                && FontWeight == other.FontWeight 
-                && FontStyle == other.FontStyle 
-                && FontStretch == other.FontStretch 
+            return Text == other.Text
+                && FontSize.Equals(other.FontSize)
+                && FontWeight == other.FontWeight
+                && FontStyle == other.FontStyle
+                && FontStretch == other.FontStretch
                 && Color.Equals(other.Color);
         }
 
@@ -12680,7 +13074,7 @@ public unsafe class SDL3Renderer : IRenderer
         }
 
         TextRenderCacheKey cacheKey = new(text, style, color);
-        
+
         if (!_textTextureCache.TryGetValue(cacheKey, out nint textTexture))
         {
             SDL.Color sdlColor = new() { R = color.R, G = color.G, B = color.B, A = color.A };
@@ -12825,14 +13219,16 @@ public unsafe class SDL3Renderer : IRenderer
         throw new NotImplementedException();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3TextLayout.cs">
-using System;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\SDL3\SDL3TextLayout.cs`
+
+```csharp
 using DirectUI.Core;
 using SDL3;
-using Vortice.DirectWrite; // For FontWeight, etc.
+using System.Numerics;
 
 namespace DirectUI.Backends.SDL3;
 
@@ -12930,16 +13326,16 @@ internal unsafe class SDL3TextLayout : ITextLayout
         // This object does not own the font pointer; it's owned by SDL3TextService.
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3TextService.cs">
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Numerics;
+---
+
+### `DirectUI\Source\Backends\SDL3\SDL3TextService.cs`
+
+```csharp
 using DirectUI.Core;
-using DirectUI.Drawing;
 using SDL3;
+using System.Numerics;
 using Vortice.DirectWrite; // For FontWeight, FontStyle, FontStretch
 
 namespace DirectUI.Backends.SDL3;
@@ -13143,9 +13539,13 @@ public unsafe class SDL3TextService : ITextService
         Console.WriteLine("SDL3TextService Cleanup finished.");
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Backends\SDL3\SDL3WindowHost.cs">
+---
+
+### `DirectUI\Source\Backends\SDL3\SDL3WindowHost.cs`
+
+```csharp
 using DirectUI.Core;
 using DirectUI.Input;
 using SDL3;
@@ -13547,12 +13947,14 @@ public unsafe class SDL3WindowHost : IWindowHost, IModalWindowService
         throw new NotImplementedException();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimatedValue.cs">
+---
+
+### `DirectUI\Source\Core\Animations\AnimatedValue.cs`
+
+```csharp
 // DirectUI/Source/Animation/AnimatedValue.cs
-using System;
-
 namespace DirectUI.Animation;
 
 internal class AnimatedValue
@@ -13606,9 +14008,13 @@ internal class AnimatedValue
         return true; // Still running
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimationInfo.cs">
+---
+
+### `DirectUI\Source\Core\Animations\AnimationInfo.cs`
+
+```csharp
 namespace DirectUI.Animation;
 
 public class AnimationInfo
@@ -13622,13 +14028,14 @@ public class AnimationInfo
         Easing = easing ?? DirectUI.Animation.Easing.EaseOutQuad;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\AnimationManager.cs">
+---
+
+### `DirectUI\Source\Core\Animations\AnimationManager.cs`
+
+```csharp
 // DirectUI/Source/Animation/AnimationManager.cs
-using System;
-using System.Collections.Generic;
-
 namespace DirectUI.Animation;
 
 public class AnimationManager
@@ -13664,13 +14071,14 @@ public class AnimationManager
         return (T)animValue.CurrentValue;
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\Easing.cs">
+---
+
+### `DirectUI\Source\Core\Animations\Easing.cs`
+
+```csharp
 // DirectUI/Source/Animation/Easing.cs
-using System;
-using System.Collections.Generic;
-
 namespace DirectUI.Animation;
 
 public static class Easing
@@ -13697,12 +14105,15 @@ public static class Easing
         return Linear; // Default to Linear if not found or name is null
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Animations\ValueInterpolator.cs">
+---
+
+### `DirectUI\Source\Core\Animations\ValueInterpolator.cs`
+
+```csharp
 // DirectUI/Source/Animation/ValueInterpolators.cs
 using System.Numerics;
-using DirectUI.Drawing;
 
 namespace DirectUI.Animation;
 
@@ -13741,9 +14152,13 @@ internal static class ValueInterpolators
         );
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IAppLogic.cs">
+---
+
+### `DirectUI\Source\Core\Interface\IAppLogic.cs`
+
+```csharp
 namespace DirectUI.Core;
 
 public interface IAppLogic
@@ -13751,9 +14166,13 @@ public interface IAppLogic
     void DrawUI(UIContext context);
     void SaveState();
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\ILayoutContainer.cs">
+---
+
+### `DirectUI\Source\Core\Interface\ILayoutContainer.cs`
+
+```csharp
 using System.Numerics;
 
 namespace DirectUI;
@@ -13763,13 +14182,14 @@ public interface ILayoutContainer
     Vector2 GetCurrentPosition();
     void Advance(Vector2 elementSize);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IModalWindowService.cs">
+---
+
+### `DirectUI\Source\Core\Interface\IModalWindowService.cs`
+
+```csharp
 // DirectUI/Core/IModalWindowService.cs
-using System;
-using Vortice.Mathematics;
-
 namespace DirectUI.Core;
 
 /// <summary>
@@ -13800,14 +14220,16 @@ public interface IModalWindowService
     /// </summary>
     bool IsModalWindowOpen { get; }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IRenderer.cs">
+---
+
+### `DirectUI\Source\Core\Interface\IRenderer.cs`
+
+```csharp
 // DirectUI/Core/IRenderer.cs
 using System.Numerics;
-using DirectUI.Drawing;
 using Vortice.Direct2D1; // Required for AntialiasMode
-using Vortice.Mathematics;
 
 namespace DirectUI.Core;
 
@@ -13861,11 +14283,14 @@ public interface IRenderer
     /// </summary>
     void Flush();
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\ITextLayout.cs">
+---
+
+### `DirectUI\Source\Core\Interface\ITextLayout.cs`
+
+```csharp
 // DirectUI/Core/ITextLayout.cs
-using System;
 using System.Numerics;
 
 namespace DirectUI.Core;
@@ -13901,12 +14326,15 @@ public interface ITextLayout : IDisposable
     /// <returns>A result object containing the metrics and character position of the hit.</returns>
     TextHitTestResult HitTestPoint(Vector2 point);
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\ITextService.cs">
+---
+
+### `DirectUI\Source\Core\Interface\ITextService.cs`
+
+```csharp
 // DirectUI/Core/ITextService.cs
 using System.Numerics;
-using Vortice.Mathematics;
 
 namespace DirectUI.Core;
 
@@ -13931,11 +14359,14 @@ public interface ITextService
     /// </summary>
     void Cleanup();
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\DirectUI\Source\Core\Interface\IWindowHost.cs">
+---
+
+### `DirectUI\Source\Core\Interface\IWindowHost.cs`
+
+```csharp
 // DirectUI/Core/IWindowHost.cs
-using System;
 using DirectUI.Input;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
@@ -13997,1524 +14428,1935 @@ public interface IWindowHost : IDisposable
     /// </summary>
     void Cleanup();
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\App.cs">
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-using System.Text.Json;
-using System.Text.Json.Serialization;
+---
+
+### `Sonorize\Sonorize.csproj`
+
+```xml
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="FFMpegCore" Version="5.3.0" />
+    <PackageReference Include="ManagedBass" Version="4.0.2" />
+    <PackageReference Include="Miniaudio-CS" Version="1.0.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DirectUI\DirectUI.csproj" />
+  </ItemGroup>
+
+</Project>
+```
+
+---
+
+### `Sonorize\Source\Program.cs`
+
+```csharp
 using DirectUI;
-using DirectUI.Core;
-using Tagra.Data;
 
-namespace Tagra;
+namespace Sonorize;
 
-public class App : IAppLogic
+public static class Program
 {
-    private readonly UIManager _uiManager;
-
-    // --- Services ---
-    internal readonly IWindowHost Host;
-    internal readonly DatabaseManager DbManager;
-    internal readonly ThumbnailService ThumbnailService;
-
-    // --- UI State (internal so UIManager can access it) ---
-    internal string SearchText = string.Empty;
-    internal string LastSearchText = string.Empty;
-    internal List<Tag> AllTags = new();
-    internal List<FileEntry> DisplayedFiles = new();
-    internal FileEntry? SelectedFile;
-    internal float LeftPanelWidth = 200f;
-    internal float RightPanelWidth = 250f;
-    internal string NewTagName = "";
-    internal long? TagIdToDelete = null;
-    internal bool ManageTagsRequested = false;
-    internal bool SettingsRequested = false;
-    internal long? ActiveColorPickerTagId = null; // State for the color picker
-
-    // --- App Settings ---
-    internal TagraSettings Settings;
-
-    public App(IWindowHost host)
+    [STAThread]
+    public static void Main()
     {
-        Host = host;
-        Settings = TagraSettingsManager.Load();
-        DbManager = new DatabaseManager();
-        ThumbnailService = new ThumbnailService();
-        _uiManager = new UIManager(this);
-        LoadInitialData();
+        var backend = GraphicsBackend.SkiaSharp;
+        ApplicationRunner.Run(backend, host => new SonorizeLogic(host));
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\SonorizeLogic.cs`
+
+```csharp
+using System.Numerics;
+using System.Text.Json;
+using DirectUI;
+using DirectUI.Backends.SkiaSharp;
+using DirectUI.Core;
+using Sonorize.Audio;
+
+namespace Sonorize;
+
+public class SonorizeLogic : IAppLogic
+{
+    private readonly IWindowHost _host;
+    private readonly Settings _settings;
+    private readonly string _settingsFilePath = "settings.json";
+
+    private readonly MenuBar _menuBar;
+    private readonly SettingsWindow _settingsWindow;
+    private readonly MusicLibrary _musicLibrary = new();
+    private readonly PlaybackManager _playbackManager;
+    private readonly PlaybackControlsView _playbackControlsView;
+    private readonly LibraryView _libraryView;
+    private readonly AlbumsView _albumsView;
+    private readonly ArtistsView _artistsView;
+    private readonly PlaylistsView _playlistsView;
+
+    // --- Navigation State ---
+    private int _activeTabIndex = 0;
+    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists", "Playlists" };
+    private string? _artistFilter;
+    private AlbumInfo? _albumFilter;
+    private Playlist? _playlistFilter;
+    private string _searchText = "";
+
+
+    public SonorizeLogic(IWindowHost host)
+    {
+        _host = host;
+        _settings = LoadState();
+
+        ConfigureWindowStyles(host);
+
+        _menuBar = new(OpenSettingsModal);
+        _settingsWindow = new(_settings, _host);
+        _playbackManager = new PlaybackManager(new AudioPlayer());
+        _playbackControlsView = new PlaybackControlsView(_playbackManager, _settings);
+
+        // Pass callbacks to the views for drill-down navigation
+        _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
+        _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
+        _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
+        _playlistsView = new PlaylistsView(_musicLibrary, OnPlaylistSelected);
+
+        // Start scanning for music files
+        _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
     }
 
-    private void LoadInitialData()
+    private Settings LoadState()
     {
-        RefreshAllData();
-    }
-
-    internal void RefreshDataForSelectedFile()
-    {
-        if (SelectedFile != null)
+        try
         {
-            SelectedFile.Tags = DbManager.GetTagsForFile(SelectedFile.Id);
+            if (File.Exists(_settingsFilePath))
+            {
+                string json = File.ReadAllText(_settingsFilePath);
+                return JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
+            }
         }
-    }
-
-    internal void RefreshAllData()
-    {
-        AllTags = DbManager.GetAllTags();
-        DisplayedFiles = string.IsNullOrWhiteSpace(SearchText)
-            ? DbManager.GetAllFiles()
-            : DbManager.GetFilesByTags(SearchText);
-
-        if (SelectedFile != null)
+        catch (Exception ex)
         {
-            SelectedFile = DisplayedFiles.FirstOrDefault(f => f.Id == SelectedFile.Id);
-            RefreshDataForSelectedFile();
-        }
-    }
-
-    public void DrawUI(UIContext context)
-    {
-        // Draw the menu bar first. It might set ManageTagsRequested = true.
-        _uiManager.DrawMenuBar();
-
-        // Handle opening the modal window for tag management
-        if (ManageTagsRequested && !Host.ModalWindowService.IsModalWindowOpen)
-        {
-            Host.ModalWindowService.OpenModalWindow(
-                "Manage Tags",
-                400, 480,
-                (modalContext) => TagManagementWindow.Draw(this),
-                (result) => {
-                    ManageTagsRequested = false; // Reset the request
-                    NewTagName = ""; // Clear any leftover input
-                    TagIdToDelete = null; // Clear any leftover state from the modal
-                    ActiveColorPickerTagId = null; // Clear color picker state
-                    RefreshAllData(); // Refresh data in main window after modal closes
-                }
-            );
+            Console.WriteLine($"Error loading settings: {ex.Message}");
         }
 
-        // Handle opening the settings window
-        if (SettingsRequested && !Host.ModalWindowService.IsModalWindowOpen)
-        {
-            Host.ModalWindowService.OpenModalWindow(
-                "Settings",
-                300, 200,
-                (modalContext) => ModalDialogs.DrawSettingsWindow(this),
-                (result) =>
-                {
-                    SettingsRequested = false;
-                    TagraSettingsManager.Save(Settings); // Save settings when window closes
-                }
-            );
-        }
-
-        HandleSearch();
-        _uiManager.DrawMainLayout();
-    }
-
-    internal void HandleSearch()
-    {
-        if (SearchText != LastSearchText)
-        {
-            LastSearchText = SearchText;
-            SelectedFile = null; // Clear selection on new search
-            DisplayedFiles = string.IsNullOrWhiteSpace(SearchText)
-                ? DbManager.GetAllFiles()
-                : DbManager.GetFilesByTags(SearchText);
-        }
+        return new();
     }
 
     public void SaveState()
     {
-        // Save application-specific settings
-        TagraSettingsManager.Save(Settings);
-    }
-}
-
-
-public enum TagDisplayMode { ColorCircle, Emoji }
-
-public class TagraSettings
-{
-    public TagDisplayMode TagDisplay { get; set; } = TagDisplayMode.ColorCircle;
-}
-
-public static class TagraSettingsManager
-{
-    private static readonly string SettingsDirectory = Path.Combine(AppContext.BaseDirectory, "Data");
-    private static readonly string SettingsFilePath = Path.Combine(SettingsDirectory, "tagra_settings.json");
-
-    private static readonly JsonSerializerOptions SerializerOptions = new()
-    {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true,
-        Converters = { new JsonStringEnumConverter() }
-    };
-
-    public static void Save(TagraSettings settings)
-    {
         try
         {
-            Directory.CreateDirectory(SettingsDirectory);
-            string json = JsonSerializer.Serialize(settings, SerializerOptions);
-            File.WriteAllText(SettingsFilePath, json);
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Tagra] Error saving settings: {ex.Message}");
-        }
-    }
-
-    public static TagraSettings Load()
-    {
-        if (!File.Exists(SettingsFilePath))
-        {
-            return new TagraSettings();
-        }
-
-        try
-        {
-            string json = File.ReadAllText(SettingsFilePath);
-            return JsonSerializer.Deserialize<TagraSettings>(json, SerializerOptions) ?? new TagraSettings();
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Tagra] Error loading settings. Using defaults. Error: {ex.Message}");
-            return new TagraSettings();
-        }
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\DatabaseManager.cs">
-using Microsoft.Data.Sqlite;
-using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Linq;
-
-namespace Tagra.Data;
-
-public class DatabaseManager
-{
-    private readonly string _databasePath;
-    private static readonly HashSet<string> _searchStopWords = new(StringComparer.OrdinalIgnoreCase) { "and", "or", "not" };
-
-    // A palette of default colors for new tags
-    private static readonly List<string> _defaultTagColors = new()
-    {
-        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab",
-        "#1e88e5", "#039be5", "#00acc1", "#00897b", "#43a047",
-        "#7cb342", "#c0ca33", "#fdd835", "#ffb300", "#fb8c00",
-        "#f4511e", "#6d4c41", "#757575", "#546e7a"
-    };
-
-    // A list of default emojis for new tags
-    private static readonly List<string> _defaultTagEmojis = new()
-    {
-        "🔴", "🟠", "🟡", "🟢", "🔵", "🟣", "🟤", "⚫️", "⚪️",
-        "❤️", "🧡", "💛", "💚", "💙", "💜", "💔", "❗️", "❓",
-        "👍", "👎", "🔥", "✨", "⭐️", "🎉", "💀", "✅", "❌",
-        "😀", "😎", "😍", "😢", "😠", "🤯", "🤖", "👻", "👽"
-    };
-
-    public DatabaseManager()
-    {
-        _databasePath = Path.Combine(AppContext.BaseDirectory, "tagra.db");
-        InitializeDatabase();
-    }
-
-    private SqliteConnection GetConnection() => new($"Data Source={_databasePath}");
-
-    private void InitializeDatabase()
-    {
-        using var connection = GetConnection();
-        connection.Open();
-
-        var command = connection.CreateCommand();
-        command.CommandText =
-        @"
-            CREATE TABLE IF NOT EXISTS Tags (
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Name TEXT NOT NULL UNIQUE,
-                ColorHex TEXT NOT NULL DEFAULT '#757575'
-            );
-
-            CREATE TABLE IF NOT EXISTS Files (
-                Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                Path TEXT NOT NULL UNIQUE,
-                Hash TEXT NULL
-            );
-
-            CREATE TABLE IF NOT EXISTS FileTags (
-                FileId INTEGER NOT NULL,
-                TagId INTEGER NOT NULL,
-                FOREIGN KEY(FileId) REFERENCES Files(Id) ON DELETE CASCADE,
-                FOREIGN KEY(TagId) REFERENCES Tags(Id) ON DELETE CASCADE,
-                PRIMARY KEY (FileId, TagId)
-            );
-        ";
-        command.ExecuteNonQuery();
-
-        // --- Simple Migration: Add ColorHex column if it doesn't exist ---
-        command.CommandText = "PRAGMA table_info(Tags);";
-        bool colorHexColumnExists = false;
-        using (var reader = command.ExecuteReader())
-        {
-            while (reader.Read())
+            JsonSerializerOptions options = new()
             {
-                if (reader.GetString(1).Equals("ColorHex", StringComparison.OrdinalIgnoreCase))
-                {
-                    colorHexColumnExists = true;
-                    break;
-                }
-            }
-        }
-
-        if (!colorHexColumnExists)
-        {
-            Console.WriteLine("[Database] Old schema detected. Upgrading 'Tags' table...");
-            command.CommandText = "ALTER TABLE Tags ADD COLUMN ColorHex TEXT NOT NULL DEFAULT '#757575';";
-            command.ExecuteNonQuery();
-
-            // Assign colors to existing tags so they aren't all the default gray.
-            var updateCommand = connection.CreateCommand();
-            updateCommand.CommandText = "SELECT Id FROM Tags ORDER BY Id";
-            var tagIds = new List<long>();
-            using (var reader = updateCommand.ExecuteReader())
-            {
-                while (reader.Read())
-                {
-                    tagIds.Add(reader.GetInt64(0));
-                }
-            }
-
-            for (int i = 0; i < tagIds.Count; i++)
-            {
-                var color = _defaultTagColors[i % _defaultTagColors.Count];
-                var colorUpdateCmd = connection.CreateCommand();
-                colorUpdateCmd.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
-                colorUpdateCmd.Parameters.AddWithValue("@ColorHex", color);
-                colorUpdateCmd.Parameters.AddWithValue("@Id", tagIds[i]);
-                colorUpdateCmd.ExecuteNonQuery();
-            }
-            Console.WriteLine("[Database] Upgrade complete.");
-        }
-        // --- End of ColorHex Migration ---
-
-        // --- Simple Migration: Add Emoji column if it doesn't exist ---
-        command.CommandText = "PRAGMA table_info(Tags);";
-        bool emojiColumnExists = false;
-        using (var reader = command.ExecuteReader())
-        {
-            while (reader.Read())
-            {
-                if (reader.GetString(1).Equals("Emoji", StringComparison.OrdinalIgnoreCase))
-                {
-                    emojiColumnExists = true;
-                    break;
-                }
-            }
-        }
-
-        if (!emojiColumnExists)
-        {
-            Console.WriteLine("[Database] Old schema detected. Upgrading 'Tags' table with Emoji column...");
-            command.CommandText = "ALTER TABLE Tags ADD COLUMN Emoji TEXT NULL;";
-            command.ExecuteNonQuery();
-            Console.WriteLine("[Database] Upgrade complete.");
-        }
-        // --- End of Emoji Migration ---
-    }
-
-    public List<Tag> GetAllTags()
-    {
-        var tags = new List<Tag>();
-        using var connection = GetConnection();
-        connection.Open();
-
-        var command = connection.CreateCommand();
-        command.CommandText = @"
-            SELECT T.Id, T.Name, COUNT(FT.FileId), T.ColorHex, T.Emoji
-            FROM Tags T
-            LEFT JOIN FileTags FT ON T.Id = FT.TagId
-            GROUP BY T.Id, T.Name
-            ORDER BY T.Name";
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            tags.Add(new Tag
-            {
-                Id = reader.GetInt64(0),
-                Name = reader.GetString(1),
-                FileCount = reader.GetInt32(2),
-                ColorHex = reader.GetString(3),
-                Emoji = reader.IsDBNull(4) ? null : reader.GetString(4)
-            });
-        }
-        return tags;
-    }
-
-    public bool AddTag(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name)) return false;
-
-        using var connection = GetConnection();
-        connection.Open();
-
-        // Get the current number of tags to pick a color and emoji
-        var countCommand = connection.CreateCommand();
-        countCommand.CommandText = "SELECT COUNT(*) FROM Tags";
-        var tagCount = Convert.ToInt32(countCommand.ExecuteScalar());
-        var color = _defaultTagColors[tagCount % _defaultTagColors.Count];
-        var emoji = _defaultTagEmojis[tagCount % _defaultTagEmojis.Count];
-
-        var command = connection.CreateCommand();
-        command.CommandText = "INSERT INTO Tags (Name, ColorHex, Emoji) VALUES (@Name, @ColorHex, @Emoji)";
-        command.Parameters.AddWithValue("@Name", name.Trim().ToLower());
-        command.Parameters.AddWithValue("@ColorHex", color);
-        command.Parameters.AddWithValue("@Emoji", emoji);
-
-        try
-        {
-            return command.ExecuteNonQuery() > 0;
-        }
-        catch (SqliteException ex) when (ex.SqliteErrorCode == 19) // UNIQUE constraint violation
-        {
-            Console.WriteLine($"Tag '{name}' already exists.");
-            return false;
-        }
-    }
-
-    public void UpdateTagColor(long tagId, string newColorHex)
-    {
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = "UPDATE Tags SET ColorHex = @ColorHex WHERE Id = @Id";
-        command.Parameters.AddWithValue("@Id", tagId);
-        command.Parameters.AddWithValue("@ColorHex", newColorHex);
-        command.ExecuteNonQuery();
-    }
-
-    public void UpdateTagEmoji(long tagId, string? emoji)
-    {
-        if (string.IsNullOrWhiteSpace(emoji))
-        {
-            emoji = null;
-        }
-
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = "UPDATE Tags SET Emoji = @Emoji WHERE Id = @Id";
-        command.Parameters.AddWithValue("@Id", tagId);
-        command.Parameters.AddWithValue("@Emoji", (object)emoji ?? DBNull.Value);
-        command.ExecuteNonQuery();
-    }
-
-    public FileEntry? AddFile(string path)
-    {
-        if (string.IsNullOrWhiteSpace(path)) return null;
-
-        using var connection = GetConnection();
-        connection.Open();
-        using var transaction = connection.BeginTransaction();
-        try
-        {
-            var command = connection.CreateCommand();
-            command.Transaction = transaction;
-            command.CommandText = "SELECT Id FROM Files WHERE Path = @Path";
-            command.Parameters.AddWithValue("@Path", path);
-            var existingId = command.ExecuteScalar();
-            if (existingId != null)
-            {
-                return GetFileById(Convert.ToInt64(existingId));
-            }
-            command.CommandText = "INSERT INTO Files (Path) VALUES (@Path); SELECT last_insert_rowid();";
-            long newId = Convert.ToInt64(command.ExecuteScalar());
-            transaction.Commit();
-            return new FileEntry { Id = newId, Path = path };
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error adding file: {ex.Message}");
-            transaction.Rollback();
-            return null;
-        }
-    }
-
-    public FileEntry? GetFileById(long fileId)
-    {
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Path, Hash FROM Files WHERE Id = @Id";
-        command.Parameters.AddWithValue("@Id", fileId);
-        using var reader = command.ExecuteReader();
-        if (reader.Read())
-        {
-            return new FileEntry
-            {
-                Id = reader.GetInt64(0),
-                Path = reader.GetString(1),
-                Hash = reader.IsDBNull(2) ? null : reader.GetString(2)
+                WriteIndented = true
             };
+
+            string json = JsonSerializer.Serialize(_settings, options);
+            File.WriteAllText(_settingsFilePath, json);
+            Console.WriteLine($"Settings saved to {_settingsFilePath}");
         }
-        return null;
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+        finally
+        {
+            _playbackManager.Dispose();
+        }
     }
 
-    public List<FileEntry> GetAllFiles()
+    private static void ConfigureWindowStyles(IWindowHost host)
     {
-        var files = new List<FileEntry>();
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, Path, Hash FROM Files ORDER BY Path";
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
+        if (host is not SilkNetWindowHost silkHost)
         {
-            files.Add(new FileEntry
+            return;
+        }
+
+        // ========================================================================
+        // == CONFIGURING WINDOW BACKDROP AND TITLE BAR (WINDOWS 11+)           ==
+        // ========================================================================
+        // This example enables a modern Mica window with a dark title bar.
+        // It requires Windows 11 (Build 22621 or newer). On older systems,
+        // it will fall back to a standard solid color window.
+        silkHost.BackdropType = WindowBackdropType.Default;
+        silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+    }
+
+    public void DrawUI(UIContext context)
+    {
+        _menuBar.Draw(context);
+
+        _playbackManager.Update();
+
+        float menuBarHeight = 30f;
+        float searchBarHeight = 24f;
+        float tabBarHeight = 30f;
+        float playbackControlsHeight = 70f;
+        float padding = 10f;
+        float verticalGap = 5f;
+
+        // --- Search Bar ---
+        var searchBarPos = new Vector2(padding, menuBarHeight + verticalGap);
+        var searchBarSize = new Vector2(context.Renderer.RenderTargetSize.X - (padding * 2), searchBarHeight);
+        UI.InputText("searchBox", ref _searchText, searchBarSize, searchBarPos, placeholderText: "Search...");
+
+
+        // --- Tab Bar ---
+        var tabBarPos = new Vector2(padding, searchBarPos.Y + searchBarHeight + verticalGap);
+
+        var tabTheme = new ButtonStylePack();
+        tabTheme.Normal.FillColor = new DirectUI.Drawing.Color(45 / 255f, 45 / 255f, 48 / 255f, 1.0f);
+        tabTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
+        tabTheme.Hover.FillColor = new DirectUI.Drawing.Color(60 / 255f, 60 / 255f, 63 / 255f, 1.0f);
+
+        UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
+        {
+            if (_albumFilter is not null || _artistFilter is not null || _playlistFilter is not null)
             {
-                Id = reader.GetInt64(0),
-                Path = reader.GetString(1),
-                Hash = reader.IsDBNull(2) ? null : reader.GetString(2)
-            });
-        }
-        return files;
-    }
-
-    public List<Tag> GetTagsForFile(long fileId)
-    {
-        var tags = new List<Tag>();
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = @"
-            SELECT T.Id, T.Name, (SELECT COUNT(*) FROM FileTags WHERE TagId = T.Id), T.ColorHex, T.Emoji
-            FROM Tags T
-            INNER JOIN FileTags FT ON T.Id = FT.TagId
-            WHERE FT.FileId = @FileId
-            ORDER BY T.Name";
-        command.Parameters.AddWithValue("@FileId", fileId);
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            tags.Add(new Tag { Id = reader.GetInt64(0), Name = reader.GetString(1), FileCount = reader.GetInt32(2), ColorHex = reader.GetString(3), Emoji = reader.IsDBNull(4) ? null : reader.GetString(4) });
-        }
-        return tags;
-    }
-
-    public void AddTagToFile(long fileId, long tagId)
-    {
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = "INSERT OR IGNORE INTO FileTags (FileId, TagId) VALUES (@FileId, @TagId)";
-        command.Parameters.AddWithValue("@FileId", fileId);
-        command.Parameters.AddWithValue("@TagId", tagId);
-        command.ExecuteNonQuery();
-    }
-
-    public void RemoveTagFromFile(long fileId, long tagId)
-    {
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        command.CommandText = "DELETE FROM FileTags WHERE FileId = @FileId AND TagId = @TagId";
-        command.Parameters.AddWithValue("@FileId", fileId);
-        command.Parameters.AddWithValue("@TagId", tagId);
-        command.ExecuteNonQuery();
-    }
-
-    public List<FileEntry> GetFilesByTags(string searchText)
-    {
-        var searchTokens = searchText.ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
-        var searchTags = searchTokens.Where(token => !_searchStopWords.Contains(token)).Distinct().ToList();
-
-        if (searchTags.Count == 0)
-        {
-            return GetAllFiles();
-        }
-
-        var files = new List<FileEntry>();
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-
-        var parameterNames = new List<string>();
-        for (int i = 0; i < searchTags.Count; i++)
-        {
-            string paramName = $"@tag{i}";
-            parameterNames.Add(paramName);
-            command.Parameters.AddWithValue(paramName, searchTags[i]);
-        }
-
-        command.CommandText = $@"
-            SELECT F.Id, F.Path, F.Hash
-            FROM Files F
-            INNER JOIN FileTags FT ON F.Id = FT.FileId
-            INNER JOIN Tags T ON FT.TagId = T.Id
-            WHERE T.Name IN ({string.Join(",", parameterNames)})
-            GROUP BY F.Id
-            HAVING COUNT(DISTINCT T.Id) = {searchTags.Count}
-            ORDER BY F.Path";
-
-        using var reader = command.ExecuteReader();
-        while (reader.Read())
-        {
-            files.Add(new FileEntry
-            {
-                Id = reader.GetInt64(0),
-                Path = reader.GetString(1),
-                Hash = reader.IsDBNull(2) ? null : reader.GetString(2)
-            });
-        }
-        return files;
-    }
-
-    public void DeleteTag(long tagId)
-    {
-        using var connection = GetConnection();
-        connection.Open();
-        var command = connection.CreateCommand();
-        // Thanks to "ON DELETE CASCADE", entries in FileTags will be removed automatically.
-        command.CommandText = "DELETE FROM Tags WHERE Id = @TagId";
-        command.Parameters.AddWithValue("@TagId", tagId);
-        command.ExecuteNonQuery();
-    }
-
-    // Placeholder methods for future implementation
-    public void UpdateTagsForFile(long fileId, IEnumerable<long> tagIds) { /* ... */ }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\GlobalUsings.cs">
-global using System.Numerics;
-global using DirectUI;
-global using DirectUI.Core;
-global using DirectUI.Drawing;
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\LeftPanel.cs">
-using DirectUI;
-using System.Numerics;
-using DirectUI.Styling;
-using Tagra.Data;
-using System.IO;
-using Vortice.Mathematics;
-using Color = DirectUI.Drawing.Color;
-
-namespace Tagra;
-
-public class LeftPanel
-{
-    private readonly App _app;
-
-    public LeftPanel(App app)
-    {
-        _app = app;
-    }
-
-    public void Draw()
-    {
-        var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
-        UI.BeginResizableVPanel("main_layout", ref _app.LeftPanelWidth, HAlignment.Left, topOffset: MenuBar.MenuBarHeight, minWidth: 150, maxWidth: 400, panelStyle: panelStyle);
-
-        var clipRect = UI.Context.Layout.GetCurrentClipRect();
-        var innerWidth = clipRect.Width / UI.Context.UIScale;
-        var availableHeight = clipRect.Height / UI.Context.UIScale;
-        var currentY = UI.Context.Layout.GetCurrentPosition().Y;
-
-        UI.BeginVBoxContainer("left_panel_vbox", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
-
-        UI.Text("search_label", "Search by Tags");
-        if (UI.InputText("search_bar", ref _app.SearchText, new Vector2(innerWidth, 28f), placeholderText: "e.g., cat vacation").EnterPressed)
-        {
-            _app.HandleSearch(); // Trigger search explicitly on Enter
-        }
-
-        UI.Separator(innerWidth);
-        UI.Text("tags_label", "All Tags");
-
-        var scrollHeight = availableHeight - (UI.Context.Layout.GetCurrentPosition().Y - currentY);
-        UI.BeginScrollableRegion("tags_scroll", new Vector2(innerWidth, scrollHeight), out var scrollInnerWidth);
-
-        // Load tag button style from StyleManager
-        var tagButtonStyle = StyleManager.Get<ButtonStylePack>("TagButton");
-
-        foreach (var tag in _app.AllTags)
-        {
-            if (DrawTagButton(tag, scrollInnerWidth, _app.SearchText == tag.Name, tagButtonStyle))
-            {
-                if (_app.SearchText == tag.Name)
+                if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
                 {
-                    _app.SearchText = ""; // Clicking the active tag deselects it
-                }
-                else
-                {
-                    _app.SearchText = tag.Name; // Click a tag to search for it
+                    OnBack();
                 }
             }
+
+            int previousTab = _activeTabIndex;
+            UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
+            if (_activeTabIndex != previousTab)
+            {
+                // Clear filters when user manually changes tab for clarity
+                _artistFilter = null;
+                _albumFilter = null;
+                _playlistFilter = null;
+            }
         }
-        UI.EndScrollableRegion();
+        UI.EndHBoxContainer();
 
-        UI.EndVBoxContainer();
-        UI.EndResizableVPanel();
-    }
 
-    private bool DrawTagButton(Tag tag, float width, bool isActive, ButtonStylePack theme)
-    {
-        var context = UI.Context;
-        var scale = context.UIScale;
-
-        // 1. Define bounds and get style for the entire widget
-        var logicalSize = new Vector2(width, 24f);
-        var startPos = context.Layout.GetCurrentPosition();
-        var physicalBounds = new Rect(startPos.X * scale, startPos.Y * scale, logicalSize.X * scale, logicalSize.Y * scale);
-
-        // 2. Use DrawButtonPrimitive for interaction and background. It returns the animated state.
-        var clickResult = UI.DrawButtonPrimitive(
-            $"tag_btn_{tag.Id}".GetHashCode(),
-            physicalBounds,
-            "", // No text, we draw content ourselves
-            theme,
-            disabled: false,
-            textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
-            clickMode: Button.ActionMode.Release,
-            clickBehavior: Button.ClickBehavior.Left,
-            textOffset: Vector2.Zero,
-            out var renderBounds,
-            out var animatedStyle,
-            isActive: isActive
+        // --- Main Content Grid ---
+        var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2);
+        var gridSize = new Vector2(
+            context.Renderer.RenderTargetSize.X - (padding * 2),
+            context.Renderer.RenderTargetSize.Y - gridPos.Y - playbackControlsHeight - padding
         );
 
-        // 3. Draw custom content (circle and text) inside the animated renderBounds
-        float padding = 5f * scale;
-
-        if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
+        switch (_activeTabIndex)
         {
-            var textRenderBounds = new Rect(renderBounds.X + padding, renderBounds.Y, renderBounds.Width - padding * 2, renderBounds.Height);
-            UI.DrawTextPrimitive(
-                textRenderBounds,
-                $"{tag.Emoji} {tag.Name} ({tag.FileCount})",
-                animatedStyle,
-                new Alignment(HAlignment.Left, VAlignment.Center),
-                Vector2.Zero
-            );
-        }
-        else
-        {
-            // Draw circle
-            float circleDiameter = 10f * scale;
-            var circleCenterY = renderBounds.Y + renderBounds.Height / 2f;
-            var circleRect = new Rect(renderBounds.X + padding, circleCenterY - circleDiameter / 2f, circleDiameter, circleDiameter);
-            var circleColor = ParseColorHex(tag.ColorHex);
-            var circleStyle = new BoxStyle { FillColor = circleColor, Roundness = 1.0f, BorderLength = 0f };
-            context.Renderer.DrawBox(circleRect, circleStyle);
-
-            // Draw text
-            var textStartX = circleRect.Right + padding;
-            var textRenderBounds = new Rect(
-                textStartX,
-                renderBounds.Y,
-                renderBounds.Width - (textStartX - renderBounds.X) - padding, // Add padding on the right
-                renderBounds.Height
-            );
-
-            UI.DrawTextPrimitive(
-                textRenderBounds,
-                $"{tag.Name} ({tag.FileCount})",
-                animatedStyle, // Use the animated style for correct color, etc.
-                new Alignment(HAlignment.Left, VAlignment.Center),
-                Vector2.Zero
-            );
+            case 0: // Songs
+                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _playlistFilter, _searchText);
+                break;
+            case 1: // Albums
+                _albumsView.Draw(context, gridPos, gridSize, _artistFilter, _searchText);
+                break;
+            case 2: // Artists
+                _artistsView.Draw(context, gridPos, gridSize, _searchText);
+                break;
+            case 3: // Playlists
+                _playlistsView.Draw(context, gridPos, gridSize, _searchText);
+                break;
         }
 
-        // 4. Advance the layout manually
-        context.Layout.AdvanceLayout(logicalSize);
-
-        return clickResult != ClickResult.None;
+        _playbackControlsView.Draw(context);
     }
 
-
-    private static Color ParseColorHex(string hex)
+    private void OnArtistSelected(string artistName)
     {
-        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        _artistFilter = artistName;
+        _albumFilter = null;
+        _playlistFilter = null;
+        _activeTabIndex = 1; // Switch to Albums tab
+        _searchText = "";    // Clear search on drill-down
+    }
+
+    private void OnAlbumSelected(AlbumInfo album)
+    {
+        _albumFilter = album;
+        // Artist filter is implicitly set by the album's artist
+        _artistFilter = album.Artist;
+        _playlistFilter = null;
+        _activeTabIndex = 0; // Switch to Songs tab
+        _searchText = "";    // Clear search on drill-down
+    }
+
+    private void OnPlaylistSelected(Playlist playlist)
+    {
+        _playlistFilter = playlist;
+        _albumFilter = null;
+        _artistFilter = null;
+        _activeTabIndex = 0; // Switch to Songs tab to show playlist content
+        _searchText = "";
+    }
+
+    private void OnBack()
+    {
+        _searchText = ""; // Clear search on navigating back
+        if (_playlistFilter is not null)
         {
-            try
-            {
-                byte r = System.Convert.ToByte(hex.Substring(1, 2), 16);
-                byte g = System.Convert.ToByte(hex.Substring(3, 2), 16);
-                byte b = System.Convert.ToByte(hex.Substring(5, 2), 16);
-                return new Color(r, g, b, 255);
-            }
-            catch
-            {
-                return DefaultTheme.Accent;
-            }
+            _playlistFilter = null;
+            _activeTabIndex = 3; // Go back to the playlists view
         }
-        return DefaultTheme.Accent;
+        else if (_albumFilter is not null)
+        {
+            _albumFilter = null;
+            _activeTabIndex = 1;
+        }
+        else if (_artistFilter is not null)
+        {
+            _artistFilter = null;
+            _activeTabIndex = 2;
+        }
+    }
+
+    private void OpenSettingsModal()
+    {
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
+        {
+            if (resultCode == 0)
+            {
+                _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
+            }
+        });
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\MainContentPanel.cs">
-using DirectUI;
+---
+
+### `Sonorize\Source\Audio\AudioPlayer.cs`
+
+```csharp
 using System;
-using System.Collections.Generic;
-using System.IO;
-using System.Numerics;
-using Tagra.Data;
-using Vortice.Mathematics;
+using ManagedBass;
 
-namespace Tagra;
+namespace Sonorize.Audio;
 
-public class MainContentPanel
+public class AudioPlayer : IDisposable
 {
-    private readonly App _app;
+    private int _stream;
+    private bool _isDisposed;
 
-    public MainContentPanel(App app)
+    public bool IsPlaying => Bass.ChannelIsActive(_stream) == PlaybackState.Playing;
+    public PlaybackState CurrentState => _stream != 0 ? Bass.ChannelIsActive(_stream) : PlaybackState.Stopped;
+
+    public AudioPlayer()
     {
-        _app = app;
+        if (!Bass.Init())
+            throw new Exception("Failed to initialize audio device.");
     }
 
-    public void Draw()
+    /// <summary>
+    /// Loads an audio file (M4A, MP3, WAV, etc.) and starts playback.
+    /// </summary>
+    public void Play(string filePath)
     {
-        var context = UI.Context;
-        var scale = context.UIScale;
-        var windowWidth = context.Renderer.RenderTargetSize.X;
-        var windowHeight = context.Renderer.RenderTargetSize.Y;
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (!System.IO.File.Exists(filePath)) throw new ArgumentException("File does not exist", nameof(filePath));
 
-        var mainPanelX = _app.LeftPanelWidth + 1;
-        var mainPanelWidth = (windowWidth / scale) - mainPanelX - _app.RightPanelWidth;
-        var mainPanelPos = new Vector2(mainPanelX, MenuBar.MenuBarHeight);
+        StopInternal();
 
-        UI.BeginVBoxContainer("main_content_vbox", mainPanelPos, gap: 10);
+        _stream = Bass.CreateStream(filePath, 0, 0, BassFlags.Default);
+        if (_stream == 0)
+            throw new Exception($"Failed to create audio stream: {Bass.LastError}");
 
-        if (UI.Button("add_file_btn", "Add File...", new Vector2(120, 28)))
-        {
-            var filters = new Dictionary<string, string>
-            {
-                { "Image Files", "jpg,jpeg,png,bmp,gif" },
-                { "Document Files", "txt,pdf,doc,docx" }
-            };
-            string? path = FileDialogs.OpenFile(filters);
-            if (!string.IsNullOrWhiteSpace(path))
-            {
-                _app.DbManager.AddFile(path);
-                _app.RefreshAllData();
-            }
-        }
-
-        UI.Separator(mainPanelWidth);
-
-        var scrollPos = context.Layout.GetCurrentPosition();
-        var scrollHeight = (windowHeight / scale) - scrollPos.Y;
-        UI.BeginScrollArea("files_scroll_area", new Vector2(mainPanelWidth, scrollHeight));
-
-        const float itemWidth = 120;
-        const float itemHeight = 150;
-        const float gridGap = 10;
-        int numColumns = Math.Max(1, (int)((mainPanelWidth - gridGap) / (itemWidth + gridGap)));
-
-        UI.BeginGridContainer("files_grid", Vector2.Zero, new Vector2(mainPanelWidth - 20, 10000), numColumns, new Vector2(gridGap, gridGap));
-
-        foreach (var file in _app.DisplayedFiles)
-        {
-            DrawFileGridItem(file, new Vector2(itemWidth, itemHeight));
-        }
-
-        UI.EndGridContainer();
-        UI.EndScrollArea();
-        UI.EndVBoxContainer(advanceParentLayout: false);
+        Bass.ChannelPlay(_stream);
     }
 
-    private void DrawFileGridItem(FileEntry file, Vector2 logicalSize)
+    public void Pause()
     {
-        var context = UI.Context;
-        var scale = context.UIScale;
-        var startPos = context.Layout.GetCurrentPosition();
-        var isSelected = _app.SelectedFile?.Id == file.Id;
-
-        var itemBounds = new Rect(startPos.X * scale, startPos.Y * scale, logicalSize.X * scale, logicalSize.Y * scale);
-
-        // Manual Hit-testing for selection
-        if (itemBounds.Contains(context.InputState.MousePosition) && context.InputState.WasLeftMousePressedThisFrame)
-        {
-            _app.SelectedFile = file;
-            _app.RefreshDataForSelectedFile();
-        }
-
-        // --- Visuals ---
-        UI.BeginVBoxContainer($"file_item_{file.Id}", startPos, gap: 4);
-
-        // Thumbnail or placeholder
-        byte[]? thumbData = _app.ThumbnailService.GetThumbnail(file.Path, 100);
-        if (thumbData != null)
-        {
-            UI.Image($"thumb_{file.Id}", thumbData, new Vector2(logicalSize.X, 100));
-        }
-        else
-        {
-            var boxStyle = new BoxStyle { FillColor = new(60, 60, 60, 255), Roundness = 0.1f };
-            UI.Box($"placeholder_{file.Id}", new Vector2(logicalSize.X, 100), boxStyle);
-        }
-
-        // Filename
-        UI.WrappedText($"filename_{file.Id}", Path.GetFileName(file.Path), new Vector2(logicalSize.X, logicalSize.Y - 104));
-
-        UI.EndVBoxContainer(advanceParentLayout: false); // We are doing custom layout advancement
-
-        // Draw selection highlight manually
-        if (isSelected)
-        {
-            var highlightStyle = new BoxStyle
-            {
-                FillColor = DirectUI.Drawing.Colors.Transparent,
-                BorderColor = DefaultTheme.Accent,
-                BorderLength = 2,
-                Roundness = 0.1f
-            };
-            context.Renderer.DrawBox(itemBounds, highlightStyle);
-        }
-
-        // Manually advance the parent grid container
-        context.Layout.AdvanceLayout(logicalSize);
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\MenuBar.cs">
-using DirectUI;
-using DirectUI.Drawing;
-using System;
-using System.Numerics;
-using Vortice.Mathematics;
-
-namespace Tagra;
-
-public class MenuBar
-{
-    private readonly App _app;
-
-    public const float MenuBarHeight = 30f;
-
-    public MenuBar(App app)
-    {
-        _app = app;
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (_stream != 0)
+            Bass.ChannelPause(_stream);
     }
 
-    public void Draw()
+    public void Resume()
     {
-        var context = UI.Context;
-        var state = UI.State;
-        var windowWidth = context.Renderer.RenderTargetSize.X / context.UIScale;
-
-        var menuBarStyle = new BoxStyle { FillColor = new(50, 50, 50, 255), BorderLength = 0 };
-        UI.Box("menu_bar_bg", new Vector2(windowWidth, MenuBarHeight), menuBarStyle);
-
-        UI.BeginHBoxContainer("menu_bar_hbox", Vector2.Zero, gap: 0);
-
-        var menuButtonTheme = new ButtonStylePack { Roundness = 0, BorderLength = 0 };
-        menuButtonTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
-        menuButtonTheme.Hover.FillColor = new DirectUI.Drawing.Color(255, 255, 255, 30);
-        menuButtonTheme.Pressed.FillColor = new DirectUI.Drawing.Color(255, 255, 255, 50);
-
-        if (UI.Button("menu_file", "File", new Vector2(50, MenuBarHeight), theme: menuButtonTheme))
-        {
-            // TODO: Open File Menu
-        }
-
-        // --- Edit Button & Dropdown Logic ---
-        int editMenuButtonId = "menu_edit".GetHashCode();
-        var editButtonPos = UI.Context.Layout.GetCurrentPosition();
-
-        if (UI.Button("menu_edit", "Edit", new Vector2(50, MenuBarHeight), theme: menuButtonTheme))
-        {
-            // If the popup is already open for this button, clicking again closes it.
-            if (state.IsPopupOpen && state.ActivePopupId == editMenuButtonId)
-            {
-                state.ClearActivePopup();
-            }
-            else
-            {
-                state.ClearActivePopup(); // Close any other popups first
-
-                // Define popup properties (using logical units)
-                var popupPos = new Vector2(editButtonPos.X, editButtonPos.Y + MenuBarHeight);
-                var popupSize = new Vector2(150, 60);
-                // The bounds for click-away detection must be in physical units.
-                var popupBoundsPhysical = new Rect(popupPos.X * context.UIScale, popupPos.Y * context.UIScale, popupSize.X * context.UIScale, popupSize.Y * context.UIScale);
-
-                // Define the drawing logic for the popup
-                Action<UIContext> drawCallback = (ctx) =>
-                {
-                    // Calculate physical bounds inside the callback to use the correct context
-                    var scaledPopupBounds = new Rect(popupPos.X * ctx.UIScale, popupPos.Y * ctx.UIScale, popupSize.X * ctx.UIScale, popupSize.Y * ctx.UIScale);
-
-                    var popupStyle = new BoxStyle { FillColor = new(60, 60, 60, 255), BorderColor = new(80, 80, 80, 255), BorderLength = 1f, Roundness = 0f };
-                    ctx.Renderer.DrawBox(scaledPopupBounds, popupStyle);
-
-                    var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-                    itemTheme.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
-                    itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
-                    itemTheme.Pressed.FillColor = DefaultTheme.Accent;
-
-                    var itemHeight = 30 * ctx.UIScale;
-
-                    var manageTagsBounds = new Rect(scaledPopupBounds.X, scaledPopupBounds.Y, scaledPopupBounds.Width, itemHeight);
-                    if (UI.DrawButtonPrimitive("manage_tags_item".GetHashCode(), manageTagsBounds, "Manage Tags...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
-                    {
-                        _app.ManageTagsRequested = true;
-                        state.ClearActivePopup();
-                    }
-
-                    var settingsBounds = new Rect(scaledPopupBounds.X, scaledPopupBounds.Y + itemHeight, scaledPopupBounds.Width, itemHeight);
-                    if (UI.DrawButtonPrimitive("settings_item".GetHashCode(), settingsBounds, "Settings...", itemTheme, false, new Alignment(HAlignment.Left, VAlignment.Center), Button.ActionMode.Release, Button.ClickBehavior.Left, new Vector2(5 * ctx.UIScale, 0), out _, out _) != ClickResult.None)
-                    {
-                        _app.SettingsRequested = true;
-                        state.ClearActivePopup();
-                    }
-                };
-
-                state.SetActivePopup(editMenuButtonId, drawCallback, popupBoundsPhysical);
-            }
-        }
-        UI.EndHBoxContainer();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\ModalDialogs.cs">
-using DirectUI;
-using DirectUI.Core;
-using System.Numerics;
-using Tagra.Data;
-
-namespace Tagra;
-
-public static class ModalDialogs
-{
-    public static void DrawDeleteConfirmation(IWindowHost host, Tag tagToDelete)
-    {
-        UI.BeginVBoxContainer("delete_modal_vbox", new Vector2(10, 10), gap: 15f);
-
-        UI.WrappedText("delete_confirm_text", $"Are you sure you want to delete the tag '{tagToDelete.Name}'? This will remove it from {tagToDelete.FileCount} file(s) and cannot be undone.", new Vector2(280, 0));
-
-        UI.BeginHBoxContainer("delete_modal_buttons", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
-
-        if (UI.Button("delete_yes", "Yes, Delete", new Vector2(120, 32)))
-        {
-            host.ModalWindowService.CloseModalWindow(0); // 0 for 'Yes'
-        }
-        if (UI.Button("delete_no", "Cancel", new Vector2(100, 32)))
-        {
-            host.ModalWindowService.CloseModalWindow(1); // 1 for 'Cancel'
-        }
-
-        UI.EndHBoxContainer();
-        UI.EndVBoxContainer();
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (_stream != 0)
+            Bass.ChannelPlay(_stream);
     }
 
-    public static void DrawSettingsWindow(App app)
+    public void Stop()
     {
-        UI.BeginVBoxContainer("settings_vbox", new Vector2(10, 10), gap: 10f);
-
-        UI.Text("tag_display_label", "Tag Display Style:");
-
-        int displayMode = (int)app.Settings.TagDisplay;
-        if (UI.RadioButtons("tag_display_mode", new[] { "Color Circle", "Emoji" }, ref displayMode))
-        {
-            app.Settings.TagDisplay = (TagDisplayMode)displayMode;
-        }
-
-        UI.Separator(280);
-
-        if (UI.Button("close_settings_btn", "Close", new Vector2(80, 32)))
-        {
-            app.Host.ModalWindowService.CloseModalWindow(0);
-        }
-
-        UI.EndVBoxContainer();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\Models.cs">
-using System.Collections.Generic;
-
-namespace Tagra.Data;
-
-public class Tag
-{
-    public long Id { get; set; }
-    public required string Name { get; set; }
-    public int FileCount { get; set; }
-    public string ColorHex { get; set; } = "#FFFFFF";
-    public string? Emoji { get; set; }
-
-    public override string ToString() => Name;
-}
-
-public class FileEntry
-{
-    public long Id { get; set; }
-    public required string Path { get; set; }
-    public string? Hash { get; set; }
-    public List<Tag> Tags { get; set; } = new();
-}
-
-public class TagComparer : IEqualityComparer<Tag>
-{
-    public bool Equals(Tag? x, Tag? y)
-    {
-        if (ReferenceEquals(x, y)) return true;
-        if (x is null || y is null) return false;
-        return x.Id == y.Id;
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        StopInternal();
     }
 
-    public int GetHashCode(Tag obj)
+    /// <summary>
+    /// Seeks to the specified position in seconds.
+    /// </summary>
+    public void Seek(double seconds)
     {
-        return obj.Id.GetHashCode();
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\Program.cs">
-using DirectUI;
-using DirectUI.Core;
-using Tagra;
-
-// Run the Tagra application using the Direct2D backend.
-// The ApplicationRunner will create a window host and pass it to our App logic.
-ApplicationRunner.Run(GraphicsBackend.SkiaSharp, (host) => new App(host));
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\RightPanel.cs">
-using DirectUI;
-using System.Linq;
-using System.Numerics;
-using Tagra.Data;
-
-namespace Tagra;
-
-public class RightPanel
-{
-    private readonly App _app;
-
-    public RightPanel(App app)
-    {
-        _app = app;
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        if (_stream != 0)
+        {
+            long pos = Bass.ChannelSeconds2Bytes(_stream, seconds);
+            Bass.ChannelSetPosition(_stream, pos);
+        }
     }
 
-    public void Draw()
+    /// <summary>
+    /// Gets the current playback position in seconds.
+    /// </summary>
+    public double GetPosition()
     {
-        var panelStyle = new BoxStyle { FillColor = new(40, 40, 40, 255), BorderLength = 0f };
-        UI.BeginResizableVPanel("details_panel", ref _app.RightPanelWidth, HAlignment.Right, topOffset: MenuBar.MenuBarHeight, minWidth: 200, maxWidth: 500, panelStyle: panelStyle);
-
-        var clipRect = UI.Context.Layout.GetCurrentClipRect();
-        var innerWidth = clipRect.Width / UI.Context.UIScale;
-
-        if (_app.SelectedFile is null)
-        {
-            UI.Text("no_selection_label", "Select a file to see details.", new Vector2(innerWidth, 40));
-        }
-        else
-        {
-            var availableHeight = clipRect.Height / UI.Context.UIScale;
-            UI.BeginScrollableRegion("details_scroll", new Vector2(innerWidth, availableHeight), out var scrollInnerWidth);
-            UI.BeginVBoxContainer("details_vbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
-
-            UI.WrappedText("selected_path", _app.SelectedFile.Path, new Vector2(scrollInnerWidth, 0));
-            UI.Separator(scrollInnerWidth);
-            UI.Text("assigned_tags_label", "Assigned Tags:");
-
-            foreach (var tag in _app.SelectedFile.Tags)
-            {
-                UI.BeginHBoxContainer($"assigned_tag_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 20f);
-                if (UI.Button($"remove_tag_{tag.Id}", "x", new Vector2(20, 20)))
-                {
-                    _app.DbManager.RemoveTagFromFile(_app.SelectedFile.Id, tag.Id);
-                    _app.RefreshAllData();
-                }
-
-                if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
-                {
-                    UI.Text($"assigned_tag_emoji_{tag.Id}", tag.Emoji, new Vector2(15, 20));
-                }
-                else
-                {
-                    var color = ParseColorHex(tag.ColorHex);
-                    UI.Box($"assigned_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
-                }
-
-                UI.Text($"assigned_tag_name_{tag.Id}", tag.Name, new Vector2(scrollInnerWidth - 45, 20));
-                UI.EndHBoxContainer();
-            }
-
-            UI.Separator(scrollInnerWidth);
-            UI.Text("available_tags_label", "Available Tags to Add:");
-
-            // Define the custom style for tag buttons
-            var tagButtonStyle = new ButtonStylePack { Roundness = 0.2f, BorderLength = 0f };
-            tagButtonStyle.Normal.FillColor = Colors.Transparent;
-            tagButtonStyle.Normal.BorderColor = Colors.Transparent;
-            tagButtonStyle.Hover.FillColor = new Color(255, 255, 255, 20); // Subtle hover
-            tagButtonStyle.Hover.BorderColor = Colors.Transparent;
-            tagButtonStyle.Pressed.FontColor = Colors.White;
-
-            var availableTags = _app.AllTags.Except(_app.SelectedFile.Tags, new TagComparer());
-            foreach (var tag in availableTags)
-            {
-                UI.BeginHBoxContainer($"available_tag_hbox_{tag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
-
-                string buttonText = tag.Name;
-                if (_app.Settings.TagDisplay == TagDisplayMode.Emoji && !string.IsNullOrEmpty(tag.Emoji))
-                {
-                    buttonText = $"{tag.Emoji} {tag.Name}";
-                }
-                else
-                {
-                    var color = ParseColorHex(tag.ColorHex);
-                    UI.Box($"available_tag_color_{tag.Id}", new Vector2(10, 10), new BoxStyle { FillColor = color, Roundness = 1.0f, BorderLength = 0f });
-                }
-
-                if (UI.Button(
-                    id: $"add_tag_{tag.Id}",
-                    text: buttonText,
-                    size: new Vector2(scrollInnerWidth - 15, 24),
-                    theme: tagButtonStyle,
-                    textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
-                {
-                    _app.DbManager.AddTagToFile(_app.SelectedFile.Id, tag.Id);
-                    _app.RefreshAllData();
-                }
-                UI.EndHBoxContainer();
-            }
-
-            UI.EndVBoxContainer();
-            UI.EndScrollableRegion();
-        }
-
-        UI.EndResizableVPanel();
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetPosition(_stream)) : 0;
     }
 
-    private static Color ParseColorHex(string hex)
+    /// <summary>
+    /// Gets the total length of the current stream in seconds.
+    /// </summary>
+    public double GetLength()
     {
-        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
-        {
-            try
-            {
-                byte r = System.Convert.ToByte(hex.Substring(1, 2), 16);
-                byte g = System.Convert.ToByte(hex.Substring(3, 2), 16);
-                byte b = System.Convert.ToByte(hex.Substring(5, 2), 16);
-                return new Color(r, g, b, 255);
-            }
-            catch
-            {
-                return DefaultTheme.Accent;
-            }
-        }
-        return DefaultTheme.Accent;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\TagManagementWindow.cs">
-using DirectUI;
-using DirectUI.Drawing;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using DirectUI.Styling;
-
-namespace Tagra;
-
-public static class TagManagementWindow
-{
-    private static readonly IReadOnlyList<string> ColorPalette = new List<string>
-    {
-        "#e53935", "#d81b60", "#8e24aa", "#5e35b1", "#3949ab", "#1e88e5",
-        "#039be5", "#00acc1", "#00897b", "#43a047", "#7cb342", "#c0ca33",
-        "#fdd835", "#ffb300", "#fb8c00", "#f4511e", "#6d4c41", "#757575",
-        "#546e7a", "#FFFFFF", "#000000"
-    }.AsReadOnly();
-
-    public static void Draw(App app)
-    {
-        var host = app.Host;
-        var innerWidth = 380f; // Modal content width
-
-        // This action will hold our state-changing logic so it can be executed
-        // after the entire UI has been drawn for this frame.
-        Action? deferredAction = null;
-
-        UI.BeginVBoxContainer("tag_manage_vbox", new Vector2(10, 10), gap: 10f);
-
-        // If a delete is pending, show confirmation UI instead of the main UI
-        if (app.TagIdToDelete.HasValue)
-        {
-            var tagToDelete = app.AllTags.FirstOrDefault(t => t.Id == app.TagIdToDelete.Value);
-            if (tagToDelete != null)
-            {
-                UI.Text("delete_header", "Confirm Deletion");
-                UI.Separator(innerWidth);
-                UI.WrappedText("delete_confirm_text", $"Are you sure you want to delete the tag '{tagToDelete.Name}'? This will remove it from {tagToDelete.FileCount} file(s) and cannot be undone.", new Vector2(innerWidth, 0));
-
-                UI.BeginHBoxContainer("delete_confirm_buttons", UI.Context.Layout.GetCurrentPosition(), gap: 10f);
-                if (UI.Button("delete_yes", "Yes, Delete"))
-                {
-                    // Defer the database action
-                    deferredAction = () => {
-                        app.DbManager.DeleteTag(app.TagIdToDelete.Value);
-                        app.TagIdToDelete = null;
-                        app.RefreshAllData();
-                    };
-                }
-                if (UI.Button("delete_no", "Cancel"))
-                {
-                    app.TagIdToDelete = null; // This is safe to do immediately
-                }
-                UI.EndHBoxContainer();
-            }
-            else
-            {
-                app.TagIdToDelete = null; // Tag was not found, clear request
-            }
-        }
-        else // Show the main tag management UI
-        {
-            UI.Text("manage_tags_header", "Manage Tags");
-            UI.Separator(innerWidth);
-
-            // --- New Tag Creation ---
-            UI.BeginHBoxContainer("new_tag_hbox", UI.Context.Layout.GetCurrentPosition(), gap: 5f);
-            UI.InputText("new_tag_input", ref app.NewTagName, new Vector2(innerWidth - 85, 28f), placeholderText: "New Tag Name");
-            if (UI.Button("create_tag_btn", "Add Tag", new Vector2(80, 28)))
-            {
-                if (!string.IsNullOrWhiteSpace(app.NewTagName))
-                {
-                    // Defer the database action
-                    deferredAction = () => {
-                        app.DbManager.AddTag(app.NewTagName);
-                        app.NewTagName = "";
-                        app.RefreshAllData();
-                    };
-                }
-            }
-            UI.EndHBoxContainer();
-            // --- End New Tag Creation ---
-
-            UI.Separator(innerWidth);
-
-            // --- Tag List ---
-            UI.BeginScrollableRegion("tags_manage_scroll", new Vector2(innerWidth, 250), out var scrollInnerWidth);
-            foreach (var tag in app.AllTags)
-            {
-                // *** THE FIX ***
-                // Create a local copy of the loop variable. The closure for the deferred action
-                // will capture this copy, not the loop variable itself.
-                var currentTag = tag;
-
-                UI.BeginVBoxContainer($"tag_vbox_wrapper_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 2);
-
-                UI.BeginHBoxContainer($"tag_manage_hbox_{currentTag.Id}", UI.Context.Layout.GetCurrentPosition(), gap: 5, verticalAlignment: VAlignment.Center, fixedRowHeight: 24f);
-
-                var color = ParseColorHex(currentTag.ColorHex);
-                var swatchTheme = StyleManager.Get<ButtonStylePack>("ColorSwatch");
-                swatchTheme.FillColor = color;
-
-                if (UI.Button($"color_swatch_{currentTag.Id}", "", new Vector2(24, 24), theme: swatchTheme))
-                {
-                    app.ActiveColorPickerTagId = app.ActiveColorPickerTagId == currentTag.Id ? null : currentTag.Id;
-                }
-
-                string emoji = currentTag.Emoji ?? "";
-                var emojiInputResult = UI.InputText($"emoji_input_{currentTag.Id}", ref emoji, new Vector2(30, 24), maxLength: 4);
-                if (emojiInputResult.ValueChanged)
-                {
-                    deferredAction = () =>
-                    {
-                        app.DbManager.UpdateTagEmoji(currentTag.Id, emoji);
-                        app.RefreshAllData();
-                    };
-                }
-
-                UI.Text($"tag_name_{currentTag.Id}", $"{currentTag.Name} ({currentTag.FileCount})", new Vector2(scrollInnerWidth - 160, 24));
-
-                if (UI.Button($"rename_tag_btn_{currentTag.Id}", "Rename", new Vector2(60, 24), disabled: true)) { /* TODO */ }
-
-                if (UI.Button($"delete_tag_btn_{currentTag.Id}", "X", new Vector2(24, 24)))
-                {
-                    app.TagIdToDelete = currentTag.Id;
-                }
-                UI.EndHBoxContainer();
-
-                if (app.ActiveColorPickerTagId == currentTag.Id)
-                {
-                    string? newlySelectedColor = null;
-                    UI.AutoPanel($"color_picker_panel_{currentTag.Id}", scrollInnerWidth, (innerWidth) =>
-                    {
-                        if (UI.ColorSelector($"picker_{currentTag.Id}", currentTag.ColorHex, ColorPalette, new Vector2(20, 20), out var tempNewColor, gap: 5f))
-                        {
-                            newlySelectedColor = tempNewColor;
-                        }
-                    });
-
-                    if (newlySelectedColor is not null)
-                    {
-                        // Schedule the state change, using the captured `currentTag` variable.
-                        deferredAction = () => {
-                            app.DbManager.UpdateTagColor(currentTag.Id, newlySelectedColor);
-                            app.RefreshAllData();
-                            app.ActiveColorPickerTagId = null;
-                        };
-                    }
-                }
-                UI.EndVBoxContainer();
-            }
-            UI.EndScrollableRegion();
-
-            UI.Separator(innerWidth);
-
-            if (UI.Button("close_tags_modal_btn", "Close", new Vector2(80, 32)))
-            {
-                host.ModalWindowService.CloseModalWindow(0);
-            }
-        }
-
-        UI.EndVBoxContainer();
-
-        // Now that the entire UI for this frame has been processed, execute any pending action.
-        deferredAction?.Invoke();
+        if (_isDisposed) throw new ObjectDisposedException(nameof(AudioPlayer));
+        return _stream != 0 ? Bass.ChannelBytes2Seconds(_stream, Bass.ChannelGetLength(_stream)) : 0;
     }
 
-    private static Color ParseColorHex(string hex)
+    private void StopInternal()
     {
-        if (!string.IsNullOrEmpty(hex) && hex.StartsWith("#") && hex.Length == 7)
+        if (_stream != 0)
         {
-            try
-            {
-                byte r = Convert.ToByte(hex.Substring(1, 2), 16);
-                byte g = Convert.ToByte(hex.Substring(3, 2), 16);
-                byte b = Convert.ToByte(hex.Substring(5, 2), 16);
-                return new Color(r, g, b, 255);
-            }
-            catch
-            {
-                return DefaultTheme.Accent;
-            }
-        }
-        return DefaultTheme.Accent;
-    }
-}
-</file>
-
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\ThumbnailService.cs">
-using System.Collections.Generic;
-using System.IO;
-using SkiaSharp;
-
-namespace Tagra;
-
-public class ThumbnailService : IDisposable
-{
-    private readonly Dictionary<string, byte[]?> _thumbnailCache = new();
-    private readonly HashSet<string> _supportedExtensions = new(System.StringComparer.OrdinalIgnoreCase)
-    {
-        ".jpg", ".jpeg", ".png", ".bmp", ".gif"
-    };
-
-    public byte[]? GetThumbnail(string filePath, int size = 128)
-    {
-        if (string.IsNullOrEmpty(filePath) || !File.Exists(filePath))
-        {
-            return null;
-        }
-
-        if (_thumbnailCache.TryGetValue(filePath, out var cachedData))
-        {
-            return cachedData;
-        }
-
-        var extension = Path.GetExtension(filePath);
-        if (!_supportedExtensions.Contains(extension))
-        {
-            _thumbnailCache[filePath] = null;
-            return null;
-        }
-
-        try
-        {
-            using var inputStream = new SKFileStream(filePath);
-            using var original = SKBitmap.Decode(inputStream);
-            if (original is null)
-            {
-                _thumbnailCache[filePath] = null;
-                return null;
-            }
-
-            var info = new SKImageInfo(size, size, SKColorType.Rgba8888, SKAlphaType.Premul);
-            using var resized = original.Resize(info, SKFilterQuality.Medium);
-            using var image = SKImage.FromBitmap(resized);
-            // Encode to PNG as it supports transparency and is widely compatible.
-            using var data = image.Encode(SKEncodedImageFormat.Png, 90);
-
-            var bytes = data.ToArray();
-            _thumbnailCache[filePath] = bytes;
-            return bytes;
-
-        }
-        catch
-        {
-            _thumbnailCache[filePath] = null; // Cache failure so we don't retry
-            return null;
+            Bass.ChannelStop(_stream);
+            Bass.StreamFree(_stream);
+            _stream = 0;
         }
     }
 
     public void Dispose()
     {
-        _thumbnailCache.Clear();
+        if (_isDisposed) return;
+
+        StopInternal();
+        Bass.Free();
+        _isDisposed = true;
+        GC.SuppressFinalize(this);
+    }
+
+    ~AudioPlayer()
+    {
+        Dispose();
     }
 }
-</file>
+```
 
-<file path="D:\Parsa Stuff\Visual Studio\DirectUI\Tagra\Source\UIManager.cs">
-namespace Tagra;
+---
 
-public class UIManager
+### `Sonorize\Source\Audio\PlaybackManager.cs`
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using ManagedBass;
+
+namespace Sonorize.Audio;
+
+public enum PlaybackEndAction { NextInQueue, RepeatSong, DoNothing }
+public enum PlaybackMode { Sequential, Shuffle }
+
+public class PlaybackManager : IDisposable
 {
-    private readonly MenuBar _menuBar;
-    private readonly LeftPanel _leftPanel;
-    private readonly MainContentPanel _mainContentPanel;
-    private readonly RightPanel _rightPanel;
+    private readonly AudioPlayer _audioPlayer;
+    private readonly Random _random = new();
+    private IReadOnlyList<MusicFile> _tracklist = new List<MusicFile>();
 
-    public UIManager(App app)
+    public int CurrentTrackIndex { get; private set; } = -1;
+    public MusicFile? CurrentTrack => (CurrentTrackIndex >= 0 && CurrentTrackIndex < _tracklist.Count) ? _tracklist[CurrentTrackIndex] : null;
+
+    public PlaybackState State => _audioPlayer.CurrentState;
+    public bool IsPlaying => State == PlaybackState.Playing;
+    public double CurrentPosition => _audioPlayer.GetPosition();
+    public double TotalDuration => _audioPlayer.GetLength();
+    public bool HasTracks => _tracklist.Any();
+
+    public PlaybackEndAction EndAction { get; set; } = PlaybackEndAction.NextInQueue;
+    public PlaybackMode Mode { get; set; } = PlaybackMode.Sequential;
+
+    public PlaybackManager(AudioPlayer audioPlayer)
     {
-        _menuBar = new MenuBar(app);
-        _leftPanel = new LeftPanel(app);
-        _mainContentPanel = new MainContentPanel(app);
-        _rightPanel = new RightPanel(app);
+        _audioPlayer = audioPlayer;
     }
 
-    public void DrawMenuBar()
+    public void SetTracklist(IReadOnlyList<MusicFile> tracks)
     {
-        _menuBar.Draw();
+        _tracklist = tracks;
+        // If the current track is no longer in the list, stop playback.
+        if (CurrentTrackIndex >= _tracklist.Count)
+        {
+            Stop();
+        }
     }
 
-    public void DrawMainLayout()
+    public void Play(int trackIndex)
     {
-        _leftPanel.Draw();
-        _mainContentPanel.Draw();
-        _rightPanel.Draw();
+        if (trackIndex < 0 || trackIndex >= _tracklist.Count)
+        {
+            Stop();
+            return;
+        }
+
+        CurrentTrackIndex = trackIndex;
+        var track = _tracklist[CurrentTrackIndex];
+        _audioPlayer.Play(track.FilePath);
+    }
+
+    public void TogglePlayPause()
+    {
+        if (CurrentTrackIndex == -1 && _tracklist.Any())
+        {
+            Play(0); // Start from the first track if nothing is playing
+        }
+        else
+        {
+            switch (State)
+            {
+                case PlaybackState.Playing:
+                    _audioPlayer.Pause();
+                    break;
+                case PlaybackState.Paused:
+                    _audioPlayer.Resume();
+                    break;
+                case PlaybackState.Stopped:
+                    if (CurrentTrack is not null) Play(CurrentTrackIndex);
+                    break;
+            }
+        }
+    }
+
+    public void Stop()
+    {
+        _audioPlayer.Stop();
+        CurrentTrackIndex = -1;
+    }
+
+    public void Next()
+    {
+        if (!_tracklist.Any()) return;
+
+        int nextIndex = GetNextTrackIndex();
+        Play(nextIndex);
+    }
+
+    public void Previous()
+    {
+        if (!_tracklist.Any()) return;
+
+        int prevIndex = CurrentTrackIndex - 1;
+        if (prevIndex < 0)
+        {
+            prevIndex = _tracklist.Count - 1;
+        }
+        Play(prevIndex);
+    }
+
+    public void Seek(double position)
+    {
+        _audioPlayer.Seek(position);
+    }
+
+    public void Update()
+    {
+        // A song is considered "finished" if its state was playing but is now stopped.
+        // The AudioPlayer doesn't emit an event, so we poll.
+        // The state check `CurrentTrackIndex != -1` ensures we don't trigger this logic
+        // for a player that was stopped manually.
+        if (State == PlaybackState.Stopped && CurrentTrackIndex != -1)
+        {
+            HandleSongFinished();
+        }
+    }
+
+    private void HandleSongFinished()
+    {
+        switch (EndAction)
+        {
+            case PlaybackEndAction.DoNothing:
+                Stop();
+                break;
+
+            case PlaybackEndAction.RepeatSong:
+                Play(CurrentTrackIndex); // Replay the same track
+                break;
+
+            case PlaybackEndAction.NextInQueue:
+                Next();
+                break;
+        }
+    }
+
+    private int GetNextTrackIndex()
+    {
+        if (_tracklist.Count <= 1) return 0;
+
+        if (Mode == PlaybackMode.Shuffle)
+        {
+            int next;
+            do
+            {
+                next = _random.Next(_tracklist.Count);
+            } while (next == CurrentTrackIndex); // Ensure it's a different track
+            return next;
+        }
+        else // Sequential
+        {
+            int nextIndex = CurrentTrackIndex + 1;
+            if (nextIndex >= _tracklist.Count)
+            {
+                nextIndex = 0; // Wrap around
+            }
+            return nextIndex;
+        }
+    }
+
+    public void Dispose()
+    {
+        _audioPlayer.Dispose();
+        GC.SuppressFinalize(this);
     }
 }
-</file>
+```
+
+---
+
+### `Sonorize\Source\Data\AlbumInfo.cs`
+
+```csharp
+namespace Sonorize;
+
+public class AlbumInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public string Artist { get; set; } = string.Empty;
+    public uint Year { get; set; }
+    public int TrackCount { get; set; }
+}
+```
+
+---
+
+### `Sonorize\Source\Data\ArtistInfo.cs`
+
+```csharp
+namespace Sonorize;
+
+public class ArtistInfo
+{
+    public string Name { get; set; } = string.Empty;
+    public int AlbumCount { get; set; }
+    public int TrackCount { get; set; }
+}
+```
+
+---
+
+### `Sonorize\Source\Data\MusicFile.cs`
+
+```csharp
+// Sonorize/Source/Data/MusicFile.cs
+namespace Sonorize;
+
+public class MusicFile
+{
+    public string Title { get; set; } = string.Empty;
+    public string Artist { get; set; } = string.Empty;
+    public string Album { get; set; } = string.Empty;
+    public string Genre { get; set; } = string.Empty;
+    public uint Year { get; set; }
+    public TimeSpan Duration { get; set; }
+    public string FilePath { get; set; } = string.Empty;
+    public byte[]? AlbumArt { get; set; }
+    public byte[]? AbstractAlbumArt { get; set; }
+}
+```
+
+---
+
+### `Sonorize\Source\Data\MusicLibrary.cs`
+
+```csharp
+// Sonorize/Source/Data/MusicLibrary.cs
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using System.Threading.Tasks;
+using SkiaSharp;
+using TagLib;
+
+namespace Sonorize;
+
+public class MusicLibrary
+{
+    private List<MusicFile> _files = new();
+    private List<Playlist> _playlists = new();
+    private readonly object _lock = new();
+
+    public IReadOnlyList<MusicFile> Files
+    {
+        get
+        {
+            lock (_lock)
+            {
+                // Return a copy to prevent collection modified exceptions if the background task updates it during a render.
+                return new List<MusicFile>(_files);
+            }
+        }
+    }
+
+    public IReadOnlyList<Playlist> Playlists
+    {
+        get
+        {
+            lock (_lock)
+            {
+                return new List<Playlist>(_playlists);
+            }
+        }
+    }
+
+
+    private static readonly string[] SupportedExtensions = { ".mp3", ".flac", ".m4a", ".ogg", ".wav", ".wma", ".aac" };
+    private static readonly string[] PlaylistExtensions = { ".m3u", ".m3u8" };
+    private Task? _scanTask;
+
+    public void ScanDirectoriesAsync(IEnumerable<string> directories)
+    {
+        // Don't start a new scan if one is already running
+        if (_scanTask is not null && !_scanTask.IsCompleted) return;
+
+        var dirsToScan = directories.ToList(); // Create a copy
+
+        _scanTask = Task.Run(() =>
+        {
+            Console.WriteLine("Starting library scan...");
+            var foundFiles = new List<MusicFile>();
+            foreach (var dir in dirsToScan)
+            {
+                if (!Directory.Exists(dir)) continue;
+
+                try
+                {
+                    var filesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => SupportedExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+                    foreach (var filePath in filesInDir)
+                    {
+                        try
+                        {
+                            using var tagFile = TagLib.File.Create(filePath);
+
+                            // --- Album Art Extraction ---
+                            var picture = tagFile.Tag.Pictures.FirstOrDefault();
+                            byte[]? albumArtData = picture?.Data.Data;
+                            byte[]? abstractArtData = CreateAbstractArt(albumArtData);
+                            // --- End Album Art Extraction ---
+
+                            var musicFile = new MusicFile
+                            {
+                                Title = string.IsNullOrEmpty(tagFile.Tag.Title) ? Path.GetFileNameWithoutExtension(filePath) : tagFile.Tag.Title,
+                                Artist = tagFile.Tag.FirstPerformer ?? "Unknown Artist",
+                                Album = tagFile.Tag.Album ?? "Unknown Album",
+                                Genre = tagFile.Tag.FirstGenre ?? string.Empty,
+                                Year = tagFile.Tag.Year,
+                                Duration = tagFile.Properties.Duration,
+                                FilePath = filePath,
+                                AlbumArt = albumArtData,
+                                AbstractAlbumArt = abstractArtData
+                            };
+                            foundFiles.Add(musicFile);
+                        }
+                        catch (CorruptFileException) { /* ignore */ }
+                        catch (UnsupportedFormatException) { /* ignore */ }
+                        catch (Exception ex) { Console.WriteLine($"Could not read tag for {filePath}: {ex.Message}"); }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error scanning directory {dir}: {ex.Message}");
+                }
+            }
+
+            var sortedFiles = foundFiles
+                .OrderBy(f => f.Artist)
+                .ThenBy(f => f.Album)
+                .ThenBy(f => f.Title)
+                .ToList();
+
+            // Now scan for playlists
+            var foundPlaylists = new List<Playlist>();
+            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f);
+
+            foreach (var dir in dirsToScan)
+            {
+                if (!Directory.Exists(dir)) continue;
+                try
+                {
+                    var playlistFilesInDir = Directory.EnumerateFiles(dir, "*.*", SearchOption.AllDirectories)
+                        .Where(f => PlaylistExtensions.Contains(Path.GetExtension(f).ToLowerInvariant()));
+
+                    foreach (var playlistPath in playlistFilesInDir)
+                    {
+                        var playlist = new Playlist
+                        {
+                            Name = Path.GetFileNameWithoutExtension(playlistPath),
+                            FilePath = playlistPath
+                        };
+
+                        var playlistDirectory = Path.GetDirectoryName(playlistPath);
+                        if (playlistDirectory is null) continue;
+
+                        var lines = System.IO.File.ReadAllLines(playlistPath);
+                        foreach (var line in lines)
+                        {
+                            if (string.IsNullOrWhiteSpace(line) || line.StartsWith('#')) continue;
+
+                            string trackPath = line.Trim();
+                            if (!Path.IsPathRooted(trackPath))
+                            {
+                                trackPath = Path.GetFullPath(Path.Combine(playlistDirectory, trackPath));
+                            }
+
+                            if (musicFileLookup.TryGetValue(trackPath, out var musicFile))
+                            {
+                                playlist.Tracks.Add(musicFile);
+                            }
+                        }
+
+                        if (playlist.Tracks.Any())
+                        {
+                            foundPlaylists.Add(playlist);
+                        }
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"Error scanning for playlists in {dir}: {ex.Message}");
+                }
+            }
+
+
+            lock (_lock)
+            {
+                _files = sortedFiles;
+                _playlists = foundPlaylists.OrderBy(p => p.Name).ToList();
+            }
+            Console.WriteLine($"Scan complete. Found {_files.Count} files and {_playlists.Count} playlists.");
+        });
+    }
+
+    /// <summary>
+    /// Creates a 1-pixel-high, blurred strip of the album art's colors.
+    /// When stretched vertically, this produces a soft, abstract gradient background.
+    /// </summary>
+    private static byte[]? CreateAbstractArt(byte[]? originalArtData, int width = 128, float blurSigma = 10f)
+    {
+        if (originalArtData is null || originalArtData.Length == 0) return null;
+
+        try
+        {
+            using var originalBitmap = SKBitmap.Decode(originalArtData);
+            if (originalBitmap is null) return null;
+
+            // 1. Create a bitmap that is `width` pixels wide and 1 pixel tall.
+            var info = new SKImageInfo(width, 1);
+            using var resizedBitmap = new SKBitmap(info);
+
+            // 2. Draw the original bitmap into this tiny strip to average the colors.
+            using (var canvas = new SKCanvas(resizedBitmap))
+            {
+                var paint = new SKPaint { FilterQuality = SKFilterQuality.High };
+                canvas.DrawBitmap(originalBitmap, new SKRect(0, 0, width, 1), paint);
+            }
+
+            // 3. Create a final bitmap and apply a strong horizontal blur to the color strip.
+            using var finalBitmap = new SKBitmap(info);
+            using (var canvas = new SKCanvas(finalBitmap))
+            using (var paint = new SKPaint())
+            {
+                // We only blur horizontally (sigmaX) to blend the colors in the strip.
+                paint.ImageFilter = SKImageFilter.CreateBlur(blurSigma, 0);
+                canvas.DrawBitmap(resizedBitmap, 0, 0, paint);
+            }
+
+            // 4. Encode the final tiny, blurry strip.
+            using var image = SKImage.FromBitmap(finalBitmap);
+            using var data = image.Encode(SKEncodedImageFormat.Png, 100);
+            return data.ToArray();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Could not create abstract art: {ex.Message}");
+            return null;
+        }
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\Data\Playlist.cs`
+
+```csharp
+using System.Collections.Generic;
+using System.Linq;
+
+namespace Sonorize;
+
+public class Playlist
+{
+    public string Name { get; set; } = string.Empty;
+    public string FilePath { get; set; } = string.Empty;
+    public List<MusicFile> Tracks { get; } = new();
+    public int TrackCount => Tracks.Count;
+}
+```
+
+---
+
+### `Sonorize\Source\Settings\Settings.cs`
+
+```csharp
+using System.Collections.Generic;
+
+namespace Sonorize;
+
+public class Settings
+{
+    public List<string> Directories { get; set; } = new();
+    public bool PlayOnDoubleClick { get; set; } = true;
+    public bool UseCompactPlaybackControls { get; set; } = false;
+    public bool UseLargeAlbumArt { get; set; } = false;
+}
+```
+
+---
+
+### `Sonorize\Source\UI\AlbumsView.cs`
+
+```csharp
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class AlbumsView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly DataGridColumn[] _columns;
+    private int _selectedIndex = -1;
+    private List<AlbumInfo> _albums = new(); // Cache the processed list
+    private int _lastLibraryFileCount = -1; // To check if we need to re-process
+    private string? _currentArtistFilter;
+    private string? _currentSearchText;
+    private readonly Action<AlbumInfo> _onAlbumSelected;
+
+    public AlbumsView(MusicLibrary musicLibrary, Action<AlbumInfo> onAlbumSelected)
+    {
+        _musicLibrary = musicLibrary;
+        _onAlbumSelected = onAlbumSelected;
+        _columns =
+        [
+            new DataGridColumn("Album", 350, nameof(AlbumInfo.Name)),
+            new DataGridColumn("Artist", 300, nameof(AlbumInfo.Artist)),
+            new DataGridColumn("Year", 100, nameof(AlbumInfo.Year)),
+            new DataGridColumn("Tracks", 100, nameof(AlbumInfo.TrackCount))
+        ];
+    }
+
+    private void ProcessLibrary(string? artistFilter, string? searchText)
+    {
+        var currentFiles = _musicLibrary.Files;
+        // Re-process if the file count, filter, or search text has changed.
+        if (currentFiles.Count == _lastLibraryFileCount && artistFilter == _currentArtistFilter && searchText == _currentSearchText) return;
+
+        IEnumerable<MusicFile> filesToProcess = currentFiles;
+        if (!string.IsNullOrEmpty(artistFilter))
+        {
+            filesToProcess = filesToProcess.Where(f => f.Artist == artistFilter);
+        }
+
+        var processedAlbums = filesToProcess
+            .GroupBy(f => new { f.Album, f.Artist })
+            .Select(g => new AlbumInfo
+            {
+                Name = g.Key.Album,
+                Artist = g.Key.Artist,
+                Year = g.FirstOrDefault()?.Year ?? 0,
+                TrackCount = g.Count()
+            });
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedAlbums = processedAlbums.Where(a =>
+                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                a.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _albums = processedAlbums
+            .OrderBy(a => a.Artist)
+            .ThenBy(a => a.Name)
+            .ToList();
+
+        _lastLibraryFileCount = currentFiles.Count;
+        _currentArtistFilter = artistFilter;
+        _currentSearchText = searchText;
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? artistFilter, string? searchText)
+    {
+        ProcessLibrary(artistFilter, searchText);
+
+        bool rowDoubleClicked;
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<AlbumInfo>(
+                "albumsGrid",
+                _albums,
+                _columns,
+                ref _selectedIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _albums.Count)
+            {
+                _onAlbumSelected?.Invoke(_albums[_selectedIndex]);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\UI\ArtistsView.cs`
+
+```csharp
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class ArtistsView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly DataGridColumn[] _columns;
+    private int _selectedIndex = -1;
+    private List<ArtistInfo> _artists = new(); // Cache
+    private int _lastLibraryFileCount = -1;
+    private string? _currentSearchText;
+    private readonly Action<string> _onArtistSelected;
+
+    public ArtistsView(MusicLibrary musicLibrary, Action<string> onArtistSelected)
+    {
+        _musicLibrary = musicLibrary;
+        _onArtistSelected = onArtistSelected;
+        _columns =
+        [
+            new DataGridColumn("Artist", 400, nameof(ArtistInfo.Name)),
+            new DataGridColumn("Albums", 150, nameof(ArtistInfo.AlbumCount)),
+            new DataGridColumn("Tracks", 150, nameof(ArtistInfo.TrackCount))
+        ];
+    }
+
+    private void ProcessLibrary(string? searchText)
+    {
+        var currentFiles = _musicLibrary.Files;
+        if (currentFiles.Count == _lastLibraryFileCount && searchText == _currentSearchText) return;
+
+        var processedArtists = currentFiles
+            .GroupBy(f => f.Artist)
+            .Select(g => new ArtistInfo
+            {
+                Name = g.Key,
+                AlbumCount = g.Select(f => f.Album).Distinct().Count(),
+                TrackCount = g.Count()
+            });
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedArtists = processedArtists.Where(a =>
+                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _artists = processedArtists.OrderBy(a => a.Name).ToList();
+
+        _lastLibraryFileCount = currentFiles.Count;
+        _currentSearchText = searchText;
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
+    {
+        ProcessLibrary(searchText);
+
+        bool rowDoubleClicked;
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<ArtistInfo>(
+                "artistsGrid",
+                _artists,
+                _columns,
+                ref _selectedIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _artists.Count)
+            {
+                _onArtistSelected?.Invoke(_artists[_selectedIndex].Name);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\UI\LibraryView.cs`
+
+```csharp
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+using Sonorize.Audio;
+
+namespace Sonorize;
+
+public class LibraryView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly PlaybackManager _playbackManager;
+    private readonly Settings _settings;
+
+    private int _selectedTrackIndex = -1;
+    private readonly DataGridColumn[] _columns;
+    private IReadOnlyList<MusicFile> _currentViewFiles = new List<MusicFile>();
+
+    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings)
+    {
+        _musicLibrary = musicLibrary;
+        _playbackManager = playbackManager;
+        _settings = settings;
+
+        _columns =
+        [
+            new DataGridColumn("Title", 350, nameof(MusicFile.Title)),
+            new DataGridColumn("Artist", 250, nameof(MusicFile.Artist)),
+            new DataGridColumn("Album", 250, nameof(MusicFile.Album)),
+            new DataGridColumn("Duration", 100, nameof(MusicFile.Duration)),
+            new DataGridColumn("Genre", 150, nameof(MusicFile.Genre)),
+            new DataGridColumn("Year", 80, nameof(MusicFile.Year))
+        ];
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, Playlist? playlistFilter, string? searchText)
+    {
+        IEnumerable<MusicFile> filesToDisplay;
+
+        // Highest priority filter is the playlist
+        if (playlistFilter is not null)
+        {
+            filesToDisplay = playlistFilter.Tracks;
+        }
+        else if (albumFilter is not null)
+        {
+            filesToDisplay = _musicLibrary.Files
+                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);
+        }
+        else
+        {
+            filesToDisplay = _musicLibrary.Files;
+        }
+
+        // Apply search text filter on top
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            filesToDisplay = filesToDisplay.Where(f =>
+                f.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                f.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
+                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _currentViewFiles = filesToDisplay.ToList();
+
+        // Keep the playback manager's tracklist in sync with the *currently viewed* list.
+        _playbackManager.SetTracklist(_currentViewFiles);
+
+        int previousSelectedTrackIndex = _selectedTrackIndex;
+        bool rowDoubleClicked = false;
+
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<MusicFile>(
+                "musicGrid",
+                _currentViewFiles,
+                _columns,
+                ref _selectedTrackIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+        }
+
+        bool selectionChanged = _selectedTrackIndex != previousSelectedTrackIndex;
+
+        // Sync state between UI selection and playback manager
+        if (_settings.PlayOnDoubleClick)
+        {
+            if (rowDoubleClicked)
+            {
+                _playbackManager.Play(_selectedTrackIndex);
+            }
+        }
+        else // Play on single click
+        {
+            if (selectionChanged)
+            {
+                _playbackManager.Play(_selectedTrackIndex);
+            }
+        }
+
+        // This ensures the grid selection updates if the song changes automatically (e.g., `Next()`).
+        // The index here is relative to the `_currentViewFiles` list.
+        if (_selectedTrackIndex != _playbackManager.CurrentTrackIndex)
+        {
+            _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
+        }
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\UI\MenuBar.cs`
+
+```csharp
+// Sonorize/Source/UI/MenuBar.cs
+using System;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class MenuBar
+{
+    private readonly Action _onOpenSettings;
+    private bool _isFileMenuOpen = false;
+    private readonly int _fileMenuPopupId;
+
+    public MenuBar(Action onOpenSettings)
+    {
+        _onOpenSettings = onOpenSettings ?? throw new ArgumentNullException(nameof(onOpenSettings));
+        _fileMenuPopupId = "fileMenuPopup".GetHashCode();
+    }
+
+    public void Draw(UIContext context)
+    {
+        var menuBarBg = new BoxStyle
+        {
+            FillColor = new(0.1f, 0.1f, 0.1f, 1.0f),
+            BorderColor = new(0.05f, 0.05f, 0.05f, 1.0f),
+            BorderLengthBottom = 1f,
+            BorderLengthTop = 0,
+            BorderLengthLeft = 0,
+            BorderLengthRight = 0,
+            Roundness = 0
+        };
+        context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, context.Renderer.RenderTargetSize.X, 30), menuBarBg);
+
+        UI.BeginHBoxContainer("menuBar", new Vector2(5, 4), 5);
+
+        var fileButtonPos = context.Layout.GetCurrentPosition();
+        var fileButtonSize = new Vector2(50, 22);
+
+        if (_isFileMenuOpen && UI.State.ActivePopupId != _fileMenuPopupId)
+        {
+            _isFileMenuOpen = false;
+        }
+
+        if (UI.Button("fileMenu", "File", fileButtonSize, isActive: _isFileMenuOpen, layer: 20))
+        {
+            _isFileMenuOpen = !_isFileMenuOpen;
+            if (_isFileMenuOpen)
+            {
+                OpenMenuPopup(fileButtonPos, fileButtonSize);
+            }
+            else
+            {
+                UI.State.ClearActivePopup();
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void OpenMenuPopup(Vector2 buttonPos, Vector2 buttonSize)
+    {
+        var popupPosition = new Vector2(buttonPos.X, buttonPos.Y + buttonSize.Y + 2);
+        var popupSize = new Vector2(150, 30);
+        var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, popupSize.X, popupSize.Y);
+
+        Action<UIContext> drawCallback = (ctx) =>
+        {
+            var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
+            ctx.Renderer.DrawBox(popupBounds, popupStyle);
+
+            var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
+            itemTheme.Normal.FillColor = DefaultTheme.Transparent;
+            itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
+            itemTheme.Pressed.FillColor = DefaultTheme.Accent;
+
+            UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
+            if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), layer: 50))
+            {
+                UI.State.ClearActivePopup();
+                _isFileMenuOpen = false;
+                _onOpenSettings();
+            }
+            UI.EndVBoxContainer();
+        };
+        UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\UI\PlaybackControlsView.cs`
+
+```csharp
+using System.Numerics;
+using DirectUI;
+using Sonorize.Audio;
+using System;
+using DirectUI.Drawing;
+
+namespace Sonorize;
+
+public class PlaybackControlsView
+{
+    private readonly PlaybackManager _playbackManager;
+    private readonly Settings _settings;
+    private bool _isSeekSliderDragging;
+    private float _seekSliderValueDuringDrag;
+
+    public PlaybackControlsView(PlaybackManager playbackManager, Settings settings)
+    {
+        _playbackManager = playbackManager;
+        _settings = settings;
+    }
+
+    public void Draw(UIContext context)
+    {
+        // The panel height is now always constant.
+        float playbackControlsHeight = 70f;
+        Vector2 windowSize = context.Renderer.RenderTargetSize;
+        float controlsY = windowSize.Y - playbackControlsHeight;
+        Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playbackControlsHeight);
+
+        var currentTrack = _playbackManager.CurrentTrack;
+
+        // 1. Draw the solid background, which acts as a fallback and provides the top border.
+        DrawBackground(context, controlsRect);
+
+        // 2. If available, draw the stretched abstract art on top of the solid background.
+        if (currentTrack?.AbstractAlbumArt is not null && currentTrack.AbstractAlbumArt.Length > 0)
+        {
+            // The file path provides a unique key for the renderer's image cache.
+            string abstractArtKey = currentTrack.FilePath + "_abstract";
+            context.Renderer.DrawImage(currentTrack.AbstractAlbumArt, abstractArtKey, controlsRect);
+
+            // 3. Draw a semi-transparent overlay to dim the art and improve control visibility.
+            var overlayStyle = new BoxStyle
+            {
+                FillColor = new Color(0, 0, 0, (byte)(255 * 0.4f)),
+                Roundness = 0,
+                BorderLength = 0
+            };
+            context.Renderer.DrawBox(controlsRect, overlayStyle);
+        }
+
+        // 4. Draw the controls layout on top.
+        if (_settings.UseCompactPlaybackControls)
+        {
+            DrawCompactLayout(context, currentTrack, controlsRect);
+        }
+        else
+        {
+            DrawStandardLayout(context, currentTrack, controlsRect);
+        }
+    }
+
+    private void DrawStandardLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    {
+        float gap = 10;
+
+        UI.BeginHBoxContainer("playbackHBox", controlsRect.TopLeft, gap);
+        {
+            DrawTrackInfoAndArt(context, currentTrack, controlsRect);
+            var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
+            // Right panel padding is now dynamic based on art size to keep things aligned.
+            float rightPanelPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+            float centerWidth = controlsRect.Width - leftPanelEndPos.X - rightPanelPadding;
+            if (centerWidth > 0)
+            {
+                DrawStandardControlsAndSlider(context, centerWidth);
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawCompactLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    {
+        float gap = 15;
+        float rightControlsWidth = 150;
+        float leftPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+
+        // --- Left: Album Art (Manually Placed) ---
+        float artPadding = _settings.UseLargeAlbumArt ? 0 : 10;
+        float artSize = controlsRect.Height - (artPadding * 2);
+        var artPos = new Vector2(
+            controlsRect.Left + artPadding,
+            controlsRect.Top + artPadding
+        );
+        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+        if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+        {
+            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+        }
+        else
+        {
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+        }
+
+        // --- Middle Section (Manually Placed & Centered) ---
+        float middleSectionStartX = artRect.Right + gap;
+        float availableMiddleWidth = controlsRect.Width - middleSectionStartX - rightControlsWidth;
+
+        float middleContentHeight = 36f;
+        var middleSectionStartPos = new Vector2(
+            middleSectionStartX,
+            controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
+        );
+
+        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10, VAlignment.Center, fixedRowHeight: middleContentHeight);
+        {
+            DrawCompactControlButtons(context);
+
+            float sliderGroupHeight = 16f + 2f + 8f; // title + gap + slider
+            float topSpacer = (middleContentHeight - sliderGroupHeight) / 2f;
+
+            DrawCompactSeekSlider(context, availableMiddleWidth - 120, topSpacer);
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private static void DrawBackground(UIContext context, Vortice.Mathematics.Rect controlsRect)
+    {
+        context.Renderer.DrawBox(controlsRect, new()
+        {
+            FillColor = new(30 / 255f, 30 / 255f, 30 / 255f, 1.0f), // Darker background
+            BorderColor = new(45 / 255f, 45 / 255f, 45 / 255f, 1.0f),
+            BorderLengthTop = 1f,
+            BorderLengthBottom = 0,
+            BorderLengthLeft = 0,
+            BorderLengthRight = 0,
+            Roundness = 0
+        });
+    }
+
+    private void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect panelRect)
+    {
+        float padding = _settings.UseLargeAlbumArt ? 0 : 10;
+        float artSize = panelRect.Height - (padding * 2);
+
+        UI.BeginHBoxContainer("trackInfoHBox", panelRect.TopLeft + new Vector2(padding, padding), padding);
+        {
+            var artPos = UI.Context.Layout.GetCurrentPosition();
+            var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+
+            if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+            {
+                context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+            }
+            else
+            {
+                context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+            }
+
+            UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
+
+            // Vertically center the text relative to the art
+            float textBlockHeight = 16f + 4f + 12f; // font sizes + gap
+            float textBlockY = UI.Context.Layout.GetCurrentPosition().Y + (artSize - textBlockHeight) / 2f;
+
+            UI.BeginVBoxContainer("trackInfoVBox", new Vector2(UI.Context.Layout.GetCurrentPosition().X, textBlockY), 4);
+            {
+                var title = currentTrack?.Title ?? "No song selected";
+                var artist = currentTrack?.Artist ?? string.Empty;
+                UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
+                if (!string.IsNullOrEmpty(artist))
+                {
+                    var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+                    UI.Text("artistName", artist, style: artistStyle);
+                }
+            }
+            UI.EndVBoxContainer();
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawStandardControlsAndSlider(UIContext context, float panelWidth)
+    {
+        var startPos = UI.Context.Layout.GetCurrentPosition();
+        UI.BeginVBoxContainer("centerControlsVBox", startPos, 2);
+        {
+            DrawControlButtons(context, panelWidth);
+            DrawSeekSliderWithTimestamps(context, panelWidth);
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawControlButtons(UIContext context, float panelWidth)
+    {
+        bool isAnyTrackAvailable = _playbackManager.HasTracks;
+        const int controlsLayer = 10;
+
+        var smallButtonSize = new Vector2(32, 32);
+        var playButtonSize = new Vector2(36, 36);
+
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
+        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
+        var toggleButtonTheme = new ButtonStylePack(iconButtonTheme);
+        toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
+
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5);
+        float buttonsStartX = (panelWidth - buttonsWidth) / 2;
+        var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
+
+        // Use the new VAlignment feature and provide the height of the tallest element.
+        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
+        {
+            DrawShuffleButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, toggleButtonTheme);
+            DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            // The origin parameter is no longer needed, as the container handles alignment.
+            DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
+            DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            DrawRepeatModeButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawCompactControlButtons(UIContext context)
+    {
+        bool isAnyTrackAvailable = _playbackManager.HasTracks;
+        const int controlsLayer = 10;
+        var smallButtonSize = new Vector2(32, 32);
+        var playButtonSize = new Vector2(36, 36);
+        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 1f };
+        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
+
+        DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+        DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
+        DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+    }
+
+    private void DrawCompactSeekSlider(UIContext context, float panelWidth, float topSpacer = 0f)
+    {
+        if (panelWidth < 10) return;
+
+        var currentTrack = _playbackManager.CurrentTrack;
+        var title = currentTrack?.Title ?? "No song selected";
+        var artist = currentTrack?.Artist ?? string.Empty;
+        var trackInfo = string.IsNullOrWhiteSpace(artist) ? title : $"{title} - {artist}";
+
+        // Prepare timestamp text for layout calculation
+        double currentPosition = _playbackManager.CurrentPosition;
+        double totalDuration = _playbackManager.TotalDuration;
+        string timeStr = $"{FormatTime(currentPosition)} / {FormatTime(totalDuration)}";
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+        var timeSize = context.TextService.MeasureText(timeStr, timeStyle);
+
+        // This VBox will contain two rows: the info row and the slider row.
+        // Apply the topSpacer to vertically center this group.
+        var startPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, topSpacer);
+        UI.BeginVBoxContainer("compactSliderVBox", startPos, 2);
+        {
+            // --- Row 1: HBox for Title/Artist and Timestamps ---
+            UI.BeginHBoxContainer("compactInfoRowHBox", UI.Context.Layout.GetCurrentPosition(), 5);
+            {
+                float titleWidth = panelWidth - timeSize.X - 5;
+                if (titleWidth > 0)
+                {
+                    UI.Text("compactTrackInfo", trackInfo, new Vector2(titleWidth, 16), new ButtonStyle { FontSize = 14 });
+                }
+
+                UI.Text("compactTimeInfo", timeStr, new Vector2(timeSize.X, 16), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            }
+            UI.EndHBoxContainer();
+
+            // --- Row 2: Slider without its own timestamps ---
+            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth, bool showTimestamps = true)
+    {
+        double currentPosition = _playbackManager.CurrentPosition;
+        double totalDuration = _playbackManager.TotalDuration;
+        bool isAudioLoaded = totalDuration > 0;
+
+        string currentTimeStr = FormatTime(currentPosition);
+        string totalTimeStr = FormatTime(totalDuration);
+
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
+        var timeSize = context.TextService.MeasureText("00:00", timeStyle);
+        float timeLabelWidth = showTimestamps ? timeSize.X + 5 : 0;
+        float gap = showTimestamps ? 5 : 0;
+
+        float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2);
+        if (sliderWidth < 10) return;
+
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap, VAlignment.Center, fixedRowHeight: 20f);
+        {
+            if (showTimestamps)
+            {
+                UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
+            }
+
+            int seekSliderId = "seekSlider".GetHashCode();
+            bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
+            float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
+            Vector2 sliderSize = new(sliderWidth, 8);
+            ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
+            SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
+
+            float newSliderValue = UI.HSlider(
+                id: "seekSlider",
+                currentValue: sliderInputValue,
+                minValue: 0f,
+                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
+                size: sliderSize,
+                disabled: !isAudioLoaded,
+                grabberSize: new(14, 14),
+                grabberTheme: grabberTheme,
+                theme: theme,
+                position: new(0, 4)
+            );
+
+            if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
+            if (_isSeekSliderDragging && !isCurrentlyDragging && isAudioLoaded)
+            {
+                _playbackManager.Seek(_seekSliderValueDuringDrag);
+            }
+            _isSeekSliderDragging = isCurrentlyDragging;
+
+            if (showTimestamps)
+            {
+                UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)
+    {
+        bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
+        if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, isActive: isShuffleActive))
+        {
+            _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
+        }
+    }
+
+    private void DrawPreviousTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
+    {
+        if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        {
+            _playbackManager.Previous();
+        }
+    }
+
+    private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
+    {
+        string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
+        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        {
+            _playbackManager.TogglePlayPause();
+        }
+    }
+
+    private void DrawNextTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
+    {
+        if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        {
+            _playbackManager.Next();
+        }
+    }
+
+    private void DrawRepeatModeButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
+    {
+        string repeatText = _playbackManager.EndAction switch
+        {
+            PlaybackEndAction.NextInQueue => "🔁",
+            PlaybackEndAction.RepeatSong => "🔂",
+            PlaybackEndAction.DoNothing => "➡",
+            _ => "?"
+        };
+        if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        {
+            _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
+        }
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
+        {
+            return "00:00";
+        }
+        var timeSpan = TimeSpan.FromSeconds(seconds);
+        return timeSpan.ToString(@"mm\:ss");
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\UI\PlaylistsView.cs`
+
+```csharp
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+
+namespace Sonorize;
+
+public class PlaylistsView
+{
+    private readonly MusicLibrary _musicLibrary;
+    private readonly DataGridColumn[] _columns;
+    private int _selectedIndex = -1;
+    private List<Playlist> _playlists = new();
+    private int _lastPlaylistCount = -1;
+    private string? _currentSearchText;
+    private readonly Action<Playlist> _onPlaylistSelected;
+
+    public PlaylistsView(MusicLibrary musicLibrary, Action<Playlist> onPlaylistSelected)
+    {
+        _musicLibrary = musicLibrary;
+        _onPlaylistSelected = onPlaylistSelected;
+        _columns =
+        [
+            new DataGridColumn("Playlist", 600, nameof(Playlist.Name)),
+            new DataGridColumn("Tracks", 150, nameof(Playlist.TrackCount))
+        ];
+    }
+
+    private void ProcessLibrary(string? searchText)
+    {
+        IReadOnlyList<Playlist> currentPlaylists = _musicLibrary.Playlists;
+        if (currentPlaylists.Count == _lastPlaylistCount && searchText == _currentSearchText) return;
+
+        IEnumerable<Playlist> processedPlaylists = currentPlaylists;
+
+        if (!string.IsNullOrWhiteSpace(searchText))
+        {
+            processedPlaylists = processedPlaylists.Where(p =>
+                p.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+        }
+
+        _playlists = processedPlaylists.OrderBy(p => p.Name).ToList();
+
+        _lastPlaylistCount = currentPlaylists.Count;
+        _currentSearchText = searchText;
+    }
+
+    public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
+    {
+        ProcessLibrary(searchText);
+
+        bool rowDoubleClicked;
+        if (size.X > 0 && size.Y > 0)
+        {
+            UI.DataGrid<Playlist>(
+                "playlistsGrid",
+                _playlists,
+                _columns,
+                ref _selectedIndex,
+                size,
+                out rowDoubleClicked,
+                position,
+                autoSizeColumns: true,
+                trimCellText: true
+            );
+
+            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _playlists.Count)
+            {
+                _onPlaylistSelected?.Invoke(_playlists[_selectedIndex]);
+            }
+        }
+    }
+}
+```
+
+---
+
+### `Sonorize\Source\UI\SettingsWindow.cs`
+
+```csharp
+using DirectUI;
+using DirectUI.Core;
+using System.Numerics;
+using TinyDialogsNet;
+
+namespace Sonorize;
+
+public class SettingsWindow
+{
+    private readonly Settings _settings;
+    private readonly IWindowHost _host;
+    private int _selectedDirectoryIndex = -1;
+
+    public SettingsWindow(Settings settings, IWindowHost host)
+    {
+        _settings = settings;
+        _host = host;
+    }
+
+    public void Draw(UIContext context)
+    {
+        UI.BeginVBoxContainer("settingsVBox", new Vector2(10, 10), 10);
+
+        UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
+        UI.Separator(480, verticalPadding: 2);
+
+        UI.Text("playbackHeader", "Playback & Appearance");
+        bool playOnDoubleClick = _settings.PlayOnDoubleClick;
+        UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
+        _settings.PlayOnDoubleClick = playOnDoubleClick;
+
+        bool useCompactControls = _settings.UseCompactPlaybackControls;
+        UI.Checkbox("compactControls", "Use compact playback controls", ref useCompactControls);
+        _settings.UseCompactPlaybackControls = useCompactControls;
+
+        bool useLargeArt = _settings.UseLargeAlbumArt;
+        UI.Checkbox("largeArt", "Use large album art in playback controls", ref useLargeArt);
+        _settings.UseLargeAlbumArt = useLargeArt;
+
+        UI.Separator(480, verticalPadding: 2);
+
+        UI.Text("dirsHeader", "Music Library Directories");
+
+        DrawDirectoriesList();
+        DrawActionButtons();
+        DrawOkButton();
+
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawDirectoriesList()
+    {
+        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 160), out float innerWidth);
+        {
+            ButtonStylePack selectedStyle = new();
+            selectedStyle.Active.FillColor = DefaultTheme.Accent;
+            selectedStyle.ActiveHover.FillColor = DefaultTheme.Accent;
+            selectedStyle.Normal.FillColor = new(0.15f, 0.15f, 0.15f, 1.0f);
+
+            for (int i = 0; i < _settings.Directories.Count; i++)
+            {
+                bool isSelected = i == _selectedDirectoryIndex;
+
+                if (!UI.Button($"dir_{i}", _settings.Directories[i], new Vector2(innerWidth, 24), theme: selectedStyle, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), isActive: isSelected))
+                {
+                    continue;
+                }
+
+                _selectedDirectoryIndex = i;
+            }
+        }
+
+        UI.EndScrollableRegion();
+    }
+
+    private void DrawActionButtons()
+    {
+        UI.BeginHBoxContainer("dirsButtons", UI.Context.Layout.GetCurrentPosition(), 5);
+        {
+            if (UI.Button("addDir", "Add", new Vector2(80, 24)))
+            {
+                var selectedPath = TinyDialogs.SelectFolderDialog("Select a folder to add to Sonorize");
+
+                if (!string.IsNullOrWhiteSpace(selectedPath.Path) && !_settings.Directories.Contains(selectedPath.Path))
+                {
+                    _settings.Directories.Add(selectedPath.Path);
+                }
+            }
+            if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
+            {
+                if (_selectedDirectoryIndex >= 0 && _selectedDirectoryIndex < _settings.Directories.Count)
+                {
+                    _settings.Directories.RemoveAt(_selectedDirectoryIndex);
+                    _selectedDirectoryIndex = -1; // Deselect
+                }
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawOkButton()
+    {
+        // Position at the bottom right.
+        float modalHeight = 400;
+        float modalWidth = 500;
+        float buttonHeight = 24;
+        float buttonWidth = 80;
+        float padding = 10;
+
+        float buttonY = modalHeight - buttonHeight - padding;
+        float buttonX = modalWidth - buttonWidth - padding;
+
+        UI.BeginVBoxContainer("okButtonContainer", new Vector2(buttonX, buttonY));
+        if (UI.Button("okSettings", "OK", new Vector2(buttonWidth, buttonHeight)))
+        {
+            _host.ModalWindowService.CloseModalWindow(0);
+        }
+        UI.EndVBoxContainer();
+    }
+}
+```
+
+---
 

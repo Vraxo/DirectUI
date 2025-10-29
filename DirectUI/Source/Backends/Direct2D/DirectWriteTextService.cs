@@ -1,10 +1,7 @@
 ﻿// DirectUI/Backends/DirectWriteTextService.cs
-using System;
-using System.Collections.Generic;
-using System.Numerics;
 using DirectUI.Core;
+using System.Numerics;
 using Vortice.DirectWrite;
-using Vortice.Mathematics;
 
 namespace DirectUI.Backends;
 

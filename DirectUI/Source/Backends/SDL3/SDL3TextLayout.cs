@@ -1,8 +1,6 @@
-﻿using System;
-using System.Numerics;
-using DirectUI.Core;
+﻿using DirectUI.Core;
 using SDL3;
-using Vortice.DirectWrite; // For FontWeight, etc.
+using System.Numerics;
 
 namespace DirectUI.Backends.SDL3;
 

@@ -1,11 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Numerics;
-using DirectUI.Core;
-using DirectUI.Drawing;
+﻿using DirectUI.Core;
 using SkiaSharp;
 using SkiaSharp.HarfBuzz;
+using System.Numerics;
 using Vortice.Direct2D1;
 using Vortice.Mathematics;
 

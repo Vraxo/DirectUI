@@ -1,6 +1,5 @@
 ﻿using System.Numerics;
 using Vortice.Mathematics;
-using Vortice.Direct2D1; // Still needed for AntialiasMode enum
 
 namespace DirectUI;
 

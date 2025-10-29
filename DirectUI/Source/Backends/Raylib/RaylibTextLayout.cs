@@ -1,9 +1,7 @@
 ﻿// DirectUI/Backends/Raylib/RaylibTextLayout.cs
-using System;
-using System.Numerics;
 using DirectUI.Core;
-using Vortice.Mathematics; // For Color4, Rect
 using Raylib_cs; // Raylib specific library
+using System.Numerics;
 
 namespace DirectUI.Backends;
 

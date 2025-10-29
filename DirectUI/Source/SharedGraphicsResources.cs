@@ -1,8 +1,7 @@
 ﻿// SharedGraphicsResources.cs
-using System;
+using SharpGen.Runtime;
 using Vortice.Direct2D1;
 using Vortice.DirectWrite;
-using SharpGen.Runtime;
 using D2D = Vortice.Direct2D1;
 using DW = Vortice.DirectWrite;
 

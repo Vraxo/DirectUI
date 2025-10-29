@@ -1,7 +1,6 @@
-﻿using System;
+﻿using DirectUI.Core; // Added for IRenderer
 using System.Numerics;
 using Vortice.Mathematics;
-using DirectUI.Core; // Added for IRenderer
 using D2D = Vortice.Direct2D1; // Added this using directive
 
 namespace DirectUI;

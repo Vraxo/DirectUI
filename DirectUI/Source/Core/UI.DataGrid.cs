@@ -1,10 +1,6 @@
 ﻿// DirectUI/Source/Core/UI.DataGrid.cs
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Numerics;
 using System.Reflection;
-using DirectUI.Drawing;
 using Vortice.Mathematics;
 
 namespace DirectUI;
@@ -26,6 +22,9 @@ public static partial class UI
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
     /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
     /// <param name="trimCellText">If true, text that overflows a cell's width will be truncated and appended with an ellipsis (...).</param>
+    /// <param name="rowVerticalPadding">The vertical padding within each row, affecting its height.</param>
+    /// <param name="enableZebraStriping">If true, alternating rows will have a slightly different background color.</param>
+    /// <param name="onRowRightClick">An action invoked with the row index when a row is right-clicked.</param>
     public static void DataGrid<T>(
         string id,
         IReadOnlyList<T> items,
@@ -35,7 +34,10 @@ public static partial class UI
         out bool rowDoubleClicked,
         Vector2 position = default,
         bool autoSizeColumns = false,
-        bool trimCellText = false)
+        bool trimCellText = false,
+        float rowVerticalPadding = 4f,
+        bool enableZebraStriping = false,
+        Action<int>? onRowRightClick = null)
     {
         if (!IsContextValid())
         {
@@ -97,7 +99,8 @@ public static partial class UI
 
         // --- Style Definitions ---
         float headerHeight = 28f;
-        float rowHeight = 24f;
+        float baseRowHeight = 24f;
+        float rowHeight = baseRowHeight + rowVerticalPadding * 2;
         const float scrollbarThickness = 12f;
 
         var gridStyle = new BoxStyle { FillColor = new(0.1f, 0.1f, 0.1f, 1.0f), BorderLength = 0f, Roundness = 0f };
@@ -181,7 +184,7 @@ public static partial class UI
         Context.Layout.PushClipRect(contentClipRect);
         Context.Renderer.PushClipRect(contentClipRect);
 
-        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText, out rowDoubleClicked);
+        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText, out rowDoubleClicked, enableZebraStriping, onRowRightClick);
 
         // Pop clip rects
         Context.Renderer.PopClipRect();
@@ -381,7 +384,7 @@ public static partial class UI
         return ellipsis; // If nothing else fits
     }
 
-    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText, out bool rowDoubleClicked)
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText, out bool rowDoubleClicked, bool enableZebraStriping, Action<int>? onRowRightClick)
     {
         var input = Context.InputState;
         rowDoubleClicked = false;
@@ -389,6 +392,7 @@ public static partial class UI
         int firstVisibleRow = (int)Math.Floor(state.ScrollOffset.Y / rowHeight);
         int visibleRowCount = (int)Math.Ceiling(viewSize.Y / rowHeight) + 1;
         int lastVisibleRow = Math.Min(items.Count - 1, firstVisibleRow + visibleRowCount);
+        var zebraStyle = new BoxStyle { FillColor = new(1, 1, 1, 0.04f), Roundness = 0, BorderLength = 0 };
 
         for (int i = firstVisibleRow; i <= lastVisibleRow; i++)
         {
@@ -397,8 +401,23 @@ public static partial class UI
             var rowBounds = new Rect(contentBounds.X, rowY, viewSize.X, rowHeight); // Use view width for selection
             bool isSelected = i == selectedIndex;
 
+            if (enableZebraStriping && i % 2 == 1)
+            {
+                Context.Renderer.DrawBox(rowBounds, zebraStyle);
+            }
+
             int rowId = HashCode.Combine(id, "row", i);
             var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, out _, out _, isSelected);
+
+            if (onRowRightClick is not null)
+            {
+                bool isHoveringRow = rowBounds.Contains(input.MousePosition);
+                if (isHoveringRow && input.WasRightMousePressedThisFrame && State.PotentialInputTargetId == rowId)
+                {
+                    onRowRightClick(i);
+                }
+            }
+
 
             if (clickResult != ClickResult.None)
             {

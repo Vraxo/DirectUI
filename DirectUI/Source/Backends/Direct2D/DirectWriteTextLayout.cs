@@ -1,9 +1,8 @@
 ﻿// DirectUI/Backends/DirectWriteTextLayout.cs
-using System;
-using System.Numerics;
 using DirectUI.Core;
-using Vortice.DirectWrite;
 using SharpGen.Runtime;
+using System.Numerics;
+using Vortice.DirectWrite;
 
 namespace DirectUI.Backends;
 
