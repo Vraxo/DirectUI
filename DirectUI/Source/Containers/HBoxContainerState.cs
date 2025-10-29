@@ -23,18 +23,24 @@ public class HBoxContainerState : ILayoutContainer
 
     public void Advance(Vector2 elementSize)
     {
+        // If this is not the first element, add a gap BEFORE it.
+        if (ElementCount > 0)
+        {
+            CurrentPosition = new Vector2(CurrentPosition.X + Gap, CurrentPosition.Y);
+            AccumulatedWidth += Gap;
+        }
+
+        // Now, account for the element itself.
         if (elementSize.Y > MaxElementHeight)
         {
             MaxElementHeight = elementSize.Y;
         }
 
         AccumulatedWidth += elementSize.X;
-        if (ElementCount > 0)
-        {
-            AccumulatedWidth += Gap;
-        }
-        float advanceX = elementSize.X + Gap;
-        CurrentPosition = new Vector2(CurrentPosition.X + advanceX, CurrentPosition.Y);
+
+        // The next logical position is simply after the current element.
+        // The gap for the *next* element will be handled in its own Advance call.
+        CurrentPosition = new Vector2(CurrentPosition.X + elementSize.X, CurrentPosition.Y);
         ElementCount++;
     }
 }

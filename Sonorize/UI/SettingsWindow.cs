@@ -121,11 +121,12 @@ public class SettingsWindow
             float okButtonWidth = 80;
             float cancelButtonWidth = 80;
 
-            // Total width consumed by visible elements and the gap BETWEEN them.
+            // Total width consumed by the visible buttons and the gaps that will be placed BETWEEN them.
+            // With the new logic, 3 elements ([Spacer], [Cancel], [OK]) will have 2 gaps between them.
             float buttonsAndGapsWidth = cancelButtonWidth + buttonGap + okButtonWidth;
 
-            // The HBox will add a gap *after* our spacer element, so we must account for it.
-            float spacerWidth = width - buttonsAndGapsWidth - buttonGap;
+            // The spacer's width is simply the remaining space. The container's corrected logic will handle the gaps.
+            float spacerWidth = width - buttonsAndGapsWidth;
 
             if (spacerWidth > 0)
             {
