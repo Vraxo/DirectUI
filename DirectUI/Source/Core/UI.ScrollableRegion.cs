@@ -6,11 +6,10 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth, Vector2 padding = default)
+    public static void BeginScrollableRegion(string id, Vector2 size, float gap = 0f, Vector2 padding = default)
     {
         if (!IsContextValid())
         {
-            availableInnerWidth = size.X;
             return;
         }
 
@@ -26,11 +25,6 @@ public static partial class UI
         scrollState.CalculatedContentSize = Vector2.Zero;
         scrollState.Padding = padding;
 
-        const float scrollbarThickness = 12f;
-        const float scrollbarGap = 4f;
-        bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
-        availableInnerWidth = size.X - (padding.X * 2) - (scrollbarWillBeVisible ? scrollbarThickness + scrollbarGap : 0);
-
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
         {
             var offset = scrollState.CurrentScrollOffset;
@@ -43,22 +37,38 @@ public static partial class UI
         clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
         scrollState.CurrentScrollOffset = clampedOffset;
 
-        var contentStartPosition = position + padding - scrollState.CurrentScrollOffset;
-        scrollState.SetContentStartPosition(contentStartPosition);
+        var contentStartPosition = position - scrollState.CurrentScrollOffset;
 
         Context.Layout.PushClipRect(regionBounds);
         Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
+
+        // Push the main state so EndScrollableRegion can find it.
         Context.Layout.PushContainer(scrollState);
+
+        // ** THE FIX **
+        // Now, immediately begin an internal VBox that is correctly offset and padded.
+        // The user's code will draw directly into this VBox.
+        Context.Layout.BeginVBox(HashCode.Combine(intId, "internal_vbox"), contentStartPosition + padding, gap);
     }
 
     public static void EndScrollableRegion()
     {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
-        { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
+        if (Context.Layout.ContainerStackCount < 2
+            || Context.Layout.PeekContainer() is not VBoxContainerState innerVBox)
+        { Console.WriteLine("Error: EndScrollableRegion found an invalid container stack. Mismatched Begin/End call."); return; }
 
-        var totalContentSize = scrollState.CalculatedContentSize + scrollState.Padding * 2;
+        // Pop the internal VBox to get its measured size.
+        Context.Layout.PopContainer();
+
+        if (Context.Layout.ContainerStackCount < 1
+            || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
+        { Console.WriteLine("Error: EndScrollableRegion could not find its own state on the stack."); return; }
+
+        var innerContentSize = innerVBox.GetAccumulatedSize();
+        var totalContentSize = innerContentSize + scrollState.Padding * 2;
         scrollState.ContentSize = totalContentSize;
 
+        // Pop our own state and the clip rects.
         Context.Layout.PopContainer();
         Context.Renderer.PopClipRect();
         Context.Layout.PopClipRect();

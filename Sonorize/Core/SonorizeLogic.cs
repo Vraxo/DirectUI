@@ -184,7 +184,9 @@ public class SonorizeLogic : IAppLogic
             UI.EndHBoxContainer();
 
             // Scrollable list of playlists
-            UI.BeginScrollableRegion("playlistScroll", new Vector2(_sidebarWidth - 20, availableHeight - UI.Context.Layout.GetCurrentPosition().Y - 20), out float innerWidth);
+            float innerWidth = _sidebarWidth - 20;
+            float scrollHeight = availableHeight - UI.Context.Layout.GetCurrentPosition().Y - 20;
+            UI.BeginScrollableRegion("playlistScroll", new Vector2(innerWidth, scrollHeight));
             {
                 for (int i = 0; i < _settings.Playlists.Count; i++)
                 {
@@ -276,8 +278,6 @@ public class SonorizeLogic : IAppLogic
 
         var song = currentViewFiles[_rightClickedSongIndex];
 
-        // This is a bit of a hack. Since context menus are popups, they are drawn at the end of the frame.
-        // We can open another modal from within the context menu's drawing callback.
         if (UI.BeginContextMenu($"song_context_{song.FilePath}"))
         {
             int selectedItem = UI.ContextMenu("addToPlaylistMenu", ["Add to playlist..."]);
@@ -297,11 +297,11 @@ public class SonorizeLogic : IAppLogic
             UI.Text("addToPlaylistHeader", $"Add '{song.Title}' to:", style: new ButtonStyle { FontSize = 16 });
             UI.Separator(280);
 
-            UI.BeginScrollableRegion("playlistSelectScroll", new(280, 300), out float innerWidth);
+            UI.BeginScrollableRegion("playlistSelectScroll", new(280, 300), gap: 2);
             {
                 foreach (var playlist in _settings.Playlists)
                 {
-                    if (UI.Button(playlist.Name, playlist.Name, new Vector2(innerWidth, 24), textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
+                    if (UI.Button(playlist.Name, playlist.Name, new Vector2(280, 24), textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
                     {
                         if (!playlist.Tracks.Any(t => t.FilePath == song.FilePath))
                         {
@@ -327,8 +327,6 @@ public class SonorizeLogic : IAppLogic
     private void OnPlaylistSelected(Playlist playlist) { }
     private void OnCreatePlaylist()
     {
-        // For simplicity, create a new playlist with a default name directly.
-        // A modal for naming it would be the next step.
         int num = _settings.Playlists.Count + 1;
         _settings.Playlists.Add(new Playlist { Name = $"New Playlist {num}" });
     }

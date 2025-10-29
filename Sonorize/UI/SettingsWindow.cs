@@ -23,56 +23,56 @@ public class SettingsWindow
         float padding = 10;
         var scrollAreaSize = new Vector2(context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y);
 
-        // The entire modal content is now inside one scrollable region with internal padding.
-        UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, out float innerWidth, new Vector2(padding, padding));
+        // The entire modal content is now inside one scrollable region.
+        // We pass padding and the gap between elements directly to it.
+        UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, gap: 15, padding: new Vector2(padding, padding));
         {
-            // This VBox now starts at (0,0) relative to the padded scroll area.
-            UI.BeginVBoxContainer("settingsVBox", Vector2.Zero, 15);
+            float contentWidth = scrollAreaSize.X - (padding * 2);
+
+            // --- Appearance Section ---
+            UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
+
+            bool zebraStriping = _settings.EnableZebraStriping;
+            if (UI.Checkbox("zebraStriping", "Enable Zebra Striping", ref zebraStriping))
             {
-                // --- Appearance Section ---
-                UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
-
-                bool zebraStriping = _settings.EnableZebraStriping;
-                if (UI.Checkbox("zebraStriping", "Enable Zebra Striping", ref zebraStriping))
-                {
-                    _settings.EnableZebraStriping = zebraStriping;
-                }
-
-                UI.Text("compactnessLabel", "Compactness");
-                float compactness = _settings.CompactnessLevel;
-                float newCompactness = UI.HSlider("compactnessSlider", compactness, 1, 3, new Vector2(150, 20), step: 1);
-                if (newCompactness != compactness)
-                {
-                    _settings.CompactnessLevel = (int)Math.Round(newCompactness);
-                }
-
-                UI.Text("overflowLabel", "Track List Text Overflow");
-                int overflowIndex = (int)_settings.TrackListOverflow;
-                if (UI.RadioButtons("overflowRadio", ["Wrap", "Truncate"], ref overflowIndex, size: new Vector2(100, 24)))
-                {
-                    _settings.TrackListOverflow = (TextOverflowMode)overflowIndex;
-                }
-
-                // --- Library Section ---
-                UI.Separator(innerWidth);
-                UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
-                DrawDirectoriesList(innerWidth);
-                DrawActionButtons();
-
-                // --- OK/Cancel Buttons ---
-                UI.Separator(innerWidth);
-                DrawOkCancelButtons(innerWidth);
+                _settings.EnableZebraStriping = zebraStriping;
             }
-            UI.EndVBoxContainer();
+
+            UI.Text("compactnessLabel", "Compactness");
+            float compactness = _settings.CompactnessLevel;
+            float newCompactness = UI.HSlider("compactnessSlider", compactness, 1, 3, new Vector2(150, 20), step: 1);
+            if (newCompactness != compactness)
+            {
+                _settings.CompactnessLevel = (int)Math.Round(newCompactness);
+            }
+
+            UI.Text("overflowLabel", "Track List Text Overflow");
+            int overflowIndex = (int)_settings.TrackListOverflow;
+            if (UI.RadioButtons("overflowRadio", ["Wrap", "Truncate"], ref overflowIndex, size: new Vector2(100, 24)))
+            {
+                _settings.TrackListOverflow = (TextOverflowMode)overflowIndex;
+            }
+
+            // --- Library Section ---
+            UI.Separator(contentWidth);
+            UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
+            DrawDirectoriesList(contentWidth);
+            DrawActionButtons();
+
+            // --- OK/Cancel Buttons ---
+            UI.Separator(contentWidth);
+            DrawOkCancelButtons(contentWidth);
         }
         UI.EndScrollableRegion();
     }
 
     private void DrawDirectoriesList(float width)
     {
-        // Restore a reasonable height now that the whole panel is scrollable.
-        UI.BeginScrollableRegion("dirsScrollInner", new Vector2(width, 140), out float innerWidth);
+        // Corrected the call to match the new signature (no 'out' parameter).
+        UI.BeginScrollableRegion("dirsScrollInner", new Vector2(width, 140), gap: 2);
         {
+            // The inner width is now simply the width of the scroll region itself.
+            float innerWidth = width;
             var selectedStyle = new ButtonStylePack();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
             selectedStyle.ActiveHover.FillColor = DefaultTheme.Accent;
@@ -117,10 +117,8 @@ public class SettingsWindow
 
     private void DrawOkCancelButtons(float width)
     {
-        // Buttons are now part of the main VBox flow, positioned with an HBox.
         UI.BeginHBoxContainer("okCancelButtonsHBox", Vector2.Zero, 5);
         {
-            // Spacer to push buttons to the right
             float buttonsTotalWidth = 80 + 5 + 80; // cancel + gap + ok
             float spacerWidth = width - buttonsTotalWidth;
             if (spacerWidth > 0)
