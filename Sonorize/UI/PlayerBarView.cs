@@ -131,11 +131,11 @@ public class PlayerBarView
         var toggleTheme = new ButtonStylePack(theme);
         toggleTheme.Active.FontColor = DefaultTheme.Accent;
 
-        float buttonsWidth = smallButtonSize.X * 4 + playButtonSize.X + 16 * 2;
+        float gap = 16f;
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (gap * 4);
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
 
-        var hboxPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(buttonsStartX, 0);
-        UI.BeginHBoxContainer("playbackButtons", hboxPos, 16, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
+        UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, 0), gap, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
         {
             bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
             if (UI.Button("shuffle", "🔀", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive))
@@ -170,7 +170,7 @@ public class PlayerBarView
 
         float sliderWidth = panelWidth - (timeLabelWidth * 2);
 
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0, VAlignment.Center, 20);
+        UI.BeginHBoxContainer("seekHBox", Vector2.Zero, 0, VAlignment.Center, 20);
         {
             UI.Text("currentTime", currentTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Right, VAlignment.Center));
 

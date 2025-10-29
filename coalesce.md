@@ -1161,18 +1161,24 @@ public class HBoxContainerState : ILayoutContainer
 
     public void Advance(Vector2 elementSize)
     {
+        // If this is not the first element, add a gap BEFORE it.
+        if (ElementCount > 0)
+        {
+            CurrentPosition = new Vector2(CurrentPosition.X + Gap, CurrentPosition.Y);
+            AccumulatedWidth += Gap;
+        }
+
+        // Now, account for the element itself.
         if (elementSize.Y > MaxElementHeight)
         {
             MaxElementHeight = elementSize.Y;
         }
 
         AccumulatedWidth += elementSize.X;
-        if (ElementCount > 0)
-        {
-            AccumulatedWidth += Gap;
-        }
-        float advanceX = elementSize.X + Gap;
-        CurrentPosition = new Vector2(CurrentPosition.X + advanceX, CurrentPosition.Y);
+
+        // The next logical position is simply after the current element.
+        // The gap for the *next* element will be handled in its own Advance call.
+        CurrentPosition = new Vector2(CurrentPosition.X + elementSize.X, CurrentPosition.Y);
         ElementCount++;
     }
 }
@@ -1297,21 +1303,35 @@ public class ScrollContainerState : ILayoutContainer
 {
     // State managed by the UI system
     internal Vector2 CurrentScrollOffset { get; set; }
+    internal Vector2 Padding { get; set; }
 
     // Per-frame calculated values
     internal int Id { get; set; }
     internal Vector2 Position { get; set; }
     internal Vector2 VisibleSize { get; set; }
-    internal Vector2 ContentSize { get; set; }
+    internal Vector2 ContentSize { get; set; } // Content size from *previous* frame (includes padding)
     internal bool IsHovered { get; set; }
-    internal VBoxContainerState ContentVBox { get; set; } = null!;
 
-    // Public parameterless constructor required for GetOrCreateElement
+    // State for the current frame's layout pass
+    internal Vector2 CalculatedContentSize { get; set; } // Content size measured *this* frame (inner content only)
+    private Vector2 ContentStartPosition { get; set; }
+
     public ScrollContainerState() { }
 
-    public Vector2 GetCurrentPosition() => ContentVBox.GetCurrentPosition();
+    // This is called by child containers to get their starting position.
+    public Vector2 GetCurrentPosition() => ContentStartPosition;
 
-    public void Advance(Vector2 elementSize) => ContentVBox.Advance(elementSize);
+    // This is called by the child container when it finishes, reporting its total size.
+    public void Advance(Vector2 elementSize)
+    {
+        CalculatedContentSize = Vector2.Max(CalculatedContentSize, elementSize);
+    }
+
+    // Internal method for BeginScrollableRegion to set up the content's drawing position.
+    internal void SetContentStartPosition(Vector2 position)
+    {
+        ContentStartPosition = position;
+    }
 }
 ```
 
@@ -1355,6 +1375,7 @@ public class VBoxContainerState : ILayoutContainer
     internal float AccumulatedHeight { get; set; } = 0f; // Track height for container bounds
     internal int ElementCount { get; set; } = 0;
     internal Vector2 MinSize { get; set; } = Vector2.Zero;
+    internal float? ConstrainedWidth { get; set; } = null;
 
     internal VBoxContainerState(int id)
     {
@@ -1380,7 +1401,11 @@ public class VBoxContainerState : ILayoutContainer
         ElementCount++;
     }
 
-    public Vector2 GetAccumulatedSize() => new(Math.Max(MinSize.X, MaxElementWidth), Math.Max(MinSize.Y, AccumulatedHeight));
+    public Vector2 GetAccumulatedSize()
+    {
+        float finalWidth = ConstrainedWidth ?? Math.Max(MinSize.X, MaxElementWidth);
+        return new(finalWidth, Math.Max(MinSize.Y, AccumulatedHeight));
+    }
 }
 ```
 
@@ -2344,6 +2369,19 @@ public static partial class UI
         return -1; // No item was clicked on *this* frame
     }
 
+    public static float GetAvailableContentWidth()
+    {
+        if (!IsContextValid()) return 0;
+
+        if (Context.ContentWidthStack.Count > 0)
+        {
+            return Context.ContentWidthStack.Peek();
+        }
+
+        // Fallback to the renderer's full width if not in a constrained container.
+        return Context.Renderer.RenderTargetSize.X;
+    }
+
 
     // --- Helper Methods ---
     private static bool IsContextValid()
@@ -2387,6 +2425,9 @@ public static partial class UI
     /// <param name="position">An optional absolute position for the grid. If not provided, it uses the current layout position.</param>
     /// <param name="autoSizeColumns">If true, columns are proportionally resized to fit the available width, disabling horizontal scrolling and user resizing.</param>
     /// <param name="trimCellText">If true, text that overflows a cell's width will be truncated and appended with an ellipsis (...).</param>
+    /// <param name="rowVerticalPadding">The vertical padding within each row, affecting its height.</param>
+    /// <param name="enableZebraStriping">If true, alternating rows will have a slightly different background color.</param>
+    /// <param name="onRowRightClick">An action invoked with the row index when a row is right-clicked.</param>
     public static void DataGrid<T>(
         string id,
         IReadOnlyList<T> items,
@@ -2396,7 +2437,10 @@ public static partial class UI
         out bool rowDoubleClicked,
         Vector2 position = default,
         bool autoSizeColumns = false,
-        bool trimCellText = false)
+        bool trimCellText = false,
+        float rowVerticalPadding = 4f,
+        bool enableZebraStriping = false,
+        Action<int>? onRowRightClick = null)
     {
         if (!IsContextValid())
         {
@@ -2458,7 +2502,8 @@ public static partial class UI
 
         // --- Style Definitions ---
         float headerHeight = 28f;
-        float rowHeight = 24f;
+        float baseRowHeight = 24f;
+        float rowHeight = baseRowHeight + rowVerticalPadding * 2;
         const float scrollbarThickness = 12f;
 
         var gridStyle = new BoxStyle { FillColor = new(0.1f, 0.1f, 0.1f, 1.0f), BorderLength = 0f, Roundness = 0f };
@@ -2542,7 +2587,7 @@ public static partial class UI
         Context.Layout.PushClipRect(contentClipRect);
         Context.Renderer.PushClipRect(contentClipRect);
 
-        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText, out rowDoubleClicked);
+        DrawDataGridRows(intId, sortedItems, columns, state, contentBounds, new Vector2(viewWidth, viewHeight), rowHeight, ref displayIndex, rowStyle, trimCellText, out rowDoubleClicked, enableZebraStriping, onRowRightClick);
 
         // Pop clip rects
         Context.Renderer.PopClipRect();
@@ -2742,7 +2787,7 @@ public static partial class UI
         return ellipsis; // If nothing else fits
     }
 
-    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText, out bool rowDoubleClicked)
+    private static void DrawDataGridRows<T>(int id, IReadOnlyList<T> items, IReadOnlyList<DataGridColumn> columns, DataGridState state, Rect contentBounds, Vector2 viewSize, float rowHeight, ref int selectedIndex, ButtonStylePack rowStyle, bool trimCellText, out bool rowDoubleClicked, bool enableZebraStriping, Action<int>? onRowRightClick)
     {
         var input = Context.InputState;
         rowDoubleClicked = false;
@@ -2750,6 +2795,7 @@ public static partial class UI
         int firstVisibleRow = (int)Math.Floor(state.ScrollOffset.Y / rowHeight);
         int visibleRowCount = (int)Math.Ceiling(viewSize.Y / rowHeight) + 1;
         int lastVisibleRow = Math.Min(items.Count - 1, firstVisibleRow + visibleRowCount);
+        var zebraStyle = new BoxStyle { FillColor = new(1, 1, 1, 0.04f), Roundness = 0, BorderLength = 0 };
 
         for (int i = firstVisibleRow; i <= lastVisibleRow; i++)
         {
@@ -2758,8 +2804,23 @@ public static partial class UI
             var rowBounds = new Rect(contentBounds.X, rowY, viewSize.X, rowHeight); // Use view width for selection
             bool isSelected = i == selectedIndex;
 
+            if (enableZebraStriping && i % 2 == 1)
+            {
+                Context.Renderer.DrawBox(rowBounds, zebraStyle);
+            }
+
             int rowId = HashCode.Combine(id, "row", i);
             var clickResult = DrawButtonPrimitive(rowId, rowBounds, "", rowStyle, false, default, DirectUI.Button.ActionMode.Press, DirectUI.Button.ClickBehavior.Left, Vector2.Zero, out _, out _, isSelected);
+
+            if (onRowRightClick is not null)
+            {
+                bool isHoveringRow = rowBounds.Contains(input.MousePosition);
+                if (isHoveringRow && input.WasRightMousePressedThisFrame && State.PotentialInputTargetId == rowId)
+                {
+                    onRowRightClick(i);
+                }
+            }
+
 
             if (clickResult != ClickResult.None)
             {
@@ -3289,7 +3350,8 @@ public static partial class UI
 
         bool valueChanged = false;
 
-        BeginHBoxContainer(id + "_hbox", Context.Layout.GetCurrentPosition(), gap);
+        // The HBox should start at the current layout position, so its relative position is Zero.
+        BeginHBoxContainer(id + "_hbox", Vector2.Zero, gap);
 
         for (int i = 0; i < labels.Length; i++)
         {
@@ -3552,11 +3614,10 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static void BeginScrollableRegion(string id, Vector2 size, out float availableInnerWidth)
+    public static void BeginScrollableRegion(string id, Vector2 size, float gap = 0f, Vector2 padding = default)
     {
         if (!IsContextValid())
         {
-            availableInnerWidth = size.X;
             return;
         }
 
@@ -3569,69 +3630,68 @@ public static partial class UI
         scrollState.Position = position;
         scrollState.VisibleSize = size;
         scrollState.IsHovered = regionBounds.Contains(Context.InputState.MousePosition);
+        scrollState.CalculatedContentSize = Vector2.Zero;
+        scrollState.Padding = padding;
 
-        // Predict if a scrollbar will be needed based on the previous frame's content size.
-        // This is a common and effective pattern in immediate-mode UIs.
-        const float scrollbarThickness = 12f; // Must match the value in EndScrollableRegion
-        const float scrollbarGap = 4f; // Add a small gap between content and scrollbar
+        const float scrollbarThickness = 12f;
         bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
-        // If scrollbar is visible, reduce the available width by its thickness and a small gap.
-        availableInnerWidth = scrollbarWillBeVisible ? size.X - scrollbarThickness - scrollbarGap : size.X;
 
+        float availableInnerWidth = size.X - (padding.X * 2) - (scrollbarWillBeVisible ? scrollbarThickness : 0);
 
-        // Handle scroll input
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
         {
             var offset = scrollState.CurrentScrollOffset;
-            offset.Y -= Context.InputState.ScrollDelta * 20; // Apply scroll wheel input
+            offset.Y -= Context.InputState.ScrollDelta * 20;
             scrollState.CurrentScrollOffset = offset;
         }
 
-        // Clamp the offset *before* using it for layout. Use the content size from the *previous* frame for this.
         float maxScrollY = Math.Max(0, scrollState.ContentSize.Y - scrollState.VisibleSize.Y);
         var clampedOffset = scrollState.CurrentScrollOffset;
         clampedOffset.Y = Math.Clamp(clampedOffset.Y, 0, maxScrollY);
         scrollState.CurrentScrollOffset = clampedOffset;
 
-        // Begin the inner container for content layout, offset by the now-clamped scroll position
-        var contentVBoxId = HashCode.Combine(intId, "scroll_vbox");
-        var contentVBox = Context.Layout.GetOrCreateVBoxState(contentVBoxId);
-        contentVBox.StartPosition = position - scrollState.CurrentScrollOffset;
-        contentVBox.CurrentPosition = position - scrollState.CurrentScrollOffset;
-        contentVBox.Gap = 0; // The user can nest another VBox inside for gaps
-        contentVBox.MaxElementWidth = 0f;
-        contentVBox.AccumulatedHeight = 0f;
-        contentVBox.ElementCount = 0;
-        scrollState.ContentVBox = contentVBox;
+        var contentStartPosition = position - scrollState.CurrentScrollOffset;
 
         Context.Layout.PushClipRect(regionBounds);
         Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
 
+        Context.ContentWidthStack.Push(availableInnerWidth);
         Context.Layout.PushContainer(scrollState);
+
+        var vboxId = HashCode.Combine(intId, "internal_vbox");
+        Context.Layout.BeginVBox(vboxId, contentStartPosition + padding, gap);
+
+        var innerVBoxState = (VBoxContainerState)Context.Layout.PeekContainer();
+        innerVBoxState.ConstrainedWidth = availableInnerWidth;
     }
 
     public static void EndScrollableRegion()
     {
-        if (Context.Layout.ContainerStackCount == 0 || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
-        { Console.WriteLine("Error: EndScrollableRegion called without a matching Begin."); return; }
+        if (Context.Layout.ContainerStackCount < 2
+            || Context.Layout.PeekContainer() is not VBoxContainerState innerVBox)
+        { Console.WriteLine("Error: EndScrollableRegion found an invalid container stack. Mismatched Begin/End call."); return; }
 
-        // Finalize content size based on what was rendered inside the container.
-        // This new size will be used for clamping in the *next* frame.
-        scrollState.ContentSize = new Vector2(scrollState.ContentVBox.MaxElementWidth, scrollState.ContentVBox.AccumulatedHeight);
+        Context.Layout.PopContainer();
 
-        // Pop the container and clip rect so the scrollbar can be drawn outside the content's clipped area.
+        if (Context.Layout.ContainerStackCount < 1
+            || Context.Layout.PeekContainer() is not ScrollContainerState scrollState)
+        { Console.WriteLine("Error: EndScrollableRegion could not find its own state on the stack."); return; }
+
+        var innerContentSize = innerVBox.GetAccumulatedSize();
+        var totalContentSize = innerContentSize + scrollState.Padding * 2;
+        scrollState.ContentSize = totalContentSize;
+
+        Context.ContentWidthStack.Pop();
         Context.Layout.PopContainer();
         Context.Renderer.PopClipRect();
         Context.Layout.PopClipRect();
 
-        // Draw scrollbar if needed. This will return a new, validated scroll offset.
         if (scrollState.ContentSize.Y > scrollState.VisibleSize.Y)
         {
             string scrollBarIdString = scrollState.Id + "_scrollbar";
             float scrollbarThickness = 12f;
             var scrollBarPos = new Vector2(scrollState.Position.X + scrollState.VisibleSize.X - scrollbarThickness, scrollState.Position.Y);
 
-            // The VScrollBar handles all its own logic, including clamping the value against the new content size.
             float newScrollY = VScrollBar(
                 id: scrollBarIdString,
                 currentScrollOffset: scrollState.CurrentScrollOffset.Y,
@@ -3641,16 +3701,13 @@ public static partial class UI
                 visibleHeight: scrollState.VisibleSize.Y,
                 thickness: scrollbarThickness);
 
-            // Update the state with the value from the scrollbar for the next frame.
             scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, newScrollY);
         }
         else
         {
-            // If no scrollbar is needed, ensure the offset is zero.
             scrollState.CurrentScrollOffset = new Vector2(scrollState.CurrentScrollOffset.X, 0);
         }
 
-        // After everything, advance the main layout cursor by the size of the scroll region itself.
         Context.Layout.AdvanceLayout(scrollState.VisibleSize);
     }
 }
@@ -3927,6 +3984,18 @@ namespace DirectUI;
 
 public static partial class UI
 {
+    /// <summary>
+    /// Draws a separator line that automatically spans the available content width.
+    /// </summary>
+    public static void Separator(float thickness = 1f, float verticalPadding = 4f, Color4? color = null)
+    {
+        float width = GetAvailableContentWidth();
+        Separator(width, thickness, verticalPadding, color);
+    }
+
+    /// <summary>
+    /// Draws a separator line with a specific width.
+    /// </summary>
     public static void Separator(float width, float thickness = 1f, float verticalPadding = 4f, Color4? color = null)
     {
         if (!IsContextValid())
@@ -4709,6 +4778,7 @@ public class UIContext
     internal readonly Stack<TreeViewState> treeStateStack = new();
     internal readonly Stack<(StyleVar, object)> styleVarStack = new();
     internal readonly Stack<(StyleColor, Color)> styleColorStack = new();
+    internal readonly Stack<float> ContentWidthStack = new();
     public bool IsLayoutPass { get; internal set; } = false;
 
     public UIContext(IRenderer renderer, ITextService textService, InputState inputState, float deltaTime, float totalTime, float uiScale)
@@ -4810,13 +4880,17 @@ public class UILayoutManager
         return vboxState;
     }
 
-    public void BeginHBox(int id, Vector2 startPosition, float gap)
+    public void BeginHBox(int id, Vector2 relativePosition, float gap)
     {
         var hboxState = GetOrCreateHBoxState(id);
 
-        // Reset per-frame properties
-        hboxState.StartPosition = startPosition;
-        hboxState.CurrentPosition = startPosition;
+        // Calculate the actual starting position by inheriting from the parent container.
+        var parentStartPosition = IsInLayoutContainer() ? GetCurrentPosition() : Vector2.Zero;
+        var actualStartPosition = parentStartPosition + relativePosition;
+
+        // Reset per-frame properties with the correct starting position.
+        hboxState.StartPosition = actualStartPosition;
+        hboxState.CurrentPosition = actualStartPosition;
         hboxState.Gap = gap;
         hboxState.MaxElementHeight = 0f;
         hboxState.AccumulatedWidth = 0f;
@@ -4825,18 +4899,23 @@ public class UILayoutManager
         PushContainer(hboxState);
     }
 
-    public void BeginVBox(int id, Vector2 startPosition, float gap, Vector2 minSize = default)
+    public void BeginVBox(int id, Vector2 relativePosition, float gap, Vector2 minSize = default)
     {
         VBoxContainerState vboxState = GetOrCreateVBoxState(id);
 
-        // Reset per-frame properties
-        vboxState.StartPosition = startPosition;
-        vboxState.CurrentPosition = startPosition;
+        // Calculate the actual starting position by inheriting from the parent container.
+        var parentStartPosition = IsInLayoutContainer() ? GetCurrentPosition() : Vector2.Zero;
+        var actualStartPosition = parentStartPosition + relativePosition;
+
+        // Reset per-frame properties with the correct starting position.
+        vboxState.StartPosition = actualStartPosition;
+        vboxState.CurrentPosition = actualStartPosition;
         vboxState.Gap = gap;
         vboxState.MaxElementWidth = 0f;
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
         vboxState.MinSize = minSize;
+        vboxState.ConstrainedWidth = null;
 
         PushContainer(vboxState);
     }
@@ -7134,7 +7213,37 @@ public static class FileDialogs
                     return outPath;
                 case NfdStatus.Cancelled:
                     return null;
-                default:
+                default: // NfdStatus.Error
+                    Console.WriteLine($"[NativeFileDialog] Dialog error.");
+                    return null;
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[NativeFileDialog] An exception occurred: {ex.Message}");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Opens a native dialog for selecting a single folder.
+    /// </summary>
+    /// <param name="defaultPath">The default path to open the dialog in.</param>
+    /// <returns>The path of the selected folder, or null if canceled or an error occurred.</returns>
+    public static string? PickFolder(string? defaultPath = null)
+    {
+        try
+        {
+            NfdStatus result = Nfd.PickFolder(out string? outPath, defaultPath);
+
+            switch (result)
+            {
+                case NfdStatus.Ok:
+                    return outPath;
+                case NfdStatus.Cancelled:
+                    return null;
+                default: // NfdStatus.Error
+                    Console.WriteLine($"[NativeFileDialog] Dialog error.");
                     return null;
             }
         }
@@ -14460,283 +14569,7 @@ public interface IWindowHost : IDisposable
 
 ---
 
-### `Sonorize\Source\Program.cs`
-
-```csharp
-using DirectUI;
-
-namespace Sonorize;
-
-public static class Program
-{
-    [STAThread]
-    public static void Main()
-    {
-        var backend = GraphicsBackend.SkiaSharp;
-        ApplicationRunner.Run(backend, host => new SonorizeLogic(host));
-    }
-}
-```
-
----
-
-### `Sonorize\Source\SonorizeLogic.cs`
-
-```csharp
-using System.Numerics;
-using System.Text.Json;
-using DirectUI;
-using DirectUI.Backends.SkiaSharp;
-using DirectUI.Core;
-using Sonorize.Audio;
-
-namespace Sonorize;
-
-public class SonorizeLogic : IAppLogic
-{
-    private readonly IWindowHost _host;
-    private readonly Settings _settings;
-    private readonly string _settingsFilePath = "settings.json";
-
-    private readonly MenuBar _menuBar;
-    private readonly SettingsWindow _settingsWindow;
-    private readonly MusicLibrary _musicLibrary = new();
-    private readonly PlaybackManager _playbackManager;
-    private readonly PlaybackControlsView _playbackControlsView;
-    private readonly LibraryView _libraryView;
-    private readonly AlbumsView _albumsView;
-    private readonly ArtistsView _artistsView;
-    private readonly PlaylistsView _playlistsView;
-
-    // --- Navigation State ---
-    private int _activeTabIndex = 0;
-    private readonly string[] _tabLabels = { "Songs", "Albums", "Artists", "Playlists" };
-    private string? _artistFilter;
-    private AlbumInfo? _albumFilter;
-    private Playlist? _playlistFilter;
-    private string _searchText = "";
-
-
-    public SonorizeLogic(IWindowHost host)
-    {
-        _host = host;
-        _settings = LoadState();
-
-        ConfigureWindowStyles(host);
-
-        _menuBar = new(OpenSettingsModal);
-        _settingsWindow = new(_settings, _host);
-        _playbackManager = new PlaybackManager(new AudioPlayer());
-        _playbackControlsView = new PlaybackControlsView(_playbackManager, _settings);
-
-        // Pass callbacks to the views for drill-down navigation
-        _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings);
-        _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
-        _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
-        _playlistsView = new PlaylistsView(_musicLibrary, OnPlaylistSelected);
-
-        // Start scanning for music files
-        _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
-    }
-
-    private Settings LoadState()
-    {
-        try
-        {
-            if (File.Exists(_settingsFilePath))
-            {
-                string json = File.ReadAllText(_settingsFilePath);
-                return JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
-            }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error loading settings: {ex.Message}");
-        }
-
-        return new();
-    }
-
-    public void SaveState()
-    {
-        try
-        {
-            JsonSerializerOptions options = new()
-            {
-                WriteIndented = true
-            };
-
-            string json = JsonSerializer.Serialize(_settings, options);
-            File.WriteAllText(_settingsFilePath, json);
-            Console.WriteLine($"Settings saved to {_settingsFilePath}");
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"Error saving settings: {ex.Message}");
-        }
-        finally
-        {
-            _playbackManager.Dispose();
-        }
-    }
-
-    private static void ConfigureWindowStyles(IWindowHost host)
-    {
-        if (host is not SilkNetWindowHost silkHost)
-        {
-            return;
-        }
-
-        // ========================================================================
-        // == CONFIGURING WINDOW BACKDROP AND TITLE BAR (WINDOWS 11+)           ==
-        // ========================================================================
-        // This example enables a modern Mica window with a dark title bar.
-        // It requires Windows 11 (Build 22621 or newer). On older systems,
-        // it will fall back to a standard solid color window.
-        silkHost.BackdropType = WindowBackdropType.Default;
-        silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
-    }
-
-    public void DrawUI(UIContext context)
-    {
-        _menuBar.Draw(context);
-
-        _playbackManager.Update();
-
-        float menuBarHeight = 30f;
-        float searchBarHeight = 24f;
-        float tabBarHeight = 30f;
-        float playbackControlsHeight = 70f;
-        float padding = 10f;
-        float verticalGap = 5f;
-
-        // --- Search Bar ---
-        var searchBarPos = new Vector2(padding, menuBarHeight + verticalGap);
-        var searchBarSize = new Vector2(context.Renderer.RenderTargetSize.X - (padding * 2), searchBarHeight);
-        UI.InputText("searchBox", ref _searchText, searchBarSize, searchBarPos, placeholderText: "Search...");
-
-
-        // --- Tab Bar ---
-        var tabBarPos = new Vector2(padding, searchBarPos.Y + searchBarHeight + verticalGap);
-
-        var tabTheme = new ButtonStylePack();
-        tabTheme.Normal.FillColor = new DirectUI.Drawing.Color(45 / 255f, 45 / 255f, 48 / 255f, 1.0f);
-        tabTheme.Normal.BorderColor = DefaultTheme.NormalBorder;
-        tabTheme.Hover.FillColor = new DirectUI.Drawing.Color(60 / 255f, 60 / 255f, 63 / 255f, 1.0f);
-
-        UI.BeginHBoxContainer("tabBarHBox", tabBarPos, 2);
-        {
-            if (_albumFilter is not null || _artistFilter is not null || _playlistFilter is not null)
-            {
-                if (UI.Button("backNav", "<", new Vector2(30, tabBarHeight)))
-                {
-                    OnBack();
-                }
-            }
-
-            int previousTab = _activeTabIndex;
-            UI.TabBar("mainTabs", _tabLabels, ref _activeTabIndex, tabTheme);
-            if (_activeTabIndex != previousTab)
-            {
-                // Clear filters when user manually changes tab for clarity
-                _artistFilter = null;
-                _albumFilter = null;
-                _playlistFilter = null;
-            }
-        }
-        UI.EndHBoxContainer();
-
-
-        // --- Main Content Grid ---
-        var gridPos = new Vector2(padding, tabBarPos.Y + tabBarHeight + 2);
-        var gridSize = new Vector2(
-            context.Renderer.RenderTargetSize.X - (padding * 2),
-            context.Renderer.RenderTargetSize.Y - gridPos.Y - playbackControlsHeight - padding
-        );
-
-        switch (_activeTabIndex)
-        {
-            case 0: // Songs
-                _libraryView.Draw(context, gridPos, gridSize, _albumFilter, _playlistFilter, _searchText);
-                break;
-            case 1: // Albums
-                _albumsView.Draw(context, gridPos, gridSize, _artistFilter, _searchText);
-                break;
-            case 2: // Artists
-                _artistsView.Draw(context, gridPos, gridSize, _searchText);
-                break;
-            case 3: // Playlists
-                _playlistsView.Draw(context, gridPos, gridSize, _searchText);
-                break;
-        }
-
-        _playbackControlsView.Draw(context);
-    }
-
-    private void OnArtistSelected(string artistName)
-    {
-        _artistFilter = artistName;
-        _albumFilter = null;
-        _playlistFilter = null;
-        _activeTabIndex = 1; // Switch to Albums tab
-        _searchText = "";    // Clear search on drill-down
-    }
-
-    private void OnAlbumSelected(AlbumInfo album)
-    {
-        _albumFilter = album;
-        // Artist filter is implicitly set by the album's artist
-        _artistFilter = album.Artist;
-        _playlistFilter = null;
-        _activeTabIndex = 0; // Switch to Songs tab
-        _searchText = "";    // Clear search on drill-down
-    }
-
-    private void OnPlaylistSelected(Playlist playlist)
-    {
-        _playlistFilter = playlist;
-        _albumFilter = null;
-        _artistFilter = null;
-        _activeTabIndex = 0; // Switch to Songs tab to show playlist content
-        _searchText = "";
-    }
-
-    private void OnBack()
-    {
-        _searchText = ""; // Clear search on navigating back
-        if (_playlistFilter is not null)
-        {
-            _playlistFilter = null;
-            _activeTabIndex = 3; // Go back to the playlists view
-        }
-        else if (_albumFilter is not null)
-        {
-            _albumFilter = null;
-            _activeTabIndex = 1;
-        }
-        else if (_artistFilter is not null)
-        {
-            _artistFilter = null;
-            _activeTabIndex = 2;
-        }
-    }
-
-    private void OpenSettingsModal()
-    {
-        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
-        {
-            if (resultCode == 0)
-            {
-                _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
-            }
-        });
-    }
-}
-```
-
----
-
-### `Sonorize\Source\Audio\AudioPlayer.cs`
+### `Sonorize\Audio\AudioPlayer.cs`
 
 ```csharp
 using System;
@@ -14855,7 +14688,7 @@ public class AudioPlayer : IDisposable
 
 ---
 
-### `Sonorize\Source\Audio\PlaybackManager.cs`
+### `Sonorize\Audio\PlaybackManager.cs`
 
 ```csharp
 using System;
@@ -15032,7 +14865,384 @@ public class PlaybackManager : IDisposable
 
 ---
 
-### `Sonorize\Source\Data\AlbumInfo.cs`
+### `Sonorize\Core\Program.cs`
+
+```csharp
+using DirectUI;
+
+namespace Sonorize;
+
+public static class Program
+{
+    [STAThread]
+    public static void Main()
+    {
+        var backend = GraphicsBackend.SkiaSharp;
+        ApplicationRunner.Run(backend, host => new SonorizeLogic(host));
+    }
+}
+```
+
+---
+
+### `Sonorize\Core\SonorizeLogic.cs`
+
+```csharp
+using System.Numerics;
+using System.Text.Json;
+using DirectUI;
+using DirectUI.Backends.SkiaSharp;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using Sonorize.Audio;
+
+namespace Sonorize;
+
+public class SonorizeLogic : IAppLogic
+{
+    private readonly IWindowHost _host;
+    private Settings _settings;
+    private readonly string _settingsFilePath = "settings.json";
+
+    private readonly MenuBar _menuBar;
+    private readonly SettingsWindow _settingsWindow;
+    private readonly MusicLibrary _musicLibrary = new();
+    private readonly PlaybackManager _playbackManager;
+    private readonly PlayerBarView _playerBarView;
+    private readonly LibraryView _libraryView;
+    private readonly AlbumsView _albumsView;
+    private readonly ArtistsView _artistsView;
+    private readonly PlaylistsView _playlistsView;
+
+    // --- Navigation State ---
+    private int _activeSidebarIndex = 0; // 0 for Library, 1+ for playlists
+    private string _searchText = "";
+    private int _rightClickedSongIndex = -1;
+
+    // --- Layout State ---
+    private float _sidebarWidth = 230f;
+
+
+    public SonorizeLogic(IWindowHost host)
+    {
+        _host = host;
+        _settings = LoadState();
+
+        ConfigureWindowStyles(host);
+
+        _menuBar = new(OpenSettingsModal);
+        _settingsWindow = new(_settings, _host, SaveState); // Pass Save action
+        _playbackManager = new PlaybackManager(new AudioPlayer());
+        _playerBarView = new PlayerBarView(_playbackManager, _settings);
+
+        _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings, OnSongRightClicked);
+        _albumsView = new AlbumsView(_musicLibrary, OnAlbumSelected);
+        _artistsView = new ArtistsView(_musicLibrary, OnArtistSelected);
+        _playlistsView = new PlaylistsView(_musicLibrary, _settings, OnPlaylistSelected, OnCreatePlaylist);
+
+        // Start scanning for music files
+        _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
+    }
+
+    private Settings LoadState()
+    {
+        try
+        {
+            if (File.Exists(_settingsFilePath))
+            {
+                string json = File.ReadAllText(_settingsFilePath);
+                return JsonSerializer.Deserialize<Settings>(json) ?? new Settings();
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error loading settings: {ex.Message}");
+        }
+
+        return new();
+    }
+
+    public void SaveState()
+    {
+        try
+        {
+            JsonSerializerOptions options = new()
+            {
+                WriteIndented = true
+            };
+
+            string json = JsonSerializer.Serialize(_settings, options);
+            File.WriteAllText(_settingsFilePath, json);
+            Console.WriteLine($"Settings saved to {_settingsFilePath}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error saving settings: {ex.Message}");
+        }
+    }
+
+    private void FinalSave()
+    {
+        SaveState();
+        _playbackManager.Dispose();
+    }
+
+    void IAppLogic.SaveState()
+    {
+        FinalSave();
+    }
+
+
+    private static void ConfigureWindowStyles(IWindowHost host)
+    {
+        if (host is not SilkNetWindowHost silkHost)
+        {
+            return;
+        }
+        silkHost.BackdropType = WindowBackdropType.Default;
+        silkHost.TitleBarTheme = WindowTitleBarTheme.Dark;
+    }
+
+    public void DrawUI(UIContext context)
+    {
+        _playbackManager.Update();
+
+        float menuBarHeight = 0f; // No menubar in this design
+        float playerBarHeight = 90f;
+
+        // Main layout using manual positioning for the two main panels
+        var mainAreaPosition = new Vector2(0, menuBarHeight);
+        var mainAreaSize = new Vector2(context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y - menuBarHeight - playerBarHeight);
+
+        DrawSidebar(context, mainAreaSize.Y);
+        DrawMainContent(context, mainAreaSize);
+
+        _playerBarView.Draw(context);
+
+        HandleContextMenu();
+    }
+
+    private void DrawSidebar(UIContext context, float availableHeight)
+    {
+        var sidebarBg = new BoxStyle
+        {
+            FillColor = new(0, 0, 0, 255),
+            Roundness = 0,
+            BorderLength = 0
+        };
+
+        var sidebarRect = new Vortice.Mathematics.Rect(0, 0, _sidebarWidth, availableHeight);
+        context.Renderer.DrawBox(sidebarRect, sidebarBg);
+
+        UI.BeginVBoxContainer("sidebarContent", new Vector2(10, 20), 5, new Vector2(_sidebarWidth - 20, 0));
+        {
+            // Logo
+            UI.Text("logo", "Sonorize", style: new ButtonStyle { FontSize = 24 });
+            UI.Separator(_sidebarWidth - 20, 1f, 10f);
+
+            // Library Button
+            var navButtonStyle = new ButtonStylePack { Roundness = 0.1f };
+            navButtonStyle.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
+            navButtonStyle.Active.FillColor = new(0.15f, 0.15f, 0.15f, 1f);
+            navButtonStyle.Hover.FillColor = new(0.1f, 0.1f, 0.1f, 1f);
+            navButtonStyle.ActiveHover.FillColor = new(0.15f, 0.15f, 0.15f, 1f);
+
+
+            if (UI.Button("navLibrary", "Your Library", new Vector2(_sidebarWidth - 20, 30),
+                theme: navButtonStyle, isActive: _activeSidebarIndex == 0,
+                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new(10, 0)))
+            {
+                _activeSidebarIndex = 0;
+            }
+
+            // Playlists
+            UI.Separator(_sidebarWidth - 20, 1f, 10f);
+            UI.BeginHBoxContainer("playlistHeader", UI.Context.Layout.GetCurrentPosition(), 0, VAlignment.Center, 20);
+            {
+                UI.Text("playlistsLabel", "PLAYLISTS", style: new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) });
+
+                // Spacer
+                var currentPos = UI.Context.Layout.GetCurrentPosition();
+                var textSize = context.TextService.MeasureText("PLAYLISTS", new ButtonStyle { FontSize = 12 });
+                UI.Context.Layout.AdvanceLayout(new Vector2(_sidebarWidth - 20 - textSize.X - 30 - 10, 0)); // Hacky spacer
+
+                if (UI.Button("addPlaylist", "+", new Vector2(20, 20), layer: 10))
+                {
+                    OnCreatePlaylist();
+                }
+            }
+            UI.EndHBoxContainer();
+
+            // Scrollable list of playlists
+            float innerWidth = _sidebarWidth - 20;
+            float scrollHeight = availableHeight - UI.Context.Layout.GetCurrentPosition().Y - 20;
+            UI.BeginScrollableRegion("playlistScroll", new Vector2(innerWidth, scrollHeight));
+            {
+                for (int i = 0; i < _settings.Playlists.Count; i++)
+                {
+                    var playlist = _settings.Playlists[i];
+                    if (UI.Button($"navPlaylist_{i}", playlist.Name, new Vector2(innerWidth, 30),
+                        theme: navButtonStyle, isActive: _activeSidebarIndex == i + 1,
+                        textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new(10, 0)))
+                    {
+                        _activeSidebarIndex = i + 1;
+                    }
+                }
+            }
+            UI.EndScrollableRegion();
+        }
+        UI.EndVBoxContainer();
+    }
+
+    private void DrawMainContent(UIContext context, Vector2 mainAreaSize)
+    {
+        var contentWidth = mainAreaSize.X - _sidebarWidth;
+        var contentHeight = mainAreaSize.Y;
+        var contentPos = new Vector2(_sidebarWidth, 0);
+
+        // Draw background
+        var contentBg = new BoxStyle { FillColor = new(18 / 255f, 18 / 255f, 18 / 255f, 1.0f), Roundness = 0, BorderLength = 0 };
+        context.Renderer.DrawBox(new Vortice.Mathematics.Rect(contentPos.X, contentPos.Y, contentWidth, contentHeight), contentBg);
+
+        // --- Header Section ---
+        float headerHeight = 40f;
+        var headerPos = contentPos + new Vector2(20, 10);
+        var headerWidth = contentWidth - 40;
+
+        UI.BeginHBoxContainer("mainHeader", headerPos, 5, VAlignment.Center, headerHeight);
+        {
+            // Title
+            string title = "Your Library";
+            if (_activeSidebarIndex > 0 && _activeSidebarIndex - 1 < _settings.Playlists.Count)
+            {
+                title = _settings.Playlists[_activeSidebarIndex - 1].Name;
+            }
+            UI.Text("mainContentTitle", title, style: new ButtonStyle { FontSize = 24 });
+
+            // Spacer to push button to the right
+            var titleSize = context.TextService.MeasureText(title, new ButtonStyle { FontSize = 24 });
+            var settingsButtonSize = new Vector2(30, 30);
+            float spacerWidth = headerWidth - titleSize.X - settingsButtonSize.X;
+            if (spacerWidth > 0)
+            {
+                UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+            }
+
+            // Settings Button
+            var theme = new ButtonStylePack { FontSize = 16, FontName = "Segoe UI Emoji", Roundness = 1f };
+            theme.Normal.FillColor = Colors.Transparent;
+            theme.Hover.FillColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+            if (UI.Button("settingsButton", "⚙️", settingsButtonSize, theme: theme, layer: 10))
+            {
+                OpenSettingsModal();
+            }
+        }
+        UI.EndHBoxContainer();
+        // --- End Header Section ---
+
+        // Adjust grid position to be below the header
+        var gridPos = new Vector2(contentPos.X + 10, headerPos.Y + headerHeight);
+        var gridSize = new Vector2(
+            contentWidth - 20,
+            contentHeight - headerHeight - 20 // 10px top padding (from header) + 10px bottom
+        );
+
+        _libraryView.Draw(context, gridPos, gridSize, _activeSidebarIndex, _settings, _searchText);
+    }
+
+    private void OnSongRightClicked(int songIndexInView)
+    {
+        _rightClickedSongIndex = songIndexInView;
+    }
+
+    private void HandleContextMenu()
+    {
+        if (_rightClickedSongIndex == -1) return;
+
+        var currentViewFiles = _libraryView.GetCurrentViewFiles();
+        if (_rightClickedSongIndex >= currentViewFiles.Count)
+        {
+            _rightClickedSongIndex = -1;
+            return;
+        }
+
+        var song = currentViewFiles[_rightClickedSongIndex];
+
+        if (UI.BeginContextMenu($"song_context_{song.FilePath}"))
+        {
+            int selectedItem = UI.ContextMenu("addToPlaylistMenu", ["Add to playlist..."]);
+            if (selectedItem == 0)
+            {
+                OpenAddToPlaylistModal(song);
+            }
+        }
+        _rightClickedSongIndex = -1;
+    }
+
+    private void OpenAddToPlaylistModal(MusicFile song)
+    {
+        _host.ModalWindowService.OpenModalWindow("Add to Playlist", 300, 400, (ctx) =>
+        {
+            UI.BeginVBoxContainer("addToPlaylistVBox", new(10, 10), 5);
+            UI.Text("addToPlaylistHeader", $"Add '{song.Title}' to:", style: new ButtonStyle { FontSize = 16 });
+            UI.Separator(280, 1f, 4f);
+
+            UI.BeginScrollableRegion("playlistSelectScroll", new(280, 300), gap: 2);
+            {
+                foreach (var playlist in _settings.Playlists)
+                {
+                    if (!UI.Button(playlist.Name, playlist.Name, new Vector2(280, 24), textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
+                    {
+                        continue;
+                    }
+                    if (!playlist.Tracks.Any(t => t.FilePath == song.FilePath))
+                    {
+                        playlist.Tracks.Add(song);
+                        SaveState();
+                    }
+                    _host.ModalWindowService.CloseModalWindow(0);
+                }
+            }
+            UI.EndScrollableRegion();
+
+            if (UI.Button("cancelAddToPlaylist", "Cancel", new Vector2(80, 24)))
+            {
+                _host.ModalWindowService.CloseModalWindow(1);
+            }
+            UI.EndVBoxContainer();
+        });
+    }
+
+    private void OnArtistSelected(string artistName) { }
+    private void OnAlbumSelected(AlbumInfo album) { }
+    private void OnPlaylistSelected(Playlist playlist) { }
+    private void OnCreatePlaylist()
+    {
+        int num = _settings.Playlists.Count + 1;
+        _settings.Playlists.Add(new Playlist { Name = $"New Playlist {num}" });
+    }
+
+    private void OpenSettingsModal()
+    {
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
+        {
+            if (resultCode == 0) // OK was clicked
+            {
+                _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
+                SaveState();
+            }
+            else // Reload settings if canceled
+            {
+                _settings = LoadState();
+            }
+        });
+    }
+}
+```
+
+---
+
+### `Sonorize\Data\AlbumInfo.cs`
 
 ```csharp
 namespace Sonorize;
@@ -15048,7 +15258,7 @@ public class AlbumInfo
 
 ---
 
-### `Sonorize\Source\Data\ArtistInfo.cs`
+### `Sonorize\Data\ArtistInfo.cs`
 
 ```csharp
 namespace Sonorize;
@@ -15063,7 +15273,7 @@ public class ArtistInfo
 
 ---
 
-### `Sonorize\Source\Data\MusicFile.cs`
+### `Sonorize\Data\MusicFile.cs`
 
 ```csharp
 // Sonorize/Source/Data/MusicFile.cs
@@ -15085,7 +15295,7 @@ public class MusicFile
 
 ---
 
-### `Sonorize\Source\Data\MusicLibrary.cs`
+### `Sonorize\Data\MusicLibrary.cs`
 
 ```csharp
 // Sonorize/Source/Data/MusicLibrary.cs
@@ -15198,7 +15408,7 @@ public class MusicLibrary
 
             // Now scan for playlists
             var foundPlaylists = new List<Playlist>();
-            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f);
+            var musicFileLookup = sortedFiles.ToDictionary(f => Path.GetFullPath(f.FilePath), f => f, StringComparer.OrdinalIgnoreCase);
 
             foreach (var dir in dirsToScan)
             {
@@ -15308,7 +15518,7 @@ public class MusicLibrary
 
 ---
 
-### `Sonorize\Source\Data\Playlist.cs`
+### `Sonorize\Data\Playlist.cs`
 
 ```csharp
 using System.Collections.Generic;
@@ -15327,12 +15537,14 @@ public class Playlist
 
 ---
 
-### `Sonorize\Source\Settings\Settings.cs`
+### `Sonorize\Settings\Settings.cs`
 
 ```csharp
 using System.Collections.Generic;
 
 namespace Sonorize;
+
+public enum TextOverflowMode { Wrap, Truncate }
 
 public class Settings
 {
@@ -15340,12 +15552,18 @@ public class Settings
     public bool PlayOnDoubleClick { get; set; } = true;
     public bool UseCompactPlaybackControls { get; set; } = false;
     public bool UseLargeAlbumArt { get; set; } = false;
+    public List<Playlist> Playlists { get; set; } = new();
+
+    // Appearance settings from WebSharp version
+    public TextOverflowMode TrackListOverflow { get; set; } = TextOverflowMode.Truncate;
+    public int CompactnessLevel { get; set; } = 2; // 1=Compact, 2=Default, 3=Comfortable
+    public bool EnableZebraStriping { get; set; } = true;
 }
 ```
 
 ---
 
-### `Sonorize\Source\UI\AlbumsView.cs`
+### `Sonorize\Ui\AlbumsView.cs`
 
 ```csharp
 using System.Collections.Generic;
@@ -15359,97 +15577,27 @@ namespace Sonorize;
 public class AlbumsView
 {
     private readonly MusicLibrary _musicLibrary;
-    private readonly DataGridColumn[] _columns;
-    private int _selectedIndex = -1;
-    private List<AlbumInfo> _albums = new(); // Cache the processed list
-    private int _lastLibraryFileCount = -1; // To check if we need to re-process
-    private string? _currentArtistFilter;
-    private string? _currentSearchText;
     private readonly Action<AlbumInfo> _onAlbumSelected;
 
     public AlbumsView(MusicLibrary musicLibrary, Action<AlbumInfo> onAlbumSelected)
     {
         _musicLibrary = musicLibrary;
         _onAlbumSelected = onAlbumSelected;
-        _columns =
-        [
-            new DataGridColumn("Album", 350, nameof(AlbumInfo.Name)),
-            new DataGridColumn("Artist", 300, nameof(AlbumInfo.Artist)),
-            new DataGridColumn("Year", 100, nameof(AlbumInfo.Year)),
-            new DataGridColumn("Tracks", 100, nameof(AlbumInfo.TrackCount))
-        ];
-    }
-
-    private void ProcessLibrary(string? artistFilter, string? searchText)
-    {
-        var currentFiles = _musicLibrary.Files;
-        // Re-process if the file count, filter, or search text has changed.
-        if (currentFiles.Count == _lastLibraryFileCount && artistFilter == _currentArtistFilter && searchText == _currentSearchText) return;
-
-        IEnumerable<MusicFile> filesToProcess = currentFiles;
-        if (!string.IsNullOrEmpty(artistFilter))
-        {
-            filesToProcess = filesToProcess.Where(f => f.Artist == artistFilter);
-        }
-
-        var processedAlbums = filesToProcess
-            .GroupBy(f => new { f.Album, f.Artist })
-            .Select(g => new AlbumInfo
-            {
-                Name = g.Key.Album,
-                Artist = g.Key.Artist,
-                Year = g.FirstOrDefault()?.Year ?? 0,
-                TrackCount = g.Count()
-            });
-
-        if (!string.IsNullOrWhiteSpace(searchText))
-        {
-            processedAlbums = processedAlbums.Where(a =>
-                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
-                a.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase));
-        }
-
-        _albums = processedAlbums
-            .OrderBy(a => a.Artist)
-            .ThenBy(a => a.Name)
-            .ToList();
-
-        _lastLibraryFileCount = currentFiles.Count;
-        _currentArtistFilter = artistFilter;
-        _currentSearchText = searchText;
     }
 
     public void Draw(UIContext context, Vector2 position, Vector2 size, string? artistFilter, string? searchText)
     {
-        ProcessLibrary(artistFilter, searchText);
-
-        bool rowDoubleClicked;
-        if (size.X > 0 && size.Y > 0)
-        {
-            UI.DataGrid<AlbumInfo>(
-                "albumsGrid",
-                _albums,
-                _columns,
-                ref _selectedIndex,
-                size,
-                out rowDoubleClicked,
-                position,
-                autoSizeColumns: true,
-                trimCellText: true
-            );
-
-            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _albums.Count)
-            {
-                _onAlbumSelected?.Invoke(_albums[_selectedIndex]);
-            }
-        }
+        // This view is not part of the main navigation in the cloned design.
+        // Display a placeholder message.
+        UI.Text("albums_placeholder", "Albums view not implemented in this version.", size,
+            textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
     }
 }
 ```
 
 ---
 
-### `Sonorize\Source\UI\ArtistsView.cs`
+### `Sonorize\Ui\ArtistsView.cs`
 
 ```csharp
 using System.Collections.Generic;
@@ -15463,82 +15611,27 @@ namespace Sonorize;
 public class ArtistsView
 {
     private readonly MusicLibrary _musicLibrary;
-    private readonly DataGridColumn[] _columns;
-    private int _selectedIndex = -1;
-    private List<ArtistInfo> _artists = new(); // Cache
-    private int _lastLibraryFileCount = -1;
-    private string? _currentSearchText;
     private readonly Action<string> _onArtistSelected;
 
     public ArtistsView(MusicLibrary musicLibrary, Action<string> onArtistSelected)
     {
         _musicLibrary = musicLibrary;
         _onArtistSelected = onArtistSelected;
-        _columns =
-        [
-            new DataGridColumn("Artist", 400, nameof(ArtistInfo.Name)),
-            new DataGridColumn("Albums", 150, nameof(ArtistInfo.AlbumCount)),
-            new DataGridColumn("Tracks", 150, nameof(ArtistInfo.TrackCount))
-        ];
-    }
-
-    private void ProcessLibrary(string? searchText)
-    {
-        var currentFiles = _musicLibrary.Files;
-        if (currentFiles.Count == _lastLibraryFileCount && searchText == _currentSearchText) return;
-
-        var processedArtists = currentFiles
-            .GroupBy(f => f.Artist)
-            .Select(g => new ArtistInfo
-            {
-                Name = g.Key,
-                AlbumCount = g.Select(f => f.Album).Distinct().Count(),
-                TrackCount = g.Count()
-            });
-
-        if (!string.IsNullOrWhiteSpace(searchText))
-        {
-            processedArtists = processedArtists.Where(a =>
-                a.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
-        }
-
-        _artists = processedArtists.OrderBy(a => a.Name).ToList();
-
-        _lastLibraryFileCount = currentFiles.Count;
-        _currentSearchText = searchText;
     }
 
     public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
     {
-        ProcessLibrary(searchText);
-
-        bool rowDoubleClicked;
-        if (size.X > 0 && size.Y > 0)
-        {
-            UI.DataGrid<ArtistInfo>(
-                "artistsGrid",
-                _artists,
-                _columns,
-                ref _selectedIndex,
-                size,
-                out rowDoubleClicked,
-                position,
-                autoSizeColumns: true,
-                trimCellText: true
-            );
-
-            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _artists.Count)
-            {
-                _onArtistSelected?.Invoke(_artists[_selectedIndex].Name);
-            }
-        }
+        // This view is not part of the main navigation in the cloned design.
+        // Display a placeholder message.
+        UI.Text("artists_placeholder", "Artists view not implemented in this version.", size,
+            textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
     }
 }
 ```
 
 ---
 
-### `Sonorize\Source\UI\LibraryView.cs`
+### `Sonorize\Ui\LibraryView.cs`
 
 ```csharp
 using System.Numerics;
@@ -15553,16 +15646,20 @@ public class LibraryView
     private readonly MusicLibrary _musicLibrary;
     private readonly PlaybackManager _playbackManager;
     private readonly Settings _settings;
+    private readonly Action<int> _onSongRightClicked;
 
     private int _selectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
     private IReadOnlyList<MusicFile> _currentViewFiles = new List<MusicFile>();
 
-    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings)
+    public IReadOnlyList<MusicFile> GetCurrentViewFiles() => _currentViewFiles;
+
+    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings, Action<int> onSongRightClicked)
     {
         _musicLibrary = musicLibrary;
         _playbackManager = playbackManager;
         _settings = settings;
+        _onSongRightClicked = onSongRightClicked;
 
         _columns =
         [
@@ -15570,40 +15667,37 @@ public class LibraryView
             new DataGridColumn("Artist", 250, nameof(MusicFile.Artist)),
             new DataGridColumn("Album", 250, nameof(MusicFile.Album)),
             new DataGridColumn("Duration", 100, nameof(MusicFile.Duration)),
-            new DataGridColumn("Genre", 150, nameof(MusicFile.Genre)),
-            new DataGridColumn("Year", 80, nameof(MusicFile.Year))
         ];
     }
 
-    public void Draw(UIContext context, Vector2 position, Vector2 size, AlbumInfo? albumFilter, Playlist? playlistFilter, string? searchText)
+    public void Draw(UIContext context, Vector2 position, Vector2 size, int activeSidebarIndex, Settings settings, string? searchText)
     {
-        IEnumerable<MusicFile> filesToDisplay;
-
-        // Highest priority filter is the playlist
-        if (playlistFilter is not null)
+        // Determine which list of files to show
+        if (activeSidebarIndex == 0) // "Your Library"
         {
-            filesToDisplay = playlistFilter.Tracks;
+            _currentViewFiles = _musicLibrary.Files;
         }
-        else if (albumFilter is not null)
+        else // A playlist is selected
         {
-            filesToDisplay = _musicLibrary.Files
-                .Where(f => f.Artist == albumFilter.Artist && f.Album == albumFilter.Name);
-        }
-        else
-        {
-            filesToDisplay = _musicLibrary.Files;
+            int playlistIndex = activeSidebarIndex - 1;
+            if (playlistIndex >= 0 && playlistIndex < settings.Playlists.Count)
+            {
+                _currentViewFiles = settings.Playlists[playlistIndex].Tracks;
+            }
+            else
+            {
+                _currentViewFiles = new List<MusicFile>(); // Should not happen
+            }
         }
 
         // Apply search text filter on top
         if (!string.IsNullOrWhiteSpace(searchText))
         {
-            filesToDisplay = filesToDisplay.Where(f =>
+            _currentViewFiles = _currentViewFiles.Where(f =>
                 f.Title.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
                 f.Artist.Contains(searchText, StringComparison.OrdinalIgnoreCase) ||
-                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase));
+                f.Album.Contains(searchText, StringComparison.OrdinalIgnoreCase)).ToList();
         }
-
-        _currentViewFiles = filesToDisplay.ToList();
 
         // Keep the playback manager's tracklist in sync with the *currently viewed* list.
         _playbackManager.SetTracklist(_currentViewFiles);
@@ -15622,7 +15716,10 @@ public class LibraryView
                 out rowDoubleClicked,
                 position,
                 autoSizeColumns: true,
-                trimCellText: true
+                trimCellText: settings.TrackListOverflow == TextOverflowMode.Truncate,
+                rowVerticalPadding: settings.CompactnessLevel,
+                enableZebraStriping: settings.EnableZebraStriping,
+                onRowRightClick: _onSongRightClicked
             );
         }
 
@@ -15656,7 +15753,7 @@ public class LibraryView
 
 ---
 
-### `Sonorize\Source\UI\MenuBar.cs`
+### `Sonorize\Ui\MenuBar.cs`
 
 ```csharp
 // Sonorize/Source/UI/MenuBar.cs
@@ -15670,87 +15767,23 @@ namespace Sonorize;
 public class MenuBar
 {
     private readonly Action _onOpenSettings;
-    private bool _isFileMenuOpen = false;
-    private readonly int _fileMenuPopupId;
 
     public MenuBar(Action onOpenSettings)
     {
         _onOpenSettings = onOpenSettings ?? throw new ArgumentNullException(nameof(onOpenSettings));
-        _fileMenuPopupId = "fileMenuPopup".GetHashCode();
     }
 
     public void Draw(UIContext context)
     {
-        var menuBarBg = new BoxStyle
-        {
-            FillColor = new(0.1f, 0.1f, 0.1f, 1.0f),
-            BorderColor = new(0.05f, 0.05f, 0.05f, 1.0f),
-            BorderLengthBottom = 1f,
-            BorderLengthTop = 0,
-            BorderLengthLeft = 0,
-            BorderLengthRight = 0,
-            Roundness = 0
-        };
-        context.Renderer.DrawBox(new Vortice.Mathematics.Rect(0, 0, context.Renderer.RenderTargetSize.X, 30), menuBarBg);
-
-        UI.BeginHBoxContainer("menuBar", new Vector2(5, 4), 5);
-
-        var fileButtonPos = context.Layout.GetCurrentPosition();
-        var fileButtonSize = new Vector2(50, 22);
-
-        if (_isFileMenuOpen && UI.State.ActivePopupId != _fileMenuPopupId)
-        {
-            _isFileMenuOpen = false;
-        }
-
-        if (UI.Button("fileMenu", "File", fileButtonSize, isActive: _isFileMenuOpen, layer: 20))
-        {
-            _isFileMenuOpen = !_isFileMenuOpen;
-            if (_isFileMenuOpen)
-            {
-                OpenMenuPopup(fileButtonPos, fileButtonSize);
-            }
-            else
-            {
-                UI.State.ClearActivePopup();
-            }
-        }
-        UI.EndHBoxContainer();
-    }
-
-    private void OpenMenuPopup(Vector2 buttonPos, Vector2 buttonSize)
-    {
-        var popupPosition = new Vector2(buttonPos.X, buttonPos.Y + buttonSize.Y + 2);
-        var popupSize = new Vector2(150, 30);
-        var popupBounds = new Vortice.Mathematics.Rect(popupPosition.X, popupPosition.Y, popupSize.X, popupSize.Y);
-
-        Action<UIContext> drawCallback = (ctx) =>
-        {
-            var popupStyle = new BoxStyle { FillColor = DefaultTheme.NormalFill, BorderColor = DefaultTheme.FocusBorder, BorderLength = 1f, Roundness = 0.1f };
-            ctx.Renderer.DrawBox(popupBounds, popupStyle);
-
-            var itemTheme = new ButtonStylePack { Roundness = 0f, BorderLength = 0f };
-            itemTheme.Normal.FillColor = DefaultTheme.Transparent;
-            itemTheme.Hover.FillColor = DefaultTheme.HoverFill;
-            itemTheme.Pressed.FillColor = DefaultTheme.Accent;
-
-            UI.BeginVBoxContainer("popupContent", popupBounds.TopLeft);
-            if (UI.Button("settingsBtn", "Settings", new Vector2(popupBounds.Width, popupBounds.Height), itemTheme, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), layer: 50))
-            {
-                UI.State.ClearActivePopup();
-                _isFileMenuOpen = false;
-                _onOpenSettings();
-            }
-            UI.EndVBoxContainer();
-        };
-        UI.State.SetActivePopup(_fileMenuPopupId, drawCallback, popupBounds);
+        // This version's UI design does not include a visible top menu bar.
+        // The logic is kept minimal and can be expanded if needed.
     }
 }
 ```
 
 ---
 
-### `Sonorize\Source\UI\PlaybackControlsView.cs`
+### `Sonorize\Ui\PlayerBarView.cs`
 
 ```csharp
 using System.Numerics;
@@ -15758,17 +15791,18 @@ using DirectUI;
 using Sonorize.Audio;
 using System;
 using DirectUI.Drawing;
+using DirectUI.Core;
 
 namespace Sonorize;
 
-public class PlaybackControlsView
+public class PlayerBarView
 {
     private readonly PlaybackManager _playbackManager;
     private readonly Settings _settings;
     private bool _isSeekSliderDragging;
     private float _seekSliderValueDuringDrag;
 
-    public PlaybackControlsView(PlaybackManager playbackManager, Settings settings)
+    public PlayerBarView(PlaybackManager playbackManager, Settings settings)
     {
         _playbackManager = playbackManager;
         _settings = settings;
@@ -15776,382 +15810,205 @@ public class PlaybackControlsView
 
     public void Draw(UIContext context)
     {
-        // The panel height is now always constant.
-        float playbackControlsHeight = 70f;
+        float playerBarHeight = 90f;
         Vector2 windowSize = context.Renderer.RenderTargetSize;
-        float controlsY = windowSize.Y - playbackControlsHeight;
-        Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playbackControlsHeight);
+        float controlsY = windowSize.Y - playerBarHeight;
+        Vortice.Mathematics.Rect controlsRect = new(0, controlsY, windowSize.X, playerBarHeight);
 
         var currentTrack = _playbackManager.CurrentTrack;
 
-        // 1. Draw the solid background, which acts as a fallback and provides the top border.
-        DrawBackground(context, controlsRect);
+        DrawBackground(context, controlsRect, currentTrack);
 
-        // 2. If available, draw the stretched abstract art on top of the solid background.
-        if (currentTrack?.AbstractAlbumArt is not null && currentTrack.AbstractAlbumArt.Length > 0)
-        {
-            // The file path provides a unique key for the renderer's image cache.
-            string abstractArtKey = currentTrack.FilePath + "_abstract";
-            context.Renderer.DrawImage(currentTrack.AbstractAlbumArt, abstractArtKey, controlsRect);
+        var layout = CalculateLayout(controlsRect);
 
-            // 3. Draw a semi-transparent overlay to dim the art and improve control visibility.
-            var overlayStyle = new BoxStyle
-            {
-                FillColor = new Color(0, 0, 0, (byte)(255 * 0.4f)),
-                Roundness = 0,
-                BorderLength = 0
-            };
-            context.Renderer.DrawBox(controlsRect, overlayStyle);
-        }
+        // --- Left Panel: Track Info ---
+        DrawTrackInfo(context, currentTrack, layout.LeftPanelRect);
 
-        // 4. Draw the controls layout on top.
-        if (_settings.UseCompactPlaybackControls)
-        {
-            DrawCompactLayout(context, currentTrack, controlsRect);
-        }
-        else
-        {
-            DrawStandardLayout(context, currentTrack, controlsRect);
-        }
+        // --- Center Panel: Playback Controls & Seek ---
+        DrawCenterPanel(context, layout.CenterPanelRect);
+
+        // --- Right Panel: Volume ---
+        // (Placeholder for volume control)
     }
 
-    private void DrawStandardLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
+    private void DrawBackground(UIContext context, Vortice.Mathematics.Rect controlsRect, MusicFile? currentTrack)
     {
-        float gap = 10;
-
-        UI.BeginHBoxContainer("playbackHBox", controlsRect.TopLeft, gap);
+        var bgStyle = new BoxStyle
         {
-            DrawTrackInfoAndArt(context, currentTrack, controlsRect);
-            var leftPanelEndPos = UI.Context.Layout.GetCurrentPosition();
-            // Right panel padding is now dynamic based on art size to keep things aligned.
-            float rightPanelPadding = _settings.UseLargeAlbumArt ? 0 : 10;
-            float centerWidth = controlsRect.Width - leftPanelEndPos.X - rightPanelPadding;
-            if (centerWidth > 0)
-            {
-                DrawStandardControlsAndSlider(context, centerWidth);
-            }
-        }
-        UI.EndHBoxContainer();
-    }
-
-    private void DrawCompactLayout(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect controlsRect)
-    {
-        float gap = 15;
-        float rightControlsWidth = 150;
-        float leftPadding = _settings.UseLargeAlbumArt ? 0 : 10;
-
-        // --- Left: Album Art (Manually Placed) ---
-        float artPadding = _settings.UseLargeAlbumArt ? 0 : 10;
-        float artSize = controlsRect.Height - (artPadding * 2);
-        var artPos = new Vector2(
-            controlsRect.Left + artPadding,
-            controlsRect.Top + artPadding
-        );
-        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
-        if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
-        {
-            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
-        }
-        else
-        {
-            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
-        }
-
-        // --- Middle Section (Manually Placed & Centered) ---
-        float middleSectionStartX = artRect.Right + gap;
-        float availableMiddleWidth = controlsRect.Width - middleSectionStartX - rightControlsWidth;
-
-        float middleContentHeight = 36f;
-        var middleSectionStartPos = new Vector2(
-            middleSectionStartX,
-            controlsRect.Top + (controlsRect.Height - middleContentHeight) / 2
-        );
-
-        UI.BeginHBoxContainer("compactControlsHBox", middleSectionStartPos, 10, VAlignment.Center, fixedRowHeight: middleContentHeight);
-        {
-            DrawCompactControlButtons(context);
-
-            float sliderGroupHeight = 16f + 2f + 8f; // title + gap + slider
-            float topSpacer = (middleContentHeight - sliderGroupHeight) / 2f;
-
-            DrawCompactSeekSlider(context, availableMiddleWidth - 120, topSpacer);
-        }
-        UI.EndHBoxContainer();
-    }
-
-    private static void DrawBackground(UIContext context, Vortice.Mathematics.Rect controlsRect)
-    {
-        context.Renderer.DrawBox(controlsRect, new()
-        {
-            FillColor = new(30 / 255f, 30 / 255f, 30 / 255f, 1.0f), // Darker background
-            BorderColor = new(45 / 255f, 45 / 255f, 45 / 255f, 1.0f),
+            FillColor = new(24, 24, 24, 255),
+            BorderColor = new(40, 40, 40, 255),
             BorderLengthTop = 1f,
             BorderLengthBottom = 0,
             BorderLengthLeft = 0,
             BorderLengthRight = 0,
             Roundness = 0
-        });
+        };
+        context.Renderer.DrawBox(controlsRect, bgStyle);
+
+        if (currentTrack?.AbstractAlbumArt is not null && currentTrack.AbstractAlbumArt.Length > 0)
+        {
+            string abstractArtKey = currentTrack.FilePath + "_abstract";
+            context.Renderer.DrawImage(currentTrack.AbstractAlbumArt, abstractArtKey, controlsRect);
+
+            var overlayStyle = new BoxStyle
+            {
+                FillColor = new Color(0, 0, 0, (byte)(255 * 0.5f)),
+                Roundness = 0,
+                BorderLength = 0
+            };
+            context.Renderer.DrawBox(controlsRect, overlayStyle);
+        }
     }
 
-    private void DrawTrackInfoAndArt(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect panelRect)
+    private void DrawTrackInfo(UIContext context, MusicFile? currentTrack, Vortice.Mathematics.Rect panelRect)
     {
-        float padding = _settings.UseLargeAlbumArt ? 0 : 10;
-        float artSize = panelRect.Height - (padding * 2);
+        if (panelRect.Width <= 0) return;
 
-        UI.BeginHBoxContainer("trackInfoHBox", panelRect.TopLeft + new Vector2(padding, padding), padding);
+        float artSize = 56;
+        float padding = (panelRect.Height - artSize) / 2f;
+        float gap = 12;
+
+        UI.BeginHBoxContainer("trackInfoHBox", panelRect.TopLeft + new Vector2(padding, padding), gap, VAlignment.Center, fixedRowHeight: artSize);
         {
             var artPos = UI.Context.Layout.GetCurrentPosition();
             var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
-
-            if (currentTrack?.AlbumArt is not null && currentTrack.AlbumArt.Length > 0)
+            if (currentTrack?.AlbumArt is not null)
             {
                 context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
             }
             else
             {
-                context.Renderer.DrawBox(artRect, new() { FillColor = new(0.3f, 0.3f, 0.3f, 1.0f), Roundness = 0.1f });
+                context.Renderer.DrawBox(artRect, new() { FillColor = new(0.2f, 0.2f, 0.2f, 1f), Roundness = 0.1f });
             }
-
             UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
 
-            // Vertically center the text relative to the art
-            float textBlockHeight = 16f + 4f + 12f; // font sizes + gap
-            float textBlockY = UI.Context.Layout.GetCurrentPosition().Y + (artSize - textBlockHeight) / 2f;
-
-            UI.BeginVBoxContainer("trackInfoVBox", new Vector2(UI.Context.Layout.GetCurrentPosition().X, textBlockY), 4);
+            float availableTextWidth = panelRect.Width - artSize - gap - padding * 2;
+            if (availableTextWidth > 0)
             {
-                var title = currentTrack?.Title ?? "No song selected";
-                var artist = currentTrack?.Artist ?? string.Empty;
-                UI.Text("songTitle", title, style: new ButtonStyle { FontSize = 16, FontWeight = Vortice.DirectWrite.FontWeight.SemiBold });
-                if (!string.IsNullOrEmpty(artist))
+                UI.BeginVBoxContainer("trackTextVBox", UI.Context.Layout.GetCurrentPosition(), 4);
                 {
-                    var artistStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
-                    UI.Text("artistName", artist, style: artistStyle);
+                    var title = currentTrack?.Title ?? "No Song Playing";
+                    var artist = currentTrack?.Artist ?? string.Empty;
+                    UI.Text("playerTitle", title, new Vector2(availableTextWidth, 16), new() { FontSize = 14 });
+                    UI.Text("playerArtist", artist, new Vector2(availableTextWidth, 12), new() { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) });
                 }
+                UI.EndVBoxContainer();
             }
-            UI.EndVBoxContainer();
         }
         UI.EndHBoxContainer();
     }
 
-    private void DrawStandardControlsAndSlider(UIContext context, float panelWidth)
+    private void DrawCenterPanel(UIContext context, Vortice.Mathematics.Rect panelRect)
     {
-        var startPos = UI.Context.Layout.GetCurrentPosition();
-        UI.BeginVBoxContainer("centerControlsVBox", startPos, 2);
+        if (panelRect.Width <= 0) return;
+        var centerPanelVBoxPos = new Vector2(panelRect.X, panelRect.Y + 8);
+        UI.BeginVBoxContainer("centerPanelVBox", centerPanelVBoxPos, 4);
         {
-            DrawControlButtons(context, panelWidth);
-            DrawSeekSliderWithTimestamps(context, panelWidth);
+            DrawControlButtons(context, panelRect.Width);
+            DrawSeekSliderWithTimestamps(context, panelRect.Width);
         }
         UI.EndVBoxContainer();
     }
 
     private void DrawControlButtons(UIContext context, float panelWidth)
     {
-        bool isAnyTrackAvailable = _playbackManager.HasTracks;
-        const int controlsLayer = 10;
-
         var smallButtonSize = new Vector2(32, 32);
         var playButtonSize = new Vector2(36, 36);
+        var theme = new ButtonStylePack { FontSize = 14, FontName = "Segoe UI Emoji", Roundness = 1f };
+        theme.Normal.FillColor = Colors.Transparent;
+        var toggleTheme = new ButtonStylePack(theme);
+        toggleTheme.Active.FontColor = DefaultTheme.Accent;
 
-        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 0.3f };
-        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
-        var toggleButtonTheme = new ButtonStylePack(iconButtonTheme);
-        toggleButtonTheme.Active.FillColor = DefaultTheme.Accent;
-
-        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (4 * 5);
+        float buttonsWidth = smallButtonSize.X * 4 + playButtonSize.X + 16 * 2;
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
-        var hboxPos = new Vector2(UI.Context.Layout.GetCurrentPosition().X + buttonsStartX, UI.Context.Layout.GetCurrentPosition().Y + 5);
 
-        // Use the new VAlignment feature and provide the height of the tallest element.
-        UI.BeginHBoxContainer("playbackButtons", hboxPos, 5, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
+        var hboxPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(buttonsStartX, 0);
+        UI.BeginHBoxContainer("playbackButtons", hboxPos, 16, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
         {
-            DrawShuffleButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, toggleButtonTheme);
-            DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
-            // The origin parameter is no longer needed, as the container handles alignment.
-            DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
-            DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
-            DrawRepeatModeButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
+            bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
+            if (UI.Button("shuffle", "🔀", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive))
+                _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
+
+            if (UI.Button("prev", "⏮", smallButtonSize, theme: theme)) _playbackManager.Previous();
+
+            string playIcon = _playbackManager.IsPlaying ? "⏸" : "▶";
+            if (UI.Button("play", playIcon, playButtonSize, theme: theme)) _playbackManager.TogglePlayPause();
+
+            if (UI.Button("next", "⏭", smallButtonSize, theme: theme)) _playbackManager.Next();
+
+            string repeatIcon = "🔁";
+            bool isRepeatOneActive = false;
+            if (_playbackManager.EndAction == PlaybackEndAction.RepeatSong) { repeatIcon = "🔂"; isRepeatOneActive = true; }
+            if (UI.Button("repeat", repeatIcon, smallButtonSize, theme: toggleTheme, isActive: isRepeatOneActive))
+                _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 2); // Simple toggle for now
         }
         UI.EndHBoxContainer();
     }
 
-    private void DrawCompactControlButtons(UIContext context)
+    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth)
     {
-        bool isAnyTrackAvailable = _playbackManager.HasTracks;
-        const int controlsLayer = 10;
-        var smallButtonSize = new Vector2(32, 32);
-        var playButtonSize = new Vector2(36, 36);
-        var iconButtonTheme = new ButtonStylePack { FontSize = 14f, FontName = "Segoe UI Emoji", Roundness = 1f };
-        var playButtonTheme = new ButtonStylePack(iconButtonTheme) { Roundness = 1.0f };
-
-        DrawPreviousTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
-        DrawPlayPauseButton(isAnyTrackAvailable, playButtonSize, controlsLayer, playButtonTheme);
-        DrawNextTrackButton(isAnyTrackAvailable, smallButtonSize, controlsLayer, iconButtonTheme);
-    }
-
-    private void DrawCompactSeekSlider(UIContext context, float panelWidth, float topSpacer = 0f)
-    {
-        if (panelWidth < 10) return;
-
-        var currentTrack = _playbackManager.CurrentTrack;
-        var title = currentTrack?.Title ?? "No song selected";
-        var artist = currentTrack?.Artist ?? string.Empty;
-        var trackInfo = string.IsNullOrWhiteSpace(artist) ? title : $"{title} - {artist}";
-
-        // Prepare timestamp text for layout calculation
-        double currentPosition = _playbackManager.CurrentPosition;
+        double currentPos = _playbackManager.CurrentPosition;
         double totalDuration = _playbackManager.TotalDuration;
-        string timeStr = $"{FormatTime(currentPosition)} / {FormatTime(totalDuration)}";
-        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
-        var timeSize = context.TextService.MeasureText(timeStr, timeStyle);
+        bool isLoaded = totalDuration > 0;
 
-        // This VBox will contain two rows: the info row and the slider row.
-        // Apply the topSpacer to vertically center this group.
-        var startPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(0, topSpacer);
-        UI.BeginVBoxContainer("compactSliderVBox", startPos, 2);
-        {
-            // --- Row 1: HBox for Title/Artist and Timestamps ---
-            UI.BeginHBoxContainer("compactInfoRowHBox", UI.Context.Layout.GetCurrentPosition(), 5);
-            {
-                float titleWidth = panelWidth - timeSize.X - 5;
-                if (titleWidth > 0)
-                {
-                    UI.Text("compactTrackInfo", trackInfo, new Vector2(titleWidth, 16), new ButtonStyle { FontSize = 14 });
-                }
-
-                UI.Text("compactTimeInfo", timeStr, new Vector2(timeSize.X, 16), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
-            }
-            UI.EndHBoxContainer();
-
-            // --- Row 2: Slider without its own timestamps ---
-            DrawSeekSliderWithTimestamps(context, panelWidth, showTimestamps: false);
-        }
-        UI.EndVBoxContainer();
-    }
-
-    private void DrawSeekSliderWithTimestamps(UIContext context, float panelWidth, bool showTimestamps = true)
-    {
-        double currentPosition = _playbackManager.CurrentPosition;
-        double totalDuration = _playbackManager.TotalDuration;
-        bool isAudioLoaded = totalDuration > 0;
-
-        string currentTimeStr = FormatTime(currentPosition);
+        string currentTimeStr = FormatTime(currentPos);
         string totalTimeStr = FormatTime(totalDuration);
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) };
+        float timeLabelWidth = context.TextService.MeasureText("00:00", timeStyle).X + 10;
 
-        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1.0f) };
-        var timeSize = context.TextService.MeasureText("00:00", timeStyle);
-        float timeLabelWidth = showTimestamps ? timeSize.X + 5 : 0;
-        float gap = showTimestamps ? 5 : 0;
+        float sliderWidth = panelWidth - (timeLabelWidth * 2);
 
-        float sliderWidth = panelWidth - (timeLabelWidth * 2) - (gap * 2);
-        if (sliderWidth < 10) return;
-
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), gap, VAlignment.Center, fixedRowHeight: 20f);
+        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0, VAlignment.Center, 20);
         {
-            if (showTimestamps)
-            {
-                UI.Text("currentTime", currentTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Right, VAlignment.Center));
-            }
+            UI.Text("currentTime", currentTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Right, VAlignment.Center));
 
-            int seekSliderId = "seekSlider".GetHashCode();
-            bool isCurrentlyDragging = UI.State.ActivelyPressedElementId == seekSliderId;
-            float sliderInputValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPosition;
-            Vector2 sliderSize = new(sliderWidth, 8);
-            ButtonStylePack grabberTheme = new() { Roundness = 1.0f };
-            SliderStyle theme = new() { Background = { Roundness = 1 }, Foreground = { FillColor = DefaultTheme.Accent } };
+            int sliderId = "seekSlider".GetHashCode();
+            bool isDragging = UI.State.ActivelyPressedElementId == sliderId;
+            float sliderValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPos;
 
-            float newSliderValue = UI.HSlider(
-                id: "seekSlider",
-                currentValue: sliderInputValue,
-                minValue: 0f,
-                maxValue: isAudioLoaded ? (float)totalDuration : 1.0f,
-                size: sliderSize,
-                disabled: !isAudioLoaded,
-                grabberSize: new(14, 14),
-                grabberTheme: grabberTheme,
-                theme: theme,
-                position: new(0, 4)
-            );
+            float newValue = UI.HSlider("seekSlider", sliderValue, 0, isLoaded ? (float)totalDuration : 1f, new(sliderWidth, 8),
+                disabled: !isLoaded, grabberSize: new(14, 14));
 
-            if (isCurrentlyDragging) _seekSliderValueDuringDrag = newSliderValue;
-            if (_isSeekSliderDragging && !isCurrentlyDragging && isAudioLoaded)
-            {
-                _playbackManager.Seek(_seekSliderValueDuringDrag);
-            }
-            _isSeekSliderDragging = isCurrentlyDragging;
+            if (isDragging) _seekSliderValueDuringDrag = newValue;
+            if (_isSeekSliderDragging && !isDragging && isLoaded) _playbackManager.Seek(_seekSliderValueDuringDrag);
+            _isSeekSliderDragging = isDragging;
 
-            if (showTimestamps)
-            {
-                UI.Text("totalTime", totalTimeStr, new Vector2(timeLabelWidth, 20), timeStyle, new Alignment(HAlignment.Left, VAlignment.Center));
-            }
+            UI.Text("totalTime", totalTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Left, VAlignment.Center));
         }
         UI.EndHBoxContainer();
     }
 
-    private void DrawShuffleButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack toggleButtonTheme)
+    private static (Vortice.Mathematics.Rect LeftPanelRect, Vortice.Mathematics.Rect CenterPanelRect, Vortice.Mathematics.Rect RightPanelRect) CalculateLayout(Vortice.Mathematics.Rect controlsRect)
     {
-        bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
-        if (UI.Button("shuffle", "🔀", buttonSize, theme: toggleButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer, isActive: isShuffleActive))
-        {
-            _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
-        }
-    }
+        float leftWidth = Math.Max(180, controlsRect.Width * 0.3f);
+        float rightWidth = Math.Max(180, controlsRect.Width * 0.3f);
+        float centerWidth = controlsRect.Width - leftWidth - rightWidth;
 
-    private void DrawPreviousTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
-    {
-        if (UI.Button("prevTrack", "⏮", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
+        if (centerWidth < 300) // Adjust if center is too cramped
         {
-            _playbackManager.Previous();
+            float deficit = 300 - centerWidth;
+            leftWidth -= deficit / 2;
+            rightWidth -= deficit / 2;
+            centerWidth = 300;
         }
-    }
 
-    private void DrawPlayPauseButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
-    {
-        string playPauseText = _playbackManager.IsPlaying ? "⏸" : "▶";
-        if (UI.Button("playPause", playPauseText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
-        {
-            _playbackManager.TogglePlayPause();
-        }
-    }
-
-    private void DrawNextTrackButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
-    {
-        if (UI.Button("nextTrack", "⏭", buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
-        {
-            _playbackManager.Next();
-        }
-    }
-
-    private void DrawRepeatModeButton(bool isAnyTrackAvailable, Vector2 buttonSize, int controlsLayer, ButtonStylePack iconButtonTheme)
-    {
-        string repeatText = _playbackManager.EndAction switch
-        {
-            PlaybackEndAction.NextInQueue => "🔁",
-            PlaybackEndAction.RepeatSong => "🔂",
-            PlaybackEndAction.DoNothing => "➡",
-            _ => "?"
-        };
-        if (UI.Button("repeatMode", repeatText, buttonSize, theme: iconButtonTheme, disabled: !isAnyTrackAvailable, layer: controlsLayer))
-        {
-            _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 3);
-        }
+        return (
+            new(controlsRect.Left, controlsRect.Top, leftWidth, controlsRect.Height),
+            new(controlsRect.Left + leftWidth, controlsRect.Top, centerWidth, controlsRect.Height),
+            new(controlsRect.Left + leftWidth + centerWidth, controlsRect.Top, rightWidth, controlsRect.Height)
+        );
     }
 
     private static string FormatTime(double seconds)
     {
-        if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0)
-        {
-            return "00:00";
-        }
-        var timeSpan = TimeSpan.FromSeconds(seconds);
-        return timeSpan.ToString(@"mm\:ss");
+        return (double.IsNaN(seconds) || seconds < 0) ? "00:00" : TimeSpan.FromSeconds(seconds).ToString(@"mm\:ss");
     }
 }
 ```
 
 ---
 
-### `Sonorize\Source\UI\PlaylistsView.cs`
+### `Sonorize\Ui\PlaylistsView.cs`
 
 ```csharp
 using System;
@@ -16166,80 +16023,36 @@ namespace Sonorize;
 public class PlaylistsView
 {
     private readonly MusicLibrary _musicLibrary;
-    private readonly DataGridColumn[] _columns;
-    private int _selectedIndex = -1;
-    private List<Playlist> _playlists = new();
-    private int _lastPlaylistCount = -1;
-    private string? _currentSearchText;
+    private readonly Settings _settings;
     private readonly Action<Playlist> _onPlaylistSelected;
+    private readonly Action _onCreatePlaylist;
 
-    public PlaylistsView(MusicLibrary musicLibrary, Action<Playlist> onPlaylistSelected)
+    public PlaylistsView(MusicLibrary musicLibrary, Settings settings, Action<Playlist> onPlaylistSelected, Action onCreatePlaylist)
     {
         _musicLibrary = musicLibrary;
+        _settings = settings;
         _onPlaylistSelected = onPlaylistSelected;
-        _columns =
-        [
-            new DataGridColumn("Playlist", 600, nameof(Playlist.Name)),
-            new DataGridColumn("Tracks", 150, nameof(Playlist.TrackCount))
-        ];
-    }
-
-    private void ProcessLibrary(string? searchText)
-    {
-        IReadOnlyList<Playlist> currentPlaylists = _musicLibrary.Playlists;
-        if (currentPlaylists.Count == _lastPlaylistCount && searchText == _currentSearchText) return;
-
-        IEnumerable<Playlist> processedPlaylists = currentPlaylists;
-
-        if (!string.IsNullOrWhiteSpace(searchText))
-        {
-            processedPlaylists = processedPlaylists.Where(p =>
-                p.Name.Contains(searchText, StringComparison.OrdinalIgnoreCase));
-        }
-
-        _playlists = processedPlaylists.OrderBy(p => p.Name).ToList();
-
-        _lastPlaylistCount = currentPlaylists.Count;
-        _currentSearchText = searchText;
+        _onCreatePlaylist = onCreatePlaylist;
     }
 
     public void Draw(UIContext context, Vector2 position, Vector2 size, string? searchText)
     {
-        ProcessLibrary(searchText);
-
-        bool rowDoubleClicked;
-        if (size.X > 0 && size.Y > 0)
-        {
-            UI.DataGrid<Playlist>(
-                "playlistsGrid",
-                _playlists,
-                _columns,
-                ref _selectedIndex,
-                size,
-                out rowDoubleClicked,
-                position,
-                autoSizeColumns: true,
-                trimCellText: true
-            );
-
-            if (rowDoubleClicked && _selectedIndex >= 0 && _selectedIndex < _playlists.Count)
-            {
-                _onPlaylistSelected?.Invoke(_playlists[_selectedIndex]);
-            }
-        }
+        // This view is not part of the main navigation in the cloned design.
+        // The playlists are now displayed in the sidebar.
+        UI.Text("playlists_placeholder", "Playlists are available in the sidebar.", size,
+            textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
     }
 }
 ```
 
 ---
 
-### `Sonorize\Source\UI\SettingsWindow.cs`
+### `Sonorize\Ui\SettingsWindow.cs`
 
 ```csharp
 using DirectUI;
 using DirectUI.Core;
 using System.Numerics;
-using TinyDialogsNet;
 
 namespace Sonorize;
 
@@ -16247,50 +16060,69 @@ public class SettingsWindow
 {
     private readonly Settings _settings;
     private readonly IWindowHost _host;
+    private readonly Action _onSave;
     private int _selectedDirectoryIndex = -1;
 
-    public SettingsWindow(Settings settings, IWindowHost host)
+    public SettingsWindow(Settings settings, IWindowHost host, Action onSave)
     {
         _settings = settings;
         _host = host;
+        _onSave = onSave;
     }
 
     public void Draw(UIContext context)
     {
-        UI.BeginVBoxContainer("settingsVBox", new Vector2(10, 10), 10);
+        float padding = 10;
+        var scrollAreaSize = new Vector2(context.Renderer.RenderTargetSize.X, context.Renderer.RenderTargetSize.Y);
 
-        UI.Text("settingsTitle", "Settings", style: new ButtonStyle { FontSize = 18 });
-        UI.Separator(480, verticalPadding: 2);
+        // The entire modal content is now inside one scrollable region.
+        // We pass padding and the gap between elements directly to it.
+        UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, gap: 15, padding: new Vector2(padding, padding));
+        {
+            // --- Appearance Section ---
+            UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
 
-        UI.Text("playbackHeader", "Playback & Appearance");
-        bool playOnDoubleClick = _settings.PlayOnDoubleClick;
-        UI.Checkbox("playOnDoubleClick", "Play track on double-click", ref playOnDoubleClick);
-        _settings.PlayOnDoubleClick = playOnDoubleClick;
+            bool zebraStriping = _settings.EnableZebraStriping;
+            if (UI.Checkbox("zebraStriping", "Enable Zebra Striping", ref zebraStriping))
+            {
+                _settings.EnableZebraStriping = zebraStriping;
+            }
 
-        bool useCompactControls = _settings.UseCompactPlaybackControls;
-        UI.Checkbox("compactControls", "Use compact playback controls", ref useCompactControls);
-        _settings.UseCompactPlaybackControls = useCompactControls;
+            UI.Text("compactnessLabel", "Compactness");
+            float compactness = _settings.CompactnessLevel;
+            float newCompactness = UI.HSlider("compactnessSlider", compactness, 1, 3, new Vector2(150, 20), step: 1);
+            if (newCompactness != compactness)
+            {
+                _settings.CompactnessLevel = (int)Math.Round(newCompactness);
+            }
 
-        bool useLargeArt = _settings.UseLargeAlbumArt;
-        UI.Checkbox("largeArt", "Use large album art in playback controls", ref useLargeArt);
-        _settings.UseLargeAlbumArt = useLargeArt;
+            UI.Text("overflowLabel", "Track List Text Overflow");
+            int overflowIndex = (int)_settings.TrackListOverflow;
+            if (UI.RadioButtons("overflowRadio", ["Wrap", "Truncate"], ref overflowIndex, size: new Vector2(100, 24)))
+            {
+                _settings.TrackListOverflow = (TextOverflowMode)overflowIndex;
+            }
 
-        UI.Separator(480, verticalPadding: 2);
+            // --- Library Section ---
+            UI.Separator();
+            UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
+            DrawDirectoriesList();
+            DrawActionButtons();
 
-        UI.Text("dirsHeader", "Music Library Directories");
-
-        DrawDirectoriesList();
-        DrawActionButtons();
-        DrawOkButton();
-
-        UI.EndVBoxContainer();
+            // --- OK/Cancel Buttons ---
+            UI.Separator();
+            DrawOkCancelButtons();
+        }
+        UI.EndScrollableRegion();
     }
 
     private void DrawDirectoriesList()
     {
-        UI.BeginScrollableRegion("dirsScroll", new Vector2(480, 160), out float innerWidth);
+        float width = UI.GetAvailableContentWidth();
+        UI.BeginScrollableRegion("dirsScrollInner", new Vector2(width, 140), gap: 2);
         {
-            ButtonStylePack selectedStyle = new();
+            float innerWidth = UI.GetAvailableContentWidth();
+            var selectedStyle = new ButtonStylePack();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
             selectedStyle.ActiveHover.FillColor = DefaultTheme.Accent;
             selectedStyle.Normal.FillColor = new(0.15f, 0.15f, 0.15f, 1.0f);
@@ -16298,30 +16130,26 @@ public class SettingsWindow
             for (int i = 0; i < _settings.Directories.Count; i++)
             {
                 bool isSelected = i == _selectedDirectoryIndex;
-
-                if (!UI.Button($"dir_{i}", _settings.Directories[i], new Vector2(innerWidth, 24), theme: selectedStyle, textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), isActive: isSelected))
+                if (UI.Button($"dir_{i}", _settings.Directories[i], new Vector2(innerWidth, 24), theme: selectedStyle,
+                    textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new Vector2(5, 0), isActive: isSelected))
                 {
-                    continue;
+                    _selectedDirectoryIndex = i;
                 }
-
-                _selectedDirectoryIndex = i;
             }
         }
-
         UI.EndScrollableRegion();
     }
 
     private void DrawActionButtons()
     {
-        UI.BeginHBoxContainer("dirsButtons", UI.Context.Layout.GetCurrentPosition(), 5);
+        UI.BeginHBoxContainer("dirsButtons", Vector2.Zero, 5);
         {
-            if (UI.Button("addDir", "Add", new Vector2(80, 24)))
+            if (UI.Button("addDir", "Add Folder...", new Vector2(120, 24)))
             {
-                var selectedPath = TinyDialogs.SelectFolderDialog("Select a folder to add to Sonorize");
-
-                if (!string.IsNullOrWhiteSpace(selectedPath.Path) && !_settings.Directories.Contains(selectedPath.Path))
+                var selectedPath = FileDialogs.PickFolder("Select Music Folder");
+                if (!string.IsNullOrWhiteSpace(selectedPath) && !_settings.Directories.Contains(selectedPath))
                 {
-                    _settings.Directories.Add(selectedPath.Path);
+                    _settings.Directories.Add(selectedPath);
                 }
             }
             if (UI.Button("removeDir", "Remove", new Vector2(80, 24), disabled: _selectedDirectoryIndex < 0))
@@ -16329,31 +16157,45 @@ public class SettingsWindow
                 if (_selectedDirectoryIndex >= 0 && _selectedDirectoryIndex < _settings.Directories.Count)
                 {
                     _settings.Directories.RemoveAt(_selectedDirectoryIndex);
-                    _selectedDirectoryIndex = -1; // Deselect
+                    _selectedDirectoryIndex = -1;
                 }
             }
         }
         UI.EndHBoxContainer();
     }
 
-    private void DrawOkButton()
+    private void DrawOkCancelButtons()
     {
-        // Position at the bottom right.
-        float modalHeight = 400;
-        float modalWidth = 500;
-        float buttonHeight = 24;
-        float buttonWidth = 80;
-        float padding = 10;
-
-        float buttonY = modalHeight - buttonHeight - padding;
-        float buttonX = modalWidth - buttonWidth - padding;
-
-        UI.BeginVBoxContainer("okButtonContainer", new Vector2(buttonX, buttonY));
-        if (UI.Button("okSettings", "OK", new Vector2(buttonWidth, buttonHeight)))
+        float width = UI.GetAvailableContentWidth();
+        UI.BeginHBoxContainer("okCancelButtonsHBox", Vector2.Zero, 5);
         {
-            _host.ModalWindowService.CloseModalWindow(0);
+            float buttonGap = 5;
+            float okButtonWidth = 80;
+            float cancelButtonWidth = 80;
+
+            // Total width consumed by the visible buttons and the gaps that will be placed BETWEEN them.
+            // With the new logic, 3 elements ([Spacer], [Cancel], [OK]) will have 2 gaps between them.
+            float buttonsAndGapsWidth = cancelButtonWidth + buttonGap + okButtonWidth;
+
+            // The spacer's width is simply the remaining space. The container's corrected logic will handle the gaps.
+            float spacerWidth = width - buttonsAndGapsWidth;
+
+            if (spacerWidth > 0)
+            {
+                UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+            }
+
+            if (UI.Button("cancelSettings", "Cancel", new Vector2(cancelButtonWidth, 24)))
+            {
+                _host.ModalWindowService.CloseModalWindow(1); // 1 indicates cancel
+            }
+            if (UI.Button("okSettings", "OK", new Vector2(okButtonWidth, 24)))
+            {
+                _onSave();
+                _host.ModalWindowService.CloseModalWindow(0); // 0 indicates success
+            }
         }
-        UI.EndVBoxContainer();
+        UI.EndHBoxContainer();
     }
 }
 ```
