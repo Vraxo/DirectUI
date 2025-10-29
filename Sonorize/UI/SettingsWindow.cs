@@ -27,8 +27,6 @@ public class SettingsWindow
         // We pass padding and the gap between elements directly to it.
         UI.BeginScrollableRegion("settingsScroll", scrollAreaSize, gap: 15, padding: new Vector2(padding, padding));
         {
-            float contentWidth = scrollAreaSize.X - (padding * 2);
-
             // --- Appearance Section ---
             UI.Text("appearanceHeader", "Appearance", style: new ButtonStyle { FontSize = 16 });
 
@@ -54,25 +52,24 @@ public class SettingsWindow
             }
 
             // --- Library Section ---
-            UI.Separator(contentWidth);
+            UI.Separator();
             UI.Text("dirsHeader", "Music Library Directories", style: new ButtonStyle { FontSize = 16 });
-            DrawDirectoriesList(contentWidth);
+            DrawDirectoriesList();
             DrawActionButtons();
 
             // --- OK/Cancel Buttons ---
-            UI.Separator(contentWidth);
-            DrawOkCancelButtons(contentWidth);
+            UI.Separator();
+            DrawOkCancelButtons();
         }
         UI.EndScrollableRegion();
     }
 
-    private void DrawDirectoriesList(float width)
+    private void DrawDirectoriesList()
     {
-        // Corrected the call to match the new signature (no 'out' parameter).
+        float width = UI.GetAvailableContentWidth();
         UI.BeginScrollableRegion("dirsScrollInner", new Vector2(width, 140), gap: 2);
         {
-            // The inner width is now simply the width of the scroll region itself.
-            float innerWidth = width;
+            float innerWidth = UI.GetAvailableContentWidth();
             var selectedStyle = new ButtonStylePack();
             selectedStyle.Active.FillColor = DefaultTheme.Accent;
             selectedStyle.ActiveHover.FillColor = DefaultTheme.Accent;
@@ -115,22 +112,31 @@ public class SettingsWindow
         UI.EndHBoxContainer();
     }
 
-    private void DrawOkCancelButtons(float width)
+    private void DrawOkCancelButtons()
     {
+        float width = UI.GetAvailableContentWidth();
         UI.BeginHBoxContainer("okCancelButtonsHBox", Vector2.Zero, 5);
         {
-            float buttonsTotalWidth = 80 + 5 + 80; // cancel + gap + ok
-            float spacerWidth = width - buttonsTotalWidth;
+            float buttonGap = 5;
+            float okButtonWidth = 80;
+            float cancelButtonWidth = 80;
+
+            // Total width consumed by visible elements and the gap BETWEEN them.
+            float buttonsAndGapsWidth = cancelButtonWidth + buttonGap + okButtonWidth;
+
+            // The HBox will add a gap *after* our spacer element, so we must account for it.
+            float spacerWidth = width - buttonsAndGapsWidth - buttonGap;
+
             if (spacerWidth > 0)
             {
                 UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
             }
 
-            if (UI.Button("cancelSettings", "Cancel", new Vector2(80, 24)))
+            if (UI.Button("cancelSettings", "Cancel", new Vector2(cancelButtonWidth, 24)))
             {
                 _host.ModalWindowService.CloseModalWindow(1); // 1 indicates cancel
             }
-            if (UI.Button("okSettings", "OK", new Vector2(80, 24)))
+            if (UI.Button("okSettings", "OK", new Vector2(okButtonWidth, 24)))
             {
                 _onSave();
                 _host.ModalWindowService.CloseModalWindow(0); // 0 indicates success

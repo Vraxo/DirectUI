@@ -114,6 +114,7 @@ public class UILayoutManager
         vboxState.AccumulatedHeight = 0f;
         vboxState.ElementCount = 0;
         vboxState.MinSize = minSize;
+        vboxState.ConstrainedWidth = null;
 
         PushContainer(vboxState);
     }

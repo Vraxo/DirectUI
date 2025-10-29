@@ -5,6 +5,18 @@ namespace DirectUI;
 
 public static partial class UI
 {
+    /// <summary>
+    /// Draws a separator line that automatically spans the available content width.
+    /// </summary>
+    public static void Separator(float thickness = 1f, float verticalPadding = 4f, Color4? color = null)
+    {
+        float width = GetAvailableContentWidth();
+        Separator(width, thickness, verticalPadding, color);
+    }
+
+    /// <summary>
+    /// Draws a separator line with a specific width.
+    /// </summary>
     public static void Separator(float width, float thickness = 1f, float verticalPadding = 4f, Color4? color = null)
     {
         if (!IsContextValid())

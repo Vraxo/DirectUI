@@ -148,7 +148,7 @@ public class SonorizeLogic : IAppLogic
         {
             // Logo
             UI.Text("logo", "Sonorize", style: new ButtonStyle { FontSize = 24 });
-            UI.Separator(_sidebarWidth - 20, verticalPadding: 10);
+            UI.Separator(_sidebarWidth - 20, 1f, 10f);
 
             // Library Button
             var navButtonStyle = new ButtonStylePack { Roundness = 0.1f };
@@ -166,7 +166,7 @@ public class SonorizeLogic : IAppLogic
             }
 
             // Playlists
-            UI.Separator(_sidebarWidth - 20, verticalPadding: 10);
+            UI.Separator(_sidebarWidth - 20, 1f, 10f);
             UI.BeginHBoxContainer("playlistHeader", UI.Context.Layout.GetCurrentPosition(), 0, VAlignment.Center, 20);
             {
                 UI.Text("playlistsLabel", "PLAYLISTS", style: new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) });
@@ -295,21 +295,22 @@ public class SonorizeLogic : IAppLogic
         {
             UI.BeginVBoxContainer("addToPlaylistVBox", new(10, 10), 5);
             UI.Text("addToPlaylistHeader", $"Add '{song.Title}' to:", style: new ButtonStyle { FontSize = 16 });
-            UI.Separator(280);
+            UI.Separator(280, 1f, 4f);
 
             UI.BeginScrollableRegion("playlistSelectScroll", new(280, 300), gap: 2);
             {
                 foreach (var playlist in _settings.Playlists)
                 {
-                    if (UI.Button(playlist.Name, playlist.Name, new Vector2(280, 24), textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
+                    if (!UI.Button(playlist.Name, playlist.Name, new Vector2(280, 24), textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
                     {
-                        if (!playlist.Tracks.Any(t => t.FilePath == song.FilePath))
-                        {
-                            playlist.Tracks.Add(song);
-                            SaveState();
-                        }
-                        _host.ModalWindowService.CloseModalWindow(0);
+                        continue;
                     }
+                    if (!playlist.Tracks.Any(t => t.FilePath == song.FilePath))
+                    {
+                        playlist.Tracks.Add(song);
+                        SaveState();
+                    }
+                    _host.ModalWindowService.CloseModalWindow(0);
                 }
             }
             UI.EndScrollableRegion();

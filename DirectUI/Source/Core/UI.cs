@@ -259,6 +259,19 @@ public static partial class UI
         return -1; // No item was clicked on *this* frame
     }
 
+    public static float GetAvailableContentWidth()
+    {
+        if (!IsContextValid()) return 0;
+
+        if (Context.ContentWidthStack.Count > 0)
+        {
+            return Context.ContentWidthStack.Peek();
+        }
+
+        // Fallback to the renderer's full width if not in a constrained container.
+        return Context.Renderer.RenderTargetSize.X;
+    }
+
 
     // --- Helper Methods ---
     private static bool IsContextValid()

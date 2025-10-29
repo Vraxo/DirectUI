@@ -25,6 +25,11 @@ public static partial class UI
         scrollState.CalculatedContentSize = Vector2.Zero;
         scrollState.Padding = padding;
 
+        const float scrollbarThickness = 12f;
+        bool scrollbarWillBeVisible = scrollState.ContentSize.Y > scrollState.VisibleSize.Y;
+
+        float availableInnerWidth = size.X - (padding.X * 2) - (scrollbarWillBeVisible ? scrollbarThickness : 0);
+
         if (scrollState.IsHovered && Context.InputState.ScrollDelta != 0)
         {
             var offset = scrollState.CurrentScrollOffset;
@@ -42,13 +47,14 @@ public static partial class UI
         Context.Layout.PushClipRect(regionBounds);
         Context.Renderer.PushClipRect(regionBounds, D2D.AntialiasMode.Aliased);
 
-        // Push the main state so EndScrollableRegion can find it.
+        Context.ContentWidthStack.Push(availableInnerWidth);
         Context.Layout.PushContainer(scrollState);
 
-        // ** THE FIX **
-        // Now, immediately begin an internal VBox that is correctly offset and padded.
-        // The user's code will draw directly into this VBox.
-        Context.Layout.BeginVBox(HashCode.Combine(intId, "internal_vbox"), contentStartPosition + padding, gap);
+        var vboxId = HashCode.Combine(intId, "internal_vbox");
+        Context.Layout.BeginVBox(vboxId, contentStartPosition + padding, gap);
+
+        var innerVBoxState = (VBoxContainerState)Context.Layout.PeekContainer();
+        innerVBoxState.ConstrainedWidth = availableInnerWidth;
     }
 
     public static void EndScrollableRegion()
@@ -57,7 +63,6 @@ public static partial class UI
             || Context.Layout.PeekContainer() is not VBoxContainerState innerVBox)
         { Console.WriteLine("Error: EndScrollableRegion found an invalid container stack. Mismatched Begin/End call."); return; }
 
-        // Pop the internal VBox to get its measured size.
         Context.Layout.PopContainer();
 
         if (Context.Layout.ContainerStackCount < 1
@@ -68,7 +73,7 @@ public static partial class UI
         var totalContentSize = innerContentSize + scrollState.Padding * 2;
         scrollState.ContentSize = totalContentSize;
 
-        // Pop our own state and the clip rects.
+        Context.ContentWidthStack.Pop();
         Context.Layout.PopContainer();
         Context.Renderer.PopClipRect();
         Context.Layout.PopClipRect();
@@ -84,7 +89,7 @@ public static partial class UI
                 currentScrollOffset: scrollState.CurrentScrollOffset.Y,
                 position: scrollBarPos,
                 trackHeight: scrollState.VisibleSize.Y,
-                contentHeight: scrollState.ContentSize.Y, // Use the full size including padding
+                contentHeight: scrollState.ContentSize.Y,
                 visibleHeight: scrollState.VisibleSize.Y,
                 thickness: scrollbarThickness);
 
