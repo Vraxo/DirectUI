@@ -5,30 +5,32 @@ namespace DirectUI;
 
 public static partial class UI
 {
-    public static float HSlider(
+    private static float SliderPrimitive<T>(
         string id,
         float currentValue,
         float minValue,
         float maxValue,
-        Vector2 size,
-        Vector2 position = default,
-        float step = 0.01f,
-        SliderStyle? theme = null,
-        ButtonStylePack? grabberTheme = null,
-        Vector2? grabberSize = null,
-        HSliderDirection direction = HSliderDirection.LeftToRight,
-        bool disabled = false,
-        object? userData = null,
-        Vector2? origin = null)
+        Vector2 size, // logical
+        Vector2 position, // logical
+        float step,
+        SliderStyle? theme,
+        ButtonStylePack? grabberTheme,
+        Vector2? grabberSize, // logical
+        bool disabled,
+        object? userData,
+        Vector2? origin, // logical
+        Action<T> configureSpecifics) where T : InternalSliderLogic, new()
     {
         if (!IsContextValid()) return currentValue;
 
         int intId = id.GetHashCode();
         var scale = Context.UIScale;
         var logicalSize = size;
+        var physicalSize = logicalSize * scale;
+
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
 
-        // New: Automatically adjust vertical position for HBox alignment
+        // Automatic vertical position adjustment for HBox alignment
         if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
         {
             if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
@@ -47,34 +49,58 @@ public static partial class UI
             }
         }
 
-        // Culling Check
-        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
+        // Culling Check using physical units
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, physicalSize.X, physicalSize.Y);
         if (!Context.Layout.IsRectVisible(widgetBounds))
         {
-            Context.Layout.AdvanceLayout(size);
+            Context.Layout.AdvanceLayout(logicalSize);
             return currentValue;
         }
 
-        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(intId);
-        sliderInstance.Position = drawPos;
+        T sliderInstance = State.GetOrCreateElement<T>(intId);
 
-        // Configure instance
-        sliderInstance.Size = size;
+        // Configure instance with PHYSICAL units
+        sliderInstance.Position = drawPos;
+        sliderInstance.Size = physicalSize;
+        sliderInstance.GrabberSize = (grabberSize ?? new Vector2(16, 16)) * scale;
+        sliderInstance.Origin = (origin ?? Vector2.Zero) * scale;
         sliderInstance.MinValue = minValue;
         sliderInstance.MaxValue = maxValue;
         sliderInstance.Step = step;
         sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
         sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
-        sliderInstance.GrabberSize = grabberSize ?? new Vector2(16, 16);
-        sliderInstance.Origin = origin ?? Vector2.Zero;
         sliderInstance.Disabled = disabled;
         sliderInstance.UserData = userData;
-        sliderInstance.Direction = direction;
 
+        // Configure slider-specific properties (H or V)
+        configureSpecifics(sliderInstance);
 
         float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
-        Context.Layout.AdvanceLayout(sliderInstance.Size);
+        Context.Layout.AdvanceLayout(logicalSize);
         return newValue;
+    }
+
+    public static float HSlider(
+        string id,
+        float currentValue,
+        float minValue,
+        float maxValue,
+        Vector2 size,
+        Vector2 position = default,
+        float step = 0.01f,
+        SliderStyle? theme = null,
+        ButtonStylePack? grabberTheme = null,
+        Vector2? grabberSize = null,
+        HSliderDirection direction = HSliderDirection.LeftToRight,
+        bool disabled = false,
+        object? userData = null,
+        Vector2? origin = null)
+    {
+        return SliderPrimitive<InternalHSliderLogic>(
+            id, currentValue, minValue, maxValue, size, position, step,
+            theme, grabberTheme, grabberSize, disabled, userData, origin,
+            sliderInstance => sliderInstance.Direction = direction
+        );
     }
 
     public static float VSlider(
@@ -93,58 +119,10 @@ public static partial class UI
         object? userData = null,
         Vector2? origin = null)
     {
-        if (!IsContextValid()) return currentValue;
-
-        int intId = id.GetHashCode();
-        var scale = Context.UIScale;
-        var logicalSize = size;
-        Vector2 drawPos = Context.Layout.ApplyLayout(position);
-
-        // New: Automatically adjust vertical position for HBox alignment
-        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
-        {
-            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
-            {
-                float yOffset = 0;
-                switch (hbox.VerticalAlignment)
-                {
-                    case VAlignment.Center:
-                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
-                        break;
-                    case VAlignment.Bottom:
-                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
-                        break;
-                }
-                drawPos.Y += yOffset * scale;
-            }
-        }
-
-        // Culling Check
-        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
-        {
-            Context.Layout.AdvanceLayout(size);
-            return currentValue;
-        }
-
-        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(intId);
-        sliderInstance.Position = drawPos;
-
-        // Configure instance
-        sliderInstance.Size = size;
-        sliderInstance.MinValue = minValue;
-        sliderInstance.MaxValue = maxValue;
-        sliderInstance.Step = step;
-        sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
-        sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
-        sliderInstance.GrabberSize = grabberSize ?? new Vector2(16, 16);
-        sliderInstance.Origin = origin ?? Vector2.Zero;
-        sliderInstance.Disabled = disabled;
-        sliderInstance.UserData = userData;
-        sliderInstance.Direction = direction;
-
-        float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
-        Context.Layout.AdvanceLayout(sliderInstance.Size);
-        return newValue;
+        return SliderPrimitive<InternalVSliderLogic>(
+            id, currentValue, minValue, maxValue, size, position, step,
+            theme, grabberTheme, grabberSize, disabled, userData, origin,
+            sliderInstance => sliderInstance.Direction = direction
+        );
     }
 }

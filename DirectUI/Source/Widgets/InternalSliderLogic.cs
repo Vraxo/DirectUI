@@ -6,8 +6,8 @@ namespace DirectUI;
 
 internal abstract class InternalSliderLogic
 {
-    // --- Configuration ---
-    public Vector2 Position { get; set; }
+    // --- Configuration (set per-frame, in PHYSICAL units) ---
+    public Vector2 Position { get; set; } // Top-left corner of the widget's layout space.
     public Vector2 Size { get; set; }
     public Vector2 Origin { get; set; }
     public float MinValue { get; set; }
@@ -15,18 +15,18 @@ internal abstract class InternalSliderLogic
     public float Step { get; set; }
     public SliderStyle Theme { get; set; } = new();
     public ButtonStylePack GrabberTheme { get; set; } = new();
-    public Vector2 GrabberSize { get; set; } = new(16, 16);
+    public Vector2 GrabberSize { get; set; }
     public bool Disabled { get; set; }
     public object? UserData { get; set; }
 
-    // --- Internal State ---
+    // --- Internal State (in PHYSICAL units) ---
     protected bool isGrabberPressed = false;
     protected bool isGrabberHovered = false;
     protected bool isTrackHovered = false;
     protected bool isFocused = false;
-    protected Vector2 trackPosition;
-    protected float trackMinBound;
-    protected float trackMaxBound;
+    protected Vector2 trackPosition;      // Physical top-left of the track.
+    protected float trackMinBound;          // Physical start of the track.
+    protected float trackMaxBound;          // Physical end of the track.
     protected bool pendingTrackClickValueJump = false;
     protected float trackClickPosition = 0f;
     protected int GlobalIntId { get; private set; } = 0;
