@@ -16,4 +16,5 @@ public class Settings
     public TextOverflowMode TrackListOverflow { get; set; } = TextOverflowMode.Truncate;
     public int CompactnessLevel { get; set; } = 2; // 1=Compact, 2=Default, 3=Comfortable
     public bool EnableZebraStriping { get; set; } = true;
+    public float Volume { get; set; } = 0.75f;
 }

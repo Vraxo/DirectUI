@@ -7,9 +7,23 @@ public class AudioPlayer : IDisposable
 {
     private int _stream;
     private bool _isDisposed;
+    private float _volume = 1.0f;
 
     public bool IsPlaying => Bass.ChannelIsActive(_stream) == PlaybackState.Playing;
     public PlaybackState CurrentState => _stream != 0 ? Bass.ChannelIsActive(_stream) : PlaybackState.Stopped;
+
+    public float Volume
+    {
+        get => _volume;
+        set
+        {
+            _volume = Math.Clamp(value, 0.0f, 1.0f);
+            if (_stream != 0)
+            {
+                Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
+            }
+        }
+    }
 
     public AudioPlayer()
     {
@@ -31,6 +45,7 @@ public class AudioPlayer : IDisposable
         if (_stream == 0)
             throw new Exception($"Failed to create audio stream: {Bass.LastError}");
 
+        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
         Bass.ChannelPlay(_stream);
     }
 

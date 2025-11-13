@@ -23,6 +23,12 @@ public class PlaybackManager : IDisposable
     public double TotalDuration => _audioPlayer.GetLength();
     public bool HasTracks => _tracklist.Any();
 
+    public float Volume
+    {
+        get => _audioPlayer.Volume;
+        set => _audioPlayer.Volume = value;
+    }
+
     public PlaybackEndAction EndAction { get; set; } = PlaybackEndAction.NextInQueue;
     public PlaybackMode Mode { get; set; } = PlaybackMode.Sequential;
 

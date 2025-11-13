@@ -30,10 +30,10 @@ public class PlaybackControlsView
             }
         };
 
-        var toggleTheme = new ButtonStylePack(theme);
+        ButtonStylePack toggleTheme = new(theme);
         toggleTheme.Active.FontColor = DefaultTheme.Accent;
 
-        var playTheme = new ButtonStylePack(theme) { FontSize = 22 };
+        ButtonStylePack playTheme = new(theme) { FontSize = 22 };
 
         float gap = 16f;
         float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (gap * 4);
