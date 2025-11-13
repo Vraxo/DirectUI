@@ -39,10 +39,10 @@ public class SonorizeLogic : IAppLogic
 
         _settingsWindow = new(_settings, _host, SaveState);
         _playerBarView = new PlayerBarView(_playbackManager, _settings);
-        _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings, null); // Callback is now handled by AppController
+        _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings, null);
 
-        _sidebarView = new SidebarView(_settings, _uiState, null); // Callback is now handled by AppController
-        _mainContentView = new MainContentView(_libraryView, _settings, _uiState, null); // Callback is now handled by AppController
+        _sidebarView = new SidebarView(_settings, _uiState, null);
+        _mainContentView = new MainContentView(_libraryView, _settings, _uiState, null);
 
         _appController = new AppController(
             _host,
@@ -55,7 +55,6 @@ public class SonorizeLogic : IAppLogic
             SaveState
         );
 
-        // Re-assign callbacks from the controller
         _libraryView.OnSongRightClicked = _appController.OnSongRightClicked;
         _sidebarView.OnCreatePlaylist = _appController.OnCreatePlaylist;
         _mainContentView.OpenSettingsCallback = _appController.OpenSettingsModal;
