@@ -84,6 +84,10 @@ public class UIPersistentState
     // --- Animation State ---
     public AnimationManager AnimationManager { get; } = new();
 
+    // --- On-Demand Rendering State ---
+    private bool _isDirty = true;
+    public bool IsDirty => _isDirty;
+
 
     /// <summary>
     /// Resets the per-frame state variables. Called once at the beginning of each frame.
@@ -116,6 +120,10 @@ public class UIPersistentState
         // Reset the popup-opened-this-frame flag.
         PopupWasOpenedThisFrame = false;
     }
+
+    // --- On-Demand Rendering ---
+    public void MarkDirty() => _isDirty = true;
+    public void ClearDirtyFlag() => _isDirty = false;
 
     // --- Popup Management ---
     public bool IsPopupOpen => _activePopupId != 0;

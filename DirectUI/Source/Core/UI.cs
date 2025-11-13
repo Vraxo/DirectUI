@@ -272,6 +272,15 @@ public static partial class UI
         return Context.Renderer.RenderTargetSize.X;
     }
 
+    // --- On-Demand Rendering ---
+    public static void MarkDirty()
+    {
+        if (IsContextValid())
+        {
+            Context.State.MarkDirty();
+        }
+    }
+
 
     // --- Helper Methods ---
     private static bool IsContextValid()

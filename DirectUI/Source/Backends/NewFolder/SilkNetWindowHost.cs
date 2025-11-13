@@ -3,6 +3,7 @@ using DirectUI.Input;
 using Silk.NET.Maths;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -104,39 +105,67 @@ namespace DirectUI.Backends.SkiaSharp
             if (_mainWindow is null)
                 return;
 
-            // 1) Create GL/Skia contexts (still hidden)
             _mainWindow.IWindow.Initialize();
-
-            // 2) Pre‐render one frame off‐screen to avoid the blank flash
             _mainWindow.Render();
-
-            // 3) Now show the main window with its first frame already painted
             _mainWindow.IWindow.IsVisible = true;
+            _mainWindow.AppEngine.MarkDirty(); // Ensure it stays dirty for the first real loop iteration
 
-            // 4) Enter the regular event/render loop
             while (!_mainWindow.IWindow.IsClosing)
             {
+                // 1. Process all events for all windows. Input handlers will mark the UI as dirty.
                 _mainWindow.IWindow.DoEvents();
+                _activeModalWindow?.IWindow.DoEvents();
 
-                bool renderMain = !IsModalWindowOpen;
+                // 2. Check for other sources of change (like animations)
+                if (!_isDisposed && _mainWindow.AppEngine.HasActiveAnimations) _mainWindow.AppEngine.MarkDirty();
+                if (IsModalWindowOpen && _activeModalWindow?.AppEngine.HasActiveAnimations == true) _activeModalWindow.AppEngine.MarkDirty();
+
+                // 3. Decide if rendering is needed
+                bool mainDirty = !_isDisposed && _mainWindow.AppEngine.IsDirty;
+                bool modalDirty = IsModalWindowOpen && (_activeModalWindow?.AppEngine.IsDirty ?? false);
+
+                // Throttled repaint for the main window when a modal is active.
+                bool repaintMainBehindModal = false;
                 if (IsModalWindowOpen)
                 {
                     var now = _throttleTimer.ElapsedTicks;
                     if (now - _lastMainRepaintTicks > _modalRepaintIntervalTicks)
                     {
-                        renderMain = true;
+                        repaintMainBehindModal = true;
                         _lastMainRepaintTicks = now;
                     }
                 }
 
-                if (renderMain)
-                    _mainWindow.Render();
+                if (mainDirty || modalDirty || repaintMainBehindModal)
+                {
+                    // Render main window if it's dirty, or if it's time for its throttled repaint.
+                    if (mainDirty || repaintMainBehindModal)
+                    {
+                        _mainWindow.AppEngine.ClearDirtyFlag();
+                        _mainWindow.Render();
+                    }
 
-                if (IsModalWindowOpen && !_activeModalWindow!.IWindow.IsClosing)
-                    _activeModalWindow.Render();
+                    // Handle modal window logic
+                    if (_activeModalWindow is not null)
+                    {
+                        if (modalDirty)
+                        {
+                            _activeModalWindow.AppEngine.ClearDirtyFlag();
+                            _activeModalWindow.Render();
+                        }
 
-                if (IsModalWindowOpen && _activeModalWindow!.IWindow.IsClosing)
-                    HandleModalClose();
+                        if (_activeModalWindow.IWindow.IsClosing)
+                        {
+                            HandleModalClose();
+                        }
+                    }
+                }
+                else
+                {
+                    // Nothing to do, yield the CPU to reduce usage significantly.
+                    // A 10ms sleep polls at ~100fps, which is responsive enough for latent changes.
+                    Thread.Sleep(10);
+                }
             }
         }
 

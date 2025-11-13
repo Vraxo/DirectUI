@@ -261,11 +261,13 @@ public class SilkNetSkiaWindow : IDisposable
     {
         if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = true;
         Input.AddKeyPressed(MapKey(k));
+        AppEngine.MarkDirty();
     }
     private void OnKeyUp(IKeyboard kb, Key k, int s)
     {
         if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = false;
         Input.AddKeyReleased(MapKey(k));
+        AppEngine.MarkDirty();
     }
     private void OnKeyChar(IKeyboard kb, char c)
     {
@@ -281,7 +283,6 @@ public class SilkNetSkiaWindow : IDisposable
             string emoji = new string(new[] { _highSurrogate, c });
             Input.AddCharacterInput(emoji); // This will call your string version
             _highSurrogate = '\0';
-            return;
         }
         else if (_highSurrogate != '\0')
         {
@@ -290,17 +291,31 @@ public class SilkNetSkiaWindow : IDisposable
             Input.AddCharacterInput(_highSurrogate); // This will call your char version
             _highSurrogate = '\0';
         }
-
-        // Regular character (not part of a surrogate pair)
-        Input.AddCharacterInput(c); // This will call your char version
+        else
+        {
+            // Regular character (not part of a surrogate pair)
+            Input.AddCharacterInput(c); // This will call your char version
+        }
+        AppEngine.MarkDirty();
     }
 
     private void OnMouseDown(IMouse m, Silk.NET.Input.MouseButton b)
-        => Input.SetMouseDown(MapMouseButton(b));
+    {
+        Input.SetMouseDown(MapMouseButton(b));
+        AppEngine.MarkDirty();
+    }
+
     private void OnMouseUp(IMouse m, Silk.NET.Input.MouseButton b)
-        => Input.SetMouseUp(MapMouseButton(b));
+    {
+        Input.SetMouseUp(MapMouseButton(b));
+        AppEngine.MarkDirty();
+    }
     private void OnMouseMove(IMouse m, Vector2 pos)
-        => Input.SetMousePosition((int)pos.X, (int)pos.Y);
+    {
+        Input.SetMousePosition((int)pos.X, (int)pos.Y);
+        AppEngine.MarkDirty();
+    }
+
     private void OnMouseWheel(IMouse m, ScrollWheel s)
     {
         if (AppEngine is null) return;
@@ -313,6 +328,7 @@ public class SilkNetSkiaWindow : IDisposable
         {
             Input.AddMouseWheelDelta(s.Y);
         }
+        AppEngine.MarkDirty();
     }
 
     // full MapKey/MapMouseButton omitted for brevity—you keep yours here unchanged

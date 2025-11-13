@@ -26,6 +26,12 @@ public class InputManager
     private readonly List<Keys> _releasedKeysThisFrame = new();
     private readonly List<MouseButton> _pressedMouseButtonsThisFrame = new();
 
+    /// <summary>
+    /// Tracks if any input has occurred since the last frame was prepared.
+    /// This is used to determine if the UI is "dirty" and needs a redraw.
+    /// </summary>
+    public bool HasInputSinceLastFrame { get; private set; } = true;
+
     public InputState GetCurrentState()
     {
         return new(
@@ -57,21 +63,25 @@ public class InputManager
         _pressedKeysThisFrame.Clear();
         _releasedKeysThisFrame.Clear();
         _pressedMouseButtonsThisFrame.Clear();
+        HasInputSinceLastFrame = false;
     }
 
     public void SetMousePosition(int x, int y)
     {
         _currentMousePos = new Vector2(x, y);
+        HasInputSinceLastFrame = true;
     }
 
     public void AddMouseWheelDelta(float delta)
     {
         _scrollDeltaThisFrame += delta;
+        HasInputSinceLastFrame = true;
     }
 
     public void SetMouseDown(MouseButton button)
     {
         _pressedMouseButtonsThisFrame.Add(button);
+        HasInputSinceLastFrame = true;
 
         if (button == MouseButton.Left)
         {
@@ -92,6 +102,7 @@ public class InputManager
 
     public void SetMouseUp(MouseButton button)
     {
+        HasInputSinceLastFrame = true;
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = false;
@@ -114,6 +125,7 @@ public class InputManager
         {
             _typedCharsThisFrame.Enqueue(c);
         }
+        HasInputSinceLastFrame = true;
 
         // If it was a surrogate pair, add a marker
         if (text.Length == 2 && char.IsSurrogatePair(text[0], text[1]))
@@ -128,6 +140,7 @@ public class InputManager
         if (!char.IsControl(c) || c == '\t' || c == '\n')
         {
             _typedCharsThisFrame.Enqueue(c);
+            HasInputSinceLastFrame = true;
         }
     }
 
@@ -137,6 +150,7 @@ public class InputManager
         {
             _pressedKeysThisFrame.Add(key);
             _heldKeys.Add(key);
+            HasInputSinceLastFrame = true;
         }
     }
 
@@ -146,6 +160,7 @@ public class InputManager
         {
             _releasedKeysThisFrame.Add(key);
             _heldKeys.Remove(key);
+            HasInputSinceLastFrame = true;
         }
     }
 

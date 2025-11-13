@@ -43,7 +43,6 @@ public class SonorizeLogic : IAppLogic
         _menuBar = new(OpenSettingsModal);
         _settingsWindow = new(_settings, _host, SaveState); // Pass Save action
         _playbackManager = new PlaybackManager(new AudioPlayer());
-        _playbackManager.Volume = _settings.Volume;
         _playerBarView = new PlayerBarView(_playbackManager, _settings);
 
         _libraryView = new LibraryView(_musicLibrary, _playbackManager, _settings, OnSongRightClicked);
@@ -77,7 +76,6 @@ public class SonorizeLogic : IAppLogic
     {
         try
         {
-            _settings.Volume = _playbackManager.Volume;
             JsonSerializerOptions options = new()
             {
                 WriteIndented = true
@@ -118,6 +116,13 @@ public class SonorizeLogic : IAppLogic
     public void DrawUI(UIContext context)
     {
         _playbackManager.Update();
+
+        // If a song is playing, the seek bar needs to update continuously.
+        // This marks the UI as "dirty" for the next frame, ensuring a redraw.
+        if (_playbackManager.IsPlaying)
+        {
+            UI.MarkDirty();
+        }
 
         float menuBarHeight = 0f; // No menubar in this design
         float playerBarHeight = 90f;

@@ -4,15 +4,20 @@ namespace DirectUI.Animation;
 public class AnimationManager
 {
     private readonly Dictionary<int, AnimatedValue> _animatedProperties = new();
+    public bool IsAnimating { get; private set; }
 
     public void Update(float currentTime)
     {
+        IsAnimating = false; // Reset at the start of the update
         var keys = new List<int>(_animatedProperties.Keys);
         foreach (var key in keys)
         {
             if (_animatedProperties.TryGetValue(key, out var animValue))
             {
-                animValue.Update(currentTime);
+                if (animValue.Update(currentTime))
+                {
+                    IsAnimating = true; // Set to true if any animation is still running
+                }
             }
         }
     }

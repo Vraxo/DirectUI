@@ -25,6 +25,9 @@ public class AppEngine
     public Color4 BackgroundColor { get; }
     public float UIScale { get; set; } = 1.0f;
 
+    public bool IsDirty => _persistentState.IsDirty;
+    public bool HasActiveAnimations => _persistentState.AnimationManager.IsAnimating;
+
     public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
@@ -36,6 +39,10 @@ public class AppEngine
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
     }
+
+    public void MarkDirty() => _persistentState.MarkDirty();
+    public void ClearDirtyFlag() => _persistentState.ClearDirtyFlag();
+
 
     /// <summary>
     /// Initializes internal components like the FPS counter.
