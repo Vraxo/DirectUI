@@ -85,8 +85,10 @@ public class UIPersistentState
     public AnimationManager AnimationManager { get; } = new();
 
     // --- On-Demand Rendering State ---
-    private bool _isDirty = true;
-    public bool IsDirty => _isDirty;
+    public bool IsFullFrameDirty { get; private set; } = true;
+    private readonly List<Rect> _dirtyRects = new();
+    public IReadOnlyList<Rect> DirtyRects => _dirtyRects;
+    public bool HasDirtyRegions => _dirtyRects.Count > 0;
 
 
     /// <summary>
@@ -122,8 +124,13 @@ public class UIPersistentState
     }
 
     // --- On-Demand Rendering ---
-    public void MarkDirty() => _isDirty = true;
-    public void ClearDirtyFlag() => _isDirty = false;
+    public void MarkFullFrameDirty() => IsFullFrameDirty = true;
+    public void MarkRegionDirty(Rect region) => _dirtyRects.Add(region);
+    public void ClearDirtyState()
+    {
+        IsFullFrameDirty = false;
+        _dirtyRects.Clear();
+    }
 
     // --- Popup Management ---
     public bool IsPopupOpen => _activePopupId != 0;

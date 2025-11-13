@@ -117,11 +117,11 @@ public class SonorizeLogic : IAppLogic
     {
         _playbackManager.Update();
 
-        // If a song is playing, the seek bar needs to update continuously.
-        // This marks the UI as "dirty" for the next frame, ensuring a redraw.
+        // If audio is playing, the UI needs to constantly redraw to update the seek slider.
+        // Mark the app engine as dirty to ensure the next frame is rendered.
         if (_playbackManager.IsPlaying)
         {
-            UI.MarkDirty();
+            _host.AppEngine.MarkDirty();
         }
 
         float menuBarHeight = 0f; // No menubar in this design

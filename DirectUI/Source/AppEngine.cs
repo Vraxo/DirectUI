@@ -13,6 +13,8 @@ namespace DirectUI;
 /// </summary>
 public class AppEngine
 {
+    public static bool UseRegionBasedDirtying { get; set; } = true;
+
     private readonly Action<UIContext> _drawCallback;
     private readonly FpsCounter _fpsCounter;
     private readonly InputManager _inputManager;
@@ -25,8 +27,14 @@ public class AppEngine
     public Color4 BackgroundColor { get; }
     public float UIScale { get; set; } = 1.0f;
 
-    public bool IsDirty => _persistentState.IsDirty;
+    public bool IsFullFrameDirty => _persistentState.IsFullFrameDirty;
+    public bool HasDirtyRegions => _persistentState.HasDirtyRegions;
+    public IReadOnlyList<Rect> DirtyRects => _persistentState.DirtyRects;
     public bool HasActiveAnimations => _persistentState.AnimationManager.IsAnimating;
+
+    public bool IsDirty => IsFullFrameDirty || HasDirtyRegions;
+    public void MarkDirty() => MarkFullFrameDirty();
+    public void ClearDirtyFlag() => ClearDirtyState();
 
     public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
@@ -40,8 +48,9 @@ public class AppEngine
         _lastFrameTicks = _frameTimer.ElapsedTicks;
     }
 
-    public void MarkDirty() => _persistentState.MarkDirty();
-    public void ClearDirtyFlag() => _persistentState.ClearDirtyFlag();
+    public void MarkFullFrameDirty() => _persistentState.MarkFullFrameDirty();
+    public void MarkRegionDirty(Rect region) => _persistentState.MarkRegionDirty(region);
+    public void ClearDirtyState() => _persistentState.ClearDirtyState();
 
 
     /// <summary>

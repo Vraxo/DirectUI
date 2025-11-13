@@ -217,7 +217,7 @@ internal class InputText
         {
             state.BlinkTimer = 0;
             state.IsBlinkOn = !state.IsBlinkOn;
-            UI.MarkDirty();
+            UI.MarkFullFrameDirty();
         }
 
         bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);

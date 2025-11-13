@@ -40,7 +40,7 @@ public class PlayerBarView
         DrawCenterPanel(context, layout.CenterPanelRect);
 
         // --- Right Panel: Volume ---
-        DrawRightPanel(context, layout.RightPanelRect);
+        // (Placeholder for volume control)
     }
 
     private void DrawBackground(UIContext context, Vortice.Mathematics.Rect controlsRect, MusicFile? currentTrack)
@@ -211,54 +211,6 @@ public class PlayerBarView
             _isSeekSliderDragging = isDragging;
 
             UI.Text("totalTime", totalTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Left, VAlignment.Center));
-        }
-        UI.EndHBoxContainer();
-    }
-
-    private void DrawRightPanel(UIContext context, Vortice.Mathematics.Rect panelRect)
-    {
-        if (panelRect.Width <= 0) return;
-
-        float volumeIconWidth = 20;
-        float volumeSliderWidth = 100;
-        float gap = 8;
-        float padding = 20;
-        float totalContentWidth = volumeIconWidth + gap + volumeSliderWidth;
-
-        // Align content to the right of the panel.
-        float startX = panelRect.Right - totalContentWidth - padding;
-        var hboxPos = new Vector2(startX, panelRect.Y);
-
-        UI.BeginHBoxContainer("volumeHBox", hboxPos, gap, VAlignment.Center, fixedRowHeight: panelRect.Height);
-        {
-            var iconStyle = new ButtonStyle { FontName = "FontAwesomeSolid", FontSize = 16 };
-            UI.Text("volumeIcon", "\uF028", new(volumeIconWidth, 20), iconStyle, new(HAlignment.Center, VAlignment.Center)); // fa-volume-up
-
-            var sliderTheme = new SliderStyle();
-            sliderTheme.Background.FillColor = new Color(0.3f, 0.3f, 0.3f, 1f);
-            sliderTheme.Foreground.FillColor = new Color(0.9f, 0.9f, 0.9f, 1f);
-            sliderTheme.ForegroundHover.FillColor = new Color(1f, 1f, 1f, 1f); // White on hover like Spotify
-
-            var grabberTheme = new ButtonStylePack();
-            grabberTheme.Normal.FillColor = Colors.Transparent;
-            grabberTheme.Normal.BorderColor = Colors.Transparent;
-            grabberTheme.Hover.FillColor = Colors.White;
-            grabberTheme.Hover.BorderColor = Colors.Transparent;
-            grabberTheme.Pressed.FillColor = Colors.White;
-            grabberTheme.Pressed.BorderColor = Colors.Transparent;
-            grabberTheme.Roundness = 1f;
-
-            float currentVolume = _playbackManager.Volume;
-            float newVolume = UI.HSlider("volumeSlider", currentVolume, 0, 1f, new(volumeSliderWidth, 8),
-                theme: sliderTheme,
-                grabberTheme: grabberTheme,
-                grabberSize: new(14, 14));
-
-            if (Math.Abs(newVolume - currentVolume) > 0.001f)
-            {
-                _playbackManager.Volume = newVolume;
-                _settings.Volume = newVolume;
-            }
         }
         UI.EndHBoxContainer();
     }

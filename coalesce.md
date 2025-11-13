@@ -75,6 +75,8 @@ namespace DirectUI;
 /// </summary>
 public class AppEngine
 {
+    public static bool UseRegionBasedDirtying { get; set; } = true;
+
     private readonly Action<UIContext> _drawCallback;
     private readonly FpsCounter _fpsCounter;
     private readonly InputManager _inputManager;
@@ -87,6 +89,11 @@ public class AppEngine
     public Color4 BackgroundColor { get; }
     public float UIScale { get; set; } = 1.0f;
 
+    public bool IsFullFrameDirty => _persistentState.IsFullFrameDirty;
+    public bool HasDirtyRegions => _persistentState.HasDirtyRegions;
+    public IReadOnlyList<Rect> DirtyRects => _persistentState.DirtyRects;
+    public bool HasActiveAnimations => _persistentState.AnimationManager.IsAnimating;
+
     public AppEngine(Action<UIContext> drawCallback, Color4 backgroundColor)
     {
         _drawCallback = drawCallback ?? throw new ArgumentNullException(nameof(drawCallback));
@@ -98,6 +105,11 @@ public class AppEngine
         _frameTimer.Start();
         _lastFrameTicks = _frameTimer.ElapsedTicks;
     }
+
+    public void MarkFullFrameDirty() => _persistentState.MarkFullFrameDirty();
+    public void MarkRegionDirty(Rect region) => _persistentState.MarkRegionDirty(region);
+    public void ClearDirtyState() => _persistentState.ClearDirtyState();
+
 
     /// <summary>
     /// Initializes internal components like the FPS counter.
@@ -2387,6 +2399,23 @@ public static partial class UI
         return Context.Renderer.RenderTargetSize.X;
     }
 
+    // --- On-Demand Rendering ---
+    public static void MarkFullFrameDirty()
+    {
+        if (IsContextValid())
+        {
+            Context.State.MarkFullFrameDirty();
+        }
+    }
+
+    public static void MarkDirty(Rect region)
+    {
+        if (IsContextValid())
+        {
+            Context.State.MarkRegionDirty(region);
+        }
+    }
+
 
     // --- Helper Methods ---
     private static bool IsContextValid()
@@ -4060,6 +4089,81 @@ namespace DirectUI;
 
 public static partial class UI
 {
+    private static float SliderPrimitive<T>(
+        string id,
+        float currentValue,
+        float minValue,
+        float maxValue,
+        Vector2 size, // logical
+        Vector2 position, // logical
+        float step,
+        SliderStyle? theme,
+        ButtonStylePack? grabberTheme,
+        Vector2? grabberSize, // logical
+        bool disabled,
+        object? userData,
+        Vector2? origin, // logical
+        Action<T> configureSpecifics) where T : InternalSliderLogic, new()
+    {
+        if (!IsContextValid()) return currentValue;
+
+        int intId = id.GetHashCode();
+        var scale = Context.UIScale;
+        var logicalSize = size;
+        var physicalSize = logicalSize * scale;
+
+        Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // Automatic vertical position adjustment for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset * scale;
+            }
+        }
+
+        // Culling Check using physical units
+        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, physicalSize.X, physicalSize.Y);
+        if (!Context.Layout.IsRectVisible(widgetBounds))
+        {
+            Context.Layout.AdvanceLayout(logicalSize);
+            return currentValue;
+        }
+
+        T sliderInstance = State.GetOrCreateElement<T>(intId);
+
+        // Configure instance with PHYSICAL units
+        sliderInstance.Position = drawPos;
+        sliderInstance.Size = physicalSize;
+        sliderInstance.GrabberSize = (grabberSize ?? new Vector2(16, 16)) * scale;
+        sliderInstance.Origin = (origin ?? Vector2.Zero) * scale;
+        sliderInstance.MinValue = minValue;
+        sliderInstance.MaxValue = maxValue;
+        sliderInstance.Step = step;
+        sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
+        sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
+        sliderInstance.Disabled = disabled;
+        sliderInstance.UserData = userData;
+
+        // Configure slider-specific properties (H or V)
+        configureSpecifics(sliderInstance);
+
+        float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
+        Context.Layout.AdvanceLayout(logicalSize);
+        return newValue;
+    }
+
     public static float HSlider(
         string id,
         float currentValue,
@@ -4076,39 +4180,11 @@ public static partial class UI
         object? userData = null,
         Vector2? origin = null)
     {
-        if (!IsContextValid()) return currentValue;
-
-        int intId = id.GetHashCode();
-        Vector2 drawPos = Context.Layout.ApplyLayout(position);
-
-        // Culling Check
-        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
-        {
-            Context.Layout.AdvanceLayout(size);
-            return currentValue;
-        }
-
-        InternalHSliderLogic sliderInstance = State.GetOrCreateElement<InternalHSliderLogic>(intId);
-        sliderInstance.Position = drawPos;
-
-        // Configure instance
-        sliderInstance.Size = size;
-        sliderInstance.MinValue = minValue;
-        sliderInstance.MaxValue = maxValue;
-        sliderInstance.Step = step;
-        sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
-        sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
-        sliderInstance.GrabberSize = grabberSize ?? new Vector2(16, 16);
-        sliderInstance.Origin = origin ?? Vector2.Zero;
-        sliderInstance.Disabled = disabled;
-        sliderInstance.UserData = userData;
-        sliderInstance.Direction = direction;
-
-
-        float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
-        Context.Layout.AdvanceLayout(sliderInstance.Size);
-        return newValue;
+        return SliderPrimitive<InternalHSliderLogic>(
+            id, currentValue, minValue, maxValue, size, position, step,
+            theme, grabberTheme, grabberSize, disabled, userData, origin,
+            sliderInstance => sliderInstance.Direction = direction
+        );
     }
 
     public static float VSlider(
@@ -4127,38 +4203,11 @@ public static partial class UI
         object? userData = null,
         Vector2? origin = null)
     {
-        if (!IsContextValid()) return currentValue;
-
-        int intId = id.GetHashCode();
-        Vector2 drawPos = Context.Layout.ApplyLayout(position);
-
-        // Culling Check
-        Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
-        if (!Context.Layout.IsRectVisible(widgetBounds))
-        {
-            Context.Layout.AdvanceLayout(size);
-            return currentValue;
-        }
-
-        InternalVSliderLogic sliderInstance = State.GetOrCreateElement<InternalVSliderLogic>(intId);
-        sliderInstance.Position = drawPos;
-
-        // Configure instance
-        sliderInstance.Size = size;
-        sliderInstance.MinValue = minValue;
-        sliderInstance.MaxValue = maxValue;
-        sliderInstance.Step = step;
-        sliderInstance.Theme = theme ?? sliderInstance.Theme ?? new SliderStyle();
-        sliderInstance.GrabberTheme = grabberTheme ?? sliderInstance.GrabberTheme ?? new ButtonStylePack();
-        sliderInstance.GrabberSize = grabberSize ?? new Vector2(16, 16);
-        sliderInstance.Origin = origin ?? Vector2.Zero;
-        sliderInstance.Disabled = disabled;
-        sliderInstance.UserData = userData;
-        sliderInstance.Direction = direction;
-
-        float newValue = sliderInstance.UpdateAndDraw(intId, currentValue);
-        Context.Layout.AdvanceLayout(sliderInstance.Size);
-        return newValue;
+        return SliderPrimitive<InternalVSliderLogic>(
+            id, currentValue, minValue, maxValue, size, position, step,
+            theme, grabberTheme, grabberSize, disabled, userData, origin,
+            sliderInstance => sliderInstance.Direction = direction
+        );
     }
 }
 ```
@@ -5084,6 +5133,12 @@ public class UIPersistentState
     // --- Animation State ---
     public AnimationManager AnimationManager { get; } = new();
 
+    // --- On-Demand Rendering State ---
+    public bool IsFullFrameDirty { get; private set; } = true;
+    private readonly List<Rect> _dirtyRects = new();
+    public IReadOnlyList<Rect> DirtyRects => _dirtyRects;
+    public bool HasDirtyRegions => _dirtyRects.Count > 0;
+
 
     /// <summary>
     /// Resets the per-frame state variables. Called once at the beginning of each frame.
@@ -5115,6 +5170,15 @@ public class UIPersistentState
 
         // Reset the popup-opened-this-frame flag.
         PopupWasOpenedThisFrame = false;
+    }
+
+    // --- On-Demand Rendering ---
+    public void MarkFullFrameDirty() => IsFullFrameDirty = true;
+    public void MarkRegionDirty(Rect region) => _dirtyRects.Add(region);
+    public void ClearDirtyState()
+    {
+        IsFullFrameDirty = false;
+        _dirtyRects.Clear();
     }
 
     // --- Popup Management ---
@@ -5222,7 +5286,7 @@ public class UIPersistentState
     // --- Click Management ---
     public ClickResult RegisterClick(int id)
     {
-        if (UI.Context.IsLayoutPass) return ClickResult.None;
+        if (UI.Context.IsLayoutPass) return;
         float currentTime = UI.Context.TotalTime;
         if (LastClickedElementId == id && (currentTime - LastClickTime) < DoubleClickThreshold)
         {
@@ -5615,6 +5679,12 @@ public class InputManager
     private readonly List<Keys> _releasedKeysThisFrame = new();
     private readonly List<MouseButton> _pressedMouseButtonsThisFrame = new();
 
+    /// <summary>
+    /// Tracks if any input has occurred since the last frame was prepared.
+    /// This is used to determine if the UI is "dirty" and needs a redraw.
+    /// </summary>
+    public bool HasInputSinceLastFrame { get; private set; } = true;
+
     public InputState GetCurrentState()
     {
         return new(
@@ -5646,21 +5716,25 @@ public class InputManager
         _pressedKeysThisFrame.Clear();
         _releasedKeysThisFrame.Clear();
         _pressedMouseButtonsThisFrame.Clear();
+        HasInputSinceLastFrame = false;
     }
 
     public void SetMousePosition(int x, int y)
     {
         _currentMousePos = new Vector2(x, y);
+        HasInputSinceLastFrame = true;
     }
 
     public void AddMouseWheelDelta(float delta)
     {
         _scrollDeltaThisFrame += delta;
+        HasInputSinceLastFrame = true;
     }
 
     public void SetMouseDown(MouseButton button)
     {
         _pressedMouseButtonsThisFrame.Add(button);
+        HasInputSinceLastFrame = true;
 
         if (button == MouseButton.Left)
         {
@@ -5681,6 +5755,7 @@ public class InputManager
 
     public void SetMouseUp(MouseButton button)
     {
+        HasInputSinceLastFrame = true;
         if (button == MouseButton.Left)
         {
             _isLeftMouseButtonDown = false;
@@ -5703,6 +5778,7 @@ public class InputManager
         {
             _typedCharsThisFrame.Enqueue(c);
         }
+        HasInputSinceLastFrame = true;
 
         // If it was a surrogate pair, add a marker
         if (text.Length == 2 && char.IsSurrogatePair(text[0], text[1]))
@@ -5717,6 +5793,7 @@ public class InputManager
         if (!char.IsControl(c) || c == '\t' || c == '\n')
         {
             _typedCharsThisFrame.Enqueue(c);
+            HasInputSinceLastFrame = true;
         }
     }
 
@@ -5726,6 +5803,7 @@ public class InputManager
         {
             _pressedKeysThisFrame.Add(key);
             _heldKeys.Add(key);
+            HasInputSinceLastFrame = true;
         }
     }
 
@@ -5735,6 +5813,7 @@ public class InputManager
         {
             _releasedKeysThisFrame.Add(key);
             _heldKeys.Remove(key);
+            HasInputSinceLastFrame = true;
         }
     }
 
@@ -7524,6 +7603,7 @@ internal class InputText
         {
             state.BlinkTimer = 0;
             state.IsBlinkOn = !state.IsBlinkOn;
+            UI.MarkFullFrameDirty();
         }
 
         bool isCtrlHeld = input.HeldKeys.Contains(Keys.Control);
@@ -8243,6 +8323,7 @@ internal class InternalComboboxLogic
 ```csharp
 // Widgets/InternalHSliderLogic.cs
 using DirectUI.Core;
+using DirectUI.Input;
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -8259,12 +8340,9 @@ internal class InternalHSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.X + Size.X;
     }
 
-    protected override float HandleInput(InputState input, float currentValue)
+    private void CheckHoverState(InputState input, float currentValue)
     {
-        float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
-        var state = UI.State;
-
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -8272,48 +8350,73 @@ internal class InternalHSliderLogic : InternalSliderLogic
         Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
         isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
 
+        if (isGrabberHovered || isTrackHovered)
+        {
+            UI.State.SetPotentialInputTarget(GlobalIntId);
+        }
+    }
+
+    private void HandlePress(InputState input)
+    {
+        var state = UI.State;
         bool isSliderHovered = isGrabberHovered || isTrackHovered;
 
-        if (isSliderHovered)
+        if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
         {
-            state.SetPotentialInputTarget(GlobalIntId);
-        }
-
-        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
-        {
-            state.ClearActivePress(GlobalIntId);
-        }
-
-        if (input.WasLeftMousePressedThisFrame)
-        {
-            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
+            state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
+            if (state.TrySetActivePress(GlobalIntId, 10))
             {
-                state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
-                if (state.TrySetActivePress(GlobalIntId, 10))
-                {
-                    state.SetFocus(GlobalIntId);
+                state.SetFocus(GlobalIntId);
 
-                    if (isTrackHovered && !isGrabberHovered)
-                    {
-                        pendingTrackClickValueJump = true;
-                        trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-                    }
+                if (isTrackHovered && !isGrabberHovered)
+                {
+                    pendingTrackClickValueJump = true;
+                    trackClickPosition = Math.Clamp(input.MousePosition.X, trackMinBound, trackMaxBound);
                 }
             }
         }
+    }
 
-        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+    private float HandleDrag(InputState input, float currentValue)
+    {
+        if (UI.State.ActivelyPressedElementId != GlobalIntId)
         {
-            if (!pendingTrackClickValueJump)
-            {
-                float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-                newValue = ConvertPositionToValue(clampedX);
-                newValue = ApplyStep(newValue);
-                newValue = Math.Clamp(newValue, MinValue, MaxValue);
-            }
+            return currentValue;
+        }
+        if (pendingTrackClickValueJump)
+        {
+            return currentValue;
+        }
+        float clampedX = Math.Clamp(input.MousePosition.X, trackMinBound, trackMaxBound);
+        float newValue = ConvertPositionToValue(clampedX);
+        newValue = ApplyStep(newValue);
+        return Math.Clamp(newValue, MinValue, MaxValue);
+    }
+
+    private void HandleRelease(InputState input)
+    {
+        if (UI.State.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        {
+            UI.State.ClearActivePress(GlobalIntId);
+        }
+    }
+
+    protected override float HandleInput(InputState input, float currentValue)
+    {
+        CheckHoverState(input, currentValue);
+
+        HandleRelease(input);
+        if (input.WasLeftMousePressedThisFrame)
+        {
+            HandlePress(input);
         }
 
-        return newValue;
+        if (input.IsLeftMouseDown)
+        {
+            return HandleDrag(input, currentValue);
+        }
+
+        return currentValue;
     }
 
     protected override float ConvertPositionToValue(float position)
@@ -8679,8 +8782,8 @@ namespace DirectUI;
 
 internal abstract class InternalSliderLogic
 {
-    // --- Configuration ---
-    public Vector2 Position { get; set; }
+    // --- Configuration (set per-frame, in PHYSICAL units) ---
+    public Vector2 Position { get; set; } // Top-left corner of the widget's layout space.
     public Vector2 Size { get; set; }
     public Vector2 Origin { get; set; }
     public float MinValue { get; set; }
@@ -8688,18 +8791,18 @@ internal abstract class InternalSliderLogic
     public float Step { get; set; }
     public SliderStyle Theme { get; set; } = new();
     public ButtonStylePack GrabberTheme { get; set; } = new();
-    public Vector2 GrabberSize { get; set; } = new(16, 16);
+    public Vector2 GrabberSize { get; set; }
     public bool Disabled { get; set; }
     public object? UserData { get; set; }
 
-    // --- Internal State ---
+    // --- Internal State (in PHYSICAL units) ---
     protected bool isGrabberPressed = false;
     protected bool isGrabberHovered = false;
     protected bool isTrackHovered = false;
     protected bool isFocused = false;
-    protected Vector2 trackPosition;
-    protected float trackMinBound;
-    protected float trackMaxBound;
+    protected Vector2 trackPosition;      // Physical top-left of the track.
+    protected float trackMinBound;          // Physical start of the track.
+    protected float trackMaxBound;          // Physical end of the track.
     protected bool pendingTrackClickValueJump = false;
     protected float trackClickPosition = 0f;
     protected int GlobalIntId { get; private set; } = 0;
@@ -8829,6 +8932,7 @@ internal abstract class InternalSliderLogic
 
 ```csharp
 using DirectUI.Core; // Added for IRenderer
+using DirectUI.Input;
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1; // Added this using directive
@@ -8845,12 +8949,9 @@ internal class InternalVSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.Y + Size.Y;
     }
 
-    protected override float HandleInput(InputState input, float currentValue)
+    private void CheckHoverState(InputState input, float currentValue)
     {
-        float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
-        var state = UI.State;
-
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -8858,57 +8959,103 @@ internal class InternalVSliderLogic : InternalSliderLogic
         Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
         isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
 
+        if (isGrabberHovered || isTrackHovered)
+        {
+            UI.State.SetPotentialInputTarget(GlobalIntId);
+        }
+    }
+
+    private void HandlePress(InputState input)
+    {
+        var state = UI.State;
         bool isSliderHovered = isGrabberHovered || isTrackHovered;
 
-        if (isSliderHovered)
+        if (!isSliderHovered || state.PotentialInputTargetId != GlobalIntId || state.DragInProgressFromPreviousFrame)
         {
-            state.SetPotentialInputTarget(GlobalIntId);
+            return;
         }
 
-        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
+
+        if (!state.TrySetActivePress(GlobalIntId, 10))
         {
-            state.ClearActivePress(GlobalIntId);
+            return;
         }
 
+        state.SetFocus(GlobalIntId);
+
+        if (!isTrackHovered || isGrabberHovered)
+        {
+            return;
+        }
+
+        pendingTrackClickValueJump = true;
+        trackClickPosition = Math.Clamp(input.MousePosition.Y, trackMinBound, trackMaxBound);
+    }
+
+    private float HandleDrag(InputState input, float currentValue)
+    {
+        if (UI.State.ActivelyPressedElementId != GlobalIntId)
+        {
+            return currentValue;
+        }
+
+        if (pendingTrackClickValueJump)
+        {
+            return currentValue;
+        }
+
+        float clampedY = Math.Clamp(input.MousePosition.Y, trackMinBound, trackMaxBound);
+        float newValue = ConvertPositionToValue(clampedY);
+        newValue = ApplyStep(newValue);
+        return Math.Clamp(newValue, MinValue, MaxValue);
+    }
+
+    private void HandleRelease(InputState input)
+    {
+        if (UI.State.ActivelyPressedElementId != GlobalIntId || input.IsLeftMouseDown)
+        {
+            return;
+        }
+
+        UI.State.ClearActivePress(GlobalIntId);
+    }
+
+    protected override float HandleInput(InputState input, float currentValue)
+    {
+        CheckHoverState(input, currentValue);
+        HandleRelease(input);
+       
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
-            {
-                state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
-                if (state.TrySetActivePress(GlobalIntId, 10))
-                {
-                    state.SetFocus(GlobalIntId);
-
-                    if (isTrackHovered && !isGrabberHovered)
-                    {
-                        pendingTrackClickValueJump = true;
-                        trackClickPosition = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-                    }
-                }
-            }
+            HandlePress(input);
         }
 
-        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+        if (input.IsLeftMouseDown)
         {
-            if (!pendingTrackClickValueJump)
-            {
-                float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-                newValue = ConvertPositionToValue(clampedY);
-                newValue = ApplyStep(newValue);
-                newValue = Math.Clamp(newValue, MinValue, MaxValue);
-            }
+            return HandleDrag(input, currentValue);
         }
 
-        return newValue;
+        return currentValue;
     }
 
     protected override float ConvertPositionToValue(float position)
     {
-        if (trackMaxBound <= trackMinBound) return MinValue;
+        if (trackMaxBound <= trackMinBound)
+        {
+            return MinValue;
+        }
+
         float normalized = (position - trackMinBound) / (trackMaxBound - trackMinBound);
-        normalized = Math.Clamp(normalized, 0.0f, 1.0f);
-        if (Direction == VSliderDirection.BottomToTop) { normalized = 1.0f - normalized; }
+        normalized = float.Clamp(normalized, 0.0f, 1.0f);
+
+        if (Direction == VSliderDirection.BottomToTop)
+        { 
+            normalized = 1.0f - normalized; 
+        }
+
         float rawValue = MinValue + normalized * (MaxValue - MinValue);
+
         return rawValue;
     }
     protected override Vector2 CalculateGrabberPosition(float currentValue)
@@ -11594,11 +11741,13 @@ public class SilkNetSkiaWindow : IDisposable
     {
         if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = true;
         Input.AddKeyPressed(MapKey(k));
+        AppEngine.MarkDirty();
     }
     private void OnKeyUp(IKeyboard kb, Key k, int s)
     {
         if (k is Key.ControlLeft or Key.ControlRight) _isCtrlDown = false;
         Input.AddKeyReleased(MapKey(k));
+        AppEngine.MarkDirty();
     }
     private void OnKeyChar(IKeyboard kb, char c)
     {
@@ -11614,7 +11763,6 @@ public class SilkNetSkiaWindow : IDisposable
             string emoji = new string(new[] { _highSurrogate, c });
             Input.AddCharacterInput(emoji); // This will call your string version
             _highSurrogate = '\0';
-            return;
         }
         else if (_highSurrogate != '\0')
         {
@@ -11623,17 +11771,31 @@ public class SilkNetSkiaWindow : IDisposable
             Input.AddCharacterInput(_highSurrogate); // This will call your char version
             _highSurrogate = '\0';
         }
-
-        // Regular character (not part of a surrogate pair)
-        Input.AddCharacterInput(c); // This will call your char version
+        else
+        {
+            // Regular character (not part of a surrogate pair)
+            Input.AddCharacterInput(c); // This will call your char version
+        }
+        AppEngine.MarkDirty();
     }
 
     private void OnMouseDown(IMouse m, Silk.NET.Input.MouseButton b)
-        => Input.SetMouseDown(MapMouseButton(b));
+    {
+        Input.SetMouseDown(MapMouseButton(b));
+        AppEngine.MarkDirty();
+    }
+
     private void OnMouseUp(IMouse m, Silk.NET.Input.MouseButton b)
-        => Input.SetMouseUp(MapMouseButton(b));
+    {
+        Input.SetMouseUp(MapMouseButton(b));
+        AppEngine.MarkDirty();
+    }
     private void OnMouseMove(IMouse m, Vector2 pos)
-        => Input.SetMousePosition((int)pos.X, (int)pos.Y);
+    {
+        Input.SetMousePosition((int)pos.X, (int)pos.Y);
+        AppEngine.MarkDirty();
+    }
+
     private void OnMouseWheel(IMouse m, ScrollWheel s)
     {
         if (AppEngine is null) return;
@@ -11646,6 +11808,7 @@ public class SilkNetSkiaWindow : IDisposable
         {
             Input.AddMouseWheelDelta(s.Y);
         }
+        AppEngine.MarkDirty();
     }
 
     // full MapKey/MapMouseButton omitted for brevity—you keep yours here unchanged
@@ -12137,6 +12300,7 @@ using DirectUI.Input;
 using Silk.NET.Maths;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
+using System.Threading;
 using Vortice.Mathematics;
 using SizeI = Vortice.Mathematics.SizeI;
 
@@ -12238,39 +12402,67 @@ namespace DirectUI.Backends.SkiaSharp
             if (_mainWindow is null)
                 return;
 
-            // 1) Create GL/Skia contexts (still hidden)
             _mainWindow.IWindow.Initialize();
-
-            // 2) Pre‐render one frame off‐screen to avoid the blank flash
             _mainWindow.Render();
-
-            // 3) Now show the main window with its first frame already painted
             _mainWindow.IWindow.IsVisible = true;
+            _mainWindow.AppEngine.MarkDirty(); // Ensure it stays dirty for the first real loop iteration
 
-            // 4) Enter the regular event/render loop
             while (!_mainWindow.IWindow.IsClosing)
             {
+                // 1. Process all events for all windows. Input handlers will mark the UI as dirty.
                 _mainWindow.IWindow.DoEvents();
+                _activeModalWindow?.IWindow.DoEvents();
 
-                bool renderMain = !IsModalWindowOpen;
+                // 2. Check for other sources of change (like animations)
+                if (!_isDisposed && _mainWindow.AppEngine.HasActiveAnimations) _mainWindow.AppEngine.MarkDirty();
+                if (IsModalWindowOpen && _activeModalWindow?.AppEngine.HasActiveAnimations == true) _activeModalWindow.AppEngine.MarkDirty();
+
+                // 3. Decide if rendering is needed
+                bool mainDirty = !_isDisposed && _mainWindow.AppEngine.IsDirty;
+                bool modalDirty = IsModalWindowOpen && (_activeModalWindow?.AppEngine.IsDirty ?? false);
+
+                // Throttled repaint for the main window when a modal is active.
+                bool repaintMainBehindModal = false;
                 if (IsModalWindowOpen)
                 {
                     var now = _throttleTimer.ElapsedTicks;
                     if (now - _lastMainRepaintTicks > _modalRepaintIntervalTicks)
                     {
-                        renderMain = true;
+                        repaintMainBehindModal = true;
                         _lastMainRepaintTicks = now;
                     }
                 }
 
-                if (renderMain)
-                    _mainWindow.Render();
+                if (mainDirty || modalDirty || repaintMainBehindModal)
+                {
+                    // Render main window if it's dirty, or if it's time for its throttled repaint.
+                    if (mainDirty || repaintMainBehindModal)
+                    {
+                        _mainWindow.AppEngine.ClearDirtyFlag();
+                        _mainWindow.Render();
+                    }
 
-                if (IsModalWindowOpen && !_activeModalWindow!.IWindow.IsClosing)
-                    _activeModalWindow.Render();
+                    // Handle modal window logic
+                    if (_activeModalWindow is not null)
+                    {
+                        if (modalDirty)
+                        {
+                            _activeModalWindow.AppEngine.ClearDirtyFlag();
+                            _activeModalWindow.Render();
+                        }
 
-                if (IsModalWindowOpen && _activeModalWindow!.IWindow.IsClosing)
-                    HandleModalClose();
+                        if (_activeModalWindow.IWindow.IsClosing)
+                        {
+                            HandleModalClose();
+                        }
+                    }
+                }
+                else
+                {
+                    // Nothing to do, yield the CPU to reduce usage significantly.
+                    // A 10ms sleep polls at ~100fps, which is responsive enough for latent changes.
+                    Thread.Sleep(10);
+                }
             }
         }
 
@@ -14226,15 +14418,20 @@ namespace DirectUI.Animation;
 public class AnimationManager
 {
     private readonly Dictionary<int, AnimatedValue> _animatedProperties = new();
+    public bool IsAnimating { get; private set; }
 
     public void Update(float currentTime)
     {
+        IsAnimating = false; // Reset at the start of the update
         var keys = new List<int>(_animatedProperties.Keys);
         foreach (var key in keys)
         {
             if (_animatedProperties.TryGetValue(key, out var animValue))
             {
-                animValue.Update(currentTime);
+                if (animValue.Update(currentTime))
+                {
+                    IsAnimating = true; // Set to true if any animation is still running
+                }
             }
         }
     }
@@ -14663,9 +14860,23 @@ public class AudioPlayer : IDisposable
 {
     private int _stream;
     private bool _isDisposed;
+    private float _volume = 1.0f;
 
     public bool IsPlaying => Bass.ChannelIsActive(_stream) == PlaybackState.Playing;
     public PlaybackState CurrentState => _stream != 0 ? Bass.ChannelIsActive(_stream) : PlaybackState.Stopped;
+
+    public float Volume
+    {
+        get => _volume;
+        set
+        {
+            _volume = Math.Clamp(value, 0.0f, 1.0f);
+            if (_stream != 0)
+            {
+                Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
+            }
+        }
+    }
 
     public AudioPlayer()
     {
@@ -14687,6 +14898,7 @@ public class AudioPlayer : IDisposable
         if (_stream == 0)
             throw new Exception($"Failed to create audio stream: {Bass.LastError}");
 
+        Bass.ChannelSetAttribute(_stream, ChannelAttribute.Volume, _volume);
         Bass.ChannelPlay(_stream);
     }
 
@@ -14797,6 +15009,12 @@ public class PlaybackManager : IDisposable
     public double CurrentPosition => _audioPlayer.GetPosition();
     public double TotalDuration => _audioPlayer.GetLength();
     public bool HasTracks => _tracklist.Any();
+
+    public float Volume
+    {
+        get => _audioPlayer.Volume;
+        set => _audioPlayer.Volume = value;
+    }
 
     public PlaybackEndAction EndAction { get; set; } = PlaybackEndAction.NextInQueue;
     public PlaybackMode Mode { get; set; } = PlaybackMode.Sequential;
@@ -14941,6 +15159,128 @@ public class PlaybackManager : IDisposable
     {
         _audioPlayer.Dispose();
         GC.SuppressFinalize(this);
+    }
+}
+```
+
+---
+
+### `Sonorize\Core\AppController.cs`
+
+```csharp
+using DirectUI;
+using DirectUI.Core;
+using Sonorize.Services;
+using System.Linq;
+using System.Numerics;
+
+namespace Sonorize;
+
+public class AppController
+{
+    private readonly IWindowHost _host;
+    private readonly Settings _settings;
+    private readonly UIStateService _uiState;
+    private readonly LibraryView _libraryView;
+    private readonly SettingsWindow _settingsWindow;
+    private readonly MusicLibrary _musicLibrary;
+    private readonly PlaylistService _playlistService;
+    private readonly Action _saveStateCallback;
+
+    public AppController(
+        IWindowHost host,
+        Settings settings,
+        UIStateService uiState,
+        LibraryView libraryView,
+        SettingsWindow settingsWindow,
+        MusicLibrary musicLibrary,
+        PlaylistService playlistService,
+        Action saveStateCallback)
+    {
+        _host = host;
+        _settings = settings;
+        _uiState = uiState;
+        _libraryView = libraryView;
+        _settingsWindow = settingsWindow;
+        _musicLibrary = musicLibrary;
+        _playlistService = playlistService;
+        _saveStateCallback = saveStateCallback;
+    }
+
+    public void OnCreatePlaylist()
+    {
+        _playlistService.CreateNewPlaylist();
+    }
+
+    public void OnSongRightClicked(int songIndexInView)
+    {
+        _uiState.RightClickedSongIndex = songIndexInView;
+    }
+
+    public void HandleContextMenu()
+    {
+        if (_uiState.RightClickedSongIndex == -1) return;
+
+        var currentViewFiles = _libraryView.GetCurrentViewFiles();
+        if (_uiState.RightClickedSongIndex >= currentViewFiles.Count)
+        {
+            _uiState.RightClickedSongIndex = -1;
+            return;
+        }
+
+        var song = currentViewFiles[_uiState.RightClickedSongIndex];
+
+        if (UI.BeginContextMenu($"song_context_{song.FilePath}"))
+        {
+            int selectedItem = UI.ContextMenu("addToPlaylistMenu", ["Add to playlist..."]);
+            if (selectedItem == 0)
+            {
+                OpenAddToPlaylistModal(song);
+            }
+        }
+        _uiState.RightClickedSongIndex = -1;
+    }
+
+    private void OpenAddToPlaylistModal(MusicFile song)
+    {
+        _host.ModalWindowService.OpenModalWindow("Add to Playlist", 300, 400, (ctx) =>
+        {
+            UI.BeginVBoxContainer("addToPlaylistVBox", new(10, 10), 5);
+            UI.Text("addToPlaylistHeader", $"Add '{song.Title}' to:", style: new ButtonStyle { FontSize = 16 });
+            UI.Separator(280, 1f, 4f);
+
+            UI.BeginScrollableRegion("playlistSelectScroll", new(280, 300), gap: 2);
+            {
+                foreach (var playlist in _settings.Playlists)
+                {
+                    if (UI.Button(playlist.Name, playlist.Name, new Vector2(280, 24), textAlignment: new Alignment(HAlignment.Left, VAlignment.Center)))
+                    {
+                        _playlistService.AddSongToPlaylist(song, playlist);
+                        _host.ModalWindowService.CloseModalWindow(0);
+                    }
+                }
+            }
+            UI.EndScrollableRegion();
+
+            if (UI.Button("cancelAddToPlaylist", "Cancel", new Vector2(80, 24)))
+            {
+                _host.ModalWindowService.CloseModalWindow(1);
+            }
+            UI.EndVBoxContainer();
+        });
+    }
+
+    public void OpenSettingsModal()
+    {
+        _host.ModalWindowService.OpenModalWindow("Settings", 500, 400, _settingsWindow.Draw, resultCode =>
+        {
+            if (resultCode == 0) // OK was clicked
+            {
+                _musicLibrary.ScanDirectoriesAsync(_settings.Directories);
+                _saveStateCallback();
+            }
+            // If canceled, the settings window handles reverting its own state.
+        });
     }
 }
 ```
@@ -15619,6 +15959,58 @@ public class Playlist
 
 ---
 
+### `Sonorize\Services\PlaylistService.cs`
+
+```csharp
+namespace Sonorize.Services;
+
+public class PlaylistService
+{
+    private readonly Settings _settings;
+    private readonly Action _saveAction;
+
+    public PlaylistService(Settings settings, Action saveAction)
+    {
+        _settings = settings;
+        _saveAction = saveAction;
+    }
+
+    public void CreateNewPlaylist()
+    {
+        int num = _settings.Playlists.Count + 1;
+        _settings.Playlists.Add(new Playlist { Name = $"New Playlist {num}" });
+        _saveAction();
+    }
+
+    public void AddSongToPlaylist(MusicFile song, Playlist playlist)
+    {
+        if (!playlist.Tracks.Any(t => t.FilePath == song.FilePath))
+        {
+            playlist.Tracks.Add(song);
+            _saveAction();
+        }
+    }
+}
+```
+
+---
+
+### `Sonorize\Services\UIStateService.cs`
+
+```csharp
+namespace Sonorize.Services;
+
+public class UIStateService
+{
+    public int ActiveSidebarIndex { get; set; } = 0;
+    public string SearchText { get; set; } = string.Empty;
+    public int RightClickedSongIndex { get; set; } = -1;
+    public bool IsSidebarCollapsed { get; set; } = false;
+}
+```
+
+---
+
 ### `Sonorize\Settings\Settings.cs`
 
 ```csharp
@@ -15640,6 +16032,7 @@ public class Settings
     public TextOverflowMode TrackListOverflow { get; set; } = TextOverflowMode.Truncate;
     public int CompactnessLevel { get; set; } = 2; // 1=Compact, 2=Default, 3=Comfortable
     public bool EnableZebraStriping { get; set; } = true;
+    public float Volume { get; set; } = 0.75f;
 }
 ```
 
@@ -15728,7 +16121,7 @@ public class LibraryView
     private readonly MusicLibrary _musicLibrary;
     private readonly PlaybackManager _playbackManager;
     private readonly Settings _settings;
-    private readonly Action<int> _onSongRightClicked;
+    public Action<int>? OnSongRightClicked { get; set; }
 
     private int _selectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
@@ -15736,12 +16129,12 @@ public class LibraryView
 
     public IReadOnlyList<MusicFile> GetCurrentViewFiles() => _currentViewFiles;
 
-    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings, Action<int> onSongRightClicked)
+    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings, Action<int>? onSongRightClicked)
     {
         _musicLibrary = musicLibrary;
         _playbackManager = playbackManager;
         _settings = settings;
-        _onSongRightClicked = onSongRightClicked;
+        OnSongRightClicked = onSongRightClicked;
 
         _columns =
         [
@@ -15801,7 +16194,7 @@ public class LibraryView
                 trimCellText: settings.TrackListOverflow == TextOverflowMode.Truncate,
                 rowVerticalPadding: settings.CompactnessLevel,
                 enableZebraStriping: settings.EnableZebraStriping,
-                onRowRightClick: _onSongRightClicked
+                onRowRightClick: OnSongRightClicked
             );
         }
 
@@ -15829,6 +16222,128 @@ public class LibraryView
         {
             _selectedTrackIndex = _playbackManager.CurrentTrackIndex;
         }
+    }
+}
+```
+
+---
+
+### `Sonorize\Ui\MainContentView.cs`
+
+```csharp
+using DirectUI;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using Sonorize.Services;
+using System.Numerics;
+
+namespace Sonorize;
+
+public class MainContentView
+{
+    private readonly LibraryView _libraryView;
+    private readonly Settings _settings;
+    private readonly UIStateService _uiState;
+    public Action? OpenSettingsCallback { get; set; }
+
+    private float SidebarWidth => _uiState.IsSidebarCollapsed ? SidebarView.SidebarWidthCollapsed : SidebarView.SidebarWidthExpanded;
+
+    public MainContentView(
+        LibraryView libraryView,
+        Settings settings,
+        UIStateService uiState,
+        Action? openSettingsCallback)
+    {
+        _libraryView = libraryView;
+        _settings = settings;
+        _uiState = uiState;
+        OpenSettingsCallback = openSettingsCallback;
+    }
+
+    public void Draw(UIContext context, Vector2 mainAreaSize)
+    {
+        var contentWidth = mainAreaSize.X - SidebarWidth;
+        var contentHeight = mainAreaSize.Y;
+        var contentPosition = new Vector2(SidebarWidth, 0);
+
+        DrawBackground(context, contentPosition, contentWidth, contentHeight);
+
+        float headerHeight = DrawHeader(context, contentPosition, contentWidth);
+
+        DrawContentArea(context, contentPosition, contentWidth, contentHeight, headerHeight);
+    }
+
+    private void DrawBackground(UIContext context, Vector2 position, float width, float height)
+    {
+        var backgroundStyle = new BoxStyle { FillColor = new(18 / 255f, 18 / 255f, 18 / 255f, 1.0f), Roundness = 0, BorderLength = 0 };
+        var bounds = new Vortice.Mathematics.Rect(position.X, position.Y, width, height);
+        context.Renderer.DrawBox(bounds, backgroundStyle);
+    }
+
+    private float DrawHeader(UIContext context, Vector2 contentPosition, float contentWidth)
+    {
+        float headerHeight = 40f;
+        var headerPosition = contentPosition + new Vector2(20, 10);
+        var headerWidth = contentWidth - 40;
+
+        UI.BeginHBoxContainer("mainHeader", headerPosition, 5, VAlignment.Center, headerHeight);
+        {
+            DrawHeaderTitle(context);
+            DrawHeaderSpacer(context, headerWidth);
+            DrawSettingsButton();
+        }
+        UI.EndHBoxContainer();
+
+        return headerHeight;
+    }
+
+    private void DrawHeaderTitle(UIContext context)
+    {
+        string title = "Your Library";
+        if (_uiState.ActiveSidebarIndex > 0 && _uiState.ActiveSidebarIndex - 1 < _settings.Playlists.Count)
+        {
+            title = _settings.Playlists[_uiState.ActiveSidebarIndex - 1].Name;
+        }
+        UI.Text("mainContentTitle", title, style: new ButtonStyle { FontSize = 24 });
+    }
+
+    private void DrawHeaderSpacer(UIContext context, float headerWidth)
+    {
+        string title = "Your Library";
+        if (_uiState.ActiveSidebarIndex > 0 && _uiState.ActiveSidebarIndex - 1 < _settings.Playlists.Count)
+        {
+            title = _settings.Playlists[_uiState.ActiveSidebarIndex - 1].Name;
+        }
+        var titleStyle = new ButtonStyle { FontSize = 24 };
+        var titleSize = context.TextService.MeasureText(title, titleStyle);
+        var settingsButtonSize = new Vector2(30, 30);
+        float spacerWidth = headerWidth - titleSize.X - settingsButtonSize.X;
+        if (spacerWidth > 0)
+        {
+            UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+        }
+    }
+
+    private void DrawSettingsButton()
+    {
+        var theme = new ButtonStylePack { FontSize = 16, FontName = "Segoe UI Emoji", Roundness = 1f };
+        theme.Normal.FillColor = Colors.Transparent;
+        theme.Hover.FillColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+        if (UI.Button("settingsButton", "⚙️", new Vector2(30, 30), theme: theme, layer: 10))
+        {
+            OpenSettingsCallback?.Invoke();
+        }
+    }
+
+    private void DrawContentArea(UIContext context, Vector2 contentPosition, float contentWidth, float contentHeight, float headerHeight)
+    {
+        var gridPosition = new Vector2(contentPosition.X + 10, contentPosition.Y + 10 + headerHeight);
+        var gridSize = new Vector2(
+            contentWidth - 20,
+            contentHeight - headerHeight - 20
+        );
+
+        _libraryView.Draw(context, gridPosition, gridSize, _uiState.ActiveSidebarIndex, _settings, _uiState.SearchText);
     }
 }
 ```
@@ -16115,6 +16630,126 @@ public class PlayerBarView
 
 ---
 
+### `Sonorize\Ui\PlayerControlsView.cs`
+
+```csharp
+using System.Numerics;
+using DirectUI;
+using DirectUI.Drawing;
+using Sonorize.Audio;
+
+namespace Sonorize;
+
+public class PlaybackControlsView
+{
+    private readonly PlaybackManager _playbackManager;
+
+    public PlaybackControlsView(PlaybackManager playbackManager)
+    {
+        _playbackManager = playbackManager;
+    }
+
+    public void Draw(UIContext context, float panelWidth)
+    {
+        Vector2 smallButtonSize = new(32, 32);
+        Vector2 playButtonSize = new(36, 36);
+
+        ButtonStylePack theme = new()
+        {
+            FontName = "FontAwesomeSolid",
+            FontSize = 14,
+            Roundness = 1f,
+            Normal = new()
+            {
+                FillColor = Colors.Transparent,
+            }
+        };
+
+        ButtonStylePack toggleTheme = new(theme);
+        toggleTheme.Active.FontColor = DefaultTheme.Accent;
+
+        ButtonStylePack playTheme = new(theme) { FontSize = 22 };
+
+        float gap = 16f;
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (gap * 4);
+        float buttonsStartX = (panelWidth - buttonsWidth) / 2;
+
+        UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, 0), gap, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
+        {
+            DrawShuffleButton(smallButtonSize, toggleTheme);
+            DrawPreviousButton(smallButtonSize, theme);
+            DrawPlayButton(playButtonSize, playTheme);
+            DrawNextButton(smallButtonSize, theme);
+            DrawRepeatButton(smallButtonSize, toggleTheme);
+        }
+
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawRepeatButton(Vector2 smallButtonSize, ButtonStylePack toggleTheme)
+    {
+        bool isRepeatActive = _playbackManager.EndAction == PlaybackEndAction.RepeatSong;
+
+        if (!UI.Button("repeat", "\uF363", smallButtonSize, theme: toggleTheme, isActive: isRepeatActive))
+        {
+            return;
+        }
+
+        _playbackManager.EndAction = isRepeatActive
+            ? PlaybackEndAction.NextInQueue
+            : PlaybackEndAction.RepeatSong;
+    }
+
+    private void DrawNextButton(Vector2 smallButtonSize, ButtonStylePack theme)
+    {
+        if (!UI.Button("next", "\uF051", smallButtonSize, theme: theme))
+        {
+            return;
+        }
+
+        _playbackManager.Next();
+    }
+
+    private void DrawPlayButton(Vector2 playButtonSize, ButtonStylePack playTheme)
+    {
+        string playIcon = _playbackManager.IsPlaying
+            ? "\uF04C"
+            : "\uF04B";
+
+        if (!UI.Button("play", playIcon, playButtonSize, theme: playTheme))
+        {
+            return;
+        }
+
+        _playbackManager.TogglePlayPause();
+    }
+
+    private void DrawPreviousButton(Vector2 smallButtonSize, ButtonStylePack theme)
+    {
+        if (!UI.Button("prev", "\uF048", smallButtonSize, theme: theme))
+        {
+            return;
+        }
+
+        _playbackManager.Previous();
+    }
+
+    private void DrawShuffleButton(Vector2 smallButtonSize, ButtonStylePack toggleTheme)
+    {
+        bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
+
+        if (!UI.Button("shuffle", "\uF074", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive))
+        {
+            return;
+        }
+
+        _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
+    }
+}
+```
+
+---
+
 ### `Sonorize\Ui\PlaylistsView.cs`
 
 ```csharp
@@ -16148,6 +16783,100 @@ public class PlaylistsView
         // The playlists are now displayed in the sidebar.
         UI.Text("playlists_placeholder", "Playlists are available in the sidebar.", size,
             textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
+    }
+}
+```
+
+---
+
+### `Sonorize\Ui\SeekSliderView.cs`
+
+```csharp
+using DirectUI;
+using DirectUI.Drawing;
+using Sonorize.Audio;
+using System.Numerics;
+
+namespace Sonorize;
+
+public class SeekSliderView
+{
+    private readonly PlaybackManager _playbackManager;
+    private bool _isSeekSliderDragging;
+    private float _seekSliderValueDuringDrag;
+
+    public SeekSliderView(PlaybackManager playbackManager)
+    {
+        _playbackManager = playbackManager;
+    }
+
+    public void Draw(UIContext context, float panelWidth)
+    {
+        double currentPos = _playbackManager.CurrentPosition;
+        double totalDuration = _playbackManager.TotalDuration;
+        bool isLoaded = totalDuration > 0;
+
+        string currentTimeStr = FormatTime(currentPos);
+        string totalTimeStr = FormatTime(totalDuration);
+        var timeStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) };
+        float timeLabelWidth = context.TextService.MeasureText("00:00", timeStyle).X + 10;
+
+        float sliderWidth = panelWidth - (timeLabelWidth * 2);
+
+        UI.BeginHBoxContainer("seekHBox", Vector2.Zero, 0, VAlignment.Center, 20);
+        {
+            UI.Text("currentTime", currentTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Right, VAlignment.Center));
+
+            DrawSeekSlider(sliderWidth, isLoaded, (float)currentPos, (float)totalDuration);
+
+            UI.Text("totalTime", totalTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Left, VAlignment.Center));
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawSeekSlider(float sliderWidth, bool isLoaded, float currentPos, float totalDuration)
+    {
+        SliderStyle sliderTheme = new SliderStyle();
+        sliderTheme.Background.FillColor = new(0.3f, 0.3f, 0.3f, 1f);
+        sliderTheme.Foreground.FillColor = new(0.9f, 0.9f, 0.9f, 1f);
+        sliderTheme.ForegroundHover.FillColor = new(30, 215, 96, 255);
+
+        ButtonStylePack grabberTheme = new() { Roundness = 1f };
+        grabberTheme.Normal.FillColor = Colors.Transparent;
+        grabberTheme.Normal.BorderColor = Colors.Transparent;
+        grabberTheme.Hover.FillColor = Colors.White;
+        grabberTheme.Hover.BorderColor = Colors.Transparent;
+        grabberTheme.Pressed.FillColor = Colors.White;
+        grabberTheme.Pressed.BorderColor = Colors.Transparent;
+
+        int sliderId = "seekSlider".GetHashCode();
+        bool isDragging = UI.State.ActivelyPressedElementId == sliderId;
+        float sliderValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : currentPos;
+
+        float newValue = UI.HSlider("seekSlider", sliderValue, 0, isLoaded ? totalDuration : 1f, new(sliderWidth, 8),
+            theme: sliderTheme,
+            grabberTheme: grabberTheme,
+            disabled: !isLoaded,
+            grabberSize: new(14, 14));
+
+        if (isDragging)
+        {
+            _seekSliderValueDuringDrag = newValue;
+        }
+
+        if (_isSeekSliderDragging && !isDragging && isLoaded)
+        {
+            _playbackManager.Seek(_seekSliderValueDuringDrag);
+        }
+
+        _isSeekSliderDragging = isDragging;
+    }
+
+    private static string FormatTime(double seconds)
+    {
+        return (double.IsNaN(seconds) || seconds < 0) 
+            ? "00:00" 
+            : TimeSpan.FromSeconds(seconds).ToString(@"mm\:ss");
     }
 }
 ```
@@ -16303,6 +17032,264 @@ public class SettingsWindow
             }
         }
         UI.EndHBoxContainer();
+    }
+}
+```
+
+---
+
+### `Sonorize\Ui\SidebarView.cs`
+
+```csharp
+using DirectUI;
+using DirectUI.Core;
+using DirectUI.Drawing;
+using Sonorize.Services;
+using System.Numerics;
+
+namespace Sonorize;
+
+public class SidebarView
+{
+    private readonly Settings _settings;
+    private readonly UIStateService _uiState;
+    public Action? OnCreatePlaylist { get; set; }
+
+    public const float SidebarWidthExpanded = 230f;
+    public const float SidebarWidthCollapsed = 68f;
+    private float SidebarWidth => _uiState.IsSidebarCollapsed ? SidebarWidthCollapsed : SidebarWidthExpanded;
+
+    public SidebarView(
+        Settings settings,
+        UIStateService uiState,
+        Action? onCreatePlaylist)
+    {
+        _settings = settings;
+        _uiState = uiState;
+        OnCreatePlaylist = onCreatePlaylist;
+    }
+
+    public void Draw(UIContext context, float availableHeight)
+    {
+        float innerWidth = SidebarWidth - 20;
+        if (innerWidth < 0) innerWidth = 0;
+
+        DrawBackground(context, availableHeight);
+
+        UI.BeginVBoxContainer("sidebarContent", new Vector2(10, 20), 5, new Vector2(innerWidth, 0));
+        {
+            DrawHeader(context, innerWidth);
+            DrawLibraryNavigation(context, innerWidth);
+            DrawPlaylistsHeader(context, innerWidth);
+            DrawPlaylistList(context, availableHeight, innerWidth);
+        }
+        UI.EndVBoxContainer();
+
+        DrawFooter(context, availableHeight);
+    }
+
+    private void DrawBackground(UIContext context, float availableHeight)
+    {
+        var backgroundStyle = new BoxStyle
+        {
+            FillColor = new(0, 0, 0, 255),
+            Roundness = 0,
+            BorderLength = 0
+        };
+        var sidebarBounds = new Vortice.Mathematics.Rect(0, 0, SidebarWidth, availableHeight);
+        context.Renderer.DrawBox(sidebarBounds, backgroundStyle);
+    }
+
+    private void DrawHeader(UIContext context, float innerWidth)
+    {
+        if (_uiState.IsSidebarCollapsed)
+        {
+            var logoStyle = new ButtonStyle { FontSize = 24, FontWeight = Vortice.DirectWrite.FontWeight.Bold };
+            UI.Text("logo", "S", new Vector2(innerWidth, 24), style: logoStyle, textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
+        }
+        else
+        {
+            UI.Text("logo", "Sonorize", style: new ButtonStyle { FontSize = 24 });
+        }
+        UI.Separator(innerWidth, 1f, 10f);
+    }
+
+    private void DrawLibraryNavigation(UIContext context, float innerWidth)
+    {
+        var theme = CreateNavigationButtonTheme();
+        var text = _uiState.IsSidebarCollapsed ? "\uF02D" : "Your Library"; // fa-book
+        var alignment = _uiState.IsSidebarCollapsed ? new Alignment(HAlignment.Center, VAlignment.Center) : new Alignment(HAlignment.Left, VAlignment.Center);
+        var textMargin = _uiState.IsSidebarCollapsed ? Vector2.Zero : new Vector2(10, 0);
+
+        if (UI.Button("navLibrary", text, new Vector2(innerWidth, 30),
+            theme: theme, isActive: _uiState.ActiveSidebarIndex == 0,
+            textAlignment: alignment, textMargin: textMargin))
+        {
+            _uiState.ActiveSidebarIndex = 0;
+        }
+    }
+
+    private void DrawPlaylistsHeader(UIContext context, float innerWidth)
+    {
+        UI.Separator(innerWidth, 1f, 10f);
+        UI.BeginHBoxContainer("playlistHeader", UI.Context.Layout.GetCurrentPosition(), 5, VAlignment.Center, 20);
+        {
+            if (!_uiState.IsSidebarCollapsed)
+            {
+                var textStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) };
+                var textSize = context.TextService.MeasureText("PLAYLISTS", textStyle);
+                UI.Text("playlistsLabel", "PLAYLISTS", style: textStyle);
+
+                var addButtonSize = new Vector2(20, 20);
+                float spacerWidth = innerWidth - textSize.X - 5 - addButtonSize.X;
+                if (spacerWidth > 0)
+                {
+                    UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+                }
+            }
+
+            var addPlaylistButtonSize = _uiState.IsSidebarCollapsed ? new Vector2(innerWidth, 20) : new Vector2(20, 20);
+            if (UI.Button("addPlaylist", "+", addPlaylistButtonSize, layer: 10))
+            {
+                OnCreatePlaylist?.Invoke();
+            }
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawPlaylistList(UIContext context, float availableHeight, float innerWidth)
+    {
+        float reservedFooterHeight = 50;
+        float scrollHeight = availableHeight - UI.Context.Layout.GetCurrentPosition().Y - reservedFooterHeight;
+        if (scrollHeight < 0) scrollHeight = 0;
+
+        UI.BeginScrollableRegion("playlistScroll", new Vector2(innerWidth, scrollHeight), gap: 2);
+        {
+            float scrollableContentWidth = UI.GetAvailableContentWidth();
+            var theme = CreateNavigationButtonTheme();
+
+            for (int i = 0; i < _settings.Playlists.Count; i++)
+            {
+                DrawPlaylistItem(i, scrollableContentWidth, theme);
+            }
+        }
+        UI.EndScrollableRegion();
+    }
+
+    private void DrawPlaylistItem(int index, float availableWidth, ButtonStylePack theme)
+    {
+        var playlist = _settings.Playlists[index];
+        bool isCollapsed = _uiState.IsSidebarCollapsed;
+
+        var icon = "\uF001"; // fa-music
+        var text = isCollapsed ? icon : playlist.Name;
+        var alignment = isCollapsed ? new Alignment(HAlignment.Center, VAlignment.Center) : new Alignment(HAlignment.Left, VAlignment.Center);
+        var textMargin = isCollapsed ? Vector2.Zero : new Vector2(10, 0);
+
+        if (UI.Button($"navPlaylist_{index}", text, new Vector2(availableWidth, 30),
+            theme: theme, isActive: _uiState.ActiveSidebarIndex == index + 1,
+            textAlignment: alignment, textMargin: textMargin))
+        {
+            _uiState.ActiveSidebarIndex = index + 1;
+        }
+    }
+
+    private void DrawFooter(UIContext context, float availableHeight)
+    {
+        bool isCollapsed = _uiState.IsSidebarCollapsed;
+        var buttonSize = new Vector2(32, 32);
+        var buttonPosition = new Vector2((SidebarWidth - buttonSize.X) / 2, availableHeight - buttonSize.Y - 10);
+        var icon = isCollapsed ? "\uF054" : "\uF053"; // right chevron : left chevron
+
+        var theme = new ButtonStylePack { FontName = "FontAwesomeSolid", FontSize = 14, Roundness = 1f };
+        theme.Normal.FillColor = Colors.Transparent;
+        theme.Hover.FillColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+
+        if (UI.Button("collapseSidebar", icon, buttonSize, theme: theme, origin: buttonPosition))
+        {
+            _uiState.IsSidebarCollapsed = !isCollapsed;
+        }
+    }
+
+    private ButtonStylePack CreateNavigationButtonTheme()
+    {
+        var theme = new ButtonStylePack { Roundness = 0.1f };
+        theme.Normal.FillColor = Colors.Transparent;
+        theme.Active.FillColor = new(0.15f, 0.15f, 0.15f, 1f);
+        theme.Hover.FillColor = new(0.1f, 0.1f, 0.1f, 1f);
+        theme.ActiveHover.FillColor = new(0.15f, 0.15f, 0.15f, 1f);
+        theme.FontName = _uiState.IsSidebarCollapsed ? "FontAwesomeSolid" : "Segoe UI";
+        return theme;
+    }
+}
+```
+
+---
+
+### `Sonorize\Ui\TrackInfoView.cs`
+
+```csharp
+using System.Numerics;
+using DirectUI;
+using DirectUI.Core;
+using Sonorize.Audio;
+
+namespace Sonorize;
+
+public class TrackInfoView
+{
+    private readonly PlaybackManager _playbackManager;
+
+    public TrackInfoView(PlaybackManager playbackManager)
+    {
+        _playbackManager = playbackManager;
+    }
+
+    public void Draw(UIContext context, Vortice.Mathematics.Rect panelRect)
+    {
+        if (panelRect.Width <= 0) return;
+
+        var currentTrack = _playbackManager.CurrentTrack;
+
+        float artSize = 56;
+        float padding = (panelRect.Height - artSize) / 2f;
+        float gap = 12;
+
+        UI.BeginHBoxContainer("trackInfoHBox", panelRect.TopLeft + new Vector2(padding, padding), gap, VAlignment.Center, fixedRowHeight: artSize);
+        {
+            DrawAlbumArt(context, currentTrack, artSize);
+            DrawTrackText(context, currentTrack, panelRect.Width - artSize - gap - padding * 2);
+        }
+        UI.EndHBoxContainer();
+    }
+
+    private void DrawAlbumArt(UIContext context, MusicFile? currentTrack, float artSize)
+    {
+        var artPos = UI.Context.Layout.GetCurrentPosition();
+        var artRect = new Vortice.Mathematics.Rect(artPos.X, artPos.Y, artSize, artSize);
+        if (currentTrack?.AlbumArt is not null)
+        {
+            context.Renderer.DrawImage(currentTrack.AlbumArt, currentTrack.FilePath, artRect);
+        }
+        else
+        {
+            context.Renderer.DrawBox(artRect, new() { FillColor = new(0.2f, 0.2f, 0.2f, 1f), Roundness = 0.1f });
+        }
+        UI.Context.Layout.AdvanceLayout(new Vector2(artSize, artSize));
+    }
+
+    private void DrawTrackText(UIContext context, MusicFile? currentTrack, float availableWidth)
+    {
+        if (availableWidth <= 0) return;
+
+        UI.BeginVBoxContainer("trackTextVBox", UI.Context.Layout.GetCurrentPosition(), 4);
+        {
+            var title = currentTrack?.Title ?? "No Song Playing";
+            var artist = currentTrack?.Artist ?? string.Empty;
+            UI.Text("playerTitle", title, new Vector2(availableWidth, 16), new() { FontSize = 14 });
+            UI.Text("playerArtist", artist, new Vector2(availableWidth, 12), new() { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) });
+        }
+        UI.EndVBoxContainer();
     }
 }
 ```

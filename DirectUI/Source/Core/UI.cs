@@ -273,11 +273,19 @@ public static partial class UI
     }
 
     // --- On-Demand Rendering ---
-    public static void MarkDirty()
+    public static void MarkFullFrameDirty()
     {
         if (IsContextValid())
         {
-            Context.State.MarkDirty();
+            Context.State.MarkFullFrameDirty();
+        }
+    }
+
+    public static void MarkDirty(Rect region)
+    {
+        if (IsContextValid())
+        {
+            Context.State.MarkRegionDirty(region);
         }
     }
 
