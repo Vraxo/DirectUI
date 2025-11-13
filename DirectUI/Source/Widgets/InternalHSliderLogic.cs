@@ -1,5 +1,6 @@
 ﻿// Widgets/InternalHSliderLogic.cs
 using DirectUI.Core;
+using DirectUI.Input;
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1;
@@ -16,12 +17,9 @@ internal class InternalHSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.X + Size.X;
     }
 
-    protected override float HandleInput(InputState input, float currentValue)
+    private void CheckHoverState(InputState input, float currentValue)
     {
-        float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
-        var state = UI.State;
-
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -29,48 +27,73 @@ internal class InternalHSliderLogic : InternalSliderLogic
         Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
         isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
 
+        if (isGrabberHovered || isTrackHovered)
+        {
+            UI.State.SetPotentialInputTarget(GlobalIntId);
+        }
+    }
+
+    private void HandlePress(InputState input)
+    {
+        var state = UI.State;
         bool isSliderHovered = isGrabberHovered || isTrackHovered;
 
-        if (isSliderHovered)
+        if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
         {
-            state.SetPotentialInputTarget(GlobalIntId);
-        }
-
-        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
-        {
-            state.ClearActivePress(GlobalIntId);
-        }
-
-        if (input.WasLeftMousePressedThisFrame)
-        {
-            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
+            state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
+            if (state.TrySetActivePress(GlobalIntId, 10))
             {
-                state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
-                if (state.TrySetActivePress(GlobalIntId, 10))
-                {
-                    state.SetFocus(GlobalIntId);
+                state.SetFocus(GlobalIntId);
 
-                    if (isTrackHovered && !isGrabberHovered)
-                    {
-                        pendingTrackClickValueJump = true;
-                        trackClickPosition = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-                    }
+                if (isTrackHovered && !isGrabberHovered)
+                {
+                    pendingTrackClickValueJump = true;
+                    trackClickPosition = Math.Clamp(input.MousePosition.X, trackMinBound, trackMaxBound);
                 }
             }
         }
+    }
 
-        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+    private float HandleDrag(InputState input, float currentValue)
+    {
+        if (UI.State.ActivelyPressedElementId != GlobalIntId)
         {
-            if (!pendingTrackClickValueJump)
-            {
-                float clampedX = Math.Clamp(mousePos.X, trackMinBound, trackMaxBound);
-                newValue = ConvertPositionToValue(clampedX);
-                newValue = ApplyStep(newValue);
-                newValue = Math.Clamp(newValue, MinValue, MaxValue);
-            }
+            return currentValue;
+        }
+        if (pendingTrackClickValueJump)
+        {
+            return currentValue;
+        }
+        float clampedX = Math.Clamp(input.MousePosition.X, trackMinBound, trackMaxBound);
+        float newValue = ConvertPositionToValue(clampedX);
+        newValue = ApplyStep(newValue);
+        return Math.Clamp(newValue, MinValue, MaxValue);
+    }
+
+    private void HandleRelease(InputState input)
+    {
+        if (UI.State.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        {
+            UI.State.ClearActivePress(GlobalIntId);
+        }
+    }
+
+    protected override float HandleInput(InputState input, float currentValue)
+    {
+        CheckHoverState(input, currentValue);
+
+        HandleRelease(input);
+        if (input.WasLeftMousePressedThisFrame)
+        {
+            HandlePress(input);
         }
 
-        return newValue;
+        if (input.IsLeftMouseDown)
+        {
+            return HandleDrag(input, currentValue);
+        }
+
+        return currentValue;
     }
 
     protected override float ConvertPositionToValue(float position)

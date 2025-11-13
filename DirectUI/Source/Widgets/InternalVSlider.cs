@@ -1,4 +1,5 @@
 ﻿using DirectUI.Core; // Added for IRenderer
+using DirectUI.Input;
 using System.Numerics;
 using Vortice.Mathematics;
 using D2D = Vortice.Direct2D1; // Added this using directive
@@ -15,12 +16,9 @@ internal class InternalVSliderLogic : InternalSliderLogic
         trackMaxBound = trackPosition.Y + Size.Y;
     }
 
-    protected override float HandleInput(InputState input, float currentValue)
+    private void CheckHoverState(InputState input, float currentValue)
     {
-        float newValue = currentValue;
         Vector2 mousePos = input.MousePosition;
-        var state = UI.State;
-
         Vector2 currentGrabberPos = CalculateGrabberPosition(currentValue);
         Rect currentGrabberBounds = new Rect(currentGrabberPos.X, currentGrabberPos.Y, GrabberSize.X, GrabberSize.Y);
         isGrabberHovered = currentGrabberBounds.Contains(mousePos.X, mousePos.Y);
@@ -28,57 +26,103 @@ internal class InternalVSliderLogic : InternalSliderLogic
         Rect trackBoundsRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y);
         isTrackHovered = trackBoundsRect.Contains(mousePos.X, mousePos.Y);
 
+        if (isGrabberHovered || isTrackHovered)
+        {
+            UI.State.SetPotentialInputTarget(GlobalIntId);
+        }
+    }
+
+    private void HandlePress(InputState input)
+    {
+        var state = UI.State;
         bool isSliderHovered = isGrabberHovered || isTrackHovered;
 
-        if (isSliderHovered)
+        if (!isSliderHovered || state.PotentialInputTargetId != GlobalIntId || state.DragInProgressFromPreviousFrame)
         {
-            state.SetPotentialInputTarget(GlobalIntId);
+            return;
         }
 
-        if (state.ActivelyPressedElementId == GlobalIntId && !input.IsLeftMouseDown)
+        state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
+
+        if (!state.TrySetActivePress(GlobalIntId, 10))
         {
-            state.ClearActivePress(GlobalIntId);
+            return;
         }
 
+        state.SetFocus(GlobalIntId);
+
+        if (!isTrackHovered || isGrabberHovered)
+        {
+            return;
+        }
+
+        pendingTrackClickValueJump = true;
+        trackClickPosition = Math.Clamp(input.MousePosition.Y, trackMinBound, trackMaxBound);
+    }
+
+    private float HandleDrag(InputState input, float currentValue)
+    {
+        if (UI.State.ActivelyPressedElementId != GlobalIntId)
+        {
+            return currentValue;
+        }
+
+        if (pendingTrackClickValueJump)
+        {
+            return currentValue;
+        }
+
+        float clampedY = Math.Clamp(input.MousePosition.Y, trackMinBound, trackMaxBound);
+        float newValue = ConvertPositionToValue(clampedY);
+        newValue = ApplyStep(newValue);
+        return Math.Clamp(newValue, MinValue, MaxValue);
+    }
+
+    private void HandleRelease(InputState input)
+    {
+        if (UI.State.ActivelyPressedElementId != GlobalIntId || input.IsLeftMouseDown)
+        {
+            return;
+        }
+
+        UI.State.ClearActivePress(GlobalIntId);
+    }
+
+    protected override float HandleInput(InputState input, float currentValue)
+    {
+        CheckHoverState(input, currentValue);
+        HandleRelease(input);
+       
         if (input.WasLeftMousePressedThisFrame)
         {
-            if (isSliderHovered && state.PotentialInputTargetId == GlobalIntId && !state.DragInProgressFromPreviousFrame)
-            {
-                state.ClickCaptureServer.RequestCapture(GlobalIntId, 10);
-                if (state.TrySetActivePress(GlobalIntId, 10))
-                {
-                    state.SetFocus(GlobalIntId);
-
-                    if (isTrackHovered && !isGrabberHovered)
-                    {
-                        pendingTrackClickValueJump = true;
-                        trackClickPosition = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-                    }
-                }
-            }
+            HandlePress(input);
         }
 
-        if (state.ActivelyPressedElementId == GlobalIntId && input.IsLeftMouseDown)
+        if (input.IsLeftMouseDown)
         {
-            if (!pendingTrackClickValueJump)
-            {
-                float clampedY = Math.Clamp(mousePos.Y, trackMinBound, trackMaxBound);
-                newValue = ConvertPositionToValue(clampedY);
-                newValue = ApplyStep(newValue);
-                newValue = Math.Clamp(newValue, MinValue, MaxValue);
-            }
+            return HandleDrag(input, currentValue);
         }
 
-        return newValue;
+        return currentValue;
     }
 
     protected override float ConvertPositionToValue(float position)
     {
-        if (trackMaxBound <= trackMinBound) return MinValue;
+        if (trackMaxBound <= trackMinBound)
+        {
+            return MinValue;
+        }
+
         float normalized = (position - trackMinBound) / (trackMaxBound - trackMinBound);
-        normalized = Math.Clamp(normalized, 0.0f, 1.0f);
-        if (Direction == VSliderDirection.BottomToTop) { normalized = 1.0f - normalized; }
+        normalized = float.Clamp(normalized, 0.0f, 1.0f);
+
+        if (Direction == VSliderDirection.BottomToTop)
+        { 
+            normalized = 1.0f - normalized; 
+        }
+
         float rawValue = MinValue + normalized * (MaxValue - MinValue);
+
         return rawValue;
     }
     protected override Vector2 CalculateGrabberPosition(float currentValue)
