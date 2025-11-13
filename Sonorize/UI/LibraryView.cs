@@ -10,7 +10,7 @@ public class LibraryView
     private readonly MusicLibrary _musicLibrary;
     private readonly PlaybackManager _playbackManager;
     private readonly Settings _settings;
-    private readonly Action<int> _onSongRightClicked;
+    public Action<int>? OnSongRightClicked { get; set; }
 
     private int _selectedTrackIndex = -1;
     private readonly DataGridColumn[] _columns;
@@ -18,12 +18,12 @@ public class LibraryView
 
     public IReadOnlyList<MusicFile> GetCurrentViewFiles() => _currentViewFiles;
 
-    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings, Action<int> onSongRightClicked)
+    public LibraryView(MusicLibrary musicLibrary, PlaybackManager playbackManager, Settings settings, Action<int>? onSongRightClicked)
     {
         _musicLibrary = musicLibrary;
         _playbackManager = playbackManager;
         _settings = settings;
-        _onSongRightClicked = onSongRightClicked;
+        OnSongRightClicked = onSongRightClicked;
 
         _columns =
         [
@@ -83,7 +83,7 @@ public class LibraryView
                 trimCellText: settings.TrackListOverflow == TextOverflowMode.Truncate,
                 rowVerticalPadding: settings.CompactnessLevel,
                 enableZebraStriping: settings.EnableZebraStriping,
-                onRowRightClick: _onSongRightClicked
+                onRowRightClick: OnSongRightClicked
             );
         }
 
