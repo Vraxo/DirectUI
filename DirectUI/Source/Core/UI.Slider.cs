@@ -24,7 +24,28 @@ public static partial class UI
         if (!IsContextValid()) return currentValue;
 
         int intId = id.GetHashCode();
+        var scale = Context.UIScale;
+        var logicalSize = size;
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset * scale;
+            }
+        }
 
         // Culling Check
         Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
@@ -75,7 +96,28 @@ public static partial class UI
         if (!IsContextValid()) return currentValue;
 
         int intId = id.GetHashCode();
+        var scale = Context.UIScale;
+        var logicalSize = size;
         Vector2 drawPos = Context.Layout.ApplyLayout(position);
+
+        // New: Automatically adjust vertical position for HBox alignment
+        if (Context.Layout.IsInLayoutContainer() && Context.Layout.PeekContainer() is HBoxContainerState hbox)
+        {
+            if (hbox.VerticalAlignment != VAlignment.Top && hbox.FixedRowHeight.HasValue)
+            {
+                float yOffset = 0;
+                switch (hbox.VerticalAlignment)
+                {
+                    case VAlignment.Center:
+                        yOffset = (hbox.FixedRowHeight.Value - logicalSize.Y) / 2f;
+                        break;
+                    case VAlignment.Bottom:
+                        yOffset = hbox.FixedRowHeight.Value - logicalSize.Y;
+                        break;
+                }
+                drawPos.Y += yOffset * scale;
+            }
+        }
 
         // Culling Check
         Rect widgetBounds = new Rect(drawPos.X, drawPos.Y, size.X, size.Y);
