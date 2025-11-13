@@ -30,7 +30,10 @@ public class SonorizeLogic : IAppLogic
     private int _rightClickedSongIndex = -1;
 
     // --- Layout State ---
-    private float _sidebarWidth = 230f;
+    private bool _isSidebarCollapsed = false;
+    private const float SidebarWidthExpanded = 230f;
+    private const float SidebarWidthCollapsed = 68f;
+    private float SidebarWidth => _isSidebarCollapsed ? SidebarWidthCollapsed : SidebarWidthExpanded;
 
 
     public SonorizeLogic(IWindowHost host)
@@ -141,42 +144,65 @@ public class SonorizeLogic : IAppLogic
             BorderLength = 0
         };
 
-        var sidebarRect = new Vortice.Mathematics.Rect(0, 0, _sidebarWidth, availableHeight);
+        var sidebarRect = new Vortice.Mathematics.Rect(0, 0, SidebarWidth, availableHeight);
         context.Renderer.DrawBox(sidebarRect, sidebarBg);
 
-        UI.BeginVBoxContainer("sidebarContent", new Vector2(10, 20), 5, new Vector2(_sidebarWidth - 20, 0));
+        float innerWidth = SidebarWidth - 20;
+        if (innerWidth < 0) innerWidth = 0;
+
+        UI.BeginVBoxContainer("sidebarContent", new Vector2(10, 20), 5, new Vector2(innerWidth, 0));
         {
             // Logo
-            UI.Text("logo", "Sonorize", style: new ButtonStyle { FontSize = 24 });
-            UI.Separator(_sidebarWidth - 20, 1f, 10f);
+            if (_isSidebarCollapsed)
+            {
+                var logoIconStyle = new ButtonStyle { FontSize = 24, FontWeight = Vortice.DirectWrite.FontWeight.Bold };
+                UI.Text("logo", "S", new Vector2(innerWidth, 24), style: logoIconStyle, textAlignment: new Alignment(HAlignment.Center, VAlignment.Center));
+            }
+            else
+            {
+                UI.Text("logo", "Sonorize", style: new ButtonStyle { FontSize = 24 });
+            }
+            UI.Separator(innerWidth, 1f, 10f);
 
-            // Library Button
+            // --- Navigation Buttons Theme ---
             var navButtonStyle = new ButtonStylePack { Roundness = 0.1f };
-            navButtonStyle.Normal.FillColor = DirectUI.Drawing.Colors.Transparent;
+            navButtonStyle.Normal.FillColor = Colors.Transparent;
             navButtonStyle.Active.FillColor = new(0.15f, 0.15f, 0.15f, 1f);
             navButtonStyle.Hover.FillColor = new(0.1f, 0.1f, 0.1f, 1f);
             navButtonStyle.ActiveHover.FillColor = new(0.15f, 0.15f, 0.15f, 1f);
+            navButtonStyle.FontName = _isSidebarCollapsed ? "FontAwesomeSolid" : "Segoe UI";
 
+            // --- Library Button ---
+            var libraryButtonText = _isSidebarCollapsed ? "\uF02D" : "Your Library"; // fa-book
+            var libraryTextAlignment = _isSidebarCollapsed ? new Alignment(HAlignment.Center, VAlignment.Center) : new Alignment(HAlignment.Left, VAlignment.Center);
 
-            if (UI.Button("navLibrary", "Your Library", new Vector2(_sidebarWidth - 20, 30),
+            if (UI.Button("navLibrary", libraryButtonText, new Vector2(innerWidth, 30),
                 theme: navButtonStyle, isActive: _activeSidebarIndex == 0,
-                textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new(10, 0)))
+                textAlignment: libraryTextAlignment, textMargin: _isSidebarCollapsed ? Vector2.Zero : new(10, 0)))
             {
                 _activeSidebarIndex = 0;
             }
 
             // Playlists
-            UI.Separator(_sidebarWidth - 20, 1f, 10f);
-            UI.BeginHBoxContainer("playlistHeader", UI.Context.Layout.GetCurrentPosition(), 0, VAlignment.Center, 20);
+            UI.Separator(innerWidth, 1f, 10f);
+            UI.BeginHBoxContainer("playlistHeader", UI.Context.Layout.GetCurrentPosition(), 5, VAlignment.Center, 20);
             {
-                UI.Text("playlistsLabel", "PLAYLISTS", style: new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) });
+                if (!_isSidebarCollapsed)
+                {
+                    var textStyle = new ButtonStyle { FontSize = 12, FontColor = new(0.7f, 0.7f, 0.7f, 1f) };
+                    var textSize = context.TextService.MeasureText("PLAYLISTS", textStyle);
+                    UI.Text("playlistsLabel", "PLAYLISTS", style: textStyle);
 
-                // Spacer
-                var currentPos = UI.Context.Layout.GetCurrentPosition();
-                var textSize = context.TextService.MeasureText("PLAYLISTS", new ButtonStyle { FontSize = 12 });
-                UI.Context.Layout.AdvanceLayout(new Vector2(_sidebarWidth - 20 - textSize.X - 30 - 10, 0)); // Hacky spacer
+                    var addButtonSize = new Vector2(20, 20);
+                    float spacerWidth = innerWidth - textSize.X - 5 - addButtonSize.X;
+                    if (spacerWidth > 0)
+                    {
+                        UI.Context.Layout.AdvanceLayout(new Vector2(spacerWidth, 0));
+                    }
+                }
 
-                if (UI.Button("addPlaylist", "+", new Vector2(20, 20), layer: 10))
+                var addPlaylistSize = _isSidebarCollapsed ? new Vector2(innerWidth, 20) : new Vector2(20, 20);
+                if (UI.Button("addPlaylist", "+", addPlaylistSize, layer: 10))
                 {
                     OnCreatePlaylist();
                 }
@@ -184,16 +210,24 @@ public class SonorizeLogic : IAppLogic
             UI.EndHBoxContainer();
 
             // Scrollable list of playlists
-            float innerWidth = _sidebarWidth - 20;
-            float scrollHeight = availableHeight - UI.Context.Layout.GetCurrentPosition().Y - 20;
-            UI.BeginScrollableRegion("playlistScroll", new Vector2(innerWidth, scrollHeight));
+            float collapseButtonHeight = 50; // Reserve space for collapse button
+            float scrollHeight = availableHeight - UI.Context.Layout.GetCurrentPosition().Y - collapseButtonHeight;
+            if (scrollHeight < 0) scrollHeight = 0;
+
+            UI.BeginScrollableRegion("playlistScroll", new Vector2(innerWidth, scrollHeight), gap: 2);
             {
+                float scrollInnerWidth = UI.GetAvailableContentWidth();
+
                 for (int i = 0; i < _settings.Playlists.Count; i++)
                 {
                     var playlist = _settings.Playlists[i];
-                    if (UI.Button($"navPlaylist_{i}", playlist.Name, new Vector2(innerWidth, 30),
+                    var playlistIcon = "\uF001"; // fa-music
+                    var playlistText = _isSidebarCollapsed ? playlistIcon : playlist.Name;
+                    var playlistAlignment = _isSidebarCollapsed ? new Alignment(HAlignment.Center, VAlignment.Center) : new Alignment(HAlignment.Left, VAlignment.Center);
+
+                    if (UI.Button($"navPlaylist_{i}", playlistText, new Vector2(scrollInnerWidth, 30),
                         theme: navButtonStyle, isActive: _activeSidebarIndex == i + 1,
-                        textAlignment: new Alignment(HAlignment.Left, VAlignment.Center), textMargin: new(10, 0)))
+                        textAlignment: playlistAlignment, textMargin: _isSidebarCollapsed ? Vector2.Zero : new(10, 0)))
                     {
                         _activeSidebarIndex = i + 1;
                     }
@@ -202,13 +236,27 @@ public class SonorizeLogic : IAppLogic
             UI.EndScrollableRegion();
         }
         UI.EndVBoxContainer();
+
+        // --- Sidebar Footer ---
+        var collapseButtonSize = new Vector2(32, 32);
+        var collapseButtonPos = new Vector2((SidebarWidth - collapseButtonSize.X) / 2, availableHeight - collapseButtonSize.Y - 10);
+        var collapseIcon = _isSidebarCollapsed ? "\uF054" : "\uF053"; // right chevron : left chevron
+
+        var collapseTheme = new ButtonStylePack { FontName = "FontAwesomeSolid", FontSize = 14, Roundness = 1f };
+        collapseTheme.Normal.FillColor = Colors.Transparent;
+        collapseTheme.Hover.FillColor = new Color(0.2f, 0.2f, 0.2f, 1f);
+
+        if (UI.Button("collapseSidebar", collapseIcon, collapseButtonSize, theme: collapseTheme, origin: collapseButtonPos))
+        {
+            _isSidebarCollapsed = !_isSidebarCollapsed;
+        }
     }
 
     private void DrawMainContent(UIContext context, Vector2 mainAreaSize)
     {
-        var contentWidth = mainAreaSize.X - _sidebarWidth;
+        var contentWidth = mainAreaSize.X - SidebarWidth;
         var contentHeight = mainAreaSize.Y;
-        var contentPos = new Vector2(_sidebarWidth, 0);
+        var contentPos = new Vector2(SidebarWidth, 0);
 
         // Draw background
         var contentBg = new BoxStyle { FillColor = new(18 / 255f, 18 / 255f, 18 / 255f, 1.0f), Roundness = 0, BorderLength = 0 };
@@ -230,7 +278,8 @@ public class SonorizeLogic : IAppLogic
             UI.Text("mainContentTitle", title, style: new ButtonStyle { FontSize = 24 });
 
             // Spacer to push button to the right
-            var titleSize = context.TextService.MeasureText(title, new ButtonStyle { FontSize = 24 });
+            var titleStyle = new ButtonStyle { FontSize = 24 };
+            var titleSize = context.TextService.MeasureText(title, titleStyle);
             var settingsButtonSize = new Vector2(30, 30);
             float spacerWidth = headerWidth - titleSize.X - settingsButtonSize.X;
             if (spacerWidth > 0)

@@ -5,10 +5,11 @@
 
   <PropertyGroup>
     <OutputType>Library</OutputType>
-    <TargetFramework>net8.0</TargetFramework>
+    <TargetFramework>net9.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <LangVersion>preview</LangVersion>
   </PropertyGroup>
 
   <ItemGroup>
@@ -1161,24 +1162,25 @@ public class HBoxContainerState : ILayoutContainer
 
     public void Advance(Vector2 elementSize)
     {
-        // If this is not the first element, add a gap BEFORE it.
-        if (ElementCount > 0)
-        {
-            CurrentPosition = new Vector2(CurrentPosition.X + Gap, CurrentPosition.Y);
-            AccumulatedWidth += Gap;
-        }
-
-        // Now, account for the element itself.
+        // Update max height for the row
         if (elementSize.Y > MaxElementHeight)
         {
             MaxElementHeight = elementSize.Y;
         }
 
+        // Update total width for container bounds.
+        // The gap is added before each element except the first.
+        if (ElementCount > 0)
+        {
+            AccumulatedWidth += Gap;
+        }
         AccumulatedWidth += elementSize.X;
 
-        // The next logical position is simply after the current element.
-        // The gap for the *next* element will be handled in its own Advance call.
-        CurrentPosition = new Vector2(CurrentPosition.X + elementSize.X, CurrentPosition.Y);
+        // Calculate the advance amount, including the gap *after* the current element,
+        // to correctly position the cursor for the start of the *next* element.
+        float advanceX = elementSize.X + Gap;
+        CurrentPosition = new Vector2(CurrentPosition.X + advanceX, CurrentPosition.Y);
+
         ElementCount++;
     }
 }
@@ -1783,6 +1785,9 @@ public static partial class UI
             }
         }
 
+        // Prioritize textOffset for backwards compatibility, but use textMargin if it's not provided.
+        Vector2 finalMargin = textOffset ?? textMargin ?? Vector2.Zero;
+
         ClickResult clickResult = DrawButtonPrimitive(
             intId,
             widgetBounds,
@@ -1792,7 +1797,7 @@ public static partial class UI
             textAlignment ?? new Alignment(HAlignment.Center, VAlignment.Center),
             clickMode,
             clickBehavior,
-            (textOffset ?? Vector2.Zero) * scale,
+            finalMargin * scale, // Pass the final margin, scaled to physical units
             out _,
             out _,
             isActive: isActive,
@@ -2703,7 +2708,7 @@ public static partial class UI
                 textAlignment: new Alignment(HAlignment.Left, VAlignment.Center),
                 clickMode: DirectUI.Button.ActionMode.Press, // Use Press mode for fair arbitration
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
-                textOffset: new Vector2(5, 0),
+                textMargin: new Vector2(5, 0),
                 renderBounds: out _,
                 animatedStyle: out _,
                 isActive: false,
@@ -4187,7 +4192,7 @@ public static partial class UI
         Alignment textAlignment,
         DirectUI.Button.ActionMode clickMode,
         DirectUI.Button.ClickBehavior clickBehavior,
-        Vector2 textOffset,
+        Vector2 textMargin,
         out Rect renderBounds,
         out ButtonStyle animatedStyle,
         bool isActive = false,
@@ -4335,7 +4340,7 @@ public static partial class UI
             renderer.DrawBox(renderBounds, renderStyle);
 
             // Draw Text using the style with scaled font size and the animated render bounds.
-            DrawTextPrimitive(renderBounds, text, renderStyle, textAlignment, textOffset);
+            DrawTextPrimitive(renderBounds, text, renderStyle, textAlignment, textMargin);
         }
 
         return clickResult;
@@ -4416,18 +4421,49 @@ public static partial class UI
         string text,
         ButtonStyle style,
         Alignment textAlignment,
-        Vector2 textOffset)
+        Vector2 textMargin)
     {
         if (string.IsNullOrEmpty(text)) return;
 
         var renderer = UI.Context.Renderer;
 
-        // Calculate a clean drawing origin without backend-specific corrections.
-        Vector2 drawOrigin = new Vector2(bounds.X + textOffset.X, bounds.Y + textOffset.Y);
+        Vector2 drawOrigin = bounds.TopLeft;
+        Vector2 maxSize = new Vector2(bounds.Width, bounds.Height);
 
-        // Call the backend-agnostic DrawText method on the renderer.
-        // The renderer is now responsible for any specific positional adjustments.
-        renderer.DrawText(drawOrigin, text, style, textAlignment, new Vector2(bounds.Width, bounds.Height), style.FontColor);
+        // Adjust the layout box based on alignment to respect the margin.
+        // This creates an inner padded rectangle for the text to be aligned within.
+        switch (textAlignment.Horizontal)
+        {
+            case HAlignment.Left:
+                drawOrigin.X += textMargin.X;
+                maxSize.X = Math.Max(0, maxSize.X - textMargin.X);
+                break;
+            case HAlignment.Right:
+                maxSize.X = Math.Max(0, maxSize.X - textMargin.X);
+                break;
+            case HAlignment.Center:
+                drawOrigin.X += textMargin.X;
+                maxSize.X = Math.Max(0, maxSize.X - textMargin.X * 2);
+                break;
+        }
+
+        switch (textAlignment.Vertical)
+        {
+            case VAlignment.Top:
+                drawOrigin.Y += textMargin.Y;
+                maxSize.Y = Math.Max(0, maxSize.Y - textMargin.Y);
+                break;
+            case VAlignment.Bottom:
+                maxSize.Y = Math.Max(0, maxSize.Y - textMargin.Y);
+                break;
+            case VAlignment.Center:
+                drawOrigin.Y += textMargin.Y;
+                maxSize.Y = Math.Max(0, maxSize.Y - textMargin.Y * 2);
+                break;
+        }
+
+        // The renderer receives the adjusted origin and max size to perform alignment within the padded area.
+        renderer.DrawText(drawOrigin, text, style, textAlignment, maxSize, style.FontColor);
     }
 }
 ```
@@ -4600,7 +4636,7 @@ public static partial class UI
                 textAlignment: new Alignment(HAlignment.Center, VAlignment.Center),
                 clickMode: DirectUI.Button.ActionMode.Release,
                 clickBehavior: DirectUI.Button.ClickBehavior.Left,
-                textOffset: Vector2.Zero,
+                textMargin: Vector2.Zero,
                 out _,
                 out _,
                 isActive: i == activeIndex
@@ -6712,6 +6748,14 @@ public class SliderStyle
         Roundness = 0.5f,
         BorderLength = 0.0f
     };
+
+    public BoxStyle ForegroundHover { get; set; } = new()
+    {
+        FillColor = DefaultTheme.AccentBorder, // Brighter version for hover
+        BorderColor = DefaultTheme.Transparent,
+        Roundness = 0.5f,
+        BorderLength = 0.0f
+    };
 }
 ```
 
@@ -8310,8 +8354,11 @@ internal class InternalHSliderLogic : InternalSliderLogic
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
 
         renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
+
+        var foregroundStyle = (isTrackHovered || isGrabberPressed) ? Theme.ForegroundHover : Theme.Foreground;
+
         // Changed to explicitly pass float components for Rect constructor
-        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), foregroundStyle);
         renderer.PopClipRect();
     }
 }
@@ -8892,7 +8939,10 @@ internal class InternalVSliderLogic : InternalSliderLogic
         if (Direction == VSliderDirection.BottomToTop) { clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight); }
         renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
-        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
+
+        var foregroundStyle = (isTrackHovered || isGrabberPressed) ? Theme.ForegroundHover : Theme.Foreground;
+
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), foregroundStyle);
         renderer.PopClipRect();
     }
 }
@@ -11938,6 +11988,19 @@ public class SilkNetTextService : ITextService
     private readonly Dictionary<TypefaceKey, SKTypeface> _typefaceCache = new();
     private readonly Dictionary<TextLayoutCacheKey, ITextLayout> _textLayoutCache = new();
     private readonly Dictionary<(string, MeasurementKey), Vector2> _textSizeCache = new();
+    private static readonly Dictionary<string, string> _registeredFonts = new(StringComparer.OrdinalIgnoreCase);
+
+    public static void RegisterFont(string familyName, string filePath)
+    {
+        if (File.Exists(filePath))
+        {
+            _registeredFonts[familyName] = filePath;
+        }
+        else
+        {
+            Console.WriteLine($"[SilkNetTextService] Font file not found: {filePath}");
+        }
+    }
 
     // Key for size-INDEPENDENT SKTypeface objects
     internal readonly struct TypefaceKey : IEquatable<TypefaceKey>
@@ -12001,10 +12064,18 @@ public class SilkNetTextService : ITextService
             return typeface;
         }
 
-        SKFontStyleWeight weight = (SKFontStyleWeight)style.FontWeight;
-        SKFontStyleSlant slant = style.FontStyle == FontStyle.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
+        // Check registered fonts first
+        if (_registeredFonts.TryGetValue(style.FontName, out var filePath))
+        {
+            typeface = SKTypeface.FromFile(filePath);
+        }
+        else // Fallback to system fonts
+        {
+            SKFontStyleWeight weight = (SKFontStyleWeight)style.FontWeight;
+            SKFontStyleSlant slant = style.FontStyle == FontStyle.Italic ? SKFontStyleSlant.Italic : SKFontStyleSlant.Upright;
+            typeface = SKTypeface.FromFamilyName(style.FontName, weight, SKFontStyleWidth.Normal, slant);
+        }
 
-        typeface = SKTypeface.FromFamilyName(style.FontName, weight, SKFontStyleWidth.Normal, slant);
         _typefaceCache[typefaceKey] = typeface;
         return typeface;
     }
@@ -12152,6 +12223,11 @@ namespace DirectUI.Backends.SkiaSharp
         {
             _mainWindow = new SilkNetSkiaWindow(
                 _title, _width, _height, this, isModal: false);
+
+            // Register fonts before initializing the window
+            string fontPath = Path.Combine(AppContext.BaseDirectory, "Data", "Fonts", "Font Awesome 7 Free-Solid-900.otf");
+            SilkNetTextService.RegisterFont("FontAwesomeSolid", fontPath);
+
 
             // Pass the initial scale down to the window, which will apply it when its AppEngine is created.
             return _mainWindow.Initialize(uiDrawCallback, backgroundColor, initialScale);
@@ -14564,6 +14640,12 @@ public interface IWindowHost : IDisposable
     <ProjectReference Include="..\DirectUI\DirectUI.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Update="Data\Fonts\Font Awesome 7 Free-Solid-900.otf">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
 </Project>
 ```
 
@@ -15914,33 +15996,39 @@ public class PlayerBarView
     {
         var smallButtonSize = new Vector2(32, 32);
         var playButtonSize = new Vector2(36, 36);
-        var theme = new ButtonStylePack { FontSize = 14, FontName = "Segoe UI Emoji", Roundness = 1f };
+
+        // Theme for standard icon buttons
+        var theme = new ButtonStylePack { FontName = "FontAwesomeSolid", FontSize = 14, Roundness = 1f };
         theme.Normal.FillColor = Colors.Transparent;
+
+        // Theme for toggle buttons (shuffle, repeat)
         var toggleTheme = new ButtonStylePack(theme);
         toggleTheme.Active.FontColor = DefaultTheme.Accent;
 
-        float buttonsWidth = smallButtonSize.X * 4 + playButtonSize.X + 16 * 2;
+        // Theme for the larger play/pause button
+        var playTheme = new ButtonStylePack(theme) { FontSize = 22 };
+
+
+        float gap = 16f;
+        float buttonsWidth = (smallButtonSize.X * 4) + playButtonSize.X + (gap * 4);
         float buttonsStartX = (panelWidth - buttonsWidth) / 2;
 
-        var hboxPos = UI.Context.Layout.GetCurrentPosition() + new Vector2(buttonsStartX, 0);
-        UI.BeginHBoxContainer("playbackButtons", hboxPos, 16, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
+        UI.BeginHBoxContainer("playbackButtons", new Vector2(buttonsStartX, 0), gap, VAlignment.Center, fixedRowHeight: playButtonSize.Y);
         {
             bool isShuffleActive = _playbackManager.Mode == PlaybackMode.Shuffle;
-            if (UI.Button("shuffle", "🔀", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive))
+            if (UI.Button("shuffle", "\uF074", smallButtonSize, theme: toggleTheme, isActive: isShuffleActive)) // fa-random
                 _playbackManager.Mode = isShuffleActive ? PlaybackMode.Sequential : PlaybackMode.Shuffle;
 
-            if (UI.Button("prev", "⏮", smallButtonSize, theme: theme)) _playbackManager.Previous();
+            if (UI.Button("prev", "\uF048", smallButtonSize, theme: theme)) _playbackManager.Previous(); // fa-step-backward
 
-            string playIcon = _playbackManager.IsPlaying ? "⏸" : "▶";
-            if (UI.Button("play", playIcon, playButtonSize, theme: theme)) _playbackManager.TogglePlayPause();
+            string playIcon = _playbackManager.IsPlaying ? "\uF04C" : "\uF04B"; // fa-pause : fa-play
+            if (UI.Button("play", playIcon, playButtonSize, theme: playTheme)) _playbackManager.TogglePlayPause();
 
-            if (UI.Button("next", "⏭", smallButtonSize, theme: theme)) _playbackManager.Next();
+            if (UI.Button("next", "\uF051", smallButtonSize, theme: theme)) _playbackManager.Next(); // fa-step-forward
 
-            string repeatIcon = "🔁";
-            bool isRepeatOneActive = false;
-            if (_playbackManager.EndAction == PlaybackEndAction.RepeatSong) { repeatIcon = "🔂"; isRepeatOneActive = true; }
-            if (UI.Button("repeat", repeatIcon, smallButtonSize, theme: toggleTheme, isActive: isRepeatOneActive))
-                _playbackManager.EndAction = (PlaybackEndAction)(((int)_playbackManager.EndAction + 1) % 2); // Simple toggle for now
+            bool isRepeatActive = _playbackManager.EndAction == PlaybackEndAction.RepeatSong;
+            if (UI.Button("repeat", "\uF363", smallButtonSize, theme: toggleTheme, isActive: isRepeatActive)) // fa-repeat
+                _playbackManager.EndAction = isRepeatActive ? PlaybackEndAction.NextInQueue : PlaybackEndAction.RepeatSong;
         }
         UI.EndHBoxContainer();
     }
@@ -15958,16 +16046,35 @@ public class PlayerBarView
 
         float sliderWidth = panelWidth - (timeLabelWidth * 2);
 
-        UI.BeginHBoxContainer("seekHBox", UI.Context.Layout.GetCurrentPosition(), 0, VAlignment.Center, 20);
+        UI.BeginHBoxContainer("seekHBox", Vector2.Zero, 0, VAlignment.Center, 20);
         {
             UI.Text("currentTime", currentTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Right, VAlignment.Center));
+
+            // Custom theme for the Spotify-like seek slider
+            var sliderTheme = new SliderStyle();
+            sliderTheme.Background.FillColor = new Color(0.3f, 0.3f, 0.3f, 1f);
+            sliderTheme.Foreground.FillColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            sliderTheme.ForegroundHover.FillColor = new Color(30, 215, 96, 255); // Spotify Green
+
+            // This theme makes the thumb invisible by default, but visible on hover.
+            var grabberTheme = new ButtonStylePack();
+            grabberTheme.Normal.FillColor = Colors.Transparent;
+            grabberTheme.Normal.BorderColor = Colors.Transparent;
+            grabberTheme.Hover.FillColor = Colors.White;
+            grabberTheme.Hover.BorderColor = Colors.Transparent;
+            grabberTheme.Pressed.FillColor = Colors.White;
+            grabberTheme.Pressed.BorderColor = Colors.Transparent;
+            grabberTheme.Roundness = 1f; // Make it a circle
 
             int sliderId = "seekSlider".GetHashCode();
             bool isDragging = UI.State.ActivelyPressedElementId == sliderId;
             float sliderValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPos;
 
             float newValue = UI.HSlider("seekSlider", sliderValue, 0, isLoaded ? (float)totalDuration : 1f, new(sliderWidth, 8),
-                disabled: !isLoaded, grabberSize: new(14, 14));
+                theme: sliderTheme,
+                grabberTheme: grabberTheme,
+                disabled: !isLoaded,
+                grabberSize: new(14, 14));
 
             if (isDragging) _seekSliderValueDuringDrag = newValue;
             if (_isSeekSliderDragging && !isDragging && isLoaded) _playbackManager.Seek(_seekSliderValueDuringDrag);

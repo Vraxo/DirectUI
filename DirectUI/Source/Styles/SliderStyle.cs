@@ -17,4 +17,12 @@ public class SliderStyle
         Roundness = 0.5f,
         BorderLength = 0.0f
     };
+
+    public BoxStyle ForegroundHover { get; set; } = new()
+    {
+        FillColor = DefaultTheme.AccentBorder, // Brighter version for hover
+        BorderColor = DefaultTheme.Transparent,
+        Roundness = 0.5f,
+        BorderLength = 0.0f
+    };
 }

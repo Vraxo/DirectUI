@@ -109,7 +109,10 @@ internal class InternalVSliderLogic : InternalSliderLogic
         if (Direction == VSliderDirection.BottomToTop) { clipRect = new Rect(trackPosition.X, trackPosition.Y + Size.Y - foregroundHeight, Size.X, foregroundHeight); }
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, Size.X, foregroundHeight); }
         renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
-        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
+
+        var foregroundStyle = (isTrackHovered || isGrabberPressed) ? Theme.ForegroundHover : Theme.Foreground;
+
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), foregroundStyle);
         renderer.PopClipRect();
     }
 }

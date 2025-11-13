@@ -111,8 +111,11 @@ internal class InternalHSliderLogic : InternalSliderLogic
         else { clipRect = new Rect(trackPosition.X, trackPosition.Y, foregroundWidth, Size.Y); }
 
         renderer.PushClipRect(clipRect, D2D.AntialiasMode.Aliased);
+
+        var foregroundStyle = (isTrackHovered || isGrabberPressed) ? Theme.ForegroundHover : Theme.Foreground;
+
         // Changed to explicitly pass float components for Rect constructor
-        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), Theme.Foreground);
+        renderer.DrawBox(new Rect(trackPosition.X, trackPosition.Y, Size.X, Size.Y), foregroundStyle);
         renderer.PopClipRect();
     }
 }

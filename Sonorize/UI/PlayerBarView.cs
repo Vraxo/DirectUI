@@ -180,12 +180,31 @@ public class PlayerBarView
         {
             UI.Text("currentTime", currentTimeStr, new(timeLabelWidth, 20), timeStyle, new(HAlignment.Right, VAlignment.Center));
 
+            // Custom theme for the Spotify-like seek slider
+            var sliderTheme = new SliderStyle();
+            sliderTheme.Background.FillColor = new Color(0.3f, 0.3f, 0.3f, 1f);
+            sliderTheme.Foreground.FillColor = new Color(0.9f, 0.9f, 0.9f, 1f);
+            sliderTheme.ForegroundHover.FillColor = new Color(30, 215, 96, 255); // Spotify Green
+
+            // This theme makes the thumb invisible by default, but visible on hover.
+            var grabberTheme = new ButtonStylePack();
+            grabberTheme.Normal.FillColor = Colors.Transparent;
+            grabberTheme.Normal.BorderColor = Colors.Transparent;
+            grabberTheme.Hover.FillColor = Colors.White;
+            grabberTheme.Hover.BorderColor = Colors.Transparent;
+            grabberTheme.Pressed.FillColor = Colors.White;
+            grabberTheme.Pressed.BorderColor = Colors.Transparent;
+            grabberTheme.Roundness = 1f; // Make it a circle
+
             int sliderId = "seekSlider".GetHashCode();
             bool isDragging = UI.State.ActivelyPressedElementId == sliderId;
             float sliderValue = _isSeekSliderDragging ? _seekSliderValueDuringDrag : (float)currentPos;
 
             float newValue = UI.HSlider("seekSlider", sliderValue, 0, isLoaded ? (float)totalDuration : 1f, new(sliderWidth, 8),
-                disabled: !isLoaded, grabberSize: new(14, 14));
+                theme: sliderTheme,
+                grabberTheme: grabberTheme,
+                disabled: !isLoaded,
+                grabberSize: new(14, 14));
 
             if (isDragging) _seekSliderValueDuringDrag = newValue;
             if (_isSeekSliderDragging && !isDragging && isLoaded) _playbackManager.Seek(_seekSliderValueDuringDrag);
